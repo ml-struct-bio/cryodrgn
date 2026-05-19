@@ -62,8 +62,9 @@ LANDSCAPE_ANIM_MAX_CYCLE = 50
 LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT = 20
 _LANDSCAPE_VIEW_ROTATION_AXES: tuple[str, ...] = ("x", "y", "z")
 
-# Vol-PCA scatter marker size (legacy was 9); ~13% smaller for parity with recent 3D landscape tweaks.
-_VOLSKETCH_SCATTER_MARKER = float(9 * (1.0 - 0.13))
+# Vol-PCA scatter: legacy 9 → −13%; match dashboard 3D (+30% size, −20% opacity vs that base).
+_VOLSKETCH_SCATTER_MARKER = float(9 * (1.0 - 0.13) * 1.3)
+_VOLSKETCH_SCATTER_OPACITY = float(min(0.98, 0.75 * 0.8))
 
 
 def _sample_landscape_vols(vols: list[int], k: int, rng: random.Random) -> list[int]:
@@ -558,7 +559,11 @@ def landscape_volpca_scatter_figure(
     if color_mode == "state" and states is not None:
         ser = pd.Series(states)
         colors, _ = _labels_colors_and_legend_items(ser)
-        marker = dict(size=_VOLSKETCH_SCATTER_MARKER, opacity=0.75, color=colors)
+        marker = dict(
+            size=_VOLSKETCH_SCATTER_MARKER,
+            opacity=_VOLSKETCH_SCATTER_OPACITY,
+            color=colors,
+        )
         customdata = np.column_stack([vol_ids, states, train_idx_col])
         hover = "volume: %{customdata[0]}<br>%{customdata[1]}<extra></extra>"
     elif (
@@ -576,11 +581,15 @@ def landscape_volpca_scatter_figure(
         ser = pd.Series(cov_vals)
         if color_mode == "labels":
             colors, _ = _labels_colors_and_legend_items(ser)
-            marker = dict(size=_VOLSKETCH_SCATTER_MARKER, opacity=0.75, color=colors)
+            marker = dict(
+                size=_VOLSKETCH_SCATTER_MARKER,
+                opacity=_VOLSKETCH_SCATTER_OPACITY,
+                color=colors,
+            )
         else:
             marker = dict(
                 size=_VOLSKETCH_SCATTER_MARKER,
-                opacity=0.75,
+                opacity=_VOLSKETCH_SCATTER_OPACITY,
                 color=ser,
                 colorscale=plotly_cs,
             )
@@ -613,7 +622,11 @@ def landscape_volpca_scatter_figure(
         )
         hover = "volume: %{customdata[0]}<br>%{customdata[1]}<extra></extra>"
     else:
-        marker = dict(size=_VOLSKETCH_SCATTER_MARKER, opacity=0.75, color="#4a5568")
+        marker = dict(
+            size=_VOLSKETCH_SCATTER_MARKER,
+            opacity=_VOLSKETCH_SCATTER_OPACITY,
+            color="#4a5568",
+        )
         customdata = np.column_stack(
             [np.asarray(vol_ids, dtype=np.int64), train_idx_col],
         )

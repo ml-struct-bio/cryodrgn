@@ -596,6 +596,25 @@
     return _fillRelLumVs(fillCss) < 0.34 ? "#f1f5f9" : "#0f172a";
   }
 
+  /** Match ``latent3d_landscape_vol_animations.js`` — keep selection overlay sizes tied to API trace. */
+  function referenceScatter3dBaseMarkerSize(trace, graphDiv) {
+    var full = graphDiv && graphDiv._fullData && graphDiv._fullData[0];
+    var marker = (full && full.marker) || (trace && trace.marker);
+    if (!marker || marker.size == null) return null;
+    var sz = marker.size;
+    if (typeof sz === "number" && isFinite(sz) && sz > 0) return sz;
+    if (Array.isArray(sz) && sz.length) {
+      var minS = Infinity;
+      var si;
+      for (si = 0; si < sz.length; si++) {
+        var one = sz[si];
+        if (typeof one === "number" && isFinite(one) && one > 0 && one < minS) minS = one;
+      }
+      if (minS < Infinity) return minS;
+    }
+    return null;
+  }
+
   function refreshSelectionHighlight() {
     if (!gd || !gd.data || !gd.data[0]) return;
     var trace = gd.data[0];
@@ -605,12 +624,13 @@
     var hasIds = trace.ids && trace.ids.length === n;
     var cd = trace.customdata;
     if (!hasIds && (!cd || cd.length !== n)) return;
-    var mk = 9 * (1 - 0.13);
-    var baseSize = Math.max(2, mk);
-    var hiSize = Math.max(3, mk * (11 / 9));
-    var baseOp = 0.75;
-    var hiOp = 0.86;
-    var dimOp = 0.66;
+    var mkFallback = 9 * (1 - 0.13);
+    var refSz = referenceScatter3dBaseMarkerSize(trace, gd);
+    var baseSize = refSz != null ? Math.max(2, refSz) : Math.max(2, mkFallback);
+    var hiSize = refSz != null ? Math.max(3, refSz * (11 / 9)) : Math.max(3, mkFallback * (11 / 9));
+    var baseOp = 0.75 * 0.8;
+    var hiOp = 0.86 * 0.8;
+    var dimOp = 0.66 * 0.8;
     var hasSel = selectedVols.size > 0;
     var sizes = new Array(n);
     var opacities = new Array(n);

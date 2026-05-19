@@ -80,6 +80,16 @@
     return Plotly.relayout(gd, patch).catch(function() {});
   }
 
+  /** Preserve orbit only — avoids pinning stale ``scene.*axis.range`` after trace restyle / colour redraw. */
+  function restoreCameraOnly(gd, snap) {
+    if (!snap || typeof Plotly === "undefined" || !Plotly.relayout) {
+      return Promise.resolve();
+    }
+    var patch = sceneRelayoutPatchCameraOnly(snap);
+    if (!Object.keys(patch).length) return Promise.resolve();
+    return Plotly.relayout(gd, patch).catch(function() {});
+  }
+
   function scheduleRestore(gd, snap, onDone) {
     requestAnimationFrame(function() {
       var p = restore(gd, snap);
@@ -87,6 +97,26 @@
       chain.then(function() {
         requestAnimationFrame(function() {
           var p2 = restore(gd, snap);
+          var chain2 = p2 && typeof p2.then === "function" ? p2.catch(function() {}) : Promise.resolve();
+          chain2.then(function() {
+            if (typeof onDone === "function") {
+              try {
+                onDone();
+              } catch (eDone) { /* ignore */ }
+            }
+          });
+        });
+      });
+    });
+  }
+
+  function scheduleRestoreCameraOnly(gd, snap, onDone) {
+    requestAnimationFrame(function() {
+      var p = restoreCameraOnly(gd, snap);
+      var chain = p && typeof p.then === "function" ? p.catch(function() {}) : Promise.resolve();
+      chain.then(function() {
+        requestAnimationFrame(function() {
+          var p2 = restoreCameraOnly(gd, snap);
           var chain2 = p2 && typeof p2.then === "function" ? p2.catch(function() {}) : Promise.resolve();
           chain2.then(function() {
             if (typeof onDone === "function") {
@@ -124,12 +154,24 @@
     } catch (e) { /* ignore */ }
   }
 
+  /** Orbit only for colour-covariate / marker restyle redraws (server axis limits stay authoritative). */
+  function applySnapshotCameraOnlyToFigureLayout(fig, snap) {
+    if (!fig || !fig.layout || !snap || !snap.camera || typeof snap.camera !== "object") return;
+    try {
+      fig.layout.scene = fig.layout.scene || {};
+      fig.layout.scene.camera = JSON.parse(JSON.stringify(snap.camera));
+    } catch (e) { /* ignore */ }
+  }
+
   global.CryoPlotlyScatter3dScene = {
     snapshot: snapshot,
     applySnapshotToFigureLayout: applySnapshotToFigureLayout,
+    applySnapshotCameraOnlyToFigureLayout: applySnapshotCameraOnlyToFigureLayout,
     sceneRelayoutPatchFromSnap: sceneRelayoutPatchFromSnap,
     sceneRelayoutPatchCameraOnly: sceneRelayoutPatchCameraOnly,
     restore: restore,
+    restoreCameraOnly: restoreCameraOnly,
     scheduleRestore: scheduleRestore,
+    scheduleRestoreCameraOnly: scheduleRestoreCameraOnly,
   };
 })(typeof window !== "undefined" ? window : globalThis);

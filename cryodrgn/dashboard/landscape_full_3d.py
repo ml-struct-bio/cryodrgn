@@ -17,6 +17,7 @@ import pandas as pd
 from cryodrgn import utils
 from cryodrgn.dashboard.column_names import (
     VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+    VOL_LANDSCAPE_IS_SKETCH_CENTROID,
     VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
 )
 from cryodrgn.dashboard.covariate_labels import covariate_display_map
@@ -24,6 +25,35 @@ from cryodrgn.dashboard.data import DashboardExperiment
 
 _LANDSCAPE_FULL_SUBDIR = "landscape_full"
 _LANDSCAPE_VOL_PC_COL_RE = re.compile(r"^landscape_vol_PC(\d+)$")
+_SKETCH_CENTERS_IND_CACHE: dict[tuple[str, int], np.ndarray] = {}
+
+
+def _sketch_centers_ind_for_epoch(workdir: str, epoch: int) -> np.ndarray | None:
+    """Centroid particle row-indices (`centers_ind.txt`) for this epoch's sketch export."""
+    key = (workdir, int(epoch))
+    if key in _SKETCH_CENTERS_IND_CACHE:
+        return _SKETCH_CENTERS_IND_CACHE[key]
+    try:
+        from cryodrgn.dashboard.landscape_volpca import (
+            load_sketch_centroid_plot_df_rows,
+            load_vol_pca_matrix,
+            resolve_kmeans_sketch_bundle,
+            landscape_dir_for_epoch,
+        )
+
+        landscape_dir = landscape_dir_for_epoch(workdir, int(epoch))
+        k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
+        centers = load_vol_pca_matrix(landscape_dir, k_sketch)
+        n_expected = int(centers.shape[0])
+        centers_ind = load_sketch_centroid_plot_df_rows(kmeans_dir, n_expected)
+    except Exception:
+        centers_ind = None
+    if centers_ind is None:
+        _SKETCH_CENTERS_IND_CACHE[key] = None  # type: ignore[assignment]
+    else:
+        _SKETCH_CENTERS_IND_CACHE[key] = centers_ind
+    return centers_ind
+
 
 LANDSCAPE_FULL_3D_LEAD_HTML = (
     '<p class="cryo-dash-lead">Use the interface on the right '
@@ -89,7 +119,12 @@ def landscape_full_vol_pca_axis_columns(df: pd.DataFrame) -> list[str]:
 def landscape_full_sampled_numeric_covariates(df: pd.DataFrame) -> list[str]:
     """Numeric columns for the colour selector (excludes helpers)."""
     skip = frozenset(
-        {"index", VOL_LANDSCAPE_3D_PLOT_DF_ROW, VOL_LANDSCAPE_NEAREST_SKETCH_VOL}
+        {
+            "index",
+            VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+            VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
+            VOL_LANDSCAPE_IS_SKETCH_CENTROID,
+        }
     )
     return [c for c in df.select_dtypes(include=[np.number]).columns if c not in skip]
 
@@ -104,6 +139,7 @@ def attach_landscape_nearest_sketch_vol_column(
         kmeans_sorted_vol_indices,
         landscape_analysis_ready,
         landscape_dir_for_epoch,
+        load_sketch_centroid_plot_df_rows,
         load_vol_pca_matrix,
         resolve_kmeans_sketch_bundle,
     )
@@ -139,6 +175,19 @@ def attach_landscape_nearest_sketch_vol_column(
     nearest_vol = np.array([vol_ids[int(r)] for r in nearest_rows], dtype=np.int64)
     out = base.copy()
     out[VOL_LANDSCAPE_NEAREST_SKETCH_VOL] = nearest_vol
+    is_cent = np.zeros(len(out), dtype=np.int64)
+    try:
+        centers_ind = load_sketch_centroid_plot_df_rows(kmeans_dir, n)
+    except (FileNotFoundError, OSError, ValueError):
+        pass
+    else:
+        plot_rows = out[VOL_LANDSCAPE_3D_PLOT_DF_ROW].to_numpy(dtype=np.int64)
+        # Mark sketch-centroid particles directly by their plot-row indices.
+        # This avoids relying on any particular ordering alignment between
+        # `centers_ind.txt` and the k-means volume-id mapping used for
+        # `nearest_vol`.
+        is_cent = np.isin(plot_rows, centers_ind).astype(np.int64, copy=False)
+    out[VOL_LANDSCAPE_IS_SKETCH_CENTROID] = is_cent
     return out
 
 
@@ -171,11 +220,26 @@ def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
             "ind.sampled.pkl contains row indices outside the current analysis table."
         )
 
-    base = exp.plot_df.iloc[ind].copy().reset_index(drop=True)
-    for i in range(zdim):
-        base[f"z{i}"] = z_s[:, i]
+    # Ensure sketch-centroid particle rows are present.
+    # `ind.sampled.pkl` is a performance sample; if it drops centroid rows, the
+    # volume-landscape UI cannot show italics for those volumes.
+    # We union the sketch centroid rows (`centers_ind.txt`) into the sampled indices.
+    centers_ind = _sketch_centers_ind_for_epoch(exp.workdir, exp.epoch)
+    if centers_ind is not None and len(centers_ind):
+        ind_used = np.unique(
+            np.concatenate([ind, centers_ind.astype(np.int64, copy=False)])
+        )
+        ind_used = ind_used[(ind_used >= 0) & (ind_used < n_full)]
+    else:
+        ind_used = ind
 
-    base[VOL_LANDSCAPE_3D_PLOT_DF_ROW] = ind.astype(np.int64, copy=False)
+    base = exp.plot_df.iloc[ind_used].copy().reset_index(drop=True)
+    zdim = int(exp.z.shape[1])
+    z_used = np.asarray(exp.z[ind_used], dtype=np.float64)
+    for i in range(zdim):
+        base[f"z{i}"] = z_used[:, i]
+
+    base[VOL_LANDSCAPE_3D_PLOT_DF_ROW] = ind_used.astype(np.int64, copy=False)
 
     n_particles = n_full
     vol_all_path = os.path.join(outdir, "vol_pca_all.pkl")
@@ -183,20 +247,20 @@ def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
         v = np.asarray(utils.load_pkl(vol_all_path), dtype=np.float64)
         if v.ndim == 2 and v.shape[0] == n_particles:
             for j in range(v.shape[1]):
-                base[f"landscape_vol_PC{j + 1}"] = v[ind, j]
+                base[f"landscape_vol_PC{j + 1}"] = v[ind_used, j]
 
     umap_path = os.path.join(outdir, "umap_vol_pca.pkl")
     if os.path.isfile(umap_path):
         u = np.asarray(utils.load_pkl(umap_path), dtype=np.float64)
         if u.ndim == 2 and u.shape[0] == n_particles and u.shape[1] >= 2:
-            base["landscape_vol_UMAP1"] = u[ind, 0]
-            base["landscape_vol_UMAP2"] = u[ind, 1]
+            base["landscape_vol_UMAP1"] = u[ind_used, 0]
+            base["landscape_vol_UMAP2"] = u[ind_used, 1]
 
     cl_path = os.path.join(outdir, "full_clustering", "cluster_labels.pkl")
     if os.path.isfile(cl_path):
         cl = np.asarray(utils.load_pkl(cl_path), dtype=np.int64)
         if cl.shape[0] == n_particles:
-            base["landscape_vol_cluster"] = cl[ind]
+            base["landscape_vol_cluster"] = cl[ind_used]
 
     return attach_landscape_nearest_sketch_vol_column(exp, base)
 

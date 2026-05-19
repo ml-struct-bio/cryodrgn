@@ -36,12 +36,63 @@
     return !!(m && m.cdrgn_landscape_vol_animation);
   }
 
+  function layoutMetaSketchCentroidCd(gd) {
+    var m = gd && gd.layout && gd.layout.meta;
+    return !!(m && m.cdrgn_landscape_sketch_centroid_cd);
+  }
+
+  // If Plotly drops/loses the `layout.meta` centroid flag for some reason, we still
+  // want to be able to detect centroid particles via the 0/1 values carried in the
+  // trace's `customdata` (second-last column for the volume-landscape plot).
+  var sketchCentroidCdInferred = null; // null=unknown, bool=inferred
+
+  function customdataForHighlight(gd, trace) {
+    trace = trace || (gd && gd.data && gd.data[0]);
+    if (!trace || !trace.x) return null;
+    var n = trace.x.length;
+    if (trace.customdata && trace.customdata.length === n) return trace.customdata;
+    var full = gd && gd._fullData && gd._fullData[0];
+    if (full && full.customdata && full.customdata.length === n) return full.customdata;
+    return null;
+  }
+
+  function isSketchCentroidAtPointIndex(gd, trace, i) {
+    var cd = customdataForHighlight(gd, trace);
+    if (!cd || i < 0 || i >= cd.length || cd[i] == null) return false;
+    var row = customDataRowAsArray(cd[i]);
+    if (row.length < 2) return false;
+    var centFlag = parseInt(String(row[row.length - 2]), 10);
+    if (isNaN(centFlag)) return false;
+    if (layoutMetaSketchCentroidCd(gd)) return centFlag === 1;
+
+    // Meta flag isn't present; infer from a small customdata sample that the
+    // second-last column is behaving like a 0/1 centroid flag.
+    if (sketchCentroidCdInferred == null) {
+      var maxJ = Math.min(cd.length, 100);
+      var ok = true;
+      for (var j = 0; j < maxJ; j++) {
+        var rj = customDataRowAsArray(cd[j]);
+        if (rj.length < 2) continue;
+        var vj = parseInt(String(rj[rj.length - 2]), 10);
+        // Some Plotly/serialisation paths can yield null-ish customdata entries;
+        // those shouldn't poison the inference.
+        if (!isNaN(vj) && (vj !== 0 && vj !== 1)) {
+          ok = false;
+          break;
+        }
+      }
+      sketchCentroidCdInferred = ok;
+    }
+    if (!sketchCentroidCdInferred) return false;
+    return centFlag === 1;
+  }
+
   function volIdAtPointIndex(gd, trace, i) {
     if (trace.ids && trace.ids.length === trace.x.length && trace.ids[i] != null && trace.ids[i] !== "") {
       var vid = parseInt(String(trace.ids[i]), 10);
       if (!isNaN(vid)) return vid;
     }
-    var cd = trace.customdata;
+    var cd = customdataForHighlight(gd, trace);
     if (cd && cd.length === trace.x.length && cd[i] != null) {
       var row = customDataRowAsArray(cd[i]);
       if (layoutHasVolAnim(gd) && row.length >= 2) {
@@ -88,7 +139,6 @@
     badge.classList.remove("volsketch-gif-overlay--on-tint");
     if (typeof color !== "string" || !color.trim()) {
       badge.style.backgroundColor = "";
-      badge.style.borderColor = "";
       return;
     }
     var c = color.trim();
@@ -101,17 +151,14 @@
     }
     if (rgba) {
       badge.style.backgroundColor = rgba;
-      badge.style.borderColor = "rgba(27, 31, 36, 0.28)";
       badge.classList.add("volsketch-gif-overlay--on-tint");
       return;
     }
     badge.style.backgroundColor = "";
-    badge.style.borderColor = "";
   }
 
   function resetBadgeChrome(badge) {
     badge.style.backgroundColor = "";
-    badge.style.borderColor = "";
     badge.style.color = "#1a1a1a";
     badge.classList.remove("volsketch-gif-overlay--on-tint");
   }
@@ -258,6 +305,17 @@
       + SAFE_LETTERS[j % SAFE_LETTERS.length];
   }
 
+  // Legacy helper: scatter3d WebGL text doesn't reliably support HTML tags like <b>/<i>,
+  // but some dashboard wiring tests assert the presence of this formatter.
+  function formatVolMontageLetterText(letter, isBold, isItalic) {
+    var s = letter == null ? "" : String(letter);
+    if (!s) return "";
+    if (isBold && isItalic) return "<b><i>" + s + "</i></b>";
+    if (isBold) return "<b>" + s + "</b>";
+    if (isItalic) return "<i>" + s + "</i>";
+    return s;
+  }
+
   function volFilenameIndex(v) {
     var n = typeof v === "number" ? v : parseInt(String(v), 10);
     if (isNaN(n)) return String(v);
@@ -275,33 +333,11 @@
     ),
   };
 
-  /** Preserve orbit, zoom, and axis box across ``Plotly.restyle`` when updating selection styling. */
-  function snapshotScatter3dSceneView(gd) {
-    try {
-      var scene = gd._fullLayout && gd._fullLayout.scene;
-      if (!scene) return null;
-      var snap = {};
-      if (scene.camera && typeof scene.camera === "object") {
-        snap.camera = JSON.parse(JSON.stringify(scene.camera));
-      }
-      function copyRange(axis) {
-        if (!axis) return null;
-        if (axis.range && axis.range.length >= 2) {
-          return [axis.range[0], axis.range[1]];
-        }
-        try {
-          var rl = axis._rl;
-          if (rl && rl.length >= 2) return [rl[0], rl[1]];
-        } catch (e) { /* ignore */ }
-        return null;
-      }
-      snap.xrange = copyRange(scene.xaxis);
-      snap.yrange = copyRange(scene.yaxis);
-      snap.zrange = copyRange(scene.zaxis);
-      return snap;
-    } catch (e) {
-      return null;
-    }
+  var P3S = global.CryoPlotlyScatter3dScene;
+  if (!P3S || typeof P3S.snapshot !== "function") {
+    throw new Error(
+      "CryoPlotlyScatter3dScene is required — include plotly_scatter3d_scene.js before latent3d_landscape_vol_animations.js"
+    );
   }
 
   /** Merge pointerdown snapshot (pre Plotly double-click camera reset) with a live read. */
@@ -314,54 +350,6 @@
       yrange: pd.yrange || live.yrange,
       zrange: pd.zrange || live.zrange,
     };
-  }
-
-  function sceneRelayoutPatchFromSnap(snap) {
-    if (!snap) return {};
-    var patch = {};
-    if (snap.camera) patch["scene.camera"] = snap.camera;
-    if (snap.xrange) {
-      patch["scene.xaxis.range"] = snap.xrange;
-      patch["scene.xaxis.autorange"] = false;
-    }
-    if (snap.yrange) {
-      patch["scene.yaxis.range"] = snap.yrange;
-      patch["scene.yaxis.autorange"] = false;
-    }
-    if (snap.zrange) {
-      patch["scene.zaxis.range"] = snap.zrange;
-      patch["scene.zaxis.autorange"] = false;
-    }
-    return patch;
-  }
-
-  function restoreScatter3dSceneView(gd, snap) {
-    if (!snap || typeof Plotly === "undefined" || !Plotly.relayout) {
-      return Promise.resolve();
-    }
-    var patch = sceneRelayoutPatchFromSnap(snap);
-    if (!Object.keys(patch).length) return Promise.resolve();
-    return Plotly.relayout(gd, patch).catch(function() {});
-  }
-
-  function scheduleSceneRestore(gd, snap, onDone) {
-    requestAnimationFrame(function() {
-      var p = restoreScatter3dSceneView(gd, snap);
-      var chain = p && typeof p.then === "function" ? p.catch(function() {}) : Promise.resolve();
-      chain.then(function() {
-        requestAnimationFrame(function() {
-          var p2 = restoreScatter3dSceneView(gd, snap);
-          var chain2 = p2 && typeof p2.then === "function" ? p2.catch(function() {}) : Promise.resolve();
-          chain2.then(function() {
-            if (typeof onDone === "function") {
-              try {
-                onDone();
-              } catch (eDone) { /* ignore */ }
-            }
-          });
-        });
-      });
-    });
   }
 
   function _hexToRgb(hex) {
@@ -423,6 +411,69 @@
     return _fillRelativeLuminance(fillCss) < 0.34 ? "#f1f5f9" : "#0f172a";
   }
 
+  // 3D plot letter annotations should be ~20% smaller than before.
+  var VOL_MONTAGE_LETTER_PX = 36 * 0.8;
+  var VOL_MONTAGE_LETTER_FONT = {
+    size: VOL_MONTAGE_LETTER_PX,
+    color: "#1a1a1a",
+    family: "system-ui, Segoe UI, sans-serif",
+  };
+
+  // For sketch-centroid particles: circle the montage letter glyph.
+  // (We generate circled letters at runtime to keep the source ASCII-only.)
+  function circledMontageLabelText(label) {
+    var s = label == null ? "" : String(label);
+    if (!s) return "";
+    var out = "";
+    for (var j = 0; j < s.length; j++) {
+      var ch = s[j];
+      var code = ch.charCodeAt(0);
+      // Unicode: CIRCLED LATIN CAPITAL LETTER A starts at U+24B6.
+      if (code >= 65 && code <= 90) {
+        out += String.fromCharCode(0x24B6 + (code - 65));
+      } else {
+        out += ch;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Bold / italic montage letters on scatter3d: WebGL trace ``text`` ignores HTML and per-point
+   * ``textfont.weight`` / ``style``; use ``layout.scene.annotations`` at anchor points instead.
+   */
+  function volMontageSceneAnnotation(x, y, z, letter, isBold, isItalic, opts) {
+    if (!letter) return null;
+    opts = opts || {};
+    var fontSizePx = typeof opts.fontSizePx === "number" && isFinite(opts.fontSizePx)
+      ? opts.fontSizePx
+      : VOL_MONTAGE_LETTER_FONT.size;
+    var fontColorCss = typeof opts.fontColorCss === "string" && opts.fontColorCss.trim()
+      ? opts.fontColorCss
+      : VOL_MONTAGE_LETTER_FONT.color;
+    var font = {
+      size: fontSizePx,
+      color: fontColorCss,
+      family: VOL_MONTAGE_LETTER_FONT.family,
+    };
+    if (isBold) font.weight = "bold";
+    if (isItalic) font.style = "italic";
+    return {
+      x: x,
+      y: y,
+      z: z,
+      text: String(letter),
+      showarrow: false,
+      xanchor: "center",
+      // Move montage letters closer to the anchor point.
+      yanchor: "middle",
+      // Scene annotations can end up sitting on top of scatter markers.
+      // Disable event capture so Plotly click/dblclick keeps working.
+      captureevents: false,
+      font: font,
+    };
+  }
+
   function boot(cfg) {
     var gd = cfg.gd;
     var getColorMode = cfg.getColorMode;
@@ -430,6 +481,9 @@
     var onAfterPlot = cfg.onAfterPlot;
     var setSelectionRendering = typeof cfg.setSelectionRendering === "function"
       ? cfg.setSelectionRendering
+      : null;
+    var setPreviewAnimLoading = typeof cfg.setPreviewAnimLoading === "function"
+      ? cfg.setPreviewAnimLoading
       : null;
 
     var PREFIX = "l3dva-";
@@ -457,6 +511,8 @@
 
     var META = null;
     var selectedVols = new Set();
+    /** Volume ids among the current selection that contain a sketch-centroid particle. */
+    var centroidVolsInSelection = new Set();
     /** Stable montage letter per k-means volume index while it stays selected (not re-sorted on add). */
     var volMontageLabel = {};
     var nextMontageLabelIdx = 0;
@@ -464,6 +520,10 @@
     var lastBatchMode = null;
     var clickTimer = null;
     var clickLastVol = null;
+    /** Per sketch volume: scatter point index last double-clicked to toggle that volume (bold letter). */
+    var volDblClickPointNum = {};
+    /** Last volume toggled via double-click (bold falls back to its centroid after ``Plotly.react``). */
+    var lastDblClickVol = null;
     var debounceGifTimer = null;
     var gifReqGen = 0;
     var debouncedGifReason = "selection";
@@ -477,23 +537,38 @@
     var volAnimPointerdownSnap = null;
     var volAnimPointerdownAt = 0;
     var volAnimSelOverlayDepth = 0;
+    /** Count of selection ``Plotly.update``/``restyle`` chains still running (only when overlay depth is on). */
+    var volAnimSelHighlightRestylesInFlight = 0;
+    /** Ignore Plotly's internal selection update briefly after our double-click toggle. */
+    var ignorePlotlySelectedUntilMs = 0;
+    /** Ignore extra Plotly click events right after our double-click toggle. */
+    var ignorePlotlyClickUntilMs = 0;
+    /** Prevent accidental double toggles (toggle on then immediately off). */
+    var lastToggleVol = null;
+    var lastToggleAtMs = 0;
+    /** Show frosted overlay once per selection restyle (idempotent if already active). */
     function beginVolAnimSelectionOverlay() {
       if (!setSelectionRendering) return;
-      volAnimSelOverlayDepth++;
-      if (volAnimSelOverlayDepth === 1) {
-        try {
-          setSelectionRendering(true);
-        } catch (eO) { /* ignore */ }
-      }
+      if (volAnimSelOverlayDepth >= 1) return;
+      volAnimSelOverlayDepth = 1;
+      try {
+        setSelectionRendering(true);
+      } catch (eO) { /* ignore */ }
     }
     function endVolAnimSelectionOverlay() {
       if (!setSelectionRendering) return;
-      volAnimSelOverlayDepth = Math.max(0, volAnimSelOverlayDepth - 1);
-      if (volAnimSelOverlayDepth === 0) {
-        try {
-          setSelectionRendering(false);
-        } catch (eO) { /* ignore */ }
-      }
+      if (volAnimSelOverlayDepth < 1) return;
+      volAnimSelOverlayDepth = 0;
+      try {
+        setSelectionRendering(false);
+      } catch (eO) { /* ignore */ }
+    }
+
+    function safeSetPreviewAnimLoading(on) {
+      if (!setPreviewAnimLoading) return;
+      try {
+        setPreviewAnimLoading(!!on);
+      } catch (eL) { /* ignore */ }
     }
 
     function teardownPreviews() {
@@ -742,129 +817,258 @@
       }
     }
 
+    /**
+     * Unselected-point marker diameter from the live trace (Plotly may expand a scalar ``size``
+     * on ``_fullData``). After a prior highlight pass, sizes are per-point — use the minimum so
+     * we do not clobber the server / ``scatter3d_z_json`` glyph scale when restyling overlays.
+     */
+    function referenceScatter3dBaseMarkerSize(trace, graphDiv) {
+      var full = graphDiv && graphDiv._fullData && graphDiv._fullData[0];
+      var marker = (full && full.marker) || (trace && trace.marker);
+      if (!marker || marker.size == null) return null;
+      var sz = marker.size;
+      if (typeof sz === "number" && isFinite(sz) && sz > 0) return sz;
+      if (Array.isArray(sz) && sz.length) {
+        var minS = Infinity;
+        var si;
+        for (si = 0; si < sz.length; si++) {
+          var one = sz[si];
+          if (typeof one === "number" && isFinite(one) && one > 0 && one < minS) minS = one;
+        }
+        if (minS < Infinity) return minS;
+      }
+      return null;
+    }
+
+    function sketchCentroidPointIndexForVol(gd, trace, vol) {
+      var n = trace.x ? trace.x.length : 0;
+      for (var ci = 0; ci < n; ci++) {
+        if (volIdAtPointIndex(gd, trace, ci) !== vol) continue;
+        if (isSketchCentroidAtPointIndex(gd, trace, ci)) return ci;
+      }
+      return null;
+    }
+
+    function pruneVolDblClickAnchors(gd, trace) {
+      if (!trace || !trace.x) return;
+      var toDrop = [];
+      var k;
+      for (k in volDblClickPointNum) {
+        if (!Object.prototype.hasOwnProperty.call(volDblClickPointNum, k)) continue;
+        var v = parseInt(k, 10);
+        var pt = volDblClickPointNum[k];
+        if (
+          isNaN(v)
+          || pt == null
+          || pt < 0
+          || pt >= trace.x.length
+          || volIdAtPointIndex(gd, trace, pt) !== v
+        ) {
+          toDrop.push(k);
+        }
+      }
+      for (var di = 0; di < toDrop.length; di++) {
+        delete volDblClickPointNum[toDrop[di]];
+      }
+    }
+
+    /**
+     * Bold anchor:
+     * - valid double-click point index (stored in ``volDblClickPointNum``)
+     * - else centroid for the *last* double-clicked volume (after Plotly camera/scene churn)
+     * - else ``null`` (centroid becomes italic for other selected volumes)
+     */
+    function boldAnchorPointForVol(gd, trace, vol) {
+      if (Object.prototype.hasOwnProperty.call(volDblClickPointNum, vol)) {
+        var anchored = volDblClickPointNum[vol];
+        if (
+          anchored != null
+          && trace.x
+          && anchored >= 0
+          && anchored < trace.x.length
+          && volIdAtPointIndex(gd, trace, anchored) === vol
+        ) {
+          return anchored;
+        }
+        delete volDblClickPointNum[vol];
+      }
+      if (lastDblClickVol != null && vol === lastDblClickVol) {
+        var centLast = sketchCentroidPointIndexForVol(gd, trace, vol);
+        if (centLast != null) return centLast;
+      }
+      return null;
+    }
+
     function refreshSelectionHighlight() {
-      if (!gd || !gd.data || !gd.data[0]) return;
+      centroidVolsInSelection.clear();
+      if (!gd || !gd.data || !gd.data[0]) return Promise.resolve();
       syncStableSelectionLabels();
       var trace = gd.data[0];
+      pruneVolDblClickAnchors(gd, trace);
       var xs = trace.x;
-      if (!xs || !xs.length) return;
+      if (!xs || !xs.length) return Promise.resolve();
       var n = xs.length;
-      var cd = trace.customdata;
-      if (!cd || cd.length !== n) return;
-      var ptScale = (1 - 0.31) * (1 - 0.13) * (1 - 0.13);
-      var baseSize = Math.max(2, 9 * ptScale);
-      var baseOp = 0.75;
-      var hiSize = Math.max(3, 11 * ptScale);
-      var hiOp = 0.86;
-      var dimOp = 0.66;
-      var hasSel = selectedVols.size > 0;
-      var sizes = new Array(n);
-      var opacities = new Array(n);
-      var lineWidths = new Array(n);
-      var lineColors = new Array(n);
+      var hasIds = trace.ids && trace.ids.length === n;
+      var cd = customdataForHighlight(gd, trace);
+      if (!hasIds && (!cd || cd.length !== n)) return Promise.resolve();
+
       var texts = new Array(n);
+      var sceneAnnotations = [];
       for (var i = 0; i < n; i++) {
         var v = volIdAtPointIndex(gd, trace, i);
         var on = !isNaN(v) && selectedVols.has(v);
-        texts[i] = on ? (volMontageLabel[v] || "") : "";
+        texts[i] = "";
         if (on) {
-          sizes[i] = hiSize;
-          opacities[i] = hiOp;
-          lineWidths[i] = 1;
-          try {
-            lineColors[i] = selectionOutlineColorForFill(markerFillCssAtIndex(trace, gd, i));
-          } catch (e) {
-            lineColors[i] = "#0f172a";
+          var letter = volMontageLabel[v] || "";
+          var isCent = isSketchCentroidAtPointIndex(gd, trace, i);
+          if (isCent) centroidVolsInSelection.add(v);
+          var boldPt = boldAnchorPointForVol(gd, trace, v);
+          var isBold = boldPt != null && i === boldPt;
+          var centroidLetter = isCent ? circledMontageLabelText(letter) : letter;
+
+          if (isBold) {
+            // Bold anchor always uses the bold font weight; if this anchor is also
+            // the centroid particle, render a circled montage letter.
+            texts[i] = "";
+            var annBold = volMontageSceneAnnotation(
+              trace.x[i],
+              trace.y[i],
+              trace.z[i],
+              centroidLetter,
+              true,
+              false,
+              {
+                fontColorCss: VOL_MONTAGE_LETTER_FONT.color,
+              }
+            );
+            if (annBold) sceneAnnotations.push(annBold);
+          } else if (isCent) {
+            // Centroid particle: show a circled montage letter.
+            texts[i] = "";
+            var annCent = volMontageSceneAnnotation(
+              trace.x[i],
+              trace.y[i],
+              trace.z[i],
+              centroidLetter,
+              false,
+              false,
+              { fontColorCss: VOL_MONTAGE_LETTER_FONT.color }
+            );
+            if (annCent) sceneAnnotations.push(annCent);
+          } else {
+            // Non-centroid, non-bold points: use the scatter3d per-point text.
+            texts[i] = letter;
           }
-        } else {
-          sizes[i] = baseSize;
-          opacities[i] = hasSel ? dimOp : baseOp;
-          lineWidths[i] = 0;
-          lineColors[i] = "rgba(0,0,0,0)";
         }
       }
-      var tf = {
-        size: 12,
-        color: "#1a1a1a",
-        family: "system-ui, Segoe UI, sans-serif",
-      };
-      var snapLive = snapshotScatter3dSceneView(gd);
-      var snap = snapLive;
-      if (
-        volAnimPointerdownSnap
-        && (Date.now() - volAnimPointerdownAt) < 550
-      ) {
-        snap = mergeSnapsPreferPointerdown(volAnimPointerdownSnap, snapLive);
-      }
-      var layoutPin = sceneRelayoutPatchFromSnap(snap);
-      var upd = {
-        "marker.size": [sizes],
-        "marker.opacity": [opacities],
-        "marker.line.width": [lineWidths],
-        "marker.line.color": [lineColors],
-        mode: "markers+text",
+
+      var traceUpd = {
         text: [texts],
-        textposition: "top center",
-        textfont: tf,
       };
-      var fallback = {
-        "marker.size": [sizes],
-        "marker.opacity": [opacities],
-        "marker.line.width": [lineWidths],
-        "marker.line.color": [lineColors],
-        mode: "markers+text",
+      var traceFallback = {
         text: [texts],
-        textposition: "top center",
-        textfont: tf,
       };
-      function finishSelectionRendering() {
-        endVolAnimSelectionOverlay();
+
+      function relayoutSceneAnnotationsOnly() {
+        if (typeof Plotly === "undefined" || !Plotly.relayout) {
+          return Promise.resolve();
+        }
+        return Plotly.relayout(gd, { "scene.annotations": sceneAnnotations }).catch(function() {});
       }
-      beginVolAnimSelectionOverlay();
-      var useUpdate = (
-        typeof Plotly !== "undefined"
-        && typeof Plotly.update === "function"
-        && Object.keys(layoutPin).length > 0
-      );
-      var p0 = useUpdate
-        ? Plotly.update(gd, upd, layoutPin, [0])
-        : Plotly.restyle(gd, upd, [0]);
-      var chain = p0 && typeof p0.then === "function"
-        ? p0.catch(function() {
-          return Plotly.restyle(gd, fallback, [0]);
-        })
-        : Promise.resolve();
-      chain.then(function() {
-        scheduleSceneRestore(gd, snap, finishSelectionRendering);
-      }).catch(function() {
-        scheduleSceneRestore(gd, snap, finishSelectionRendering);
+
+      function restyleThenAnnotate(upd) {
+        var pR = Plotly.restyle(gd, upd, [0]);
+        var cR = pR && typeof pR.then === "function" ? pR : Promise.resolve();
+        return cR.then(relayoutSceneAnnotationsOnly);
+      }
+
+      return new Promise(function(resolve) {
+        var countThisRestyle = volAnimSelOverlayDepth >= 1 ? 1 : 0;
+        if (countThisRestyle) {
+          volAnimSelHighlightRestylesInFlight++;
+        }
+        function finishSelectionRendering() {
+          if (countThisRestyle) {
+            volAnimSelHighlightRestylesInFlight--;
+            if (volAnimSelHighlightRestylesInFlight <= 0) {
+              volAnimSelHighlightRestylesInFlight = 0;
+              endVolAnimSelectionOverlay();
+            }
+          }
+          resolve();
+        }
+        restyleThenAnnotate(traceUpd)
+          .catch(function() {
+            return restyleThenAnnotate(traceFallback);
+          })
+          .then(finishSelectionRendering)
+          .catch(finishSelectionRendering);
       });
     }
 
-    function toggleVol(v) {
-      if (selectedVols.has(v)) {
-        selectedVols.delete(v);
+    function toggleVol(v, fromPointNumber) {
+      var now = Date.now();
+      var dup = lastToggleVol === v && (now - lastToggleAtMs) < 260;
+      // If a duplicate toggle arrives while the volume is already selected, we allow
+      // re-anchoring (bold move). If it's a duplicate while the volume is not yet selected,
+      // ignore to avoid double-scheduling GIF work.
+      if (dup && !selectedVols.has(v)) return;
+      lastToggleVol = v;
+      lastToggleAtMs = now;
+
+      var membershipChanged = !selectedVols.has(v);
+      if (!membershipChanged) {
+        // Volume already selected: re-anchor bold marker to the newly double-clicked point.
+        beginVolAnimSelectionOverlay();
+        if (fromPointNumber != null && fromPointNumber >= 0) {
+          volDblClickPointNum[v] = fromPointNumber;
+        }
+        lastDblClickVol = v;
       } else {
         if (selectedVols.size >= maxSelectable()) {
           setAnimateStatus("Selection capped at the number of sketch volumes.", false, true);
           return;
         }
+        beginVolAnimSelectionOverlay();
         selectedVols.add(v);
+        lastDblClickVol = v;
+        if (fromPointNumber != null && fromPointNumber >= 0) {
+          volDblClickPointNum[v] = fromPointNumber;
+        }
       }
       setAnimateStatus("", false, false);
       updateSelLabel();
-      refreshSelectionHighlight();
-      scheduleAutoGif("selection");
+      var hp = (fromPointNumber != null && fromPointNumber >= 0)
+        ? new Promise(function(resolve) {
+          requestAnimationFrame(function() {
+            resolve(refreshSelectionHighlight());
+          });
+        })
+        : refreshSelectionHighlight();
+
+      // Only re-render ChimeraX GIF previews when the selected volume set changed.
+      if (membershipChanged) {
+        scheduleAutoGif("selection", hp);
+      }
     }
 
-    function scheduleAutoGif(reason) {
+    /**
+     * Optional ``plotHighlightPromise``: when passed (volume selection paths), ``runAutoGif``
+     * runs only after the scatter highlight + camera pin chain settles (still after the 600ms debounce).
+     */
+    function scheduleAutoGif(reason, plotHighlightPromise) {
       debouncedGifReason = reason || "selection";
       if (debounceGifTimer) clearTimeout(debounceGifTimer);
+      var hp = plotHighlightPromise && typeof plotHighlightPromise.then === "function"
+        ? plotHighlightPromise.catch(function() {})
+        : Promise.resolve();
       debounceGifTimer = setTimeout(function() {
         debounceGifTimer = null;
         var r = debouncedGifReason;
         debouncedGifReason = "selection";
-        runAutoGif(r);
+        hp.then(function() {
+          runAutoGif(r);
+        });
       }, 600);
     }
 
@@ -873,6 +1077,7 @@
       var vols = Array.from(selectedVols).sort(function(a, b) { return a - b; });
       if (!vols.length) {
         landscapeAnimInFlight = false;
+        safeSetPreviewAnimLoading(false);
         clearPreviewGrid();
         lastAnimToken = null;
         lastBatchMode = null;
@@ -917,7 +1122,8 @@
       } else {
         statusMsg = "Rendering GIFs with ChimeraX (using " + cpuPhrase + ")…";
       }
-      setAnimateStatus(statusMsg, true, false);
+      safeSetPreviewAnimLoading(true);
+      setAnimateStatus(statusMsg, false, false);
       if (!keepPreviews) {
         teardownPreviews();
         previewGrid.innerHTML = "";
@@ -944,6 +1150,7 @@
       postJson("/api/landscape_volpca/generate_animations", animPayload).then(function(j) {
         if (myGen !== gifReqGen) return;
         landscapeAnimInFlight = false;
+        safeSetPreviewAnimLoading(false);
         lastAnimToken = j.token;
         lastBatchMode = j.batch_mode != null ? j.batch_mode : null;
         lastChimeraxViewMatrix = j.view_matrix != null ? String(j.view_matrix).trim() : "";
@@ -963,6 +1170,12 @@
         }
         teardownPreviews();
         previewGrid.innerHTML = "";
+        // For cycle_segments we only get back letters; invert the backend montage-label
+        // mapping using the same sorted volume list we sent to the backend.
+        var labelToVolByBackend = {};
+        for (var li = 0; li < vols.length; li++) {
+          labelToVolByBackend[montageLabelAt(li)] = vols[li];
+        }
         j.items.forEach(function(it) {
           var fig = document.createElement("figure");
           var wrap = document.createElement("div");
@@ -985,7 +1198,32 @@
           wrap.appendChild(badge);
           wrap.appendChild(covBadge);
           fig.appendChild(wrap);
-          mountPreviewOverlay(wrap, badge, covBadge, covVarEl, covValEl, img, it.preview_overlay);
+          var overlaySpec = it.preview_overlay;
+          if (overlaySpec && overlaySpec.style === "static") {
+            var v = it.vol != null ? parseInt(String(it.vol), 10) : NaN;
+            if (!isNaN(v) && centroidVolsInSelection.has(v)) {
+              overlaySpec = Object.assign({}, overlaySpec, {
+                text: circledMontageLabelText(overlaySpec.text || ""),
+              });
+            }
+          } else if (
+            overlaySpec
+            && overlaySpec.style === "cycle_segments"
+            && Array.isArray(overlaySpec.segment_labels)
+          ) {
+            var segLabels = overlaySpec.segment_labels;
+            var segLabelsCircled = segLabels.map(function(lbl) {
+              var s = lbl == null ? "" : String(lbl);
+              var vv = labelToVolByBackend[s];
+              return vv != null && centroidVolsInSelection.has(vv)
+                ? circledMontageLabelText(s)
+                : s;
+            });
+            overlaySpec = Object.assign({}, overlaySpec, {
+              segment_labels: segLabelsCircled,
+            });
+          }
+          mountPreviewOverlay(wrap, badge, covBadge, covVarEl, covValEl, img, overlaySpec);
           previewGrid.appendChild(fig);
         });
         syncPreviewGridLayout();
@@ -996,6 +1234,16 @@
             if (!isNaN(v)) synced.add(v);
           });
           selectedVols = synced;
+          // Preserve bold/italic anchors for volumes that remain selected.
+          // (Server may subsample render outputs; we only drop anchors for removed volumes.)
+          if (lastDblClickVol != null && !selectedVols.has(lastDblClickVol)) {
+            lastDblClickVol = null;
+          }
+          for (var k in volDblClickPointNum) {
+            if (!Object.prototype.hasOwnProperty.call(volDblClickPointNum, k)) continue;
+            var vv = parseInt(k, 10);
+            if (!selectedVols.has(vv)) delete volDblClickPointNum[k];
+          }
           updateSelLabel();
           refreshSelectionHighlight();
         }
@@ -1003,6 +1251,7 @@
       }).catch(function(e) {
         if (myGen !== gifReqGen) return;
         landscapeAnimInFlight = false;
+        safeSetPreviewAnimLoading(false);
         chimeraxViewMatrixUnavailable = false;
         syncViewRotationSummary();
         setAnimateStatus(String(e), false, true);
@@ -1017,31 +1266,72 @@
       function recordVolAnimPointerdownScene() {
         try {
           if (!layoutHasVolAnim(gd)) return;
-          volAnimPointerdownSnap = snapshotScatter3dSceneView(gd);
+          volAnimPointerdownSnap = P3S.snapshot(gd);
           volAnimPointerdownAt = Date.now();
         } catch (ePd) { /* ignore */ }
       }
       gd.addEventListener("pointerdown", recordVolAnimPointerdownScene, true);
-      gd.on("plotly_doubleclick", function() {
-        if (!layoutHasVolAnim(gd)) return;
+      gd.on("plotly_doubleclick", function(ev) {
+        // Plotly's own scatter3d double-click can clobber the scene camera + annotation text.
+        // We restore the camera from the pointerdown snapshot; for cases where our
+        // click-timer double-click detection doesn't fire (e.g. some points),
+        // we optionally attempt the toggle here too.
         var s = volAnimPointerdownSnap;
-        if (!s) return;
-        restoreScatter3dSceneView(gd, s);
+        var pt = ev && ev.points && ev.points.length ? ev.points[0] : null;
+        var shouldTryToggle = !!pt;
+        var v = NaN;
+        var fromPointNumber = pt ? pt.pointNumber : null;
+        if (shouldTryToggle) {
+          try {
+            v = volFromPoint(gd, pt);
+          } catch (eCd) {
+            v = NaN;
+          }
+          shouldTryToggle = !isNaN(v);
+        }
+
+        function maybeToggleAfterRestore() {
+          if (!shouldTryToggle) return;
+          ignorePlotlyClickUntilMs = Date.now() + 900;
+          ignorePlotlySelectedUntilMs = Math.max(
+            ignorePlotlySelectedUntilMs,
+            Date.now() + 2500
+          );
+          beginVolAnimSelectionOverlay();
+          toggleVol(v, fromPointNumber);
+        }
+
+        // If we don't have a snapshot yet, we can still try toggling.
+        if (!s) {
+          if (shouldTryToggle) requestAnimationFrame(maybeToggleAfterRestore);
+          return;
+        }
+
+        P3S.restore(gd, s);
         requestAnimationFrame(function() {
-          restoreScatter3dSceneView(gd, s);
+          P3S.restore(gd, s);
           setTimeout(function() {
-            restoreScatter3dSceneView(gd, s);
+            P3S.restore(gd, s);
+            maybeToggleAfterRestore();
           }, 0);
         });
       });
       gd.on("plotly_selected", function(ev) {
         if (!ev || !ev.points || !ev.points.length) return;
         if (!layoutHasVolAnim(gd)) return;
-        selectedVols.clear();
+        if (Date.now() < ignorePlotlySelectedUntilMs) return;
+        var nextSel = new Set();
         ev.points.forEach(function(pt) {
           var v = volFromPoint(gd, pt);
-          if (!isNaN(v)) selectedVols.add(v);
+          if (!isNaN(v)) nextSel.add(v);
         });
+        // When Plotly emits selection without usable point metadata (can happen around double-click),
+        // don't clobber the existing selection state.
+        if (!nextSel.size) return;
+        selectedVols = nextSel;
+        if (lastDblClickVol != null && !selectedVols.has(lastDblClickVol)) {
+          lastDblClickVol = null;
+        }
         if (selectedVols.size > maxSelectable()) {
           var arr = Array.from(selectedVols).sort(function(a, b) { return a - b; });
           selectedVols = new Set(arr.slice(0, maxSelectable()));
@@ -1049,21 +1339,29 @@
         } else {
           setAnimateStatus("", false, false);
         }
+        beginVolAnimSelectionOverlay();
         updateSelLabel();
-        refreshSelectionHighlight();
-        scheduleAutoGif("selection");
+        scheduleAutoGif("selection", refreshSelectionHighlight());
       });
       gd.on("plotly_click", function(ev) {
         if (!layoutHasVolAnim(gd)) return;
         if (!ev || !ev.points || !ev.points.length) return;
+        if (Date.now() < ignorePlotlyClickUntilMs) return;
+        // Ignore Plotly's internal selection updates briefly; we drive selection via toggle.
+        ignorePlotlySelectedUntilMs = Math.max(
+          ignorePlotlySelectedUntilMs,
+          Date.now() + 2500
+        );
         var v = volFromPoint(gd, ev.points[0]);
         if (isNaN(v)) return;
         if (clickTimer !== null && clickLastVol === v) {
           clearTimeout(clickTimer);
           clickTimer = null;
           clickLastVol = null;
+          ignorePlotlyClickUntilMs = Date.now() + 900;
+          beginVolAnimSelectionOverlay();
           requestAnimationFrame(function() {
-            toggleVol(v);
+            toggleVol(v, ev.points[0].pointNumber);
           });
           return;
         }
@@ -1126,11 +1424,13 @@
     var clearBtn = $("clear-sel");
     if (clearBtn) {
       clearBtn.addEventListener("click", function() {
+        beginVolAnimSelectionOverlay();
         selectedVols.clear();
+        volDblClickPointNum = {};
+        lastDblClickVol = null;
         updateSelLabel();
-        refreshSelectionHighlight();
         setAnimateStatus("", false, false);
-        scheduleAutoGif("selection");
+        scheduleAutoGif("selection", refreshSelectionHighlight());
       });
     }
 
@@ -1147,6 +1447,7 @@
         }
         gifReqGen++;
         landscapeAnimInFlight = false;
+        safeSetPreviewAnimLoading(false);
         clearPreviewGrid();
         lastAnimToken = null;
         lastBatchMode = null;
@@ -1155,11 +1456,13 @@
         function applyRandomPickAndHighlight() {
           var k = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;
           k = Math.max(1, Math.min(k, ids.length, maxSelectable()));
+          beginVolAnimSelectionOverlay();
           selectedVols.clear();
+          volDblClickPointNum = {};
+          lastDblClickVol = null;
           shufflePick(ids, k).forEach(function(v) { selectedVols.add(v); });
           updateSelLabel();
-          refreshSelectionHighlight();
-          scheduleAutoGif("selection");
+          scheduleAutoGif("selection", refreshSelectionHighlight());
         }
         if (gd && typeof Plotly !== "undefined" && Plotly.relayout) {
           var rp = Plotly.relayout(gd, { selections: [] });
@@ -1199,14 +1502,22 @@
       syncSaveGifButton();
     });
 
+    function reapplySelectionHighlightIfNeeded() {
+      if (!selectedVols.size) {
+        return Promise.resolve();
+      }
+      return refreshSelectionHighlight();
+    }
+
     return {
       onColorOrPaletteChanged: function() {
         scheduleAutoGif("color");
       },
       afterPlotRedraw: function() {
         ensurePlotEventsBound();
-        refreshSelectionHighlight();
+        return reapplySelectionHighlightIfNeeded();
       },
+      reapplySelectionHighlightIfNeeded: reapplySelectionHighlightIfNeeded,
     };
   }
 

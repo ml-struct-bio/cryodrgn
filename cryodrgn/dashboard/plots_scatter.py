@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 
 from cryodrgn.dashboard.column_names import (
     VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+    VOL_LANDSCAPE_IS_SKETCH_CENTROID,
     VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
 )
 from cryodrgn.dashboard.covariate_labels import (
@@ -47,6 +48,16 @@ from cryodrgn.dashboard.plots_figure_utils import (
     ezlab_matplotlib_rc,
     _plotly_to_json,
 )
+
+
+def _dashboard_scatter3d_glyph_visual_scale(
+    size: float, opacity: float
+) -> tuple[float, float]:
+    """In-dashboard Plotly scatter3d: ~30% larger glyphs, ~20% lower alpha (more transparent)."""
+    return (
+        float(size * 1.3),
+        float(max(0.06, min(0.98, opacity * 0.8))),
+    )
 
 
 def _scatter_color_hover_texts(
@@ -320,12 +331,29 @@ def scatter3d_z_json(
             raise ValueError("No particles match the current colour covariate filter.")
         df = df_all.loc[mask].reset_index(drop=True)
 
-    sub, row_indices = _subsample(df, None if no_subsample else max_points, seed=1)
+    if no_subsample:
+        sub, row_indices = _subsample(df, None, seed=1)
+    elif VOL_LANDSCAPE_IS_SKETCH_CENTROID in df.columns:
+        from cryodrgn.dashboard.plots_figure_utils import (
+            _subsample_preserving_sketch_centroids,
+        )
+
+        sub, row_indices = _subsample_preserving_sketch_centroids(
+            df, max_points, seed=1, centroid_col=VOL_LANDSCAPE_IS_SKETCH_CENTROID
+        )
+    else:
+        sub, row_indices = _subsample(df, max_points, seed=1)
     cap = max(len(sub), 1) if no_subsample else max_points
     msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
     if volume_landscape_3d_style:
-        # ~31% smaller vs the usual n-points curve, then two ~13% reductions for this 3D UI.
-        msize *= (1.0 - 0.31) * (1.0 - 0.13) * (1.0 - 0.13)
+        # ~31% smaller vs the usual n-points curve, then two ~13% reductions for this 3D UI,
+        # then a further 20% shrink for the volume-landscape glyph size.
+        msize *= (1.0 - 0.31) * (1.0 - 0.13) * (1.0 - 0.13) * 0.8
+    msize, mopacity = _dashboard_scatter3d_glyph_visual_scale(msize, mopacity)
+    if volume_landscape_3d_style:
+        # ~13% larger points, and ~19% more transparent glyphs.
+        msize *= 1.13
+        mopacity = float(max(0.0, min(1.0, mopacity * 0.81)))
 
     discrete_trace = (
         color_col
@@ -449,7 +477,32 @@ def scatter3d_z_json(
 
     if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
         nv = np.asarray(sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL], dtype=np.int64)
+        if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
+            cd_cent = np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
+            customdata = np.column_stack([customdata, cd_cent])
         customdata = np.column_stack([customdata, nv])
+
+        # Volume-landscape hover: show which k-means volume each particle belongs to.
+        # We append `nv` as the last customdata column, so use `customdata[-1]`.
+        if volume_landscape_3d_style:
+            nv_cd_idx = int(customdata.shape[1] - 1)
+            if has_cov_color:
+                hover_kwargs_3d["hovertemplate"] = (
+                    "particle: %{customdata[0]}"
+                    + "<br>%{customdata[3]}"
+                    + "<br>k_means_vol=%{customdata["
+                    + str(nv_cd_idx)
+                    + "]}"
+                    + "<extra></extra>"
+                )
+            else:
+                hover_kwargs_3d["hovertemplate"] = (
+                    "particle: %{customdata[0]}"
+                    + "<br>k_means_vol=%{customdata["
+                    + str(nv_cd_idx)
+                    + "]}"
+                    + "<extra></extra>"
+                )
 
     # Match the volume-selection overlay (``latent3d_landscape_vol_animations.js``): keep
     # ``markers+text`` from the first draw so the first selection only restyles marker/text
@@ -460,9 +513,10 @@ def scatter3d_z_json(
     scatter3d_extras: dict[str, Any] = {}
     if vol_landscape_sel_overlay:
         scatter3d_extras["text"] = [""] * n_pts
-        scatter3d_extras["textposition"] = "top center"
+        # Bring montage letters closer to the points (previously "top center").
+        scatter3d_extras["textposition"] = "middle center"
         scatter3d_extras["textfont"] = dict(
-            size=12,
+            size=36 * 0.8,
             color="#1a1a1a",
             family="system-ui, Segoe UI, sans-serif",
         )
@@ -512,6 +566,8 @@ def scatter3d_z_json(
         plot_meta["cdrgn_color_mode"] = "discrete" if discrete_trace else "continuous"
     if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
         plot_meta["cdrgn_landscape_vol_animation"] = True
+        if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
+            plot_meta["cdrgn_landscape_sketch_centroid_cd"] = True
 
     hoverlabel_font_3d = dict(_PLOTLY_FONT)
     hoverlabel_font_3d["size"] = DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE
@@ -723,6 +779,7 @@ def scatter3d_discrete_level_png_bytes(
     msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
     if volume_landscape_marker_shrink:
         msize *= 1.0 - 0.31
+    msize, mopacity = _dashboard_scatter3d_glyph_visual_scale(msize, mopacity)
     mpl_marker_area = float(max(6.0, (msize * 2.2) ** 2))
 
     xs = sub[xcol].to_numpy(dtype=np.float64)

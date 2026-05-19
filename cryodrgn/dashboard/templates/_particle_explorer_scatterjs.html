@@ -1119,6 +1119,9 @@
     syncImageCacheLoadPanelVsProgress();
   }
 
+  /** Max new thumbnails per HTTP preload round-trip (JSON + base64 payload size). */
+  var IMAGE_CACHE_HTTP_CHUNK_MAX = 400;
+
   function imageCacheChunkSize(total) {
     total = Math.max(0, Number(total) || 0);
     if (!total) return 0;
@@ -1126,7 +1129,15 @@
     var parallelThreshold = Math.max(128, cpus * 32);
     var minChunk = cpus > 1 ? parallelThreshold : 250;
     var targetChunk = Math.ceil(total / 200);
-    return Math.min(5000, Math.max(minChunk, targetChunk));
+    return Math.min(IMAGE_CACHE_HTTP_CHUNK_MAX, 5000, Math.max(minChunk, targetChunk));
+  }
+
+  function preloadFetchErrorMessage(err) {
+    var msg = err && err.message ? String(err.message) : "";
+    if (msg === "Failed to fetch" || /networkerror/i.test(msg)) {
+      return "Image cache request failed (network or timeout). Try a smaller new cache size.";
+    }
+    return msg || "Image cache failed.";
   }
 
   /** Next absolute ``cache_size`` for one preload request when growing toward ``finalTarget``. */
@@ -1176,6 +1187,7 @@
     var scatterMaxPoints = opts.scatterMaxPoints;
     var selectedRows = opts.selectedRows || null;
     var suppressHighlightsDuring = !!opts.suppressHighlightsDuring;
+    var suppressMontageRefresh = !!opts.suppressMontageRefresh;
     var fullLoad = !!opts.fullLoad;
     var selAddN = opts.selectionAdditionTotal != null ? Math.round(Number(opts.selectionAdditionTotal)) : 0;
     var trackSelectionAdditionFreeze = selAddN > 0;
@@ -1222,7 +1234,7 @@
         syncHighlightTraceAnnotations();
       }
       refreshPreloadStatusAfterChunkedLoad();
-      showRandomPreloaded();
+      if (!suppressMontageRefresh) showRandomPreloaded();
       syncImageCacheButton(false);
       syncVolumeExploreButtons();
     }
@@ -1242,7 +1254,7 @@
         preloadStatus.textContent = (preloadStatus.textContent || "").trim()
           + " — Could not add more (off-scatter selection, already cached, or server cache cap).";
       }
-      showRandomPreloaded();
+      if (!suppressMontageRefresh) showRandomPreloaded();
       syncImageCacheButton(false);
       syncVolumeExploreButtons();
     }
@@ -1293,7 +1305,7 @@
           suppressPlotGridHighlights = false;
           syncHighlightTraceAnnotations();
         }
-        if (preloadStatus) preloadStatus.textContent = e.message || "Image cache failed.";
+        if (preloadStatus) preloadStatus.textContent = preloadFetchErrorMessage(e);
         setMontagePreloadOverlay(false);
         syncImageCacheButton(false);
         syncVolumeExploreButtons();
@@ -1418,7 +1430,7 @@
       })
       .catch(function(e) {
         console.error("preload failed", e);
-        if (preloadStatus) preloadStatus.textContent = "Image cache failed.";
+        if (preloadStatus) preloadStatus.textContent = preloadFetchErrorMessage(e);
         setMontagePreloadOverlay(false);
         syncImageCacheButton(false);
         if (onDone) onDone(e);

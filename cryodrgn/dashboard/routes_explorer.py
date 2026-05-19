@@ -65,6 +65,7 @@ from cryodrgn.dashboard.plots import (
 )
 from cryodrgn.dashboard.plots_color_covariate import _lower_color_series_is_discrete
 from cryodrgn.dashboard.preload import (
+    MAX_PRELOAD_IMAGES_PER_HTTP_RESPONSE,
     encode_particle_batch,
     explorer_cache_size_power10_step,
     explorer_initial_preload_image_limit,
@@ -1218,13 +1219,17 @@ def api_preload_images():
                 total_cached=min(len(cached_rows), max_images),
             )
         t0 = time.monotonic()
+        n_add = min(
+            max_images - len(cached_rows),
+            MAX_PRELOAD_IMAGES_PER_HTTP_RESPONSE,
+        )
         add_rows, add_global_indices = sample_plot_df_rows_for_preload(
             e,
             xcol,
             ycol,
             restrict_to_rows=preload_restrict_list,
             exclude_rows=cached_rows,
-            max_images=max_images - len(cached_rows),
+            max_images=n_add,
         )
         if not add_global_indices:
             if delta_response:
@@ -1254,7 +1259,11 @@ def api_preload_images():
 
     t0 = time.monotonic()
     rows, global_indices = sample_plot_df_rows_for_preload(
-        e, xcol, ycol, restrict_to_rows=preload_restrict_list, max_images=max_images
+        e,
+        xcol,
+        ycol,
+        restrict_to_rows=preload_restrict_list,
+        max_images=min(max_images, MAX_PRELOAD_IMAGES_PER_HTTP_RESPONSE),
     )
     if not global_indices:
         return jsonify(rows=[], images=[], elapsed=0.0)

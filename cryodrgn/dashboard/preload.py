@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PRELOAD_IMAGE_LIMIT = 1000
 
+# Max thumbnails encoded in one ``api_preload_images`` response (JSON + base64 size).
+MAX_PRELOAD_IMAGES_PER_HTTP_RESPONSE = 400
+
 
 def explorer_cache_size_power10_step(scatter_plotted_point_count: int) -> int:
     """Largest power of ten not greater than 5% of scatter-plotted point count.

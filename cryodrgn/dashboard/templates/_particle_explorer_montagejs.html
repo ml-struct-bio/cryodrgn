@@ -471,7 +471,18 @@
     return out;
   }
 
+  function montageResampleSuppressed() {
+    return Date.now() < suppressMontageResampleUntil;
+  }
+
+  function armMontageResampleSuppress(extraMs) {
+    var ms = extraMs != null ? Number(extraMs) : 0;
+    if (!isFinite(ms) || ms < 0) ms = 0;
+    suppressMontageResampleUntil = Math.max(suppressMontageResampleUntil, Date.now() + ms);
+  }
+
   function showRandomPreloaded() {
+    if (montageResampleSuppressed()) return;
     if (!preloaded || !preloaded.traceMap) return;
     var items = pickMontageItemsSelectionFirstFromCache(neighborK);
     if (!items.length) return;
@@ -479,36 +490,16 @@
   }
 
   function updateMontage(nbs) {
+    if (montageResampleSuppressed()) return;
     nbs = nbs.slice();
-    cancelPendingHighlightRestyle();
     if (!showGridHighlightsEnabled()) {
-      nbs = [];
+      updateMontageOrdered([]);
+      return;
     }
-    var newOrdered = nbs.map(function(x) { return x.row; }).join(",");
-    var oldOrdered = lastMontageRows.join(",");
-    var newStable = nbs.map(function(x) { return x.row; }).slice().sort(function(a, b) { return a - b; }).join(",");
-    var oldStable = lastMontageRows.length
-      ? lastMontageRows.slice().sort(function(a, b) { return a - b; }).join(",")
-      : "";
-    if (newOrdered !== oldOrdered || newStable !== oldStable) {
-      invalidateVolumeArtifacts();
-    }
-    var colorCol = sc.value;
-    var colorColLabel = covariateDisplayMap[colorCol] || colorCol;
     var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
+    var colorCol = sc.value;
     var hasColor = colorCol !== "none" && Array.isArray(markerColors);
     var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
-    var cmin = Infinity;
-    var cmax = -Infinity;
-    if (hasColor && colorMode === "continuous") {
-      for (var ci = 0; ci < markerColors.length; ci++) {
-        var vci = markerColors[ci];
-        if (typeof vci === "number" && isFinite(vci)) {
-          if (vci < cmin) cmin = vci;
-          if (vci > cmax) cmax = vci;
-        }
-      }
-    }
     if (hasColor && colorMode === "discrete") {
       nbs = nbs.slice().sort(function(a, b) {
         var ka = discreteMontageSortKey(a.ti);
@@ -543,6 +534,27 @@
         return a.row - b.row;
       });
     }
+    updateMontageOrdered(nbs);
+  }
+
+  /** Paint montage cells in caller order (no covariate / region re-sort). */
+  function montageCellStyleContext() {
+    var colorCol = sc.value;
+    var colorColLabel = covariateDisplayMap[colorCol] || colorCol;
+    var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
+    var hasColor = colorCol !== "none" && Array.isArray(markerColors);
+    var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
+    var cmin = Infinity;
+    var cmax = -Infinity;
+    if (hasColor && colorMode === "continuous") {
+      for (var ci = 0; ci < markerColors.length; ci++) {
+        var vci = markerColors[ci];
+        if (typeof vci === "number" && isFinite(vci)) {
+          if (vci < cmin) cmin = vci;
+          if (vci > cmax) cmax = vci;
+        }
+      }
+    }
     var selMem = null;
     if (saveSelectionRows && saveSelectionRows.length) {
       selMem = new Set();
@@ -552,128 +564,187 @@
       }
       if (!selMem.size) selMem = null;
     }
-    for (var i = 0; i < montageCells.length; i++) {
-      if (i < nbs.length) {
-        montageCells[i].img.src = nbs[i].src || "";
-        montageCells[i].idx.textContent = "idx " + nbs[i].row;
-        montageCells[i].cell.classList.add("cryo-montage-cell--light");
-        if (montageCells[i].lbl) montageCells[i].lbl.style.color = "";
-        if (hasColor) {
-          var ti = nbs[i].ti;
-          var dispVal = traceCustomdataColorDisp(ti);
-          if (dispVal == null && colorMode === "continuous") {
-            var vmc = markerColors[ti];
-            dispVal = typeof vmc === "number" && isFinite(vmc) ? vmc : vmc;
+    return {
+      colorCol: colorCol,
+      colorColLabel: colorColLabel,
+      markerColors: markerColors,
+      hasColor: hasColor,
+      colorMode: colorMode,
+      cmin: cmin,
+      cmax: cmax,
+      selMem: selMem
+    };
+  }
+
+  function clearMontageCellAtIndex(i) {
+    if (i < 0 || i >= montageCells.length) return;
+    montageCells[i].img.src = "";
+    montageCells[i].img.style.opacity = "";
+    montageCells[i].idx.textContent = "";
+    montageCells[i].idx.style.color = "";
+    montageCells[i].covar.textContent = "";
+    montageCells[i].covar.style.color = "";
+    montageCells[i].cell.style.background = "";
+    montageCells[i].cell.style.border = "";
+    if (montageCells[i].lbl) montageCells[i].lbl.style.color = "";
+  }
+
+  function paintMontageCellAtIndex(i, item, ctx) {
+    if (i < 0 || i >= montageCells.length || !item) return;
+    ctx = ctx || montageCellStyleContext();
+    var hasColor = ctx.hasColor;
+    var colorMode = ctx.colorMode;
+    var markerColors = ctx.markerColors;
+    var cmin = ctx.cmin;
+    var cmax = ctx.cmax;
+    var selMem = ctx.selMem;
+    var colorCol = ctx.colorCol;
+    var colorColLabel = ctx.colorColLabel;
+    montageCells[i].img.src = item.src || "";
+    montageCells[i].idx.textContent = "idx " + item.row;
+    montageCells[i].cell.classList.add("cryo-montage-cell--light");
+    if (montageCells[i].lbl) montageCells[i].lbl.style.color = "";
+    if (hasColor) {
+      var ti = item.ti;
+      var dispVal = traceCustomdataColorDisp(ti);
+      if (dispVal == null && colorMode === "continuous") {
+        var vmc = markerColors[ti];
+        dispVal = typeof vmc === "number" && isFinite(vmc) ? vmc : vmc;
+      }
+      var dispStr = dispVal == null ? "—" : (
+        typeof dispVal === "number" && isFinite(dispVal) ? dispVal.toFixed(2) : String(dispVal)
+      );
+      montageCells[i].covar.textContent = colorCol === "labels"
+        ? ("k-means cluster = " + dispStr)
+        : (colorColLabel + "=" + dispStr);
+      if (colorMode === "discrete") {
+        var hexCol = markerColors[ti];
+        var dStyles = discreteLabelMontageStyles(String(hexCol));
+        montageCells[i].cell.style.background = dStyles.bg;
+        setMontageCellSelectionBorderStyle(montageCells[i].cell, String(hexCol));
+        montageCells[i].covar.style.color = dStyles.covarColor || "";
+        montageCells[i].idx.style.color = dStyles.covarColor || "";
+      } else {
+        var valC = markerColors[ti];
+        var tCell = cmax > cmin && typeof valC === "number" && isFinite(valC)
+          ? (valC - cmin) / (cmax - cmin)
+          : 0.5;
+        var cStyles = continuousMontageStylesFromT(tCell);
+        montageCells[i].cell.style.background = cStyles.bg;
+        setMontageCellSelectionBorderStyle(
+          montageCells[i].cell,
+          cStyles.borderCss || cStyles.bg
+        );
+        montageCells[i].covar.style.color = cStyles.covarColor || "";
+        montageCells[i].idx.style.color = cStyles.idxColor || cStyles.covarColor || "";
+      }
+    } else {
+      montageCells[i].covar.textContent = "";
+      montageCells[i].covar.style.color = "";
+      montageCells[i].idx.style.color = "";
+      montageCells[i].cell.style.background = "";
+      var borderNoCov = ACCENT;
+      if (imagesViewEnabled && preloaded && preloaded.traceMap && committedScatterRegions.length) {
+        var ridxM = selectionRegionIndexForRow(item.row);
+        if (ridxM >= 0) {
+          borderNoCov = scatterRegionPlotStyle(ridxM).line;
+          var rsMont = selectionRegionMontageStyles(ridxM);
+          montageCells[i].cell.style.background = rsMont.bg;
+          montageCells[i].covar.style.color = rsMont.covarColor || "";
+          montageCells[i].idx.style.color = rsMont.covarColor || "";
+          if (committedScatterRegions.length > 1) {
+            montageCells[i].covar.textContent = "Region " + (ridxM + 1);
           }
-          var dispStr = dispVal == null ? "—" : (
-            typeof dispVal === "number" && isFinite(dispVal) ? dispVal.toFixed(2) : String(dispVal)
-          );
-          montageCells[i].covar.textContent = colorCol === "labels"
-            ? ("k-means cluster = " + dispStr)
-            : (colorColLabel + "=" + dispStr);
-          if (colorMode === "discrete") {
-            var hexCol = markerColors[ti];
-            var dStyles = discreteLabelMontageStyles(String(hexCol));
-            montageCells[i].cell.style.background = dStyles.bg;
-            setMontageCellSelectionBorderStyle(montageCells[i].cell, String(hexCol));
-            montageCells[i].covar.style.color = dStyles.covarColor || "";
-            montageCells[i].idx.style.color = dStyles.covarColor || "";
-          } else {
-            var valC = markerColors[ti];
-            var tCell = cmax > cmin && typeof valC === "number" && isFinite(valC)
-              ? (valC - cmin) / (cmax - cmin)
-              : 0.5;
-            var cStyles = continuousMontageStylesFromT(tCell);
-            montageCells[i].cell.style.background = cStyles.bg;
-            setMontageCellSelectionBorderStyle(
-              montageCells[i].cell,
-              cStyles.borderCss || cStyles.bg
-            );
-            montageCells[i].covar.style.color = cStyles.covarColor || "";
-            montageCells[i].idx.style.color = cStyles.idxColor || cStyles.covarColor || "";
+          if (montageCells[i].lbl && committedScatterRegions.length >= 2) {
+            montageCells[i].lbl.style.color = rsMont.covarColor || "";
           }
-        } else {
+        } else if (committedScatterRegions.length > 1) {
+          borderNoCov = "#94a3b8";
+          montageCells[i].cell.style.background = "";
           montageCells[i].covar.textContent = "";
           montageCells[i].covar.style.color = "";
-          montageCells[i].idx.style.color = "";
-          montageCells[i].cell.style.background = "";
-          var borderNoCov = ACCENT;
-          if (imagesViewEnabled && preloaded && preloaded.traceMap && committedScatterRegions.length) {
-            var ridxM = selectionRegionIndexForRow(nbs[i].row);
-            if (ridxM >= 0) {
-              borderNoCov = scatterRegionPlotStyle(ridxM).line;
-              var rsMont = selectionRegionMontageStyles(ridxM);
-              montageCells[i].cell.style.background = rsMont.bg;
-              montageCells[i].covar.style.color = rsMont.covarColor || "";
-              montageCells[i].idx.style.color = rsMont.covarColor || "";
-              if (committedScatterRegions.length > 1) {
-                montageCells[i].covar.textContent = "Region " + (ridxM + 1);
-              }
-              if (montageCells[i].lbl && committedScatterRegions.length >= 2) {
-                montageCells[i].lbl.style.color = rsMont.covarColor || "";
-              }
-            } else if (committedScatterRegions.length > 1) {
-              borderNoCov = "#94a3b8";
-              montageCells[i].cell.style.background = "";
-              montageCells[i].covar.textContent = "";
-              montageCells[i].covar.style.color = "";
-              montageCells[i].idx.style.color = "#64748b";
-              if (montageCells[i].lbl) montageCells[i].lbl.style.color = "#64748b";
-            }
-          }
-          setMontageCellSelectionBorderStyle(montageCells[i].cell, borderNoCov);
+          montageCells[i].idx.style.color = "#64748b";
+          if (montageCells[i].lbl) montageCells[i].lbl.style.color = "#64748b";
         }
-        var rowNj = Number(nbs[i].row);
-        var inScatterSel = !selMem || (isFinite(rowNj) && selMem.has(rowNj));
-        if (imagesViewEnabled && selMem) {
-          montageCells[i].img.style.opacity = inScatterSel ? "1" : "0.5";
-          if (!inScatterSel) {
-            setMontageCellSelectionBorderStyle(montageCells[i].cell, "#94a3b8");
-            if (montageCells[i].lbl) montageCells[i].lbl.style.color = "#64748b";
-            montageCells[i].idx.style.color = "#64748b";
-            if (hasColor) {
-              montageCells[i].covar.style.color = "#64748b";
-            }
-          } else if (montageCells[i].lbl && hasColor) {
-            montageCells[i].lbl.style.color = "";
-          } else {
-            if (montageCells[i].lbl && !hasColor && committedScatterRegions.length <= 1) {
-              montageCells[i].lbl.style.color = "";
-            }
-          }
-        } else {
-          montageCells[i].img.style.opacity = "";
+      }
+      setMontageCellSelectionBorderStyle(montageCells[i].cell, borderNoCov);
+    }
+    var rowNj = Number(item.row);
+    var inScatterSel = !selMem || (isFinite(rowNj) && selMem.has(rowNj));
+    if (imagesViewEnabled && selMem) {
+      montageCells[i].img.style.opacity = inScatterSel ? "1" : "0.5";
+      if (!inScatterSel) {
+        setMontageCellSelectionBorderStyle(montageCells[i].cell, "#94a3b8");
+        if (montageCells[i].lbl) montageCells[i].lbl.style.color = "#64748b";
+        montageCells[i].idx.style.color = "#64748b";
+        if (hasColor) {
+          montageCells[i].covar.style.color = "#64748b";
         }
+      } else if (montageCells[i].lbl && hasColor) {
+        montageCells[i].lbl.style.color = "";
       } else {
-        montageCells[i].img.src = "";
-        montageCells[i].img.style.opacity = "";
-        montageCells[i].idx.textContent = "";
-        montageCells[i].idx.style.color = "";
-        montageCells[i].covar.textContent = "";
-        montageCells[i].covar.style.color = "";
-        montageCells[i].cell.style.background = "";
-        montageCells[i].cell.style.border = "";
-        if (montageCells[i].lbl) montageCells[i].lbl.style.color = "";
+        if (montageCells[i].lbl && !hasColor && committedScatterRegions.length <= 1) {
+          montageCells[i].lbl.style.color = "";
+        }
+      }
+    } else {
+      montageCells[i].img.style.opacity = "";
+    }
+  }
+
+  function syncHighlightTraceFromMontageItems(items) {
+    if (!highlightTraceAdded || !gd.data || !gd.data[0] || !items.length) return;
+    var ctx = montageCellStyleContext();
+    var nx = [], ny = [], txt = [];
+    var showPlotHighlights = showGridHighlightsOnPlot();
+    for (var k = 0; k < items.length; k++) {
+      nx.push(gd.data[0].x[items[k].ti]);
+      ny.push(gd.data[0].y[items[k].ti]);
+      if (showPlotHighlights) txt.push(labels[k]);
+    }
+    var restyleData = {
+      x: [nx],
+      y: [ny],
+      mode: [showPlotHighlights ? "markers+text" : "markers"],
+      text: [txt],
+      visible: [showPlotHighlights]
+    };
+    appendGridHighlightMarkerRestyle(
+      restyleData,
+      items,
+      ctx.hasColor,
+      ctx.colorMode,
+      ctx.markerColors,
+      ctx.cmin,
+      ctx.cmax
+    );
+    queueHighlightRestyle(restyleData);
+  }
+
+  function updateMontageOrdered(nbs) {
+    nbs = nbs.slice();
+    cancelPendingHighlightRestyle();
+    if (!showGridHighlightsEnabled()) {
+      nbs = [];
+    }
+    var newOrdered = nbs.map(function(x) { return x.row; }).join(",");
+    var oldOrdered = lastMontageRows.join(",");
+    var newStable = nbs.map(function(x) { return x.row; }).slice().sort(function(a, b) { return a - b; }).join(",");
+    var oldStable = lastMontageRows.length
+      ? lastMontageRows.slice().sort(function(a, b) { return a - b; }).join(",")
+      : "";
+    if (newOrdered !== oldOrdered || newStable !== oldStable) {
+      invalidateVolumeArtifacts();
+    }
+    var ctx = montageCellStyleContext();
+    for (var i = 0; i < montageCells.length; i++) {
+      if (i < nbs.length) {
+        paintMontageCellAtIndex(i, nbs[i], ctx);
+      } else {
+        clearMontageCellAtIndex(i);
       }
     }
-    if (highlightTraceAdded && gd.data && gd.data[0]) {
-      var nx = [], ny = [], txt = [];
-      var showPlotHighlights = showGridHighlightsOnPlot();
-      for (var k = 0; k < nbs.length; k++) {
-        nx.push(gd.data[0].x[nbs[k].ti]);
-        ny.push(gd.data[0].y[nbs[k].ti]);
-        if (showPlotHighlights) txt.push(labels[k]);
-      }
-      var restyleData = {
-        x: [nx],
-        y: [ny],
-        mode: [showPlotHighlights ? "markers+text" : "markers"],
-        text: [txt],
-        visible: [showPlotHighlights]
-      };
-      appendGridHighlightMarkerRestyle(restyleData, nbs, hasColor, colorMode, markerColors, cmin, cmax);
-      queueHighlightRestyle(restyleData);
-    }
+    syncHighlightTraceFromMontageItems(nbs);
     lastMontageRows = [];
     for (var mi = 0; mi < nbs.length; mi++) {
       lastMontageRows.push(nbs[mi].row);
@@ -688,6 +759,125 @@
     } else {
       syncVolumeExploreButtons();
     }
+  }
+
+  /** Replace one montage letter slot; other cells are left unchanged (double-click → A). */
+  function replaceMontageSlotAt(slotIndex, item) {
+    if (!item || slotIndex !== 0 || !showGridHighlightsEnabled()) return;
+    if (slotIndex >= montageCells.length) return;
+    var prevRow = lastMontageRows.length ? lastMontageRows[0] : undefined;
+    if (prevRow != null && Number(prevRow) !== Number(item.row)) {
+      invalidateVolumeArtifacts();
+    }
+    if (!lastMontageRows.length) {
+      lastMontageRows = [item.row];
+    } else {
+      lastMontageRows[0] = item.row;
+    }
+    var ctx = montageCellStyleContext();
+    paintMontageCellAtIndex(slotIndex, item, ctx);
+    if (montageDisplayMode === "volumes") {
+      var vkey = montageRowsOrderKey();
+      if (volumeStaticDataUrls && volumeStaticKey === vkey && volumeStaticDataUrls.length) {
+        montageCells[slotIndex].img.src = volumeStaticDataUrls[slotIndex] || "";
+      } else {
+        syncVolumeExploreButtons();
+      }
+    }
+    syncHighlightTraceAfterSlotReplace(slotIndex, item);
+    syncVolumeExploreButtons();
+  }
+
+  /** Update grid-letter overlay for one slot; keep other highlight positions when possible. */
+  function syncHighlightTraceAfterSlotReplace(slotIndex, item) {
+    if (!highlightTraceAdded || !gd.data || !gd.data[0] || !gd.data[1] || !item) return;
+    var n = lastMontageRows.length;
+    if (!n) return;
+    var trace = gd.data[1];
+    var oldX = Array.isArray(trace.x) ? trace.x.slice() : [];
+    var oldY = Array.isArray(trace.y) ? trace.y.slice() : [];
+    var oldText = Array.isArray(trace.text) ? trace.text.slice() : [];
+    if (oldX.length !== n || slotIndex >= n) {
+      syncHighlightTraceFromMontageItems(montageItemsFromLastRows());
+      return;
+    }
+    var items = [];
+    for (var hi = 0; hi < n; hi++) {
+      if (hi === slotIndex) {
+        items.push(item);
+        continue;
+      }
+      var keptHi = montageItemForRow(lastMontageRows[hi]);
+      if (!keptHi) {
+        syncHighlightTraceFromMontageItems(montageItemsFromLastRows());
+        return;
+      }
+      items.push(keptHi);
+    }
+    oldX[slotIndex] = gd.data[0].x[item.ti];
+    oldY[slotIndex] = gd.data[0].y[item.ti];
+    var showPlotHighlights = showGridHighlightsOnPlot();
+    var ctx = montageCellStyleContext();
+    var restyleData = {
+      x: [oldX],
+      y: [oldY],
+      mode: [showPlotHighlights ? "markers+text" : "markers"],
+      text: [showPlotHighlights ? oldText : []],
+      visible: [showPlotHighlights]
+    };
+    appendGridHighlightMarkerRestyle(
+      restyleData,
+      items,
+      ctx.hasColor,
+      ctx.colorMode,
+      ctx.markerColors,
+      ctx.cmin,
+      ctx.cmax
+    );
+    queueHighlightRestyle(restyleData);
+  }
+
+  function rowFromPlotlyPoint(pt) {
+    if (!pt) return NaN;
+    if (pt.customdata != null && pt.customdata.length > 1) {
+      var r0 = Number(pt.customdata[1]);
+      if (isFinite(r0)) return r0;
+    }
+    var pi = pt.pointIndex;
+    if (pi != null && gd && gd.data && gd.data[0] && gd.data[0].customdata) {
+      var cd = gd.data[0].customdata[pi];
+      if (cd && cd.length > 1) {
+        var r1 = Number(cd[1]);
+        if (isFinite(r1)) return r1;
+      }
+    }
+    return NaN;
+  }
+
+  function ensureRowCachedForMontage(row) {
+    row = Number(row);
+    if (!isFinite(row)) return Promise.reject(new Error("invalid row"));
+    if (preloaded && preloaded.rows && preloaded.rows.has(row)) {
+      buildTraceMap();
+      return Promise.resolve();
+    }
+    var have = preloaded ? cachedImageCount() : 0;
+    return preloadImagesInChunksToTarget({
+      finalTarget: have + 1,
+      overlayLabel: "Caching 1 image…",
+      enableImages: true,
+      selectedRows: [row],
+      restrictToScatterPlot: true,
+      suppressMontageRefresh: true
+    });
+  }
+
+  function assignScatterRowToMontageSlotA(row) {
+    return ensureRowCachedForMontage(row).then(function() {
+      if (!showGridHighlightsEnabled()) return;
+      var item = montageItemForRow(row);
+      if (item) replaceMontageSlotAt(0, item);
+    });
   }
 
   /** After color-only scatter reload: same particles, pad from lasso pool or full cache if grid needs more. */
@@ -886,6 +1076,8 @@
   var lassoSelectedRowSet = null;
   var lassoSelectionDebounceTimer = null;
   var LASSO_SELECTION_DEBOUNCE_MS = 200;
+  /** While set, skip full-grid montage resamples (e.g. during double-click → slot A). */
+  var suppressMontageResampleUntil = 0;
   var highlightRestyleRaf = null;
   var pendingHighlightRestyle = null;
   /**
@@ -1888,7 +2080,7 @@
               explorerApplyDiscreteMarkerColoursFromOverrides();
               setTimeout(function() { suppressSelectionEvents = false; }, 0);
             }
-            var opts = {responsive: true};
+            var opts = {responsive: true, doubleClick: false};
             var p;
             try {
               if (!gd.data || gd.data.length === 0) {
@@ -2336,19 +2528,71 @@
 
   /* ---------- plot events ---------- */
   var plotlyEventsWired = false;
+  var scatterClickTimer = null;
+  var scatterClickLastRow = null;
+  var scatterClickPendingXY = null;
+  var scatterBlockSingleClickUntil = 0;
+
+  function suppressSelectionAfterScatterDoubleClick() {
+    suppressSelectionEvents = true;
+    setTimeout(function() {
+      suppressSelectionEvents = false;
+    }, LASSO_SELECTION_DEBOUNCE_MS + 500);
+  }
+
+  function handleScatterPointDoubleClick(pt) {
+    var row = rowFromPlotlyPoint(pt);
+    if (!isFinite(row)) return;
+    cancelLassoSelectionDebounce();
+    armMontageResampleSuppress(LASSO_SELECTION_DEBOUNCE_MS + 800);
+    scatterBlockSingleClickUntil = Date.now() + 400;
+    suppressSelectionAfterScatterDoubleClick();
+    assignScatterRowToMontageSlotA(row)
+      .finally(function() {
+        armMontageResampleSuppress(400);
+      })
+      .catch(function(e) {
+      console.error("montage slot A assign failed", e);
+    });
+  }
+
   function wireUpPlotlyEvents() {
     if (plotlyEventsWired) return;
     plotlyEventsWired = true;
     ensureHighlightTrace();
     bindScatterRegionPlotPostRenderChipsOnce();
     gd.on("plotly_click", function(ev) {
-      if (!imagesViewEnabled || !preloaded || !preloaded.traceMap) return;
-      if (!showGridHighlightsEnabled()) return;
       if (!ev.points || !ev.points.length) return;
       var pt = ev.points[0];
       if (pt.curveNumber !== 0) return;
-      var nbs = findKNearestInPool(pt.x, pt.y, neighborK);
-      if (nbs.length) updateMontage(nbs);
+      var row = rowFromPlotlyPoint(pt);
+      if (!isFinite(row)) return;
+      if (scatterClickTimer !== null && scatterClickLastRow === row) {
+        clearTimeout(scatterClickTimer);
+        scatterClickTimer = null;
+        scatterClickLastRow = null;
+        scatterClickPendingXY = null;
+        handleScatterPointDoubleClick(pt);
+        return;
+      }
+      scatterClickLastRow = row;
+      scatterClickPendingXY = { x: pt.x, y: pt.y };
+      if (scatterClickTimer) clearTimeout(scatterClickTimer);
+      scatterClickTimer = setTimeout(function() {
+        scatterClickTimer = null;
+        scatterClickLastRow = null;
+        var snap = scatterClickPendingXY;
+        scatterClickPendingXY = null;
+        if (!snap) return;
+        if (Date.now() < scatterBlockSingleClickUntil) return;
+        if (!imagesViewEnabled || !preloaded || !preloaded.traceMap) return;
+        if (!showGridHighlightsEnabled()) return;
+        var nbs = findKNearestInPool(snap.x, snap.y, neighborK);
+        if (nbs.length) updateMontage(nbs);
+      }, 320);
+    });
+    gd.on("plotly_doubleclick", function() {
+      suppressSelectionAfterScatterDoubleClick();
     });
     gd.on("plotly_selecting", function(ev) {
       if (suppressSelectionEvents) return;
@@ -2379,6 +2623,12 @@
         preloadStatus.textContent = formatCachedSelectionStatusCore(activePool.length) + ".";
       }
       ensureHighlightTrace();
+      if (montageResampleSuppressed()) {
+        if (lastMontageRows.length && highlightTraceAdded) {
+          refreshGridHighlightMarkerStylesFromLastRows();
+        }
+        return;
+      }
       if (activePool.length) {
         showRandomFromPool();
       } else {

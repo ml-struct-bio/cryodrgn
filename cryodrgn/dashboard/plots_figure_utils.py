@@ -70,6 +70,43 @@ def _subsample(
     return df, np.arange(n, dtype=np.int64)
 
 
+def _subsample_preserving_sketch_centroids(
+    df: pd.DataFrame,
+    max_points: int | None,
+    *,
+    seed: int = 0,
+    centroid_col: str = "_dashboard_sketch_centroid_point",
+) -> tuple[pd.DataFrame, np.ndarray]:
+    """Subsample like :func:`_subsample` but always retain sketch-centroid rows.
+
+    Volume-landscape montage letters use italic at the centroid particle; random
+    subsampling would usually drop those rows from the WebGL scatter.
+    """
+    if centroid_col not in df.columns:
+        return _subsample(df, max_points, seed=seed)
+    cent = df[centroid_col].to_numpy(dtype=np.int64) > 0
+    if not bool(np.any(cent)):
+        return _subsample(df, max_points, seed=seed)
+    pin_idx = np.flatnonzero(cent)
+    rest_idx = np.flatnonzero(~cent)
+    pinned = df.iloc[pin_idx]
+    n_pin = int(len(pin_idx))
+    if max_points is None:
+        rest_cap: int | None = None
+    else:
+        rest_cap = max(0, int(max_points) - n_pin)
+    if len(rest_idx) == 0:
+        sub = pinned.reset_index(drop=True)
+        return sub, pin_idx.astype(np.int64, copy=False)
+    sub_rest, pick_local = _subsample(df.iloc[rest_idx], rest_cap, seed=seed)
+    pick_global = rest_idx[pick_local]
+    if n_pin == 0:
+        return sub_rest, pick_global.astype(np.int64, copy=False)
+    sub = pd.concat([pinned, sub_rest], ignore_index=True)
+    row_indices = np.concatenate([pin_idx, pick_global.astype(np.int64, copy=False)])
+    return sub, row_indices
+
+
 def _scatter3d_marker_size_opacity(
     n_points: int, *, point_cap: int
 ) -> tuple[float, float]:

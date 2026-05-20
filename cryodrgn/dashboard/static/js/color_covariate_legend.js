@@ -82,6 +82,8 @@
     this.discreteSwitches = opts.discreteSwitches;
     this.invertHeadingSlotEl = opts.invertHeadingSlotEl || null;
     this.invertHeadingRowEl = opts.invertHeadingRowEl || null;
+    this._discretePanelCollapsed = false;
+    this._discreteCollapseToggleBtn = null;
     /**
      * When true, category cells wrap in a grid and invert sits in a dedicated right column
      * (legacy). Ignored when invertHeadingSlotEl is set.
@@ -270,10 +272,13 @@
     if (this.discreteWrap) {
       this.discreteWrap.hidden = true;
       this.discreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
+      this.discreteWrap.classList.remove("cryo-cc-discrete-panel--collapsed");
+      this.discreteWrap.classList.remove("cryo-discrete-legend--collapsed");
     }
     if (this.discreteSwitches) {
       this.discreteSwitches.innerHTML = "";
     }
+    this._discretePanelCollapsed = false;
     this._clearInvertHeadingChrome();
     if (this.panel) {
       this.panel.hidden = false;
@@ -401,17 +406,124 @@
     this._relayoutHistGuides();
   };
 
+  CryoColorCovariateLegend.prototype._discreteToggleHeadingRow = function () {
+    if (this.invertHeadingRowEl) return this.invertHeadingRowEl;
+    if (!this.discreteWrap) return null;
+    return this.discreteWrap.querySelector(".cryo-cc-discrete-toggle-heading-row");
+  };
+
+  CryoColorCovariateLegend.prototype._upgradeDiscreteCollapseTitleButton = function (row) {
+    if (!row) return null;
+    var btn = row.querySelector("[data-cryo-discrete-collapse-toggle]");
+    var titleSpan = row.querySelector(".cryo-cc-discrete-toggle-heading-text");
+    var label = this.regionHeadingDiscreteText || "Toggle selection";
+    if (btn && btn.classList.contains("cryo-cc-discrete-toggle-title")) {
+      if (titleSpan && titleSpan.textContent) {
+        label = titleSpan.textContent;
+      }
+      return btn;
+    }
+    var chev = btn && btn.querySelector(".cryo-cc-discrete-collapse-chevron");
+    var expanded = btn ? btn.getAttribute("aria-expanded") : "true";
+    var controls = btn ? btn.getAttribute("aria-controls") : null;
+    if (!chev) {
+      chev = document.createElement("span");
+      chev.className = "cryo-cc-discrete-collapse-chevron";
+      chev.setAttribute("aria-hidden", "true");
+      chev.textContent = "\u25bc";
+    }
+    var titleBtn = document.createElement("button");
+    titleBtn.type = "button";
+    titleBtn.className = "cryo-cc-discrete-toggle-title";
+    titleBtn.setAttribute("data-cryo-discrete-collapse-toggle", "true");
+    titleBtn.setAttribute("aria-expanded", expanded || "true");
+    if (controls) titleBtn.setAttribute("aria-controls", controls);
+    else if (this.discreteSwitches && this.discreteSwitches.id) {
+      titleBtn.setAttribute("aria-controls", this.discreteSwitches.id);
+    }
+    var titleInner = document.createElement("span");
+    titleInner.className = "cryo-cc-discrete-toggle-heading-text";
+    titleInner.textContent = titleSpan
+      ? titleSpan.textContent
+      : label;
+    titleBtn.appendChild(chev);
+    titleBtn.appendChild(titleInner);
+    if (btn) row.replaceChild(titleBtn, btn);
+    else row.insertBefore(titleBtn, row.firstChild);
+    if (titleSpan && titleSpan.parentNode === row) titleSpan.remove();
+    return titleBtn;
+  };
+
+  CryoColorCovariateLegend.prototype._ensureDiscreteCollapseToggle = function () {
+    var self = this;
+    if (!this.discreteWrap || !this.discreteSwitches) return;
+    var row = this._discreteToggleHeadingRow();
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "cryo-cc-discrete-toggle-heading-row";
+      this.discreteWrap.insertBefore(row, this.discreteSwitches);
+      this.invertHeadingRowEl = row;
+    }
+    row.hidden = false;
+    var btn = this._upgradeDiscreteCollapseTitleButton(row);
+    if (!btn) return;
+    this._discreteCollapseToggleBtn = btn;
+    btn.setAttribute("aria-expanded", this._discretePanelCollapsed ? "false" : "true");
+    btn.title = this._discretePanelCollapsed
+      ? "Show toggle selection"
+      : "Hide toggle selection";
+    if (this.discreteWrap && !this.discreteWrap.dataset.cryoDiscreteCollapseBound) {
+      this.discreteWrap.dataset.cryoDiscreteCollapseBound = "1";
+      this.discreteWrap.addEventListener("click", function (ev) {
+        var toggle = ev.target.closest("[data-cryo-discrete-collapse-toggle]");
+        if (!toggle || !self.discreteWrap.contains(toggle)) return;
+        ev.preventDefault();
+        self._discreteCollapseToggleBtn = toggle;
+        self.setDiscretePanelCollapsed(!self._discretePanelCollapsed);
+      });
+    }
+  };
+
+  CryoColorCovariateLegend.prototype.setDiscretePanelCollapsed = function (collapsed) {
+    this._discretePanelCollapsed = !!collapsed;
+    if (!this.discreteWrap) return;
+    this.discreteWrap.classList.toggle("cryo-cc-discrete-panel--collapsed", this._discretePanelCollapsed);
+    this.discreteWrap.classList.toggle("cryo-discrete-legend--collapsed", this._discretePanelCollapsed);
+    if (this._discreteCollapseToggleBtn) {
+      this._discreteCollapseToggleBtn.setAttribute(
+        "aria-expanded",
+        this._discretePanelCollapsed ? "false" : "true"
+      );
+      this._discreteCollapseToggleBtn.title = this._discretePanelCollapsed
+        ? "Show toggle selection"
+        : "Hide toggle selection";
+    }
+    this._syncInvertBtn();
+    if (typeof this.onDiscretePanelCollapsedChange === "function") {
+      this.onDiscretePanelCollapsedChange(this._discretePanelCollapsed);
+    }
+    if (typeof this.onDiscreteLayout === "function") {
+      this.onDiscreteLayout();
+    }
+  };
+
+  CryoColorCovariateLegend.prototype.isDiscretePanelCollapsed = function () {
+    return !!this._discretePanelCollapsed;
+  };
+
   CryoColorCovariateLegend.prototype._updateRegionHeading = function () {
-    if (!this.regionHeadingEl) return;
-    if (this._mode === "continuous") {
-      this.regionHeadingEl.hidden = false;
-      this.regionHeadingEl.textContent = this.regionHeadingContinuousText;
-    } else if (this._mode === "discrete") {
-      this.regionHeadingEl.hidden = false;
-      this.regionHeadingEl.textContent = this.regionHeadingDiscreteText;
-    } else {
-      this.regionHeadingEl.hidden = true;
-      this.regionHeadingEl.textContent = "";
+    var innerDiscreteHeading = this._mode === "discrete" && !!this._discreteToggleHeadingRow();
+    if (this.regionHeadingEl) {
+      if (this._mode === "continuous") {
+        this.regionHeadingEl.hidden = false;
+        this.regionHeadingEl.textContent = this.regionHeadingContinuousText;
+      } else if (this._mode === "discrete" && !innerDiscreteHeading) {
+        this.regionHeadingEl.hidden = false;
+        this.regionHeadingEl.textContent = this.regionHeadingDiscreteText;
+      } else {
+        this.regionHeadingEl.hidden = true;
+        this.regionHeadingEl.textContent = "";
+      }
     }
   };
 
@@ -532,6 +644,9 @@
           if (self.discreteWrap) {
             self.discreteWrap.hidden = true;
             self.discreteWrap.classList.remove("cryo-cc-discrete-wrap--show");
+            self.discreteWrap.classList.remove("cryo-cc-discrete-panel--collapsed");
+            self.discreteWrap.classList.remove("cryo-discrete-legend--collapsed");
+            self._discretePanelCollapsed = false;
           }
           if (self.discreteSwitches) {
             self.discreteSwitches.innerHTML = "";
@@ -568,6 +683,7 @@
           if (self.continuousWrap) self.continuousWrap.hidden = true;
           if (self.discreteWrap) {
             self.discreteWrap.hidden = false;
+            self.discreteWrap.classList.add("cryo-cc-discrete-wrap");
             self.discreteWrap.classList.add("cryo-cc-discrete-wrap--show");
           }
           self._renderDiscrete(data.categories || []);
@@ -1363,6 +1479,7 @@
     if (this.invertHeadingRowEl) {
       this.invertHeadingRowEl.hidden = false;
     }
+    this._ensureDiscreteCollapseToggle();
     var cellsMount = this.discreteSwitches;
     var invertMount = this.discreteSwitches;
     if (this.discreteInvertAsideColumn) {
@@ -1599,8 +1716,12 @@
     }
 
     this._syncInvertBtn();
+    if (this._discretePanelCollapsed) {
+      this.setDiscretePanelCollapsed(true);
+    }
     this._syncDiscretePopoverAnchorAfterDiscreteRender();
     var afterDiscreteLay = function () {
+      self.fitDiscreteSwitchColumnWidths();
       self.measureDiscreteInvertAsideColumn();
       self.scheduleInvertTypographyFit();
       if (typeof self.onDiscreteLayout === "function") {
@@ -1610,6 +1731,74 @@
     requestAnimationFrame(function () {
       requestAnimationFrame(afterDiscreteLay);
     });
+  };
+
+  /**
+   * Measure widest toggle cell, cap at 79% of legend width, and set ``--cryo-discrete-col-w`` so
+   * CSS ``repeat(auto-fill, …)`` packs as many columns as fit in the toggle-selection region.
+   */
+  CryoColorCovariateLegend.prototype.fitDiscreteSwitchColumnWidths = function () {
+    if (!this.discreteSwitches) return;
+    if (this._mode !== "discrete") {
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-col-w");
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-max-w");
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-min-h");
+      return;
+    }
+    var gridHost =
+      this.discreteSwitches.querySelector(".cryo-cc-discrete-cells-wrap") ||
+      this.discreteSwitches;
+    var regionRoot =
+      this.discreteWrap ||
+      this.discreteSwitches.closest("#color-discrete-wrap") ||
+      this.discreteSwitches.closest("#latent3d-color-discrete-wrap") ||
+      this.discreteSwitches.closest("#pair-color-discrete-wrap") ||
+      gridHost.parentElement;
+    var legendRoot =
+      this.discreteSwitches.closest("#latent3d-color-legend-panel") ||
+      this.discreteSwitches.closest(".pairplot-color-legend-aside") ||
+      this.discreteSwitches.closest(".cryo-cc-legend") ||
+      this.discreteSwitches.closest("#color-hist-panel") ||
+      regionRoot ||
+      this.discreteSwitches.parentElement;
+    var legendW =
+      legendRoot && legendRoot.getBoundingClientRect
+        ? legendRoot.getBoundingClientRect().width
+        : 0;
+    var regionW =
+      regionRoot && regionRoot.getBoundingClientRect
+        ? regionRoot.getBoundingClientRect().width
+        : gridHost.clientWidth || 0;
+    var maxColW = legendW > 1 ? Math.floor(legendW * 0.79) : 0;
+    if (maxColW > 0) {
+      this.discreteSwitches.style.setProperty("--cryo-discrete-cell-max-w", maxColW + "px");
+    } else {
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-max-w");
+    }
+    this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-min-h");
+
+    var cells = gridHost.querySelectorAll(
+      ".cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert):not(.cryo-cc-discrete-cell--invert-heading)"
+    );
+    if (!cells.length) {
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-col-w");
+      return;
+    }
+    this.discreteSwitches.style.removeProperty("--cryo-discrete-col-w");
+    var maxCell = 0;
+    for (var ci = 0; ci < cells.length; ci++) {
+      var cell = cells[ci];
+      var w = cell.scrollWidth;
+      if (w > maxCell) maxCell = w;
+    }
+    if (maxCell < 1) {
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-col-w");
+      return;
+    }
+    var colW = Math.ceil(maxCell + 1);
+    if (maxColW > 0) colW = Math.min(colW, maxColW);
+    if (regionW > 1 && colW > regionW) colW = Math.max(1, Math.floor(regionW));
+    this.discreteSwitches.style.setProperty("--cryo-discrete-col-w", colW + "px");
   };
 
   CryoColorCovariateLegend.prototype.measureDiscreteInvertAsideColumn = function () {
@@ -1711,6 +1900,14 @@
 
     if (invertCell && headingInvert) {
       var hLabel = invertCell.querySelector(".cryo-cc-discrete-switch-label");
+      if (this._discretePanelCollapsed) {
+        invertCell.hidden = true;
+        if (this.invertHeadingSlotEl) {
+          this.invertHeadingSlotEl.hidden = true;
+          this.invertHeadingSlotEl.setAttribute("aria-hidden", "true");
+        }
+        return;
+      }
       invertCell.hidden = !any;
       if (this.invertHeadingSlotEl) {
         this.invertHeadingSlotEl.hidden = !any;

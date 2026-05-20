@@ -159,6 +159,256 @@
 /* Discrete covariate legend (was injected from color_covariate_legend.js).   */
 /* -------------------------------------------------------------------------- */
 
+.cryo-cc-discrete-switches,
+.cryo-cc-discrete-cells-wrap {
+  --cryo-discrete-grid-gap-y: 0.24rem;
+  --cryo-discrete-grid-gap-x: 0.36rem;
+}
+
+/* Discrete panel: up to 80% viewport tall; only the toggle grid scrolls. */
+#color-discrete-wrap.cryo-cc-discrete-wrap--show,
+#color-discrete-wrap.cryo-color-discrete-wrap--show,
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show,
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show,
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show,
+.cryo-cc-discrete-wrap.cryo-color-discrete-wrap--show {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 80vh;
+  max-height: 80svh;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+#color-hist-panel:not([hidden]):has(#color-discrete-wrap.cryo-cc-discrete-wrap--show),
+#color-hist-panel:not([hidden]):has(#color-discrete-wrap.cryo-color-discrete-wrap--show) {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  max-height: 80svh;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.cryo-cc-discrete-toggle-heading-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* Collapse control is the “Toggle selection” title itself (not a separate menu switch). */
+.cryo-cc-discrete-toggle-title,
+button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.cryo-cc-discrete-toggle-title:hover,
+button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:hover {
+  background: rgba(36, 59, 83, 0.07);
+}
+
+.cryo-cc-discrete-toggle-title:focus-visible,
+button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:focus-visible {
+  outline: 2px solid var(--accent, #c4703a);
+  outline-offset: 1px;
+}
+
+.cryo-cc-discrete-toggle-heading-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cryo-cc-discrete-collapse-chevron {
+  display: inline-block;
+  font-size: 0.68rem;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+/* Collapse hides toggle grid + footer; keep “Toggle selection” title row (IDs — wraps lack .cryo-cc-discrete-wrap in HTML). */
+#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed,
+#color-discrete-wrap.cryo-color-discrete-wrap--show.cryo-cc-discrete-panel--collapsed,
+#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed,
+#color-discrete-wrap.cryo-color-discrete-wrap--show.cryo-discrete-legend--collapsed,
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed,
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed,
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed,
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed,
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed,
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed {
+  flex: 0 0 auto;
+  max-height: none;
+}
+
+#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+#color-discrete-wrap.cryo-color-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+#color-discrete-wrap.cryo-color-discrete-wrap--show.cryo-discrete-legend--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row),
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  > :not(.cryo-cc-discrete-toggle-heading-row) {
+  display: none !important;
+}
+
+#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  .cryo-cc-discrete-collapse-chevron,
+#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  .cryo-cc-discrete-collapse-chevron,
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  .cryo-cc-discrete-collapse-chevron,
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  .cryo-cc-discrete-collapse-chevron,
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  .cryo-cc-discrete-collapse-chevron,
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  .cryo-cc-discrete-collapse-chevron,
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  .cryo-cc-discrete-collapse-chevron,
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  .cryo-cc-discrete-collapse-chevron {
+  transform: rotate(-90deg);
+}
+
+/* Collapsed: keep only the menu row (chevron + title); hide invert beside the title too. */
+#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  .cryo-cc-discrete-toggle-heading-row .cryo-cc-region-invert-slot,
+#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  .cryo-cc-discrete-toggle-heading-row .cryo-cc-region-invert-slot,
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  .cryo-cc-discrete-toggle-heading-row .cryo-cc-region-invert-slot,
+#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  .cryo-cc-discrete-toggle-heading-row .cryo-cc-region-invert-slot,
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  .cryo-cc-discrete-toggle-heading-row .cryo-cc-region-invert-slot,
+#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  .cryo-cc-discrete-toggle-heading-row .cryo-cc-region-invert-slot,
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed
+  .cryo-cc-discrete-toggle-heading-row .cryo-cc-region-invert-slot,
+.cryo-cc-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed
+  .cryo-cc-discrete-toggle-heading-row .cryo-cc-region-invert-slot {
+  display: none !important;
+}
+
+#color-hist-panel:has(#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed)
+  #color-legend-region-invert-slot,
+#color-hist-panel:has(#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed)
+  #color-legend-region-invert-slot {
+  display: none !important;
+}
+
+.cryo-cc-discrete-actions {
+  flex-shrink: 0;
+}
+
+/* Scroll host: toggle cards only (not the whole page). */
+.cryo-cc-discrete-switches,
+.cryo-color-discrete-switches,
+#color-discrete-switches {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  box-sizing: border-box;
+  padding: 0.2rem 0.34rem 0.22rem 0.16rem;
+}
+
+.cryo-cc-discrete-switches.cryo-color-discrete-switches--invert-aside {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.28rem;
+  overflow: hidden;
+}
+
+.cryo-cc-discrete-cells-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  box-sizing: border-box;
+  padding: 0.1rem 0.16rem 0.12rem 0.1rem;
+}
+
+.cryo-cc-discrete-invert-aside {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
+.cryo-cc-discrete-switches--pair-2col,
+.cryo-cc-discrete-cells-wrap,
+.cryo-color-discrete-switches,
+#color-discrete-switches.cryo-color-discrete-switches {
+  display: grid;
+  /* ``--cryo-discrete-col-w`` from JS (widest cell); auto-fill packs max columns in region width */
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--cryo-discrete-col-w, max-content)), var(--cryo-discrete-col-w, max-content))
+  );
+  grid-auto-rows: auto;
+  gap: var(--cryo-discrete-grid-gap-y, 0.24rem) var(--cryo-discrete-grid-gap-x, 0.36rem);
+  justify-content: center;
+  justify-items: center;
+  align-content: start;
+  width: 100%;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+.cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell,
+.cryo-cc-discrete-cells-wrap .cryo-cc-discrete-cell,
+.cryo-color-discrete-switches .cryo-cc-discrete-cell,
+#color-discrete-switches .cryo-cc-discrete-cell {
+  width: max-content;
+  max-width: min(100%, var(--cryo-discrete-cell-max-w, 100%), var(--cryo-discrete-col-w, 100%));
+  min-height: 0;
+  height: auto;
+  box-sizing: border-box;
+  justify-self: center;
+}
+
 .cryo-cc-discrete-cell {
   box-sizing: border-box;
   min-width: 0;
@@ -175,7 +425,8 @@
   gap: 0;
   margin: 0;
   padding: 0;
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
   min-width: 0;
   cursor: default;
   user-select: none;
@@ -194,7 +445,7 @@
 }
 
 .cryo-cc-discrete-switch > label[for] {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -203,6 +454,7 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
+  overflow: visible;
 }
 
 .cryo-cc-discrete-switch-text {
@@ -211,7 +463,11 @@
   align-items: flex-start;
   flex: 1 1 auto;
   min-width: 0;
-  line-height: 1;
+  line-height: 1.12;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .cryo-cc-discrete-cell-controls {
@@ -349,6 +605,10 @@
     inset 0 -3px 6px rgba(0, 0, 0, 0.16),
     inset 0 0 0 1px rgba(255, 255, 255, 0.28),
     0 2px 5px rgba(26, 35, 50, 0.2);
+}
+
+.cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) > .cryo-cc-discrete-switch {
+  padding: 0.1rem 0.28rem 0.1rem 0.18rem;
 }
 
 .cryo-cc-discrete-color-popover {

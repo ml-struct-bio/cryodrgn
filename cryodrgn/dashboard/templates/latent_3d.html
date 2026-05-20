@@ -6,21 +6,33 @@
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/cryo_cc_legend_palette_menu.css') }}"/>
 <style>
-  /* Full-plot frosted blur while the WebGL scatter redraws (axes / colour reload only) — no dark scrim. */
+  /* Full-plot loading veil while the WebGL scatter redraws. No backdrop-filter — it composites over
+     the Plotly WebGL canvas and resets the scatter3d camera when the overlay appears. */
   .cryo-dash-page--latent3d #latent3d-plot-stack {
     position: relative;
     min-height: 280px;
+    isolation: isolate;
   }
-  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show {
+  .cryo-dash-page--latent3d #latent3d.cryo-plotly-graph-host {
+    isolation: isolate;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-main .cryo-dash-viewport--plotly {
+    position: relative;
+  }
+  /* Full-area veil on first draw only — sibling of the plot stack, not stacked over the WebGL canvas. */
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show:not(
+    .cryo-plot-rendering-overlay--nonblocking
+  ) {
     position: absolute;
     inset: 0;
     z-index: 6;
     display: flex !important;
     align-items: center;
     justify-content: center;
-    background: transparent;
-    backdrop-filter: blur(14px) saturate(1.06);
-    -webkit-backdrop-filter: blur(14px) saturate(1.06);
+    background: rgba(250, 248, 244, 0.9);
+    pointer-events: none;
+    transform: none;
+    backface-visibility: visible;
   }
   .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__inner {
     display: flex;
@@ -54,24 +66,128 @@
 {% if show_landscape_vol_animations %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/landscape_volpca.css') }}"/>
 <style>
-  /* Four columns: controls | plot | colour legend | volume / animations (right edge) */
+  /* Controls | plot+legend band | volume panel — legend centred in the band’s right gap. */
   .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-volanim {
-    grid-template-columns: minmax(0, 14fr) minmax(0, 50fr) minmax(0, 13fr) minmax(11.5rem, 17fr);
-    align-items: start;
+    grid-template-columns:
+      minmax(12.75rem, 19rem)
+      minmax(0, 1fr)
+      minmax(11.5rem, 22rem);
+    align-items: stretch;
+    width: 100%;
+    max-width: none;
+    height: calc(100svh - var(--cryo-dash-below-nav-tall));
+    min-height: calc(100svh - var(--cryo-dash-below-nav-tall));
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-side,
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-main,
-  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .latent3d-volanim-aside,
-  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .latent3d-color-legend-aside {
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .latent3d-volanim-aside {
+    align-self: stretch;
+    min-height: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-side {
+    width: auto;
+    max-width: 19rem;
+    justify-self: start;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-main {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    display: block;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .latent3d-volanim-aside {
+    width: auto;
+    max-width: 22rem;
+    justify-self: end;
+    align-items: flex-end;
+    padding-right: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: start;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band .cryo-dash-viewport--plotly {
+    grid-column: 2;
+    grid-row: 1;
+    --latent3d-volanim-plot-side: calc(100svh - var(--cryo-dash-below-nav-tall));
+    flex: 0 0 auto;
+    width: min(100%, var(--latent3d-volanim-plot-side));
+    height: min(100%, var(--latent3d-volanim-plot-side));
+    max-height: 100%;
+    min-height: 0;
+    aspect-ratio: 1 / 1;
+    align-self: center;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-plot-stack {
+    min-height: 0;
+    height: 100%;
+    width: 100%;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band > .latent3d-color-legend-aside {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: center;
     align-self: start;
+    width: auto;
+    max-width: min(9.25rem, 100%);
+    height: 100%;
+    justify-content: flex-start;
+    z-index: 2;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-legend-panel:not([hidden]) {
+    width: 100%;
+    max-width: 100%;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-legend-panel {
+    --pair-legend-middle-w: min(4.05rem, 11vw);
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-continuous-wrap,
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .pair-legend-continuous-stack {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .pair-legend-middle-track--continuous {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim
+    .pair-legend-middle-track--continuous #latent3d-color-hist,
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim
+    #latent3d-color-hist.cryo-cc-hist--pair-vertical {
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 auto;
+    min-height: 58px;
+    height: auto;
+  }
+  @media (max-width: 900px) {
+    .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-legend #latent3d-color-hist {
+      min-height: 4.4rem;
+    }
   }
   .cryo-dash-page--latent3d .latent3d-volanim-aside {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     min-width: 0;
-    max-width: 100%;
-    width: 100%;
+    max-width: 22rem;
+    width: auto;
     box-sizing: border-box;
     position: sticky;
     top: 0.35rem;
@@ -81,9 +197,16 @@
     width: 100%;
     max-width: min(100%, 22rem);
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
     /* ~10% smaller than default card copy + tighter leading (right-hand volume column only). */
     font-size: 0.9em;
     line-height: 1.22;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card > .l3dva-display-col {
+    flex: 0 0 auto;
+    margin-top: 0;
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card fieldset legend {
     line-height: 1.18;
@@ -514,18 +637,56 @@
     padding-top: 0.24rem;
     padding-bottom: 0.24rem;
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row button {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row button.l3dva-view-rotate-btn {
     flex: 1 1 0;
     min-width: 0;
-    padding-left: 0.28rem;
-    padding-right: 0.28rem;
-    padding-top: 0.36rem;
-    padding-bottom: 0.36rem;
+    padding-left: 0.22rem;
+    padding-right: 0.22rem;
+    padding-top: 0.32rem;
+    padding-bottom: 0.32rem;
     line-height: 1;
     white-space: nowrap;
+    font-size: 0.8em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.22rem;
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card #l3dva-sel-summary {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-btn__axis-icon {
+    width: 1.15em;
+    height: 1.15em;
+    flex: 0 0 auto;
+    display: block;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-btn__label {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .l3dva-display-col {
+    width: 100%;
+    max-width: min(100%, 22rem);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    align-self: flex-start;
+  }
+  .cryo-dash-page--latent3d .l3dva-display-col #l3dva-sel-summary {
     font-variant-numeric: tabular-nums;
+    margin: 0 0 0.35rem;
+    padding: 0;
+    align-self: flex-start;
+    text-align: left;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .l3dva-display-col #l3dva-preview-wrap {
+    margin-top: 0 !important;
+  }
+  .cryo-dash-page--latent3d .l3dva-display-col .volsketch-sel-indices-wrap {
+    margin: 0 0 0.35rem;
+    width: 100%;
+    box-sizing: border-box;
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-animate-status-row {
     display: flex;
@@ -552,6 +713,13 @@
   @media (max-width: 900px) {
     .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-volanim {
       grid-template-columns: minmax(0, 1fr);
+      height: auto;
+      min-height: 0;
+    }
+    .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band .cryo-dash-viewport--plotly {
+      --latent3d-volanim-plot-side: max(20rem, calc(100svh - 18rem));
+      width: min(100%, var(--latent3d-volanim-plot-side));
+      height: min(100%, var(--latent3d-volanim-plot-side));
     }
     .cryo-dash-page--latent3d .latent3d-volanim-aside {
       position: static;
@@ -1039,6 +1207,19 @@
   <div class="cryo-dash-side">
     {{ lead_html | safe }}
     <div class="card cryo-dash-controls" id="latent3d-controls-card">
+{% if legend_context_body_extra %}
+      <fieldset>
+        <legend>Choose axes<br/>and point color scale</legend>
+        <label class="cryo-select-line" for="sx">First axis</label>
+        <select id="sx"></select>
+        <label class="cryo-select-line" for="sy">Second axis</label>
+        <select id="sy"></select>
+        <label class="cryo-select-line" for="sz">Third axis</label>
+        <select id="sz"></select>
+        <label class="cryo-select-line" for="sc">Color by</label>
+        <select id="sc"><option value="none">None</option></select>
+      </fieldset>
+{% else %}
       <fieldset>
         <legend>{{ axes_fieldset_legend }}</legend>
         {{ axes_fieldset_note_html | safe }}
@@ -1056,11 +1237,16 @@
         <label class="cryo-select-line" for="sc">Color by</label>
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
+{% endif %}
 {% if show_vol_landscape_quick_actions | default(false) %}
       <fieldset class="l3dva-quick-actions">
         <legend>Quick actions</legend>
         <div class="l3dva-quick-actions-btns">
           <div class="l3dva-quick-actions-inner">
+{% if show_landscape_vol_animations %}
+            <button type="button" class="btn btn-secondary" id="l3dva-clear-sel">Clear selection</button>
+            <button type="button" class="btn btn-secondary" id="l3dva-random-sel" disabled>Choose volumes at random</button>
+{% endif %}
             <button type="button" class="btn btn-secondary" id="l3d-gif-orbit-360" title="Full turn around the vertical direction in the view plane (orthogonal to your line of sight); saves as a GIF">
               Create orbit<br/>animation
             </button>
@@ -1078,10 +1264,14 @@
       <p id="z3-axis-status" class="status"></p>
     </div>
   </div>
-  <div class="cryo-dash-main">
+  <div class="cryo-dash-main{% if show_landscape_vol_animations %} cryo-dash-main--latent3d-volanim{% endif %}">
+{% if show_landscape_vol_animations %}
+    <div class="latent3d-plot-legend-band">
+{% endif %}
     <div class="cryo-dash-viewport--plotly">
         <div class="cryo-plotly-stack" id="latent3d-plot-stack">
           <div id="latent3d" class="cryo-plotly-graph-host"></div>
+        </div>
           <div id="latent3d-rendering-overlay"
             class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
             aria-hidden="false">
@@ -1092,9 +1282,10 @@
               </div>
             </div>
           </div>
-        </div>
       </div>
+{% if not show_landscape_vol_animations %}
     </div>
+{% endif %}
       <aside class="latent3d-color-legend-aside" aria-label="Colour covariate filter">
         <div id="latent3d-color-legend-panel" class="cryo-cc-legend" hidden aria-hidden="true"
           title="Covariate colours in the legend; filtering applies to the 3D view.">
@@ -1147,15 +1338,12 @@
         </div>
       </aside>
 {% if show_landscape_vol_animations %}
+    </div>
+  </div>
     <aside class="latent3d-volanim-aside" aria-label="Volume GIF animations">
       <div class="card volsketch-animate-card latent3d-volanim-card" id="l3dva-animate-panel">
-        <fieldset style="margin:0 0 0.65rem;">
-          <legend>Volume selection</legend>
-          <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Double-click a point to add or remove its nearest
-            k-means sketch volume. Use toggle or histogram selection to select volumes based on color covariates, or
-            choose volumes at random.</p>
-          <p id="l3dva-sel-summary" class="status" style="margin:0 0 0.35rem;" role="status" aria-live="polite">No k-means
-            volumes selected</p>
+        <div class="l3dva-display-col">
+          <p id="l3dva-sel-summary" class="status" role="status" aria-live="polite">No k-means volumes selected</p>
           <div class="volsketch-sel-indices-wrap">
             <details class="volsketch-sel-indices-details" id="l3dva-sel-indices-details" hidden>
               <summary class="volsketch-sel-indices-summary">
@@ -1167,28 +1355,27 @@
                 aria-label="Selected sketch volume indices"></ul>
             </details>
           </div>
-          <button type="button" class="btn" id="l3dva-clear-sel">Clear selection</button>
-        </fieldset>
-        <div class="volsketch-animate-status-row" aria-live="polite">
-          <span id="l3dva-animate-status" class="volsketch-animate-status-text"></span>
-          <div
-            id="l3dva-animate-progress"
-            class="cryo-plot-rendering-overlay__track"
-            role="progressbar"
-            aria-valuetext="Rendering GIFs"
-            hidden
-          >
-            <div class="cryo-plot-rendering-overlay__indeterminate"></div>
-          </div>
-        </div>
-        <div id="l3dva-preview-wrap" class="volsketch-preview-wrap" style="margin-top:0;">
-          <div id="l3dva-preview-grid" class="volsketch-preview-grid"></div>
-          <div id="l3dva-preview-anim-overlay" class="l3dva-preview-anim-overlay" aria-hidden="true">
-            <div class="l3dva-preview-anim-overlay__inner">
-              <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
-              <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading volume animations">
-                <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+          <div id="l3dva-preview-wrap" class="volsketch-preview-wrap" style="margin-top:0;">
+            <div id="l3dva-preview-grid" class="volsketch-preview-grid"></div>
+            <div id="l3dva-preview-anim-overlay" class="l3dva-preview-anim-overlay" aria-hidden="true">
+              <div class="l3dva-preview-anim-overlay__inner">
+                <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+                <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading volume animations">
+                  <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+                </div>
               </div>
+            </div>
+          </div>
+          <div class="volsketch-animate-status-row" aria-live="polite">
+            <span id="l3dva-animate-status" class="volsketch-animate-status-text"></span>
+            <div
+              id="l3dva-animate-progress"
+              class="cryo-plot-rendering-overlay__track"
+              role="progressbar"
+              aria-valuetext="Rendering GIFs"
+              hidden
+            >
+              <div class="cryo-plot-rendering-overlay__indeterminate"></div>
             </div>
           </div>
         </div>
@@ -1214,9 +1401,30 @@
             Degrees
             <input id="l3dva-view-rotate-angle" type="number" step="1" value="15" />
           </label>
-          <button type="button" class="btn" data-l3dva-view-axis="x">Rotate X</button>
-          <button type="button" class="btn" data-l3dva-view-axis="y">Rotate Y</button>
-          <button type="button" class="btn" data-l3dva-view-axis="z">Rotate Z</button>
+          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="x" title="Rotate view around the X axis">
+            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.42"/>
+              <path d="M15.2 6.2a6.2 6.2 0 0 0 0 11.6" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round"/>
+              <path d="M14.1 16.8l2.1 1.1-1.1-2.1" fill="currentColor" stroke="none"/>
+            </svg>
+            <span class="l3dva-view-rotate-btn__label">Rotate X</span>
+          </button>
+          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="y" title="Rotate view around the Y axis">
+            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.42"/>
+              <path d="M6.2 8.8a6.2 6.2 0 0 0 11.6 0" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round"/>
+              <path d="M16.8 9.9l1.1-2.1 2.1 1.1" fill="currentColor" stroke="none"/>
+            </svg>
+            <span class="l3dva-view-rotate-btn__label">Rotate Y</span>
+          </button>
+          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="z" title="Rotate view around the Z axis">
+            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="12" r="1.65" fill="currentColor" opacity="0.42"/>
+              <path d="M12 5.4a6.6 6.6 0 0 1 0 13.2a6.6 6.6 0 0 1-.1-13.2" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round"/>
+              <path d="M6.1 11.4l-1.8 1.8 2.5.4" fill="currentColor" stroke="none"/>
+            </svg>
+            <span class="l3dva-view-rotate-btn__label">Rotate Z</span>
+          </button>
         </div>
         <p id="l3dva-view-rotate-summary" class="volsketch-view-rotate-summary">ChimeraX view matrix: available after
           animation loads.</p>
@@ -1226,9 +1434,6 @@
           <button type="button" class="btn btn--primary" id="l3dva-save-gif" disabled>Save GIFs to k-means
             folder…</button>
         </div>
-        <button type="button" class="btn" id="l3dva-random-sel" style="margin-top:1rem;width:100%;" disabled>
-          Choose volumes at random
-        </button>
       </div>
     </aside>
 {% endif %}
@@ -1322,36 +1527,366 @@
   var latent3dPaletteToggle = document.getElementById("latent3d-palette-toggle");
   var latent3dPaletteOptions = document.getElementById("latent3d-palette-options");
   var latent3dColorHist = document.getElementById("latent3d-color-hist");
+{% if show_landscape_vol_animations %}
+  var latent3dLegendHistHeightScale = 0.8;
+  var latent3dLegendHistMinHeightPx = 58;
+{% else %}
+  var latent3dLegendHistHeightScale = 1;
+  var latent3dLegendHistMinHeightPx = 72;
+{% endif %}
   var controlsCard = document.getElementById("latent3d-controls-card");
   var controlsSide = controlsCard ? controlsCard.closest(".cryo-dash-side") : null;
   var plotStack = document.getElementById("latent3d-plot-stack");
   var P3S = window.CryoPlotlyScatter3dScene;
   var latent3dScatterLoadGen = 0;
   var lastLatent3dAxesKey = null;
-  /** Last scatter3d view with a usable ``camera.eye`` (orbit); updated on relayout / afterplot when idle. */
+  /** User orbit pin — only updated after pointer interaction, never from post-redraw snapshots. */
   var lastLatent3dPersistedSceneSnap = null;
+  /** Frozen pin for the current ``loadPlot``; re-applied until ``latent3dSceneHoldUntil``. */
+  var latent3dLoadScenePin = null;
+  var latent3dSceneHoldUntil = 0;
 
   function latent3dSceneSnapHasCamera(snap) {
+    if (P3S && typeof P3S.snapHasCamera === "function") return P3S.snapHasCamera(snap);
     if (!snap || !snap.camera || typeof snap.camera !== "object") return false;
     var eye = snap.camera.eye;
     return !!(eye && typeof eye === "object");
   }
 
-  function latent3dMaybePersistSceneFromPlot() {
-    requestAnimationFrame(function() {
+  function latent3dCloneScenePin(snap) {
+    if (P3S && typeof P3S.cloneSnap === "function") return P3S.cloneSnap(snap);
+    if (!latent3dSceneSnapHasCamera(snap)) return null;
+    return {
+      camera: JSON.parse(JSON.stringify(snap.camera)),
+      xrange: snap.xrange ? snap.xrange.slice() : snap.xrange,
+      yrange: snap.yrange ? snap.yrange.slice() : snap.yrange,
+      zrange: snap.zrange ? snap.zrange.slice() : snap.zrange,
+    };
+  }
+
+  function latent3dCommitScenePin(snap) {
+    var cloned = latent3dCloneScenePin(snap);
+    if (!cloned) return;
+    lastLatent3dPersistedSceneSnap = cloned;
+    if (P3S && typeof P3S.setPinnedSnap === "function") P3S.setPinnedSnap(gd, cloned);
+  }
+
+  function latent3dBeginSceneHold(pin, durationMs) {
+    var cloned = latent3dCloneScenePin(pin);
+    if (!cloned) return;
+    latent3dLoadScenePin = cloned;
+    latent3dSceneHoldUntil = Date.now() + (durationMs || 6000);
+    gd._cryoLatent3dLoadScenePin = cloned;
+    gd._cryoLatent3dSceneHoldUntil = latent3dSceneHoldUntil;
+  }
+
+  function latent3dExtendSceneHold(durationMs) {
+    if (!gd._cryoLatent3dLoadScenePin) return;
+    latent3dLoadScenePin = gd._cryoLatent3dLoadScenePin;
+    latent3dSceneHoldUntil = Date.now() + (durationMs || 5000);
+    gd._cryoLatent3dSceneHoldUntil = latent3dSceneHoldUntil;
+  }
+
+  function latent3dSceneHoldActive() {
+    var until = gd._cryoLatent3dSceneHoldUntil || latent3dSceneHoldUntil;
+    var pin = gd._cryoLatent3dLoadScenePin || latent3dLoadScenePin;
+    return !!(pin && Date.now() < until);
+  }
+
+  function latent3dRestoreLoadScenePin() {
+    var pin = gd._cryoLatent3dLoadScenePin || latent3dLoadScenePin;
+    if (!pin || !P3S || typeof P3S.restoreCameraOnly !== "function") {
+      return Promise.resolve();
+    }
+    return P3S.restoreCameraOnly(gd, pin).catch(function() {});
+  }
+
+  function latent3dGetScenePin() {
+    if (P3S && typeof P3S.getPinnedSnap === "function") {
+      var pinned = P3S.getPinnedSnap(gd);
+      if (latent3dSceneSnapHasCamera(pinned)) return pinned;
+    }
+    return latent3dSceneSnapHasCamera(lastLatent3dPersistedSceneSnap)
+      ? lastLatent3dPersistedSceneSnap
+      : null;
+  }
+
+  /** Live orbit on the graph div beats stored pin (first-load enforce can leave a stale default). */
+  function latent3dCaptureScenePinPreferLive() {
+    var live = null;
+    if (
+      P3S
+      && typeof P3S.snapshot === "function"
+      && gd
+      && gd._fullLayout
+      && gd._fullLayout.scene
+    ) {
       try {
-        if (overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
-        if (!P3S || typeof P3S.snapshot !== "function" || !gd._fullLayout || !gd._fullLayout.scene) return;
-        var s = P3S.snapshot(gd);
-        if (latent3dSceneSnapHasCamera(s)) lastLatent3dPersistedSceneSnap = s;
-      } catch (eRel) { /* ignore */ }
+        live = P3S.snapshot(gd);
+      } catch (eLive) { /* ignore */ }
+    }
+    if (latent3dSceneSnapHasCamera(live)) {
+      return live;
+    }
+    return latent3dGetScenePin();
+  }
+
+  var latent3dCameraWatchdogTimer = null;
+
+  function latent3dActiveScenePin() {
+    if (latent3dSceneHoldActive() && latent3dLoadScenePin) return latent3dLoadScenePin;
+    if (gd._cryoLatent3dLoadScenePin) return gd._cryoLatent3dLoadScenePin;
+    return latent3dGetScenePin();
+  }
+
+  function latent3dRelayoutIsUserCameraOrbit(ed) {
+    if (!ed || typeof ed !== "object") return false;
+    return Object.keys(ed).some(function(k) {
+      if (k === "scene.camera") return true;
+      return /^scene\.camera(\.|$)/i.test(k);
     });
   }
 
-  if (gd && typeof gd.on === "function") {
-    gd.on("plotly_relayout", latent3dMaybePersistSceneFromPlot);
-    gd.on("plotly_afterplot", latent3dMaybePersistSceneFromPlot);
+  function latent3dCameraWatchdog() {
+    if (P3S && typeof P3S.isRestoring === "function" && P3S.isRestoring(gd)) return;
+    var pin = latent3dActiveScenePin();
+    if (!pin || !P3S || typeof P3S.snapshot !== "function" || typeof P3S.cameraEyeDiffers !== "function") {
+      return;
+    }
+    if (!gd._fullLayout || !gd._fullLayout.scene) return;
+    var live = P3S.snapshot(gd);
+    if (!live || !P3S.cameraEyeDiffers(pin, live)) return;
+    if (
+      latent3dSceneHoldActive()
+      && overlay
+      && overlay.classList.contains("cryo-plot-rendering-overlay--show")
+    ) {
+      return;
+    }
+    if (latent3dSceneHoldActive()) {
+      P3S.restoreCameraOnly(gd, pin);
+      return;
+    }
+    if (latent3dCameraWatchdogTimer) clearTimeout(latent3dCameraWatchdogTimer);
+    latent3dCameraWatchdogTimer = setTimeout(function() {
+      latent3dCameraWatchdogTimer = null;
+      if (P3S.isRestoring(gd)) return;
+      var pin2 = latent3dActiveScenePin();
+      if (!pin2) return;
+      var live2 = P3S.snapshot(gd);
+      if (!live2 || !P3S.cameraEyeDiffers(pin2, live2)) return;
+      P3S.restoreCameraOnly(gd, pin2);
+    }, 0);
   }
+
+  function latent3dOnPlotlyRelayout(ed) {
+    if (latent3dRelayoutIsUserCameraOrbit(ed)) {
+      if (
+        !(P3S && typeof P3S.isRestoring === "function" && P3S.isRestoring(gd))
+        && !latent3dSceneHoldActive()
+      ) {
+        setTimeout(latent3dPersistSceneAfterUserOrbit, 40);
+      }
+      return;
+    }
+    latent3dCameraWatchdog();
+  }
+
+  function latent3dPlotlyConfig() {
+    var cfg = {
+      responsive: false,
+      modeBarButtonsToRemove: [
+        "lasso2d",
+        "select2d",
+        "lasso3d",
+        "select3d",
+        "selectCartesian",
+        "lassoCartesian",
+        "select",
+        "lasso",
+      ],
+    };
+    {% if show_landscape_vol_animations %}
+    cfg.doubleClick = false;
+    {% endif %}
+    return cfg;
+  }
+
+  function latent3dDisableSceneLasso() {
+    if (typeof Plotly === "undefined" || !Plotly.relayout) {
+      return Promise.resolve();
+    }
+    var patch = P3S && typeof P3S.disableSceneSelectionRelayoutPatch === "function"
+      ? P3S.disableSceneSelectionRelayoutPatch()
+      : { "scene.dragmode": "orbit", selections: [] };
+    return Plotly.relayout(gd, patch).catch(function() {});
+  }
+
+  function latent3dApplyFigurePreservingScene(fig, sceneSnap, sameAxes, hasColorFilter) {
+    var pin = latent3dCloneScenePin(sceneSnap) || sceneSnap;
+    var hasLivePlot = gd && gd.data && gd.data[0] && gd._fullLayout && gd._fullLayout.scene;
+
+    function finishRedraw() {
+      if (pin) return latent3dEnforceScenePin(pin);
+      return latent3dDisableSceneLasso();
+    }
+
+    if (sameAxes && hasLivePlot && P3S) {
+      var markerRestyle = pin
+        && typeof P3S.traceMarkerRestylePreservingCamera === "function"
+        ? function() {
+            return P3S.traceMarkerRestylePreservingCamera(fig, gd, pin);
+          }
+        : typeof P3S.traceRestyleFromFigure === "function"
+          ? function() {
+              return P3S.traceRestyleFromFigure(fig, gd);
+            }
+          : null;
+      if (markerRestyle) {
+        return markerRestyle().then(function(didMarkerOnly) {
+        if (didMarkerOnly) {
+          return finishRedraw();
+        }
+        if (typeof Plotly === "undefined" || !Plotly.restyle || !P3S.traceCoordsRestyleFromFigure) {
+          return finishRedraw();
+        }
+        var coordUpd = P3S.traceCoordsRestyleFromFigure(fig);
+        var pCoords = Plotly.restyle(gd, coordUpd, [0]);
+        var cCoords = pCoords && typeof pCoords.then === "function"
+          ? pCoords.catch(function() {})
+          : Promise.resolve();
+        if (!hasColorFilter || !pin || typeof Plotly.relayout !== "function") {
+          return cCoords.then(finishRedraw);
+        }
+        var axisPatch = typeof P3S.relayoutCameraAndAxisPatch === "function"
+          ? P3S.relayoutCameraAndAxisPatch(pin, fig.layout, true)
+          : P3S.sceneRelayoutPatchCameraOnly(pin);
+        return cCoords
+          .then(function() {
+            if (!axisPatch || !Object.keys(axisPatch).length) return;
+            return Plotly.relayout(gd, axisPatch).catch(function() {});
+          })
+          .then(finishRedraw);
+      });
+      }
+    }
+
+    if (pin && P3S) {
+      if (sameAxes && typeof P3S.applySnapshotCameraOnlyToFigureLayout === "function") {
+        P3S.applySnapshotCameraOnlyToFigureLayout(fig, pin);
+      } else if (typeof P3S.applySnapshotToFigureLayout === "function") {
+        P3S.applySnapshotToFigureLayout(fig, pin);
+      }
+    }
+    var pReact = Plotly.react(gd, fig.data, fig.layout, latent3dPlotlyConfig());
+    var chainR = pReact && typeof pReact.then === "function" ? pReact.catch(function() {}) : Promise.resolve();
+    return chainR.then(function() {
+      return latent3dDisableSceneLasso().then(finishRedraw);
+    });
+  }
+
+  /**
+   * After the loading overlay is removed, legend chrome and plot size change — resize then
+   * re-pin the camera (this is when users see the snap if we restore too early).
+   */
+  function latent3dStabilizeSceneAfterOverlay(pin, onDone) {
+    syncControlsAlignment();
+    syncLatent3dAsideLayout();
+    if (pin) latent3dExtendSceneHold(6000);
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        try {
+          Plotly.Plots.resize(gd);
+        } catch (eRsz0) { /* ignore */ }
+        if (!pin || !P3S) {
+          if (typeof onDone === "function") {
+            try { onDone(); } catch (eDone) { /* ignore */ }
+          }
+          return;
+        }
+        latent3dEnforceScenePin(pin, function() {
+          requestAnimationFrame(function() {
+            try {
+              Plotly.Plots.resize(gd);
+            } catch (eRsz1) { /* ignore */ }
+            latent3dEnforceScenePin(pin, function() {
+              setTimeout(function() {
+                try {
+                  Plotly.Plots.resize(gd);
+                } catch (eRsz2) { /* ignore */ }
+                latent3dEnforceScenePin(pin, onDone);
+              }, 120);
+            });
+          });
+        });
+      });
+    });
+  }
+
+  function latent3dEnforceScenePin(pin, onDone) {
+    if (!pin || !P3S) {
+      if (typeof onDone === "function") {
+        try { onDone(); } catch (eDone) { /* ignore */ }
+      }
+      return Promise.resolve();
+    }
+    if (typeof P3S.scheduleEnforceCamera === "function") {
+      return new Promise(function(res) {
+        P3S.scheduleEnforceCamera(gd, pin, function() {
+          if (typeof onDone === "function") {
+            try { onDone(); } catch (eDone) { /* ignore */ }
+          }
+          res();
+        });
+      });
+    }
+    if (typeof P3S.scheduleRestoreCameraOnly === "function") {
+      return new Promise(function(res) {
+        P3S.scheduleRestoreCameraOnly(gd, pin, function() {
+          latent3dCommitScenePin(pin);
+          if (typeof onDone === "function") {
+            try { onDone(); } catch (eDone) { /* ignore */ }
+          }
+          res();
+        });
+      });
+    }
+    return Promise.resolve();
+  }
+
+  function latent3dPersistSceneAfterUserOrbit() {
+    if (P3S && typeof P3S.isRestoring === "function" && P3S.isRestoring(gd)) return;
+    if (!P3S || typeof P3S.snapshot !== "function" || !gd._fullLayout || !gd._fullLayout.scene) return;
+    try {
+      var s = P3S.snapshot(gd);
+      if (latent3dSceneSnapHasCamera(s)) latent3dCommitScenePin(s);
+    } catch (eSnap) { /* ignore */ }
+  }
+
+  function latent3dOnPlotlyAfterplot() {
+    var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
+    if (latent3dSceneHoldActive() && !rendering) {
+      latent3dRestoreLoadScenePin();
+    }
+    latent3dCameraWatchdog();
+  }
+
+  if (gd) {
+    gd.addEventListener("pointerup", function() {
+      if (overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
+      setTimeout(latent3dPersistSceneAfterUserOrbit, 40);
+    }, true);
+    gd.addEventListener("mouseup", function() {
+      if (overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
+      setTimeout(latent3dPersistSceneAfterUserOrbit, 40);
+    }, true);
+    if (typeof gd.on === "function") {
+      gd.on("plotly_relayout", latent3dOnPlotlyRelayout);
+      gd.on("plotly_afterplot", latent3dOnPlotlyAfterplot);
+    }
+  }
+
+  var latent3dResizeRestoreTimer = null;
 
   function syncControlsAlignment() {
     if (!controlsCard || !controlsSide || !plotStack) return;
@@ -1418,11 +1953,13 @@
 
   function syncLatent3dPaletteFieldset() {
     if (!latent3dPaletteSelect) return;
-    var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
     var hasColor = sc.value && sc.value !== "none";
     var disc = document.getElementById("latent3d-color-discrete-wrap");
     var discreteVisible = !!(disc && !disc.hidden && disc.classList.contains("cryo-cc-discrete-wrap--show"));
-    var suppress = rendering || !hasColor || discreteVisible;
+    var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
+    // Keep palette hidden while rendering — revealing it when the overlay appears resizes chrome
+    // and resets the scatter3d camera (notably on first continuous covariate selection).
+    var suppress = !hasColor || discreteVisible || rendering;
     latent3dPaletteSelect.classList.toggle("latent3d-palette-select--hidden-during-plot-render", suppress);
     if (suppress) latent3dPaletteMenu.close();
     else latent3dPaletteMenu.sync();
@@ -1477,6 +2014,21 @@
     }
   }
 
+  function latent3dIsVolanimLayout() {
+    return !!document.querySelector(".cryo-dash-row--latent3d-volanim");
+  }
+
+  function syncLatent3dVolanimPlotGeometry() {
+    if (!latent3dIsVolanimLayout() || !gd) {
+      return;
+    }
+    try {
+      if (window.Plotly) {
+        window.Plotly.Plots.resize(gd);
+      }
+    } catch (e0) { /* ignore */ }
+  }
+
   function syncLatent3dHistVerticalMetrics() {
     var histEl = latent3dColorHist;
     if (!histEl || !histEl.classList.contains("cryo-cc-hist--pair-vertical")) {
@@ -1490,6 +2042,23 @@
     if (!wrap || wrap.hidden) {
       return;
     }
+    var minH = latent3dLegendHistMinHeightPx;
+    if (latent3dIsVolanimLayout()) {
+      histEl.style.maxWidth = "";
+      var track = histEl.closest(".pair-legend-middle-track--continuous");
+      var trackH = track && track.clientHeight > 0 ? track.clientHeight : 0;
+      var h = trackH > 0
+        ? Math.max(minH, Math.floor(trackH * latent3dLegendHistHeightScale))
+        : minH;
+      histEl.style.height = h + "px";
+      histEl.style.minHeight = minH + "px";
+      try {
+        if (window.Plotly && histEl.data && histEl.data.length) {
+          window.Plotly.Plots.resize(histEl);
+        }
+      } catch (e0) { /* ignore */ }
+      return;
+    }
     var vw = window.innerWidth || document.documentElement.clientWidth || 0;
     var vh = window.innerHeight || document.documentElement.clientHeight || 0;
     if (vw < 1 || vh < 1) {
@@ -1499,12 +2068,11 @@
     var rect = histEl.getBoundingClientRect();
     var targetBottom = vh * 0.9;
     var padding = 6;
-    var h = Math.floor(targetBottom - rect.top - padding);
-    var minH = 72;
+    var h = Math.floor((targetBottom - rect.top - padding) * latent3dLegendHistHeightScale);
     if (h < minH) {
       h = minH;
     }
-    var maxH = Math.floor(vh * 0.92);
+    var maxH = Math.floor(vh * 0.92 * latent3dLegendHistHeightScale);
     if (h > maxH) {
       h = maxH;
     }
@@ -1526,16 +2094,30 @@
   function syncLatent3dAsideLayout() {
     syncLatent3dLegendMiddleWidth();
     syncLatent3dHistVerticalMetrics();
+    syncLatent3dVolanimPlotGeometry();
     scheduleLatent3dLegendHeadingTitleFit();
   }
 
-  function setRendering(on) {
-    if (overlay) {
-      overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
-      overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
-      overlay.setAttribute("aria-hidden", on ? "false" : "true");
+  function setRendering(on, opts) {
+    opts = opts || {};
+    if (!overlay) {
+      syncLatent3dPaletteFieldset();
+      return Promise.resolve();
     }
+    if (!on) {
+      overlay.classList.remove("cryo-plot-rendering-overlay--show");
+      overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+      overlay.setAttribute("aria-hidden", "true");
+      syncLatent3dPaletteFieldset();
+      return Promise.resolve();
+    }
+    // Do not relayout the camera before showing the badge — a stale pin snaps the view back to
+    // the initial load orbit while the WebGL scene still shows the user's drag orientation.
+    overlay.classList.toggle("cryo-plot-rendering-overlay--nonblocking", !!opts.nonblocking);
+    overlay.classList.add("cryo-plot-rendering-overlay--show");
+    overlay.setAttribute("aria-hidden", "false");
     syncLatent3dPaletteFieldset();
+    return Promise.resolve();
   }
 
   function selectedLatentPalette() {
@@ -1572,6 +2154,9 @@
     vertical: true,
     histPlotVertical: true,
     histVerticalMargins: { l: 16, r: 36 },
+{% if show_landscape_vol_animations %}
+    histTickFontSize: 18,
+{% endif %}
     onContinuousHistogramLayout: syncLatent3dContinuousHistogramLayout,
     onDiscreteLayout: syncLatent3dLegendMiddleWidth,
     onModeChange: function() {
@@ -1643,28 +2228,24 @@
     );
     if (typeof lastLatent3dAxesKey === "string" && lastLatent3dAxesKey !== axesKey) {
       lastLatent3dPersistedSceneSnap = null;
+      latent3dLoadScenePin = null;
+      latent3dSceneHoldUntil = 0;
+      gd._cryoLatent3dLoadScenePin = null;
+      gd._cryoLatent3dSceneHoldUntil = 0;
+      gd._cryoLatent3dScenePin = null;
     }
-    var sceneSnap = null;
-    if (
-      P3S && typeof P3S.snapshot === "function"
-      && gd && gd._fullLayout && gd._fullLayout.scene
-      && typeof lastLatent3dAxesKey === "string"
-      && lastLatent3dAxesKey === axesKey
-    ) {
-      var liveSnap = P3S.snapshot(gd);
-      sceneSnap = liveSnap;
-      if (
-        sceneSnap
-        && !latent3dSceneSnapHasCamera(sceneSnap)
-        && lastLatent3dPersistedSceneSnap
-        && latent3dSceneSnapHasCamera(lastLatent3dPersistedSceneSnap)
-      ) {
-        sceneSnap = {
-          camera: lastLatent3dPersistedSceneSnap.camera,
-          xrange: (liveSnap && liveSnap.xrange) || lastLatent3dPersistedSceneSnap.xrange,
-          yrange: (liveSnap && liveSnap.yrange) || lastLatent3dPersistedSceneSnap.yrange,
-          zrange: (liveSnap && liveSnap.zrange) || lastLatent3dPersistedSceneSnap.zrange,
-        };
+    var sceneSnap;
+    if (latent3dSceneHoldActive() && latent3dLoadScenePin) {
+      sceneSnap = latent3dLoadScenePin;
+    } else {
+      sceneSnap = latent3dCaptureScenePinPreferLive();
+      if (latent3dSceneSnapHasCamera(sceneSnap)) {
+        latent3dCommitScenePin(sceneSnap);
+        latent3dBeginSceneHold(sceneSnap, 12000);
+        sceneSnap = latent3dLoadScenePin;
+      } else {
+        latent3dLoadScenePin = null;
+        latent3dSceneHoldUntil = 0;
       }
     }
     var st = document.getElementById("z3-axis-status");
@@ -1675,8 +2256,14 @@
     }
     var myGen = ++latent3dScatterLoadGen;
     if (st) st.textContent = "";
-    setRendering(true);
     var payload = buildLatent3dPostPayload({});
+    var hasColorFilter = !!(payload.color_filter);
+    var useNonblockingOverlay = !!(
+      latent3dSameAxesAsLast
+      && sceneSnap
+      && latent3dSceneSnapHasCamera(sceneSnap)
+    );
+    return setRendering(true, { nonblocking: useNonblockingOverlay }).then(function() {
     return new Promise(function(resolve, reject) {
       requestAnimationFrame(function() {
         requestAnimationFrame(function() {
@@ -1698,68 +2285,15 @@
               if (myGen !== latent3dScatterLoadGen) {
                 return Promise.resolve();
               }
-              if (sceneSnap && P3S) {
-                if (
-                  latent3dSameAxesAsLast
-                  && typeof P3S.applySnapshotCameraOnlyToFigureLayout === "function"
-                ) {
-                  P3S.applySnapshotCameraOnlyToFigureLayout(fig, sceneSnap);
-                } else if (typeof P3S.applySnapshotToFigureLayout === "function") {
-                  P3S.applySnapshotToFigureLayout(fig, sceneSnap);
-                }
-              }
-              var pReact = Plotly.react(gd, fig.data, fig.layout, {
-                responsive: true,
-                {% if show_landscape_vol_animations %}
-                doubleClick: false,
-                {% endif %}
-              });
-              var chainR = pReact && typeof pReact.then === "function"
-                ? pReact.catch(function() {})
-                : Promise.resolve();
-              return chainR.then(function() {
+              return latent3dApplyFigurePreservingScene(
+                fig,
+                sceneSnap,
+                latent3dSameAxesAsLast,
+                hasColorFilter
+              ).then(function() {
                 if (myGen !== latent3dScatterLoadGen) {
                   return;
                 }
-                var pSel = Promise.resolve();
-                if (latent3dVolAnimApi
-                    && typeof latent3dVolAnimApi.reapplySelectionHighlightIfNeeded === "function") {
-                  pSel = latent3dVolAnimApi.reapplySelectionHighlightIfNeeded();
-                }
-                var cSel = pSel && typeof pSel.then === "function"
-                  ? pSel.catch(function() {})
-                  : Promise.resolve();
-                return cSel.then(function() {
-                if (myGen !== latent3dScatterLoadGen) {
-                  return;
-                }
-                if (!sceneSnap || !P3S) {
-                  return;
-                }
-                var pImm = latent3dSameAxesAsLast
-                    && typeof P3S.restoreCameraOnly === "function"
-                  ? P3S.restoreCameraOnly(gd, sceneSnap)
-                  : (typeof P3S.restore === "function" ? P3S.restore(gd, sceneSnap) : null);
-                var cImm = pImm && typeof pImm.then === "function"
-                  ? pImm.catch(function() {})
-                  : Promise.resolve();
-                return cImm.then(function() {
-                  if (myGen !== latent3dScatterLoadGen) {
-                    return;
-                  }
-                  if (latent3dSameAxesAsLast
-                      && typeof P3S.scheduleRestoreCameraOnly === "function") {
-                    return new Promise(function(res) {
-                      P3S.scheduleRestoreCameraOnly(gd, sceneSnap, res);
-                    });
-                  }
-                  if (typeof P3S.scheduleRestore === "function") {
-                    return new Promise(function(res) {
-                      P3S.scheduleRestore(gd, sceneSnap, res);
-                    });
-                  }
-                });
-                });
               });
             })
             .then(function() {
@@ -1769,9 +2303,6 @@
               lastLatent3dAxesKey = axesKey;
               syncControlsAlignment();
               requestAnimationFrame(function() {
-                try {
-                  Plotly.Plots.resize(gd);
-                } catch (e) {}
                 function runLatent3dPostResizeTail() {
                   syncLatent3dAsideLayout();
                   // ``refresh`` returns a Promise (histogram fetch / Plotly draw). If we run the
@@ -1797,55 +2328,37 @@
                         latent3dNeedVolAnimColorRefresh = false;
                         latent3dVolAnimApi.onColorOrPaletteChanged();
                       }
-                      if (latent3dVolAnimApi && typeof latent3dVolAnimApi.afterPlotRedraw === "function") {
-                        latent3dVolAnimApi.afterPlotRedraw();
-                      }
-                      function latent3dFinishScatterLoadPromise() {
-                        try {
-                          if (
-                            P3S && typeof P3S.snapshot === "function"
-                            && gd && gd._fullLayout && gd._fullLayout.scene
-                          ) {
-                            var sPost = P3S.snapshot(gd);
-                            if (latent3dSceneSnapHasCamera(sPost)) {
-                              lastLatent3dPersistedSceneSnap = sPost;
-                            }
-                          }
-                        } catch (ePost) { /* ignore */ }
-                        if (myGen === latent3dScatterLoadGen) {
-                          setRendering(false);
-                        }
+                      if (myGen !== latent3dScatterLoadGen) {
                         resolve();
+                        return;
                       }
-                      if (sceneSnap && P3S) {
-                        if (latent3dSameAxesAsLast
-                            && typeof P3S.scheduleRestoreCameraOnly === "function") {
-                          P3S.scheduleRestoreCameraOnly(gd, sceneSnap, latent3dFinishScatterLoadPromise);
-                        } else if (typeof P3S.scheduleRestore === "function") {
-                          P3S.scheduleRestore(gd, sceneSnap, latent3dFinishScatterLoadPromise);
-                        } else {
-                          latent3dFinishScatterLoadPromise();
+                      var finishPin = latent3dLoadScenePin
+                        || sceneSnap
+                        || latent3dCaptureScenePinPreferLive();
+                      setRendering(false);
+                      latent3dStabilizeSceneAfterOverlay(finishPin, function() {
+                        if (myGen !== latent3dScatterLoadGen) {
+                          resolve();
+                          return;
                         }
-                      } else {
-                        latent3dFinishScatterLoadPromise();
-                      }
+                        var pAfter = Promise.resolve();
+                        if (latent3dVolAnimApi
+                            && typeof latent3dVolAnimApi.afterPlotRedraw === "function") {
+                          pAfter = latent3dVolAnimApi.afterPlotRedraw();
+                        }
+                        var cAfter = pAfter && typeof pAfter.then === "function"
+                          ? pAfter.catch(function() {})
+                          : Promise.resolve();
+                        cAfter.then(function() {
+                          if (myGen === latent3dScatterLoadGen) {
+                            resolve();
+                          }
+                        });
+                      });
                     });
                   });
                 }
-                if (sceneSnap && P3S) {
-                  var prs = latent3dSameAxesAsLast
-                      && typeof P3S.restoreCameraOnly === "function"
-                    ? P3S.restoreCameraOnly(gd, sceneSnap)
-                    : (typeof P3S.restore === "function" ? P3S.restore(gd, sceneSnap) : null);
-                  var crs = prs && typeof prs.then === "function"
-                    ? prs.catch(function() {})
-                    : Promise.resolve();
-                  crs.then(function() {
-                    requestAnimationFrame(runLatent3dPostResizeTail);
-                  });
-                } else {
-                  requestAnimationFrame(runLatent3dPostResizeTail);
-                }
+                requestAnimationFrame(runLatent3dPostResizeTail);
               });
             })
             .catch(function(e) {
@@ -1859,6 +2372,7 @@
             });
         });
       });
+    });
     });
   }
 
@@ -1888,12 +2402,15 @@
   sc.addEventListener("change", function() {
     latent3dNeedVolAnimColorRefresh = true;
     latent3dDiscreteColorOverrides = {};
-    latent3dColorLegend.refresh({
-      suppressNotify: true,
-      afterLayout: function() {
-        loadPlot();
-      }
-    });
+    latent3dPersistSceneAfterUserOrbit();
+    var preLegendPin = latent3dCaptureScenePinPreferLive();
+    if (latent3dSceneSnapHasCamera(preLegendPin)) {
+      latent3dCommitScenePin(preLegendPin);
+      latent3dBeginSceneHold(preLegendPin, 12000);
+    }
+    // Legend layout runs once in ``loadPlot``'s post-resize tail — refreshing here resizes the
+    // aside before the pin is applied and resets the scatter3d camera to the initial load view.
+    loadPlot();
   });
   document.querySelectorAll("input[name=\"latent3d_palette\"]").forEach(function(inp) {
     inp.addEventListener("change", function() {
@@ -1908,6 +2425,8 @@
     try {
       Plotly.Plots.resize(gd);
     } catch (e) {}
+    var pin = latent3dGetScenePin();
+    if (pin) latent3dEnforceScenePin(pin);
   });
   if (window.ResizeObserver) {
     var panelEl = document.getElementById("latent3d-color-legend-panel");
@@ -1922,6 +2441,15 @@
     var latent3dPlotStackObserver = new ResizeObserver(function() {
       syncControlsAlignment();
       syncLatent3dAsideLayout();
+      syncLatent3dVolanimPlotGeometry();
+      if (overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
+      var pin = latent3dLoadScenePin || latent3dGetScenePin();
+      if (!pin) return;
+      if (latent3dResizeRestoreTimer) clearTimeout(latent3dResizeRestoreTimer);
+      latent3dResizeRestoreTimer = setTimeout(function() {
+        latent3dResizeRestoreTimer = null;
+        latent3dEnforceScenePin(pin);
+      }, 80);
     });
     latent3dPlotStackObserver.observe(plotStack);
   }

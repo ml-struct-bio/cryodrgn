@@ -351,8 +351,8 @@ def scatter3d_z_json(
         msize *= (1.0 - 0.31) * (1.0 - 0.13) * (1.0 - 0.13) * 0.8
     msize, mopacity = _dashboard_scatter3d_glyph_visual_scale(msize, mopacity)
     if volume_landscape_3d_style:
-        # ~13% larger points, and ~19% more transparent glyphs.
-        msize *= 1.13
+        # ~13% larger points, then +73% radius vs pre-landscape baseline (three +20% steps); ~19% more transparent.
+        msize *= 1.13 * 1.728 * 1.11
         mopacity = float(max(0.0, min(1.0, mopacity * 0.81)))
 
     discrete_trace = (
@@ -578,6 +578,7 @@ def scatter3d_z_json(
     scene_kw: dict[str, Any] = dict(
         aspectmode="data",
         bgcolor="rgba(250,248,244,0.95)",
+        dragmode="orbit",
     )
     if volume_landscape_3d_style:
         # Reference tick size 12px → +33%; layout font → +20% for titles (bold).

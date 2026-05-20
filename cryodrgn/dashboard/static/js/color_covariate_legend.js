@@ -114,6 +114,7 @@
     this.vertical = opts.vertical !== false;
     this.histPlotVertical = opts.histPlotVertical === true;
     this.histVerticalMargins = opts.histVerticalMargins || null;
+    this.histTickFontSize = opts.histTickFontSize != null ? Number(opts.histTickFontSize) : 9;
     this.getDiscreteColorOverrides = opts.getDiscreteColorOverrides || null;
     this.enableDiscreteColorPicker = opts.enableDiscreteColorPicker !== false;
     this.onDiscreteColorChange = opts.onDiscreteColorChange || null;
@@ -640,7 +641,7 @@
           showgrid: true,
           zeroline: false,
           fixedrange: true,
-          tickfont: { size: 9, color: "#243b53" }
+          tickfont: { size: this.histTickFontSize, color: "#243b53" }
         },
         showlegend: false,
         hovermode: false
@@ -657,7 +658,7 @@
           showgrid: true,
           zeroline: false,
           fixedrange: true,
-          tickfont: { size: 9, color: "#243b53" }
+          tickfont: { size: this.histTickFontSize, color: "#243b53" }
         },
         yaxis: {
           visible: false,

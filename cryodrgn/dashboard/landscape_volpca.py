@@ -17,11 +17,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.colors import sample_colorscale
-
 from cryodrgn import utils
 from cryodrgn.dashboard.covariate_labels import covariate_display_name
 from cryodrgn.dashboard.data import DashboardExperiment
+from cryodrgn.dashboard.plots_color_covariate import numeric_array_to_plotly_hex
 from cryodrgn.dashboard.particle_explorer import (
     ChimeraxViewTurn,
     DEFAULT_CHIMERAX_PARALLEL,
@@ -35,6 +34,7 @@ from cryodrgn.dashboard.plots_color_covariate import (
     _labels_colors_and_legend_items,
     _lower_legend_entry_label,
 )
+from cryodrgn.dashboard.plots_color_covariate import _continuous_series_stats
 from cryodrgn.dashboard.plots_figure_utils import (
     _DASHBOARD_CREAM,
     _PLOTLY_FONT,
@@ -330,27 +330,6 @@ def parse_landscape_axis_spec(spec: str) -> tuple[str, int]:
     return (kind, idx)
 
 
-def _numeric_array_to_plotly_hex(vals: np.ndarray, plotly_cs: str) -> list[str]:
-    """Map finite floats through a Plotly colorscale name; NaN → neutral gray."""
-    vals = np.asarray(vals, dtype=float)
-    n = int(vals.shape[0])
-    finite = np.isfinite(vals)
-    if not finite.any():
-        return ["#9ca3af"] * n
-    vmin = float(np.nanmin(vals))
-    vmax = float(np.nanmax(vals))
-    span = vmax - vmin
-    out: list[str] = []
-    for i in range(n):
-        if not finite[i]:
-            out.append("#9ca3af")
-            continue
-        t = 0.5 if span <= 0 else (float(vals[i]) - vmin) / span
-        t = max(0.0, min(1.0, t))
-        out.append(sample_colorscale(plotly_cs, [t])[0])
-    return out
-
-
 def sketch_vol_marker_hex_by_vol_index(
     landscape_dir: str,
     exp: DashboardExperiment,
@@ -397,7 +376,7 @@ def sketch_vol_marker_hex_by_vol_index(
             colors, _ = _labels_colors_and_legend_items(ser)
             return {int(vol_ids[i]): str(colors[i]) for i in range(n)}
         color_num = pd.to_numeric(ser, errors="coerce")
-        hexes = _numeric_array_to_plotly_hex(
+        hexes = numeric_array_to_plotly_hex(
             color_num.to_numpy(dtype=float),
             plotly_cs,
         )
@@ -459,6 +438,85 @@ def sketch_vol_color_covariate_overlay_text(
         return f"{fv:.6g}"
 
     return None
+
+
+def _plot_color_mode_is_continuous_numeric(exp: DashboardExperiment, pcm: str) -> bool:
+    pcm = (pcm or "none").strip().lower()
+    return bool(
+        pcm not in ("none", "state", "labels")
+        and pcm in exp.plot_df.columns
+        and pcm in exp.numeric_columns
+    )
+
+
+def sketch_vol_rotate_frames_covariate_overlay(
+    exp: DashboardExperiment,
+    landscape_dir: str,
+    kmeans_dir: str,
+    k_sketch: int,
+    plot_color_mode: str,
+    vol_index: int,
+    gif_frames: int,
+    continuous_palette: str | None,
+) -> dict[str, Any] | None:
+    """Per-frame covariate text + palette hex for rotate-each GIF previews (continuous colour only)."""
+    pcm = (plot_color_mode or "none").strip().lower()
+    if not _plot_color_mode_is_continuous_numeric(exp, pcm):
+        return None
+
+    from cryodrgn.dashboard.landscape_full_3d import (
+        VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
+        attach_landscape_nearest_sketch_vol_column,
+    )
+
+    df = exp.plot_df
+    if VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in df.columns:
+        df = attach_landscape_nearest_sketch_vol_column(exp, df)
+    if VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in df.columns:
+        return None
+
+    mask = df[VOL_LANDSCAPE_NEAREST_SKETCH_VOL].to_numpy(dtype=np.int64) == int(
+        vol_index
+    )
+    if not mask.any():
+        return None
+    ser = pd.to_numeric(df.loc[mask, pcm], errors="coerce").dropna()
+    if ser.empty:
+        return None
+
+    plotly_cs = normalize_continuous_palette(continuous_palette)
+    _, cmin, cmax = _continuous_series_stats(exp.plot_df[pcm])
+    sorted_vals = np.sort(ser.to_numpy(dtype=float))
+    n = int(sorted_vals.shape[0])
+    gif_frames = max(4, int(gif_frames))
+    texts: list[str] = []
+    bgs: list[str] = []
+    for i in range(gif_frames):
+        idx = min(n - 1, int(i * n / gif_frames))
+        fv = float(sorted_vals[idx])
+        texts.append(f"{fv:.6g}")
+        bgs.append(
+            numeric_array_to_plotly_hex(
+                np.array([fv], dtype=float),
+                plotly_cs,
+                vmin=cmin,
+                vmax=cmax,
+            )[0]
+        )
+    from cryodrgn.dashboard.particle_explorer import GIF_DURATION_S
+
+    frame_ms = max(20, int(GIF_DURATION_S * 1000 / gif_frames))
+    out: dict[str, Any] = {
+        "style": "rotate_frames",
+        "frame_covariate_texts": texts,
+        "frame_badge_backgrounds": bgs,
+        "frame_duration_ms": frame_ms,
+        "total_frames": gif_frames,
+    }
+    vlab = sketch_plot_color_covariate_variable_label(pcm)
+    if vlab:
+        out["covariate_variable_label"] = vlab
+    return out
 
 
 def landscape_volpca_scatter_figure(
@@ -874,14 +932,38 @@ def generate_landscape_volume_animations(
         )
         if not s:
             return {}
+        cov_bg = _label_hex(int(vol)) if pcm != "none" else ""
         out: dict[str, Any] = {
             "covariate_text": s,
-            "covariate_badge_background": _label_hex(int(vol)),
+            "covariate_badge_background": cov_bg,
         }
         vlab = sketch_plot_color_covariate_variable_label(pcm)
         if vlab:
             out["covariate_variable_label"] = vlab
         return out
+
+    def _rotate_each_preview_overlay(vol: int) -> dict[str, Any]:
+        rot = sketch_vol_rotate_frames_covariate_overlay(
+            exp,
+            landscape_dir,
+            kmeans_dir,
+            k_sketch,
+            pcm,
+            int(vol),
+            gif_frames,
+            continuous_palette,
+        )
+        if rot:
+            rot["text"] = label_for_vol[int(vol)]
+            rot["badge_background"] = _label_hex(int(vol))
+            return rot
+        overlay: dict[str, Any] = {
+            "style": "static",
+            "text": label_for_vol[int(vol)],
+            "badge_background": _label_hex(int(vol)),
+        }
+        overlay.update(_cov_preview_fields(int(vol)))
+        return overlay
 
     rng = random.Random()
     rot_vols: list[int] = []
@@ -926,12 +1008,28 @@ def generate_landscape_volume_animations(
         for v in rot_vols:
             mp = vol_mrc_path(kmeans_dir, v)
             out_gif = os.path.join(job_dir, f"vol_{v:03d}_rotate.gif")
+            rot_overlay = sketch_vol_rotate_frames_covariate_overlay(
+                exp,
+                landscape_dir,
+                kmeans_dir,
+                k_sketch,
+                pcm,
+                int(v),
+                gif_frames,
+                continuous_palette,
+            )
+            frame_volume_colors = (
+                list(rot_overlay["frame_badge_backgrounds"])
+                if rot_overlay and rot_overlay.get("frame_badge_backgrounds")
+                else None
+            )
             vm = mrc_to_rotating_gif(
                 mp,
                 out_gif,
                 gif_frames=gif_frames,
                 ncpus=chimerax_cpus,
                 volume_color=_vol_chimerax_color(v),
+                volume_colors=frame_volume_colors,
                 view_turns=view_turns,
                 report_view_matrix=view_matrix_text is None,
             )
@@ -947,12 +1045,7 @@ def generate_landscape_volume_animations(
                     "filename": os.path.basename(out_gif),
                     "path": out_gif,
                     "label": label_for_vol[int(v)],
-                    "preview_overlay": {
-                        "style": "static",
-                        "text": label_for_vol[int(v)],
-                        "badge_background": _label_hex(int(v)),
-                        **_cov_preview_fields(int(v)),
-                    },
+                    "preview_overlay": _rotate_each_preview_overlay(int(v)),
                 }
             )
 
@@ -1047,6 +1140,10 @@ def generate_landscape_volume_animations(
                         or ""
                         for vx in cyc_vols
                     ]
+                    if _plot_color_mode_is_continuous_numeric(exp, pcm):
+                        cyc_preview["segment_covariate_backgrounds"] = [
+                            _label_hex(int(vx)) for vx in cyc_vols
+                        ]
                     vlab_c = sketch_plot_color_covariate_variable_label(pcm)
                     if vlab_c:
                         cyc_preview["covariate_variable_label"] = vlab_c

@@ -56,8 +56,10 @@ def _sketch_centers_ind_for_epoch(workdir: str, epoch: int) -> np.ndarray | None
 
 
 LANDSCAPE_FULL_3D_LEAD_HTML = (
-    '<p class="cryo-dash-lead">Use the interface on the right '
-    "to animate volumes chosen from the 3D plot.</p>"
+    '<p class="cryo-dash-lead">Double-click a point to add or remove the nearest '
+    "k-means sketch volume to the animation, or choose volumes to animate at random."
+    "<br /><br />"
+    "Use toggle or histogram selection to filter volumes based on color covariates.</p>"
 )
 
 LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA: dict[str, str] = {

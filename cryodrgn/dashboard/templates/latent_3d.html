@@ -66,17 +66,18 @@
 {% if show_landscape_vol_animations %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/landscape_volpca.css') }}"/>
 <style>
-  /* Controls | plot+legend band | volume panel — legend centred in the band’s right gap. */
+  /* Controls | plot+legend band | volume panel — plot centred before the legend column. */
   .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-volanim {
     grid-template-columns:
-      minmax(12.75rem, 19rem)
+      minmax(8.60625rem, 12.825rem)
       minmax(0, 1fr)
       minmax(11.5rem, 22rem);
+    column-gap: 0;
     align-items: stretch;
     width: 100%;
     max-width: none;
-    height: calc(100svh - var(--cryo-dash-below-nav-tall));
-    min-height: calc(100svh - var(--cryo-dash-below-nav-tall));
+    height: calc((100svh - var(--cryo-dash-below-nav-tall)) * 1.1);
+    min-height: calc((100svh - var(--cryo-dash-below-nav-tall)) * 1.1);
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-side,
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-main,
@@ -86,7 +87,8 @@
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-side {
     width: auto;
-    max-width: 19rem;
+    min-width: 0;
+    max-width: 12.825rem;
     justify-self: start;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-main {
@@ -100,11 +102,12 @@
     max-width: 22rem;
     justify-self: end;
     align-items: flex-end;
+    margin-left: 1.5rem;
     padding-right: 0;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 9.25rem);
     grid-template-rows: minmax(0, 1fr);
     align-items: start;
     width: 100%;
@@ -113,9 +116,10 @@
     box-sizing: border-box;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band .cryo-dash-viewport--plotly {
-    grid-column: 2;
+    grid-column: 1;
     grid-row: 1;
-    --latent3d-volanim-plot-side: calc(100svh - var(--cryo-dash-below-nav-tall));
+    justify-self: center;
+    --latent3d-volanim-plot-side: calc((100svh - var(--cryo-dash-below-nav-tall)) * 1.1);
     flex: 0 0 auto;
     width: min(100%, var(--latent3d-volanim-plot-side));
     height: min(100%, var(--latent3d-volanim-plot-side));
@@ -130,9 +134,9 @@
     width: 100%;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band > .latent3d-color-legend-aside {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1;
-    justify-self: center;
+    justify-self: end;
     align-self: start;
     width: auto;
     max-width: min(9.25rem, 100%);
@@ -165,16 +169,40 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    align-items: flex-end;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim
     .pair-legend-middle-track--continuous #latent3d-color-hist,
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim
     #latent3d-color-hist.cryo-cc-hist--pair-vertical {
-    width: 100%;
+    width: 92%;
     max-width: 100%;
+    align-self: flex-end;
+    margin-left: auto;
+    margin-right: 0;
     flex: 1 1 auto;
     min-height: 58px;
     height: auto;
+    box-sizing: border-box;
+  }
+  /* Discrete toggles stay in the narrow legend rail — do not size from plot stack width. */
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    max-height: min(50vh, calc((100svh - var(--cryo-dash-below-nav-tall)) * 1.1));
+    overflow: hidden;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-discrete-switches--pair-2col {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px 0;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 1.35rem;
   }
   @media (max-width: 900px) {
     .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-legend #latent3d-color-hist {
@@ -442,7 +470,7 @@
     top: 0.28rem;
     left: 0.28rem;
     z-index: 1;
-    font-size: clamp(0.936rem, 2.88vw, 1.224rem);
+    font-size: clamp(1.685rem, 5.18vw, 2.203rem);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: #1a1a1a;
@@ -457,6 +485,18 @@
       0 1px 1px rgba(255, 255, 255, 0.5),
       0 1px 2px rgba(0, 0, 0, 0.07);
   }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--circle-chip:not(.volsketch-gif-overlay--cov) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.38em;
+    height: 1.38em;
+    min-width: 1.38em;
+    padding: 0;
+    border-radius: 50%;
+    line-height: 1;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
   .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--on-tint {
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.32),
@@ -466,6 +506,20 @@
       0 0 1px rgba(255, 255, 255, 0.85),
       0 1px 2px rgba(255, 255, 255, 0.45),
       0 2px 3px rgba(0, 0, 0, 0.12);
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--circle-chip.volsketch-gif-overlay--on-tint:not(.volsketch-gif-overlay--cov) {
+    text-shadow:
+      0 0 1px rgba(255, 255, 255, 0.85),
+      0 1px 2px rgba(255, 255, 255, 0.45),
+      0 2px 3px rgba(0, 0, 0, 0.12);
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--letter-cov-glyph:not(.volsketch-gif-overlay--cov) {
+    padding: 0.1rem 0.22rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.86);
+    text-shadow:
+      0 0 2px rgba(255, 255, 255, 0.75),
+      0 1px 2px rgba(0, 0, 0, 0.1);
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay[hidden] {
     display: none !important;
@@ -969,9 +1023,9 @@
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(var(--cryo-discrete-col-w, 5.5rem), 1fr));
     grid-auto-rows: minmax(1.3rem, auto);
-    gap: 1px 2px;
+    gap: 2px 3px;
     align-items: stretch;
     padding-right: 0;
     /* --cryo-discrete-legend-w set from JS as 90% of 3D plot stack width */
@@ -983,9 +1037,10 @@
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
     min-height: 1.2rem;
-    height: 100%;
+    height: auto;
     box-sizing: border-box;
     min-width: 0;
+    width: 100%;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-cell {
     padding: 0;
@@ -1001,35 +1056,33 @@
     box-sizing: border-box;
     min-width: 0;
   }
-  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-label {
-    font-weight: 600;
-    font-size: 0.6rem;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-count {
-    font-size: 0.52rem;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch-text {
     display: flex;
     flex-direction: column;
     gap: 1px;
     min-width: 0;
+    flex: 1 1 auto;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch-label {
     font-weight: 600;
+    font-size: 0.6rem;
+    line-height: 1.15;
     color: var(--nav-bg, #243b53);
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
     word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch-count {
-    font-size: 0.6rem;
+    font-size: 0.52rem;
+    line-height: 1.12;
     color: var(--muted, #5c6b7a);
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switch input[type="checkbox"] {
     margin: 0 0.35rem 0 0;
@@ -1634,7 +1687,25 @@
   var latent3dCameraWatchdogTimer = null;
 
   function latent3dActiveScenePin() {
-    if (latent3dSceneHoldActive() && latent3dLoadScenePin) return latent3dLoadScenePin;
+    if (latent3dSceneHoldActive()) {
+      var loadPin = gd._cryoLatent3dLoadScenePin || latent3dLoadScenePin;
+      var pinned = null;
+      if (P3S && typeof P3S.getPinnedSnap === "function") {
+        pinned = P3S.getPinnedSnap(gd);
+      }
+      if (pinned && latent3dSceneSnapHasCamera(pinned)) {
+        if (
+          !loadPin
+          || !latent3dSceneSnapHasCamera(loadPin)
+          || !P3S
+          || typeof P3S.cameraEyeDiffers !== "function"
+          || P3S.cameraEyeDiffers(loadPin, pinned)
+        ) {
+          return pinned;
+        }
+      }
+      if (loadPin && latent3dSceneSnapHasCamera(loadPin)) return loadPin;
+    }
     if (gd._cryoLatent3dLoadScenePin) return gd._cryoLatent3dLoadScenePin;
     return latent3dGetScenePin();
   }
@@ -1859,14 +1930,39 @@
     if (!P3S || typeof P3S.snapshot !== "function" || !gd._fullLayout || !gd._fullLayout.scene) return;
     try {
       var s = P3S.snapshot(gd);
-      if (latent3dSceneSnapHasCamera(s)) latent3dCommitScenePin(s);
+      if (!latent3dSceneSnapHasCamera(s)) return;
+      latent3dCommitScenePin(s);
+      if (latent3dSceneHoldActive()) {
+        var holdPin = latent3dCloneScenePin(s);
+        if (holdPin) {
+          latent3dLoadScenePin = holdPin;
+          gd._cryoLatent3dLoadScenePin = holdPin;
+        }
+      }
     } catch (eSnap) { /* ignore */ }
   }
 
   function latent3dOnPlotlyAfterplot() {
     var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
     if (latent3dSceneHoldActive() && !rendering) {
-      latent3dRestoreLoadScenePin();
+      var loadPin = gd._cryoLatent3dLoadScenePin || latent3dLoadScenePin;
+      var liveAfter = null;
+      try {
+        if (P3S && typeof P3S.snapshot === "function") liveAfter = P3S.snapshot(gd);
+      } catch (eAp) { /* ignore */ }
+      if (
+        liveAfter
+        && latent3dSceneSnapHasCamera(liveAfter)
+        && loadPin
+        && latent3dSceneSnapHasCamera(loadPin)
+        && P3S
+        && typeof P3S.cameraEyeDiffers === "function"
+        && P3S.cameraEyeDiffers(loadPin, liveAfter)
+      ) {
+        /* User orbited during scene hold (e.g. while ChimeraX GIFs render) — keep live view. */
+      } else {
+        latent3dRestoreLoadScenePin();
+      }
     }
     latent3dCameraWatchdog();
   }
@@ -1976,12 +2072,16 @@
     var showDiscrete =
       disc && !disc.hidden && disc.classList.contains("cryo-cc-discrete-wrap--show");
     if (showDiscrete) {
-      var pw = plotStack.getBoundingClientRect().width;
-      if (pw > 1) {
-        panelLegend.style.setProperty(
-          "--cryo-discrete-legend-w",
-          Math.max(1, Math.floor(pw * 0.9)) + "px"
-        );
+      if (latent3dIsVolanimLayout()) {
+        panelLegend.style.removeProperty("--cryo-discrete-legend-w");
+      } else {
+        var pw = plotStack.getBoundingClientRect().width;
+        if (pw > 1) {
+          panelLegend.style.setProperty(
+            "--cryo-discrete-legend-w",
+            Math.max(1, Math.floor(pw * 0.9)) + "px"
+          );
+        }
       }
     } else {
       panelLegend.style.removeProperty("--cryo-discrete-legend-w");
@@ -2009,8 +2109,13 @@
       panel.style.removeProperty("--pair-legend-middle-w");
     }
     scheduleLatent3dLegendHeadingTitleFit();
-    if (typeof latent3dColorLegend !== "undefined" && latent3dColorLegend && typeof latent3dColorLegend.scheduleInvertTypographyFit === "function") {
-      latent3dColorLegend.scheduleInvertTypographyFit();
+    if (typeof latent3dColorLegend !== "undefined" && latent3dColorLegend) {
+      if (typeof latent3dColorLegend.fitDiscreteSwitchColumnWidths === "function") {
+        latent3dColorLegend.fitDiscreteSwitchColumnWidths();
+      }
+      if (typeof latent3dColorLegend.scheduleInvertTypographyFit === "function") {
+        latent3dColorLegend.scheduleInvertTypographyFit();
+      }
     }
   }
 
@@ -2155,7 +2260,7 @@
     histPlotVertical: true,
     histVerticalMargins: { l: 16, r: 36 },
 {% if show_landscape_vol_animations %}
-    histTickFontSize: 18,
+    histTickFontSize: 12.6,
 {% endif %}
     onContinuousHistogramLayout: syncLatent3dContinuousHistogramLayout,
     onDiscreteLayout: syncLatent3dLegendMiddleWidth,

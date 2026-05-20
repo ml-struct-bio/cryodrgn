@@ -134,11 +134,18 @@
     return "rgba(" + r + "," + g + "," + b + "," + a + ")";
   }
 
+  function isCircledMontageGlyphText(text) {
+    var s = text == null ? "" : String(text);
+    if (!s) return false;
+    var code = s.charCodeAt(0);
+    return code >= 0x24b6 && code <= 0x24cf;
+  }
+
   function applyBadgeBackground(badge, color) {
     badge.style.color = "#1a1a1a";
+    badge.style.backgroundColor = "";
     badge.classList.remove("volsketch-gif-overlay--on-tint");
     if (typeof color !== "string" || !color.trim()) {
-      badge.style.backgroundColor = "";
       return;
     }
     var c = color.trim();
@@ -152,15 +159,43 @@
     if (rgba) {
       badge.style.backgroundColor = rgba;
       badge.classList.add("volsketch-gif-overlay--on-tint");
+    }
+  }
+
+  /** Montage letter on GIF previews — glyph fill matches plot covariate colour (not covariate side badge). */
+  function applyBadgeLetterColor(badge, color) {
+    badge.style.backgroundColor = "";
+    badge.classList.remove("volsketch-gif-overlay--on-tint");
+    badge.classList.remove("volsketch-gif-overlay--circle-chip");
+    badge.classList.remove("volsketch-gif-overlay--letter-cov-glyph");
+    if (typeof color !== "string" || !color.trim()) {
+      badge.style.color = "#1a1a1a";
       return;
     }
-    badge.style.backgroundColor = "";
+    var c = color.trim();
+    var label = badge.textContent || "";
+    if (isCircledMontageGlyphText(label)) {
+      var rgba = null;
+      if (/^#([0-9a-fA-F]{6})$/.test(c)) {
+        rgba = hex6ToRgba(c, 0.95);
+      } else {
+        var rm = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(c);
+        if (rm) rgba = "rgba(" + rm[1] + "," + rm[2] + "," + rm[3] + ",0.95)";
+        else rgba = c;
+      }
+      badge.style.color = rgba;
+      return;
+    }
+    badge.classList.add("volsketch-gif-overlay--letter-cov-glyph");
+    badge.style.color = c;
   }
 
   function resetBadgeChrome(badge) {
     badge.style.backgroundColor = "";
     badge.style.color = "#1a1a1a";
     badge.classList.remove("volsketch-gif-overlay--on-tint");
+    badge.classList.remove("volsketch-gif-overlay--circle-chip");
+    badge.classList.remove("volsketch-gif-overlay--letter-cov-glyph");
   }
 
   function mountPreviewOverlay(wrap, badge, covBadge, covVarEl, covValEl, img, spec) {
@@ -182,7 +217,10 @@
     if (spec.style === "static") {
       badge.textContent = spec.text || "";
       badge.hidden = !badge.textContent;
-      applyBadgeBackground(badge, spec.badge_background);
+      applyBadgeLetterColor(badge, spec.badge_background);
+      wrap._l3dvaReapplyLetterColor = function() {
+        applyBadgeLetterColor(badge, spec.badge_background || "");
+      };
       var ctext = spec.covariate_text != null ? String(spec.covariate_text).trim() : "";
       if (ctext) {
         var vLabStatic = (
@@ -203,6 +241,86 @@
       }
       return;
     }
+    if (spec.style === "rotate_frames") {
+      var frameTexts = spec.frame_covariate_texts || [];
+      var frameBgs = spec.frame_badge_backgrounds || [];
+      var covVarRotate = (
+        spec.covariate_variable_label != null
+          ? String(spec.covariate_variable_label).trim()
+          : ""
+      );
+      var fdRot = Math.max(1, parseInt(spec.frame_duration_ms, 10) || 100);
+      var totalRot = Math.max(
+        1,
+        parseInt(spec.total_frames, 10) || frameTexts.length || 1
+      );
+      badge.textContent = spec.text || "";
+      badge.hidden = !badge.textContent;
+      applyBadgeLetterColor(badge, spec.badge_background || "");
+      wrap._l3dvaReapplyLetterColor = function() {
+        applyBadgeLetterColor(badge, spec.badge_background || "");
+      };
+      if (!frameTexts.length) {
+        hideCov();
+        return;
+      }
+      var rafRot = 0;
+      var bootRot = 0;
+      var startRot = null;
+      function applyRotateFrameIdx(fi) {
+        fi = Math.max(0, Math.min(frameTexts.length - 1, fi | 0));
+        var covt = frameTexts[fi] != null ? String(frameTexts[fi]).trim() : "";
+        var bg = frameBgs[fi] != null ? frameBgs[fi] : "";
+        covVarEl.textContent = covVarRotate;
+        covVarEl.hidden = !covVarRotate;
+        if (covt) {
+          covValEl.textContent = covt;
+          covBadge.hidden = false;
+          applyBadgeBackground(covBadge, bg);
+        } else {
+          hideCov();
+        }
+      }
+      function tickRotate(now) {
+        if (!wrap.isConnected) {
+          if (rafRot) cancelAnimationFrame(rafRot);
+          rafRot = 0;
+          return;
+        }
+        if (startRot === null) startRot = now;
+        var elapsed = now - startRot;
+        var frameIdx = Math.floor(elapsed / fdRot) % totalRot;
+        var covIdx = Math.min(
+          frameTexts.length - 1,
+          Math.floor((frameIdx * frameTexts.length) / totalRot)
+        );
+        applyRotateFrameIdx(covIdx);
+        rafRot = requestAnimationFrame(tickRotate);
+      }
+      function beginRotateClock() {
+        applyRotateFrameIdx(0);
+        startRot = null;
+        bootRot = requestAnimationFrame(function() {
+          bootRot = 0;
+          rafRot = requestAnimationFrame(tickRotate);
+        });
+      }
+      wrap._l3dvaCancelOverlay = function() {
+        if (bootRot) cancelAnimationFrame(bootRot);
+        if (rafRot) cancelAnimationFrame(rafRot);
+        bootRot = 0;
+        rafRot = 0;
+      };
+      var decRot = img.decode && img.decode();
+      if (decRot && typeof decRot.then === "function") {
+        decRot.then(beginRotateClock).catch(beginRotateClock);
+      } else if (img.complete) {
+        beginRotateClock();
+      } else {
+        img.addEventListener("load", beginRotateClock, { once: true });
+      }
+      return;
+    }
     if (spec.style !== "cycle_segments") {
       badge.hidden = true;
       resetBadgeChrome(badge);
@@ -211,6 +329,7 @@
     }
     var labels = spec.segment_labels || [];
     var segBgs = spec.segment_backgrounds || [];
+    var segCovBgs = spec.segment_covariate_backgrounds || [];
     var segCov = spec.segment_covariate_texts || [];
     var covVarLabelCycle = (
       spec.covariate_variable_label != null
@@ -232,9 +351,10 @@
     var startT = null;
     function applySegmentIdx(idx) {
       idx = Math.max(0, Math.min(labels.length - 1, idx | 0));
+      wrap._l3dvaCurrentSegIdx = idx;
       badge.textContent = labels[idx] || "";
       var bg = segBgs[idx] != null ? segBgs[idx] : "";
-      applyBadgeBackground(badge, bg);
+      applyBadgeLetterColor(badge, bg);
       var covt = "";
       if (segCov.length > idx && segCov[idx] != null) {
         covt = String(segCov[idx]).trim();
@@ -244,7 +364,8 @@
       if (covt) {
         covValEl.textContent = covt;
         covBadge.hidden = false;
-        applyBadgeBackground(covBadge, bg);
+        var covBg = segCovBgs.length > idx && segCovBgs[idx] != null ? segCovBgs[idx] : bg;
+        applyBadgeBackground(covBadge, covBg);
       } else {
         covVarEl.hidden = true;
         covVarEl.textContent = "";
@@ -266,6 +387,9 @@
       applySegmentIdx(idx);
       rafId = requestAnimationFrame(tick);
     }
+    wrap._l3dvaReapplyLetterColor = function() {
+      applySegmentIdx(wrap._l3dvaCurrentSegIdx != null ? wrap._l3dvaCurrentSegIdx : 0);
+    };
     function beginClock() {
       applySegmentIdx(0);
       startT = null;
@@ -340,6 +464,12 @@
     );
   }
 
+  function sceneSnapHasCamera(snap) {
+    if (!snap || !snap.camera || typeof snap.camera !== "object") return false;
+    var eye = snap.camera.eye;
+    return !!(eye && typeof eye === "object");
+  }
+
   /** Merge pointerdown snapshot (pre Plotly double-click camera reset) with a live read. */
   function mergeSnapsPreferPointerdown(pd, live) {
     if (!pd || typeof pd !== "object") return live;
@@ -390,17 +520,134 @@
     return 0.2126 * R + 0.7152 * G + 0.0722 * B;
   }
 
-  /** Resolve plotted marker fill for trace index ``i`` (Plotly may expand colours on ``_fullData``). */
-  function markerFillCssAtIndex(trace, gd, i) {
+  function plotlyColorToCss(c) {
+    if (c == null) return null;
+    if (typeof c === "string") return c;
+    if (typeof c === "object") {
+      if (c.r != null && c.g != null && c.b != null) {
+        var a = c.a != null && isFinite(c.a) ? c.a : 1;
+        if (a >= 0.999) {
+          return "rgb(" + Math.round(c.r) + "," + Math.round(c.g) + "," + Math.round(c.b) + ")";
+        }
+        return "rgba(" + Math.round(c.r) + "," + Math.round(c.g) + "," + Math.round(c.b) + "," + a + ")";
+      }
+    }
+    return null;
+  }
+
+  function plotColorModeFromGd(gd) {
+    try {
+      var m = gd && gd.layout && gd.layout.meta;
+      if (!m) return null;
+      if (m.cdrgn_color_mode) return String(m.cdrgn_color_mode);
+      var leg = m.cdrgn_color_legend;
+      if (leg && leg.type) return String(leg.type);
+    } catch (eMode) { /* ignore */ }
+    return null;
+  }
+
+  function discreteColorLegendMap(gd) {
+    var out = Object.create(null);
+    try {
+      var leg = gd && gd.layout && gd.layout.meta && gd.layout.meta.cdrgn_color_legend;
+      if (!leg || leg.type !== "discrete" || !leg.items) return out;
+      for (var li = 0; li < leg.items.length; li++) {
+        var it = leg.items[li];
+        if (!it) continue;
+        var key = it.label == null ? "" : String(it.label);
+        if (it.color) out[key] = String(it.color);
+      }
+    } catch (eMap) { /* ignore */ }
+    return out;
+  }
+
+  function colorCovariateKeyFromCustomdataRow(row) {
+    var r = customDataRowAsArray(row);
+    return r.length >= 3 && r[2] != null ? String(r[2]) : "";
+  }
+
+  function continuousCssFromValue(val, trace, gd, paletteName) {
+    if (typeof val !== "number" || !isFinite(val)) return null;
+    var mk = (trace && trace.marker) || {};
+    var cmin = mk.cmin;
+    var cmax = mk.cmax;
+    try {
+      var leg = gd && gd.layout && gd.layout.meta && gd.layout.meta.cdrgn_color_legend;
+      if (leg && leg.type === "continuous") {
+        if (cmin == null || !isFinite(cmin)) cmin = leg.min;
+        if (cmax == null || !isFinite(cmax)) cmax = leg.max;
+      }
+    } catch (eLeg) { /* ignore */ }
+    cmin = typeof cmin === "number" && isFinite(cmin) ? cmin : 0;
+    cmax = typeof cmax === "number" && isFinite(cmax) ? cmax : 1;
+    var span = cmax - cmin;
+    var t = span > 0 ? (val - cmin) / span : 0.5;
+    t = Math.max(0, Math.min(1, t));
+    var pal = paletteName || "Viridis";
+    try {
+      var metaPal = gd && gd.layout && gd.layout.meta && gd.layout.meta.cdrgn_continuous_palette;
+      if (metaPal && global.CryoColorCovariateLegend
+          && CryoColorCovariateLegend.hasPalette(metaPal)) {
+        pal = String(metaPal);
+      }
+    } catch (ePal) { /* ignore */ }
+    var CCL = global.CryoColorCovariateLegend;
+    if (CCL && typeof CCL.paletteScaleCSS === "function" && CCL.hasPalette(pal)) {
+      return CCL.paletteScaleCSS(pal, t);
+    }
+    return null;
+  }
+
+  /**
+   * Resolve plotted marker fill for trace index ``i`` — discrete hex, continuous colorscale,
+   * or Plotly-expanded colours on ``_fullData``.
+   */
+  function markerFillCssAtIndex(trace, gd, i, paletteName) {
+    if (!trace || !gd || i < 0) return "#4a5568";
     var full = gd._fullData && gd._fullData[0];
     var expanded = full && full.marker && full.marker.color;
-    if (Array.isArray(expanded) && expanded[i] != null && typeof expanded[i] === "string") {
-      return expanded[i];
+    if (Array.isArray(expanded) && expanded[i] != null) {
+      var exCss = plotlyColorToCss(expanded[i]);
+      if (exCss) return exCss;
     }
-    var mk = trace.marker || {};
+    var mk = (full && full.marker) || trace.marker || {};
     var mc = mk.color;
     if (typeof mc === "string") return mc;
     if (Array.isArray(mc) && mc[i] != null) {
+      var mcCss = plotlyColorToCss(mc[i]);
+      if (mcCss) return mcCss;
+      if (typeof mc[i] === "string") return mc[i];
+    }
+    var mode = plotColorModeFromGd(gd);
+    var cd = customdataForHighlight(gd, trace);
+    var row = cd && cd[i] != null ? cd[i] : null;
+    if (mode === "discrete") {
+      var fk = colorCovariateKeyFromCustomdataRow(row);
+      if (fk) {
+        var dmap = discreteColorLegendMap(gd);
+        if (dmap[fk]) return dmap[fk];
+      }
+      if (Array.isArray(mc) && mc[i] != null) {
+        var dCss = plotlyColorToCss(mc[i]);
+        if (dCss) return dCss;
+        if (typeof mc[i] === "string") return mc[i];
+      }
+    }
+    if (mode === "continuous") {
+      var cKey = colorCovariateKeyFromCustomdataRow(row);
+      var cVal = cKey !== "" ? parseFloat(cKey) : NaN;
+      if (!isNaN(cVal)) {
+        var fromCd = continuousCssFromValue(cVal, trace, gd, paletteName);
+        if (fromCd) return fromCd;
+      }
+      if (Array.isArray(mc) && mc[i] != null && typeof mc[i] === "number" && isFinite(mc[i])) {
+        var fromMc = continuousCssFromValue(mc[i], trace, gd, paletteName);
+        if (fromMc) return fromMc;
+      }
+    }
+    if (Array.isArray(mc) && mc[i] != null) {
+      var anyCss = plotlyColorToCss(mc[i]);
+      if (anyCss) return anyCss;
       if (typeof mc[i] === "string") return mc[i];
     }
     return "#4a5568";
@@ -411,10 +658,26 @@
     return _fillRelativeLuminance(fillCss) < 0.34 ? "#f1f5f9" : "#0f172a";
   }
 
-  // 3D plot letter annotations should be ~20% smaller than before.
-  var VOL_MONTAGE_LETTER_PX = 36 * 0.8;
+  function montagePlotLetterStrokeShadow(strokeCss) {
+    var s = strokeCss || "#000";
+    return (
+      "0 0 1px " + s + ",-1px 0 1px " + s + ",1px 0 1px " + s + ","
+      + "0 -1px 1px " + s + ",0 1px 1px " + s
+    );
+  }
+
+  /** Plot letter border: white on dark covariate glyphs, black on light glyphs. */
+  function montagePlotLetterStrokeForFill(fillCss) {
+    var strokeCss = _fillRelativeLuminance(fillCss) < 0.34 ? "#ffffff" : "#000000";
+    return montagePlotLetterStrokeShadow(strokeCss);
+  }
+
+  // 3D plot scene letters only (GIF preview size is separate CSS).
+  var VOL_MONTAGE_PLOT_LETTER_PX = 36 * 0.8 * 0.75 * 1.5 * 0.8 * 0.8 * 0.8 * 0.8;
+  /** Non-centroid, non–last-dblclick-anchor montage letters on duplicate particles per volume. */
+  var VOL_MONTAGE_PLOT_LETTER_PX_SECONDARY = VOL_MONTAGE_PLOT_LETTER_PX * 0.8;
   var VOL_MONTAGE_LETTER_FONT = {
-    size: VOL_MONTAGE_LETTER_PX,
+    size: VOL_MONTAGE_PLOT_LETTER_PX,
     color: "#1a1a1a",
     family: "system-ui, Segoe UI, sans-serif",
   };
@@ -442,6 +705,18 @@
    * Bold / italic montage letters on scatter3d: WebGL trace ``text`` ignores HTML and per-point
    * ``textfont.weight`` / ``style``; use ``layout.scene.annotations`` at anchor points instead.
    */
+  function scatterMarkerOpacityFromGd(gd) {
+    try {
+      var tr = gd && gd.data && gd.data[0];
+      var mo = tr && tr.marker && tr.marker.opacity;
+      if (typeof mo === "number" && isFinite(mo)) return mo;
+      if (Array.isArray(mo) && mo.length && typeof mo[0] === "number" && isFinite(mo[0])) {
+        return mo[0];
+      }
+    } catch (eMo) { /* ignore */ }
+    return null;
+  }
+
   function volMontageSceneAnnotation(x, y, z, letter, isBold, isItalic, opts) {
     if (!letter) return null;
     opts = opts || {};
@@ -451,6 +726,12 @@
     var fontColorCss = typeof opts.fontColorCss === "string" && opts.fontColorCss.trim()
       ? opts.fontColorCss
       : VOL_MONTAGE_LETTER_FONT.color;
+    var scatterOp = typeof opts.scatterOpacity === "number" && isFinite(opts.scatterOpacity)
+      ? opts.scatterOpacity
+      : scatterMarkerOpacityFromGd(opts.gd);
+    var annOpacity = scatterOp != null
+      ? Math.max(0.0, Math.min(1.0, (1 + scatterOp) / 2))
+      : 0.5;
     var font = {
       size: fontSizePx,
       color: fontColorCss,
@@ -458,11 +739,13 @@
     };
     if (isBold) font.weight = "bold";
     if (isItalic) font.style = "italic";
+    font.shadow = montagePlotLetterStrokeForFill(fontColorCss);
     return {
       x: x,
       y: y,
       z: z,
       text: String(letter),
+      opacity: annOpacity,
       showarrow: false,
       xanchor: "center",
       // Move montage letters closer to the anchor point.
@@ -539,8 +822,6 @@
     var volAnimSelOverlayDepth = 0;
     /** Count of selection ``Plotly.update``/``restyle`` chains still running (only when overlay depth is on). */
     var volAnimSelHighlightRestylesInFlight = 0;
-    /** Ignore Plotly's internal selection update briefly after our double-click toggle. */
-    var ignorePlotlySelectedUntilMs = 0;
     /** Ignore extra Plotly click events right after our double-click toggle. */
     var ignorePlotlyClickUntilMs = 0;
     /** Prevent accidental double toggles (toggle on then immediately off). */
@@ -878,6 +1159,92 @@
      * - else centroid for the *last* double-clicked volume (after Plotly camera/scene churn)
      * - else ``null`` (centroid becomes italic for other selected volumes)
      */
+    function resolvePlotPalette() {
+      if (getPalette) {
+        var p = getPalette();
+        if (p && global.CryoColorCovariateLegend && CryoColorCovariateLegend.hasPalette(p)) {
+          return String(p);
+        }
+      }
+      return "Viridis";
+    }
+
+    function colorCovariateActive() {
+      var cm = getColorMode ? String(getColorMode()) : "none";
+      if (cm && cm !== "none") return true;
+      var mode = plotColorModeFromGd(gd);
+      return !!(mode && mode !== "none");
+    }
+
+    function markerFillCssForVol(gd, trace, vol) {
+      var v = typeof vol === "number" ? vol : parseInt(String(vol), 10);
+      if (isNaN(v) || !trace || !trace.x) return null;
+      var pt = sketchCentroidPointIndexForVol(gd, trace, v);
+      if (pt == null) pt = boldAnchorPointForVol(gd, trace, v);
+      if (pt == null) {
+        for (var fi = 0; fi < trace.x.length; fi++) {
+          if (volIdAtPointIndex(gd, trace, fi) === v) {
+            pt = fi;
+            break;
+          }
+        }
+      }
+      if (pt == null) return null;
+      return markerFillCssAtIndex(trace, gd, pt, resolvePlotPalette());
+    }
+
+    function montageLetterFontColor(trace, gd, pointIndex) {
+      if (!colorCovariateActive()) return VOL_MONTAGE_LETTER_FONT.color;
+      return markerFillCssAtIndex(trace, gd, pointIndex, resolvePlotPalette())
+        || VOL_MONTAGE_LETTER_FONT.color;
+    }
+
+    function refreshPreviewOverlayLetterColors() {
+      if (!previewGrid || !gd || !gd.data || !gd.data[0]) return;
+      var trace = gd.data[0];
+      var active = colorCovariateActive();
+      previewGrid.querySelectorAll(".volsketch-anim-wrap").forEach(function(wrap) {
+        var badge = wrap.querySelector(".volsketch-gif-overlay:not(.volsketch-gif-overlay--cov)");
+        var spec = wrap._l3dvaOverlaySpec;
+        if (!badge || !spec) return;
+        if (!active) {
+          if (spec.style === "static" || spec.style === "rotate_frames") {
+            spec.badge_background = "";
+          } else if (spec.style === "cycle_segments" && spec.segment_backgrounds) {
+            spec.segment_backgrounds = spec.segment_backgrounds.map(function() { return ""; });
+          }
+          resetBadgeChrome(badge);
+          if (typeof wrap._l3dvaReapplyLetterColor === "function") {
+            wrap._l3dvaReapplyLetterColor();
+          }
+          return;
+        }
+        if (spec.style === "static" || spec.style === "rotate_frames") {
+          var vol = wrap._l3dvaVol;
+          spec.badge_background = markerFillCssForVol(gd, trace, vol) || "";
+          applyBadgeLetterColor(badge, spec.badge_background);
+          return;
+        }
+        if (spec.style === "cycle_segments" && spec.segment_labels) {
+          var ltv = wrap._l3dvaLabelToVol || {};
+          var labels = spec.segment_labels;
+          if (!spec.segment_backgrounds || spec.segment_backgrounds.length !== labels.length) {
+            spec.segment_backgrounds = labels.map(function() { return ""; });
+          }
+          for (var si = 0; si < labels.length; si++) {
+            var lbl = labels[si] == null ? "" : String(labels[si]);
+            var vv = ltv[lbl];
+            spec.segment_backgrounds[si] = vv != null
+              ? (markerFillCssForVol(gd, trace, vv) || "")
+              : "";
+          }
+          if (typeof wrap._l3dvaReapplyLetterColor === "function") {
+            wrap._l3dvaReapplyLetterColor();
+          }
+        }
+      });
+    }
+
     function boldAnchorPointForVol(gd, trace, vol) {
       if (Object.prototype.hasOwnProperty.call(volDblClickPointNum, vol)) {
         var anchored = volDblClickPointNum[vol];
@@ -899,9 +1266,133 @@
       return null;
     }
 
+    /**
+     * Full-size plot letters: sketch-centroid particle, or bold anchor on the volume last
+     * double-clicked in the current k-means selection.
+     */
+    function montagePlotLetterFontSizePx(isCent, isBold, vol) {
+      var primary = !!isCent || (!!isBold && lastDblClickVol != null && vol === lastDblClickVol);
+      return primary ? VOL_MONTAGE_PLOT_LETTER_PX : VOL_MONTAGE_PLOT_LETTER_PX_SECONDARY;
+    }
+
+    /** Live orbit for montage relayout / GIF tail — never the double-click pointerdown snapshot. */
+    function captureVolAnimScenePinLiveOnly() {
+      var pin = null;
+      try {
+        pin = P3S.snapshot(gd);
+      } catch (ePin) { /* ignore */ }
+      if (!sceneSnapHasCamera(pin) && typeof P3S.getPinnedSnap === "function") {
+        pin = P3S.getPinnedSnap(gd);
+      }
+      if (!sceneSnapHasCamera(pin) && gd._cryoLatent3dLoadScenePin) {
+        pin = gd._cryoLatent3dLoadScenePin;
+      }
+      return sceneSnapHasCamera(pin) ? pin : null;
+    }
+
+    /**
+     * Pointerdown merge only during the brief Plotly double-click window (pre-reset orbit).
+     * Using it later would snap back to the view at volume selection after the user orbited.
+     */
+    function captureVolAnimScenePin() {
+      var pin = captureVolAnimScenePinLiveOnly();
+      if (
+        volAnimPointerdownSnap
+        && volAnimPointerdownAt
+        && Date.now() - volAnimPointerdownAt < 1200
+      ) {
+        pin = mergeSnapsPreferPointerdown(volAnimPointerdownSnap, pin);
+      }
+      return sceneSnapHasCamera(pin) ? pin : null;
+    }
+
+    function scheduleRestoreVolAnimScenePin(pin, onDone) {
+      if (!pin || !sceneSnapHasCamera(pin)) {
+        if (typeof onDone === "function") {
+          try {
+            onDone();
+          } catch (eDone) { /* ignore */ }
+        }
+        return Promise.resolve();
+      }
+      if (typeof P3S.scheduleEnforceCamera === "function") {
+        return new Promise(function(res) {
+          P3S.scheduleEnforceCamera(gd, pin, function() {
+            if (typeof onDone === "function") {
+              try {
+                onDone();
+              } catch (eDone) { /* ignore */ }
+            }
+            res();
+          });
+        });
+      }
+      if (typeof P3S.scheduleRestoreCameraOnly === "function") {
+        return new Promise(function(res) {
+          P3S.scheduleRestoreCameraOnly(gd, pin, function() {
+            if (typeof onDone === "function") {
+              try {
+                onDone();
+              } catch (eDone) { /* ignore */ }
+            }
+            res();
+          });
+        });
+      }
+      if (typeof P3S.scheduleRestore === "function") {
+        return new Promise(function(res) {
+          P3S.scheduleRestore(gd, pin, function() {
+            if (typeof onDone === "function") {
+              try {
+                onDone();
+              } catch (eDone) { /* ignore */ }
+            }
+            res();
+          });
+        });
+      }
+      var p = typeof P3S.restoreCameraOnly === "function"
+        ? P3S.restoreCameraOnly(gd, pin)
+        : P3S.restore(gd, pin);
+      var chain = p && typeof p.then === "function" ? p.catch(function() {}) : Promise.resolve();
+      return chain.then(function() {
+        if (typeof onDone === "function") {
+          try {
+            onDone();
+          } catch (eDone) { /* ignore */ }
+        }
+      });
+    }
+
+    function relayoutMontageAnnotations(sceneAnnotations, scenePin) {
+      if (typeof Plotly === "undefined" || !Plotly.relayout) {
+        return Promise.resolve();
+      }
+      var anns = sceneAnnotations || [];
+      var patch = { "scene.annotations": anns };
+      // Patching scene.camera when only clearing/updating letter overlays resets the main
+      // scatter3d orbit after a colour-covariate redraw (especially with no volumes selected).
+      var camPin = captureVolAnimScenePinLiveOnly() || scenePin;
+      if (anns.length && camPin && camPin.camera && typeof camPin.camera === "object") {
+        try {
+          patch["scene.camera"] = JSON.parse(JSON.stringify(camPin.camera));
+        } catch (eCam) {
+          patch["scene.camera"] = camPin.camera;
+        }
+      }
+      return Plotly.relayout(gd, patch).catch(function() {});
+    }
+
     function refreshSelectionHighlight() {
       centroidVolsInSelection.clear();
       if (!gd || !gd.data || !gd.data[0]) return Promise.resolve();
+      if (gd._cryoLatent3dLoadScenePin && volAnimSelOverlayDepth >= 1) {
+        gd._cryoLatent3dSceneHoldUntil = Date.now() + 6000;
+      }
+      var scenePin = captureVolAnimScenePinLiveOnly();
+      if (scenePin && typeof P3S.setPinnedSnap === "function") {
+        P3S.setPinnedSnap(gd, scenePin);
+      }
       syncStableSelectionLabels();
       var trace = gd.data[0];
       pruneVolDblClickAnchors(gd, trace);
@@ -912,74 +1403,31 @@
       var cd = customdataForHighlight(gd, trace);
       if (!hasIds && (!cd || cd.length !== n)) return Promise.resolve();
 
-      var texts = new Array(n);
       var sceneAnnotations = [];
       for (var i = 0; i < n; i++) {
         var v = volIdAtPointIndex(gd, trace, i);
         var on = !isNaN(v) && selectedVols.has(v);
-        texts[i] = "";
-        if (on) {
-          var letter = volMontageLabel[v] || "";
-          var isCent = isSketchCentroidAtPointIndex(gd, trace, i);
-          if (isCent) centroidVolsInSelection.add(v);
-          var boldPt = boldAnchorPointForVol(gd, trace, v);
-          var isBold = boldPt != null && i === boldPt;
-          var centroidLetter = isCent ? circledMontageLabelText(letter) : letter;
-
-          if (isBold) {
-            // Bold anchor always uses the bold font weight; if this anchor is also
-            // the centroid particle, render a circled montage letter.
-            texts[i] = "";
-            var annBold = volMontageSceneAnnotation(
-              trace.x[i],
-              trace.y[i],
-              trace.z[i],
-              centroidLetter,
-              true,
-              false,
-              {
-                fontColorCss: VOL_MONTAGE_LETTER_FONT.color,
-              }
-            );
-            if (annBold) sceneAnnotations.push(annBold);
-          } else if (isCent) {
-            // Centroid particle: show a circled montage letter.
-            texts[i] = "";
-            var annCent = volMontageSceneAnnotation(
-              trace.x[i],
-              trace.y[i],
-              trace.z[i],
-              centroidLetter,
-              false,
-              false,
-              { fontColorCss: VOL_MONTAGE_LETTER_FONT.color }
-            );
-            if (annCent) sceneAnnotations.push(annCent);
-          } else {
-            // Non-centroid, non-bold points: use the scatter3d per-point text.
-            texts[i] = letter;
+        if (!on) continue;
+        var letter = volMontageLabel[v] || "";
+        var isCent = isSketchCentroidAtPointIndex(gd, trace, i);
+        if (isCent) centroidVolsInSelection.add(v);
+        var boldPt = boldAnchorPointForVol(gd, trace, v);
+        var isBold = boldPt != null && i === boldPt;
+        var labelText = isCent ? circledMontageLabelText(letter) : letter;
+        var ann = volMontageSceneAnnotation(
+          trace.x[i],
+          trace.y[i],
+          trace.z[i],
+          labelText,
+          isBold,
+          isCent && !isBold,
+          {
+            fontColorCss: montageLetterFontColor(trace, gd, i),
+            fontSizePx: montagePlotLetterFontSizePx(isCent, isBold, v),
+            gd: gd,
           }
-        }
-      }
-
-      var traceUpd = {
-        text: [texts],
-      };
-      var traceFallback = {
-        text: [texts],
-      };
-
-      function relayoutSceneAnnotationsOnly() {
-        if (typeof Plotly === "undefined" || !Plotly.relayout) {
-          return Promise.resolve();
-        }
-        return Plotly.relayout(gd, { "scene.annotations": sceneAnnotations }).catch(function() {});
-      }
-
-      function restyleThenAnnotate(upd) {
-        var pR = Plotly.restyle(gd, upd, [0]);
-        var cR = pR && typeof pR.then === "function" ? pR : Promise.resolve();
-        return cR.then(relayoutSceneAnnotationsOnly);
+        );
+        if (ann) sceneAnnotations.push(ann);
       }
 
       return new Promise(function(resolve) {
@@ -997,12 +1445,29 @@
           }
           resolve();
         }
-        restyleThenAnnotate(traceUpd)
-          .catch(function() {
-            return restyleThenAnnotate(traceFallback);
-          })
-          .then(finishSelectionRendering)
-          .catch(finishSelectionRendering);
+        function finishSelectionRenderingWithCameraPin() {
+          if (!scenePin || !sceneSnapHasCamera(scenePin)) {
+            finishSelectionRendering();
+            return;
+          }
+          var liveAfterRelayout = null;
+          try {
+            if (typeof P3S.snapshot === "function") liveAfterRelayout = P3S.snapshot(gd);
+          } catch (eLive) { /* ignore */ }
+          if (
+            liveAfterRelayout
+            && sceneSnapHasCamera(liveAfterRelayout)
+            && typeof P3S.cameraEyeDiffers === "function"
+            && !P3S.cameraEyeDiffers(scenePin, liveAfterRelayout)
+          ) {
+            finishSelectionRendering();
+            return;
+          }
+          scheduleRestoreVolAnimScenePin(scenePin, finishSelectionRendering);
+        }
+        relayoutMontageAnnotations(sceneAnnotations, scenePin)
+          .then(finishSelectionRenderingWithCameraPin)
+          .catch(finishSelectionRenderingWithCameraPin);
       });
     }
 
@@ -1224,8 +1689,12 @@
             });
           }
           mountPreviewOverlay(wrap, badge, covBadge, covVarEl, covValEl, img, overlaySpec);
+          wrap._l3dvaVol = it.vol != null ? parseInt(String(it.vol), 10) : NaN;
+          wrap._l3dvaOverlaySpec = overlaySpec;
+          wrap._l3dvaLabelToVol = labelToVolByBackend;
           previewGrid.appendChild(fig);
         });
+        refreshPreviewOverlayLetterColors();
         syncPreviewGridLayout();
         if (j.rendered_vol_indices && j.rendered_vol_indices.length) {
           var synced = new Set();
@@ -1263,10 +1732,21 @@
       if (plotEventsBound) return;
       if (!gd || typeof gd.on !== "function") return;
       plotEventsBound = true;
+      if (
+        layoutHasVolAnim(gd)
+        && typeof Plotly !== "undefined"
+        && Plotly.relayout
+        && typeof P3S.disableSceneSelectionRelayoutPatch === "function"
+      ) {
+        Plotly.relayout(gd, P3S.disableSceneSelectionRelayoutPatch()).catch(function() {});
+      }
       function recordVolAnimPointerdownScene() {
         try {
           if (!layoutHasVolAnim(gd)) return;
           volAnimPointerdownSnap = P3S.snapshot(gd);
+          if (sceneSnapHasCamera(volAnimPointerdownSnap) && typeof P3S.setPinnedSnap === "function") {
+            P3S.setPinnedSnap(gd, volAnimPointerdownSnap);
+          }
           volAnimPointerdownAt = Date.now();
         } catch (ePd) { /* ignore */ }
       }
@@ -1276,7 +1756,10 @@
         // We restore the camera from the pointerdown snapshot; for cases where our
         // click-timer double-click detection doesn't fire (e.g. some points),
         // we optionally attempt the toggle here too.
-        var s = volAnimPointerdownSnap;
+        var s = mergeSnapsPreferPointerdown(
+          volAnimPointerdownSnap,
+          typeof P3S.getPinnedSnap === "function" ? P3S.getPinnedSnap(gd) : null
+        );
         var pt = ev && ev.points && ev.points.length ? ev.points[0] : null;
         var shouldTryToggle = !!pt;
         var v = NaN;
@@ -1293,10 +1776,6 @@
         function maybeToggleAfterRestore() {
           if (!shouldTryToggle) return;
           ignorePlotlyClickUntilMs = Date.now() + 900;
-          ignorePlotlySelectedUntilMs = Math.max(
-            ignorePlotlySelectedUntilMs,
-            Date.now() + 2500
-          );
           beginVolAnimSelectionOverlay();
           toggleVol(v, fromPointNumber);
         }
@@ -1307,51 +1786,24 @@
           return;
         }
 
-        P3S.restore(gd, s);
+        var restoreFn = typeof P3S.restoreCameraOnly === "function"
+          ? P3S.restoreCameraOnly
+          : P3S.restore;
+        restoreFn(gd, s);
         requestAnimationFrame(function() {
-          P3S.restore(gd, s);
+          restoreFn(gd, s);
           setTimeout(function() {
-            P3S.restore(gd, s);
+            restoreFn(gd, s);
             maybeToggleAfterRestore();
+            volAnimPointerdownSnap = null;
+            volAnimPointerdownAt = 0;
           }, 0);
         });
-      });
-      gd.on("plotly_selected", function(ev) {
-        if (!ev || !ev.points || !ev.points.length) return;
-        if (!layoutHasVolAnim(gd)) return;
-        if (Date.now() < ignorePlotlySelectedUntilMs) return;
-        var nextSel = new Set();
-        ev.points.forEach(function(pt) {
-          var v = volFromPoint(gd, pt);
-          if (!isNaN(v)) nextSel.add(v);
-        });
-        // When Plotly emits selection without usable point metadata (can happen around double-click),
-        // don't clobber the existing selection state.
-        if (!nextSel.size) return;
-        selectedVols = nextSel;
-        if (lastDblClickVol != null && !selectedVols.has(lastDblClickVol)) {
-          lastDblClickVol = null;
-        }
-        if (selectedVols.size > maxSelectable()) {
-          var arr = Array.from(selectedVols).sort(function(a, b) { return a - b; });
-          selectedVols = new Set(arr.slice(0, maxSelectable()));
-          setAnimateStatus("Selection capped at the number of sketch volumes.", false, true);
-        } else {
-          setAnimateStatus("", false, false);
-        }
-        beginVolAnimSelectionOverlay();
-        updateSelLabel();
-        scheduleAutoGif("selection", refreshSelectionHighlight());
       });
       gd.on("plotly_click", function(ev) {
         if (!layoutHasVolAnim(gd)) return;
         if (!ev || !ev.points || !ev.points.length) return;
         if (Date.now() < ignorePlotlyClickUntilMs) return;
-        // Ignore Plotly's internal selection updates briefly; we drive selection via toggle.
-        ignorePlotlySelectedUntilMs = Math.max(
-          ignorePlotlySelectedUntilMs,
-          Date.now() + 2500
-        );
         var v = volFromPoint(gd, ev.points[0]);
         if (isNaN(v)) return;
         if (clickTimer !== null && clickLastVol === v) {
@@ -1464,13 +1916,7 @@
           updateSelLabel();
           scheduleAutoGif("selection", refreshSelectionHighlight());
         }
-        if (gd && typeof Plotly !== "undefined" && Plotly.relayout) {
-          var rp = Plotly.relayout(gd, { selections: [] });
-          var p = rp && typeof rp.then === "function" ? rp.catch(function() {}) : Promise.resolve();
-          p.then(applyRandomPickAndHighlight);
-        } else {
-          applyRandomPickAndHighlight();
-        }
+        applyRandomPickAndHighlight();
       });
     }
 
@@ -1503,15 +1949,20 @@
     });
 
     function reapplySelectionHighlightIfNeeded() {
-      if (!selectedVols.size) {
-        return Promise.resolve();
-      }
+      refreshPreviewOverlayLetterColors();
       return refreshSelectionHighlight();
     }
 
     return {
       onColorOrPaletteChanged: function() {
-        scheduleAutoGif("color");
+        refreshPreviewOverlayLetterColors();
+        var pPlot = refreshSelectionHighlight();
+        var chain = pPlot && typeof pPlot.then === "function"
+          ? pPlot.catch(function() {})
+          : Promise.resolve();
+        chain.then(function() {
+          scheduleAutoGif("color");
+        });
       },
       afterPlotRedraw: function() {
         ensurePlotEventsBound();

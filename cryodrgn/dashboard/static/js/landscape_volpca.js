@@ -47,13 +47,21 @@
     return "rgba(" + r + "," + g + "," + b + "," + a + ")";
   }
 
-  /** Volume color → tinted badge background; letters stay black. */
+  function volsketchIsCircledMontageGlyphText(text) {
+    var s = text == null ? "" : String(text);
+    if (!s) return false;
+    var code = s.charCodeAt(0);
+    return code >= 0x24b6 && code <= 0x24cf;
+  }
+
+  /** Volume colour → circled glyph tint or round letter chip; covariate badges stay rectangular. */
   function volsketchApplyBadgeBackground(badge, color) {
     badge.style.color = "#1a1a1a";
+    badge.style.backgroundColor = "";
+    badge.style.borderColor = "";
     badge.classList.remove("volsketch-gif-overlay--on-tint");
+    badge.classList.remove("volsketch-gif-overlay--circle-chip");
     if (typeof color !== "string" || !color.trim()) {
-      badge.style.backgroundColor = "";
-      badge.style.borderColor = "";
       return;
     }
     var c = color.trim();
@@ -64,14 +72,16 @@
       var rm = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(c);
       if (rm) rgba = "rgba(" + rm[1] + "," + rm[2] + "," + rm[3] + ",0.88)";
     }
-    if (rgba) {
-      badge.style.backgroundColor = rgba;
-      badge.style.borderColor = "rgba(27, 31, 36, 0.28)";
-      badge.classList.add("volsketch-gif-overlay--on-tint");
+    if (!rgba) return;
+    var label = badge.textContent || "";
+    if (volsketchIsCircledMontageGlyphText(label)) {
+      badge.style.color = rgba;
       return;
     }
-    badge.style.backgroundColor = "";
-    badge.style.borderColor = "";
+    badge.classList.add("volsketch-gif-overlay--circle-chip");
+    badge.style.backgroundColor = rgba;
+    badge.style.borderColor = "rgba(27, 31, 36, 0.28)";
+    badge.classList.add("volsketch-gif-overlay--on-tint");
   }
 
   function volsketchResetBadgeChrome(badge) {
@@ -79,6 +89,7 @@
     badge.style.borderColor = "";
     badge.style.color = "#1a1a1a";
     badge.classList.remove("volsketch-gif-overlay--on-tint");
+    badge.classList.remove("volsketch-gif-overlay--circle-chip");
   }
 
   /** Keep pan/zoom across ``Plotly.restyle`` when selection styling updates (2-D scattergl). */
@@ -151,6 +162,83 @@
       }
       return;
     }
+    if (spec.style === "rotate_frames") {
+      var frameTexts = spec.frame_covariate_texts || [];
+      var frameBgs = spec.frame_badge_backgrounds || [];
+      var covVarRotate = (
+        spec.covariate_variable_label != null
+          ? String(spec.covariate_variable_label).trim()
+          : ""
+      );
+      var fdRot = Math.max(1, parseInt(spec.frame_duration_ms, 10) || 100);
+      var totalRot = Math.max(
+        1,
+        parseInt(spec.total_frames, 10) || frameTexts.length || 1
+      );
+      badge.textContent = spec.text || "";
+      badge.hidden = !badge.textContent;
+      volsketchApplyBadgeBackground(badge, spec.badge_background || "");
+      if (!frameTexts.length) {
+        hideCov();
+        return;
+      }
+      var rafRot = 0;
+      var bootRot = 0;
+      var startRot = null;
+      function applyRotateFrameIdx(fi) {
+        fi = Math.max(0, Math.min(frameTexts.length - 1, fi | 0));
+        var covt = frameTexts[fi] != null ? String(frameTexts[fi]).trim() : "";
+        var bg = frameBgs[fi] != null ? frameBgs[fi] : "";
+        covVarEl.textContent = covVarRotate;
+        covVarEl.hidden = !covVarRotate;
+        if (covt) {
+          covValEl.textContent = covt;
+          covBadge.hidden = false;
+          volsketchApplyBadgeBackground(covBadge, bg);
+        } else {
+          hideCov();
+        }
+      }
+      function tickRotate(now) {
+        if (!wrap.isConnected) {
+          if (rafRot) cancelAnimationFrame(rafRot);
+          rafRot = 0;
+          return;
+        }
+        if (startRot === null) startRot = now;
+        var elapsed = now - startRot;
+        var frameIdx = Math.floor(elapsed / fdRot) % totalRot;
+        var covIdx = Math.min(
+          frameTexts.length - 1,
+          Math.floor((frameIdx * frameTexts.length) / totalRot)
+        );
+        applyRotateFrameIdx(covIdx);
+        rafRot = requestAnimationFrame(tickRotate);
+      }
+      function beginRotateClock() {
+        applyRotateFrameIdx(0);
+        startRot = null;
+        bootRot = requestAnimationFrame(function() {
+          bootRot = 0;
+          rafRot = requestAnimationFrame(tickRotate);
+        });
+      }
+      wrap._volsketchCancelOverlay = function() {
+        if (bootRot) cancelAnimationFrame(bootRot);
+        if (rafRot) cancelAnimationFrame(rafRot);
+        bootRot = 0;
+        rafRot = 0;
+      };
+      var decRot = img.decode && img.decode();
+      if (decRot && typeof decRot.then === "function") {
+        decRot.then(beginRotateClock).catch(beginRotateClock);
+      } else if (img.complete) {
+        beginRotateClock();
+      } else {
+        img.addEventListener("load", beginRotateClock, { once: true });
+      }
+      return;
+    }
     if (spec.style !== "cycle_segments") {
       badge.hidden = true;
       volsketchResetBadgeChrome(badge);
@@ -159,6 +247,7 @@
     }
     var labels = spec.segment_labels || [];
     var segBgs = spec.segment_backgrounds || [];
+    var segCovBgs = spec.segment_covariate_backgrounds || [];
     var segCov = spec.segment_covariate_texts || [];
     var covVarLabelCycle = (
       spec.covariate_variable_label != null
@@ -192,7 +281,8 @@
       if (covt) {
         covValEl.textContent = covt;
         covBadge.hidden = false;
-        volsketchApplyBadgeBackground(covBadge, bg);
+        var covBg = segCovBgs.length > idx && segCovBgs[idx] != null ? segCovBgs[idx] : bg;
+        volsketchApplyBadgeBackground(covBadge, covBg);
       } else {
         covVarEl.hidden = true;
         covVarEl.textContent = "";
@@ -209,7 +299,6 @@
       }
       if (startT === null) startT = now;
       var elapsed = now - startT;
-      var loopMs = totalF * fd;
       var frameIdx = Math.floor(elapsed / fd) % totalF;
       var idx = Math.min(labels.length - 1, Math.floor(frameIdx / fpv));
       applySegmentIdx(idx);

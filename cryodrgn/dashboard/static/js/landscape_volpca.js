@@ -1114,7 +1114,8 @@
       animPayload.view_rotations = currentViewRotationPayload();
     }
     if (
-      currentGifMode() === "cycle"
+      reason !== "color"
+      && currentGifMode() === "cycle"
       && lastAnimToken
       && lastBatchMode === "rotate_each"
     ) {

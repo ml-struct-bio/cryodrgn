@@ -187,22 +187,19 @@
   }
   /* Discrete toggles stay in the narrow legend rail — do not size from plot stack width. */
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
-    max-height: min(50vh, calc((100svh - var(--cryo-dash-below-nav-tall)) * 1.1));
     overflow: hidden;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-discrete-switches--pair-2col {
     width: 100%;
     max-width: 100%;
-    margin-left: 0;
-    margin-right: 0;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 3px 0;
+    grid-template-columns: minmax(0, max-content);
+    justify-content: center;
+    justify-items: center;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
-    width: 100%;
+    width: max-content;
+    max-width: min(var(--cryo-discrete-cell-max-w, 100%), 100%);
     min-width: 0;
-    height: auto;
-    min-height: 1.35rem;
   }
   @media (max-width: 900px) {
     .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-legend #latent3d-color-hist {
@@ -251,8 +248,34 @@
   .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-end-label {
     line-height: 1.15;
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-view-rotate-summary {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-view-matrix-field {
+    margin: 0.28rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-view-matrix-field label {
+    font-size: 0.72rem;
+    color: var(--muted, #5c6b7a);
+    margin: 0;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-view-matrix-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0.28rem 0.35rem;
+    font-size: 0.62rem;
     line-height: 1.2;
+    color: var(--text, #1a2332);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    resize: vertical;
+    min-height: 3.2rem;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-view-matrix-apply {
+    align-self: flex-start;
+    font-size: 0.72rem;
+    padding: 0.22rem 0.5rem;
   }
   /* Fixed preview footprint so the aside column does not grow when GIFs finish loading. */
   .cryo-dash-page--latent3d #l3dva-preview-wrap {
@@ -599,19 +622,48 @@
     line-height: 1.16;
     color: var(--nav-bg, #243b53);
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-switch-row {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-seg.volsketch-seg {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
+    width: 100%;
     margin: 0.12rem 0 0;
-    flex-wrap: wrap;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(36, 59, 83, 0.28);
+    background: #e8ecf1;
+    box-sizing: border-box;
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-end-label {
-    font-size: 0.68rem;
-    font-weight: 600;
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-seg input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-seg label {
+    flex: 1 1 0;
+    text-align: center;
+    padding: 0.34rem 0.18rem;
+    font-size: 0.61rem;
+    line-height: 1.04;
+    white-space: normal;
+    cursor: pointer;
+    margin: 0;
     color: var(--muted, #5c6b7a);
     user-select: none;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-seg label:not(:last-of-type) {
+    border-right: 1px solid rgba(36, 59, 83, 0.18);
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-seg input:focus-visible + label {
+    outline: 2px solid var(--nav-bg, #243b53);
+    outline-offset: -2px;
+    z-index: 1;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-seg input:checked + label {
+    background: var(--nav-bg, #243b53);
+    color: #fff;
+    font-weight: 600;
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch {
     position: relative;
@@ -725,8 +777,13 @@
     align-items: stretch;
     align-self: flex-start;
   }
+  .cryo-dash-page--latent3d .latent3d-volanim-card > #l3dva-gif-preview-note {
+    margin: 0 0 0.45rem;
+    line-height: 1.24;
+  }
   .cryo-dash-page--latent3d .l3dva-display-col #l3dva-sel-summary {
     font-variant-numeric: tabular-nums;
+    font-weight: 600;
     margin: 0 0 0.35rem;
     padding: 0;
     align-self: flex-start;
@@ -850,9 +907,6 @@
     }
     .cryo-dash-page--latent3d .cryo-cc-legend #latent3d-color-hist {
       min-height: 5.5rem;
-    }
-    .cryo-dash-page--latent3d #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
-      max-height: min(45vh, 22rem);
     }
   }
   .cryo-dash-page--latent3d #latent3d-color-legend-panel {
@@ -1004,43 +1058,11 @@
   }
   #latent3d-color-discrete-wrap {
     display: none;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
-    flex-direction: column;
-  }
-  #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
-    display: flex;
-  }
-  .cryo-dash-page--latent3d .cryo-cc-discrete-switches {
-    display: flex;
-    flex-direction: column;
-    gap: 0.32rem;
-    overflow-y: auto;
-    flex: 1 1 auto;
-    min-height: 0;
-    padding-right: 0.15rem;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(var(--cryo-discrete-col-w, 5.5rem), 1fr));
-    grid-auto-rows: minmax(1.3rem, auto);
-    gap: 2px 3px;
-    align-items: stretch;
-    padding-right: 0;
     /* --cryo-discrete-legend-w set from JS as 90% of 3D plot stack width */
     width: var(--cryo-discrete-legend-w, 100%);
     max-width: 100%;
-    margin-left: auto;
-    margin-right: auto;
-    box-sizing: border-box;
-  }
-  .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
-    min-height: 1.2rem;
-    height: auto;
-    box-sizing: border-box;
-    min-width: 0;
-    width: 100%;
   }
   .cryo-dash-page--latent3d .cryo-cc-discrete-cell {
     padding: 0;
@@ -1375,9 +1397,13 @@
               </div>
             </div>
           </div>
-          <div id="latent3d-color-discrete-wrap">
+          <div id="latent3d-color-discrete-wrap" class="cryo-cc-discrete-wrap">
             <div id="latent3d-color-discrete-heading-row" class="cryo-cc-discrete-toggle-heading-row" hidden>
-              <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
+              <button type="button" class="cryo-cc-discrete-toggle-title" data-cryo-discrete-collapse-toggle
+                aria-expanded="true" aria-controls="latent3d-color-discrete-switches" title="Hide toggle selection">
+                <span class="cryo-cc-discrete-collapse-chevron" aria-hidden="true">▼</span>
+                <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
+              </button>
               <div id="latent3d-color-discrete-invert-slot" class="cryo-cc-region-invert-slot" hidden aria-hidden="true"></div>
             </div>
             <div id="latent3d-color-discrete-switches" class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
@@ -1395,6 +1421,8 @@
   </div>
     <aside class="latent3d-volanim-aside" aria-label="Volume GIF animations">
       <div class="card volsketch-animate-card latent3d-volanim-card" id="l3dva-animate-panel">
+        <p id="l3dva-gif-preview-note" class="cryo-dash-legend-note">GIF previews update automatically a moment after you
+          change the selection (ChimeraX offscreen).</p>
         <div class="l3dva-display-col">
           <p id="l3dva-sel-summary" class="status" role="status" aria-live="polite">No k-means volumes selected</p>
           <div class="volsketch-sel-indices-wrap">
@@ -1434,13 +1462,13 @@
         </div>
         <fieldset class="volsketch-gif-modes l3dva-gif-mode-fieldset" style="margin:0 0 0.65rem;">
           <legend>Animation output</legend>
-          <div class="l3dva-gif-mode-switch-row" role="group" aria-label="Animation output style">
-            <span class="l3dva-gif-mode-end-label">Cycle</span>
-            <label class="l3dva-light-switch">
-              <input type="checkbox" id="l3dva-gif-mode-switch" aria-label="Rotate each volume (on) versus cycle volumes (off)"/>
-              <span class="l3dva-light-switch-track" aria-hidden="true"><span class="l3dva-light-switch-thumb"></span></span>
-            </label>
-            <span class="l3dva-gif-mode-end-label">Rotate</span>
+          <div class="volsketch-seg l3dva-gif-mode-seg" role="radiogroup" aria-label="Animation output style">
+            <input type="radio" name="l3dva-gif-mode" id="l3dva-mode-cycle" value="cycle" />
+            <label for="l3dva-mode-cycle">Cycle<br />through volumes</label>
+            <input type="radio" name="l3dva-gif-mode" id="l3dva-mode-rotate" value="rotate_each" />
+            <label for="l3dva-mode-rotate">Rotating<br />tiled grid</label>
+            <input type="radio" name="l3dva-gif-mode" id="l3dva-mode-disabled" value="disabled" checked />
+            <label for="l3dva-mode-disabled">Disable<br />animation</label>
           </div>
           <p id="l3dva-mode-desc" class="cryo-dash-legend-note"></p>
         </fieldset>
@@ -1479,10 +1507,13 @@
             <span class="l3dva-view-rotate-btn__label">Rotate Z</span>
           </button>
         </div>
-        <p id="l3dva-view-rotate-summary" class="volsketch-view-rotate-summary">ChimeraX view matrix: available after
-          animation loads.</p>
-        <p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">GIF previews update automatically a moment after you
-          change the selection (ChimeraX offscreen).</p>
+        <div class="volsketch-view-matrix-field">
+          <label for="l3dva-view-matrix-input">ChimeraX view matrix</label>
+          <textarea id="l3dva-view-matrix-input" class="volsketch-view-matrix-input" rows="3"
+            placeholder="camera n1,n2,... (12 numbers; available after animation loads)"></textarea>
+          <button type="button" class="btn btn-secondary volsketch-view-matrix-apply" id="l3dva-view-matrix-apply"
+            disabled>Apply view matrix</button>
+        </div>
         <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">
           <button type="button" class="btn btn--primary" id="l3dva-save-gif" disabled>Save GIFs to k-means
             folder…</button>

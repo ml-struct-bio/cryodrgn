@@ -1448,14 +1448,27 @@
         }
         if (spec.style === "static") {
           var volStatic = wrap._l3dvaVol;
-          spec.badge_background = markerFillCssForVol(gd, trace, volStatic) || "";
+          var serverStaticBg = spec.badge_background != null
+            ? String(spec.badge_background).trim()
+            : "";
+          var serverCovStaticBg = spec.covariate_badge_background != null
+            ? String(spec.covariate_badge_background).trim()
+            : "";
+          spec.badge_background = serverCovStaticBg || serverStaticBg
+            || markerFillCssForVol(gd, trace, volStatic)
+            || "";
           applyBadgeLetterColor(badge, spec.badge_background);
           return;
         }
         if (spec.style === "rotate_frames") {
           var volRot = wrap._l3dvaVol;
           var palRot = resolvePlotPalette();
-          spec.badge_background = markerFillCssForVol(gd, trace, volRot) || "";
+          var serverRotBg = spec.badge_background != null
+            ? String(spec.badge_background).trim()
+            : "";
+          spec.badge_background = serverRotBg
+            || markerFillCssForVol(gd, trace, volRot)
+            || "";
           rebuildRotateFrameBadgeBackgrounds(spec, trace, gd, palRot);
           if (typeof wrap._l3dvaReapplyLetterColor === "function") {
             wrap._l3dvaReapplyLetterColor();
@@ -1467,15 +1480,28 @@
         if (spec.style === "cycle_segments" && spec.segment_labels) {
           var ltv = wrap._l3dvaLabelToVol || {};
           var labels = spec.segment_labels;
+          var serverSegBgs = spec.segment_backgrounds || [];
+          var serverCovBgs = spec.segment_covariate_backgrounds || [];
           if (!spec.segment_backgrounds || spec.segment_backgrounds.length !== labels.length) {
             spec.segment_backgrounds = labels.map(function() { return ""; });
           }
           for (var si = 0; si < labels.length; si++) {
             var lbl = labels[si] == null ? "" : String(labels[si]);
             var vv = ltv[lbl];
-            spec.segment_backgrounds[si] = vv != null
-              ? (markerFillCssForVol(gd, trace, vv) || "")
-              : "";
+            var fromServer = "";
+            if (serverCovBgs.length > si && serverCovBgs[si] != null) {
+              fromServer = String(serverCovBgs[si]).trim();
+            }
+            if (!fromServer && serverSegBgs.length > si && serverSegBgs[si] != null) {
+              fromServer = String(serverSegBgs[si]).trim();
+            }
+            if (fromServer) {
+              spec.segment_backgrounds[si] = fromServer;
+            } else {
+              spec.segment_backgrounds[si] = vv != null
+                ? (markerFillCssForVol(gd, trace, vv) || "")
+                : "";
+            }
           }
           if (typeof wrap._l3dvaReapplyLetterColor === "function") {
             wrap._l3dvaReapplyLetterColor();
@@ -1882,7 +1908,8 @@
         if (pal) animPayload.palette = pal;
       }
       if (
-        currentGifMode() === "cycle"
+        reason !== "color"
+        && currentGifMode() === "cycle"
         && lastAnimToken
         && lastBatchMode === "rotate_each"
       ) {

@@ -33,10 +33,11 @@ from cryodrgn.dashboard.particle_explorer import (
 )
 from cryodrgn.dashboard.palette_config import normalize_continuous_palette
 from cryodrgn.dashboard.plots_color_covariate import (
+    _continuous_series_stats,
     _labels_colors_and_legend_items,
+    _lower_color_series_is_discrete,
     _lower_legend_entry_label,
 )
-from cryodrgn.dashboard.plots_color_covariate import _continuous_series_stats
 from cryodrgn.dashboard.plots_figure_utils import (
     _DASHBOARD_CREAM,
     _PLOTLY_FONT,
@@ -52,6 +53,7 @@ _LANDSCAPE_ANIM_ENTRIES: dict[str, dict[str, Any]] = {}
 
 _LANDSCAPE_VOLPCA_KMEANS_RE = re.compile(r"^kmeans(\d+)$")
 _LANDSCAPE_VOLPCA_PKL_RE = re.compile(r"^vol_pca_(\d+)\.pkl$")
+_LANDSCAPE_VOL_PC_COL_RE = re.compile(r"^landscape_vol_PC(\d+)$", re.IGNORECASE)
 # ``vol_mean.mrc`` and similar match ``vol_*.mrc`` but are not k-means centroids.
 _KMEANS_SKETCH_VOL_MRC_RE = re.compile(r"^vol_(\d+)\.mrc$")
 # Particle PCA columns from ``analysis.load_dataframe`` (``PC1``, ``PC2``, …).
@@ -332,6 +334,131 @@ def parse_landscape_axis_spec(spec: str) -> tuple[str, int]:
     return (kind, idx)
 
 
+def _resolve_covariate_column_name(df: pd.DataFrame, pcm: str) -> str | None:
+    """Match a colour column name case-insensitively against ``df`` columns."""
+    pcm = (pcm or "").strip()
+    if not pcm:
+        return None
+    if pcm in df.columns:
+        return pcm
+    pl = pcm.lower()
+    hits = [c for c in df.columns if str(c).lower() == pl]
+    if len(hits) == 1:
+        return str(hits[0])
+    return None
+
+
+def _sketch_continuous_covariate_per_volume_values(
+    landscape_dir: str,
+    exp: DashboardExperiment,
+    pcm: str,
+    vol_ids: list[int],
+) -> tuple[np.ndarray, float, float] | None:
+    """Per sketch-volume covariate floats + global vmin/vmax (aligned with 3D volume landscape scatter)."""
+    pcm = (pcm or "").strip()
+    pl = pcm.lower()
+    if pl in ("none", "state", "labels"):
+        return None
+
+    k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
+    pc = load_vol_pca_matrix(landscape_dir, k_sketch)
+    n = int(pc.shape[0])
+    sorted_vols = kmeans_sorted_vol_indices(kmeans_dir)
+    all_vol_ids = sorted_vols[:n] if len(sorted_vols) >= n else sorted_vols
+    if len(all_vol_ids) < n:
+        raise ValueError(
+            f"Found {len(all_vol_ids)} vol_*.mrc files but vol_pca has {n} rows."
+        )
+    centers_plot_rows = load_sketch_centroid_plot_df_rows(kmeans_dir, n)
+
+    m_pc = _LANDSCAPE_VOL_PC_COL_RE.match(pcm)
+    if m_pc:
+        pc_idx = int(m_pc.group(1)) - 1
+        if pc_idx < 0 or pc_idx >= pc.shape[1]:
+            return None
+        col_vals = pc[:, pc_idx].astype(np.float64)
+        vol_to_val = {
+            int(all_vol_ids[i]): float(col_vals[i]) for i in range(len(all_vol_ids))
+        }
+        out = np.array(
+            [vol_to_val.get(int(v), np.nan) for v in vol_ids],
+            dtype=np.float64,
+        )
+        _, cmin, cmax = _continuous_series_stats(pd.Series(col_vals))
+        return out, cmin, cmax
+
+    from cryodrgn.dashboard.landscape_full_3d import (
+        VOL_LANDSCAPE_3D_PLOT_DF_ROW,
+        VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
+        landscape_full_3d_ready,
+        landscape_full_sampled_plot_df,
+    )
+
+    if landscape_full_3d_ready(exp.workdir, exp.epoch):
+        try:
+            sdf = landscape_full_sampled_plot_df(exp)
+            col = _resolve_covariate_column_name(sdf, pcm)
+            if col is not None and not _lower_color_series_is_discrete(sdf[col]):
+                bounds = pd.to_numeric(sdf[col], errors="coerce")
+                if bounds.notna().any():
+                    out = np.full(len(vol_ids), np.nan, dtype=np.float64)
+                    for j, v in enumerate(vol_ids):
+                        mask = sdf[VOL_LANDSCAPE_NEAREST_SKETCH_VOL].to_numpy(
+                            dtype=np.int64
+                        ) == int(v)
+                        if mask.any():
+                            sub = pd.to_numeric(
+                                sdf.loc[mask, col], errors="coerce"
+                            ).dropna()
+                            out[j] = float(sub.median()) if not sub.empty else np.nan
+                        else:
+                            try:
+                                ri = all_vol_ids.index(int(v))
+                                r = int(centers_plot_rows[ri])
+                                row_m = (
+                                    sdf[VOL_LANDSCAPE_3D_PLOT_DF_ROW].to_numpy(
+                                        dtype=np.int64
+                                    )
+                                    == r
+                                )
+                                if row_m.any():
+                                    sub2 = pd.to_numeric(
+                                        sdf.loc[row_m, col], errors="coerce"
+                                    ).dropna()
+                                    out[j] = (
+                                        float(sub2.iloc[0])
+                                        if not sub2.empty
+                                        else np.nan
+                                    )
+                            except ValueError:
+                                pass
+                    if np.isfinite(out).any():
+                        _, cmin, cmax = _continuous_series_stats(bounds)
+                        return out, cmin, cmax
+        except (FileNotFoundError, ValueError, OSError):
+            pass
+
+    df = exp.plot_df
+    col = _resolve_covariate_column_name(df, pcm)
+    if col is None:
+        return None
+    if col not in exp.numeric_columns and not pd.api.types.is_numeric_dtype(df[col]):
+        return None
+    cov: list[Any] = []
+    for v in vol_ids:
+        try:
+            ri = all_vol_ids.index(int(v))
+            r = int(centers_plot_rows[ri])
+            cov.append(df.iloc[r][col] if 0 <= r < len(df) else np.nan)
+        except ValueError:
+            cov.append(np.nan)
+    arr = pd.to_numeric(pd.Series(cov), errors="coerce").to_numpy(dtype=np.float64)
+    if not np.isfinite(arr).any():
+        return None
+    _, cmin, cmax = _continuous_series_stats(df[col])
+    return arr, cmin, cmax
+
+
 def sketch_vol_marker_hex_by_vol_index(
     landscape_dir: str,
     exp: DashboardExperiment,
@@ -354,36 +481,40 @@ def sketch_vol_marker_hex_by_vol_index(
     if states is not None and len(states) != n:
         states = None
     plotly_cs = normalize_continuous_palette(continuous_palette)
-    color_mode = (color_mode or "none").strip().lower()
-    df = exp.plot_df
+    color_mode = (color_mode or "none").strip()
+    pl = color_mode.lower()
 
-    if color_mode == "state" and states is not None:
+    if pl == "state" and states is not None:
         ser = pd.Series(states)
         colors, _ = _labels_colors_and_legend_items(ser)
         return {int(vol_ids[i]): str(colors[i]) for i in range(n)}
-    if (
-        color_mode not in ("none", "state")
-        and color_mode in df.columns
-        and color_mode in exp.numeric_columns
-    ):
+    if pl == "labels":
+        df = exp.plot_df
         cov_vals: list[Any] = []
         for i in range(n):
             r = int(centers_plot_rows[i])
             if r < 0 or r >= len(df):
                 cov_vals.append(np.nan)
             else:
-                cov_vals.append(df.iloc[r][color_mode])
+                cov_vals.append(df.iloc[r]["labels"])
         ser = pd.Series(cov_vals)
-        if color_mode == "labels":
-            colors, _ = _labels_colors_and_legend_items(ser)
-            return {int(vol_ids[i]): str(colors[i]) for i in range(n)}
-        color_num = pd.to_numeric(ser, errors="coerce")
+        colors, _ = _labels_colors_and_legend_items(ser)
+        return {int(vol_ids[i]): str(colors[i]) for i in range(n)}
+
+    cont = _sketch_continuous_covariate_per_volume_values(
+        landscape_dir, exp, color_mode, [int(v) for v in vol_ids]
+    )
+    if cont is not None:
+        arr, cmin, cmax = cont
         hexes = numeric_array_to_plotly_hex(
-            color_num.to_numpy(dtype=float),
+            arr,
             plotly_cs,
+            vmin=cmin,
+            vmax=cmax,
         )
-        return {int(vol_ids[i]): hexes[i] for i in range(n)}
-    if color_mode == "none":
+        return {int(vol_ids[i]): hexes[i] for i in range(len(vol_ids))}
+
+    if pl == "none":
         return {}
     return {int(vol_ids[i]): "#4a5568" for i in range(n)}
 
@@ -397,8 +528,9 @@ def sketch_vol_color_covariate_overlay_text(
     vol_index: int,
 ) -> str | None:
     """Display string for the plot color column at this sketch volume (preview badge)."""
-    pcm = (plot_color_mode or "none").strip().lower()
-    if pcm == "none":
+    pcm = (plot_color_mode or "none").strip()
+    pl = pcm.lower()
+    if pl == "none":
         return None
 
     n = int(load_vol_pca_matrix(landscape_dir, k_sketch).shape[0])
@@ -406,48 +538,73 @@ def sketch_vol_color_covariate_overlay_text(
     vol_ids = sorted_vols[:n] if len(sorted_vols) >= n else sorted_vols
     if len(vol_ids) < n:
         return None
+
+    states = load_sketch_state_labels(landscape_dir)
+    if states is not None and len(states) != n:
+        states = None
     try:
         row_idx = vol_ids.index(int(vol_index))
     except ValueError:
         return None
 
-    centers_plot_rows = load_sketch_centroid_plot_df_rows(kmeans_dir, n)
-    states = load_sketch_state_labels(landscape_dir)
-    if states is not None and len(states) != n:
-        states = None
-    df = exp.plot_df
-    r_plot = int(centers_plot_rows[row_idx])
-
-    if pcm == "state" and states is not None:
+    if pl == "state" and states is not None:
         return str(int(states[row_idx]))
 
-    if (
-        pcm not in ("none", "state")
-        and pcm in df.columns
-        and pcm in exp.numeric_columns
-    ):
+    cont = _sketch_continuous_covariate_per_volume_values(
+        landscape_dir, exp, pcm, [int(vol_index)]
+    )
+    if cont is not None:
+        arr, _, _ = cont
+        if not np.isfinite(arr[0]):
+            return "—"
+        return f"{float(arr[0]):.6g}"
+
+    if pl == "labels":
+        centers_plot_rows = load_sketch_centroid_plot_df_rows(kmeans_dir, n)
+        df = exp.plot_df
+        r_plot = int(centers_plot_rows[row_idx])
         if r_plot < 0 or r_plot >= len(df):
             return "—"
-        raw = df.iloc[r_plot][pcm]
-        if pcm == "labels":
-            return _lower_legend_entry_label("labels", raw)
-        color_num = pd.to_numeric(pd.Series([raw]), errors="coerce").iloc[0]
-        if pd.isna(color_num):
-            return "—"
-        fv = float(color_num)
-        if not np.isfinite(fv):
-            return "—"
-        return f"{fv:.6g}"
+        return _lower_legend_entry_label("labels", df.iloc[r_plot]["labels"])
 
     return None
 
 
-def _plot_color_mode_is_continuous_numeric(exp: DashboardExperiment, pcm: str) -> bool:
-    pcm = (pcm or "none").strip().lower()
+def _plot_color_mode_is_continuous_numeric(
+    exp: DashboardExperiment,
+    pcm: str,
+    *,
+    landscape_dir: str | None = None,
+) -> bool:
+    pcm = (pcm or "none").strip()
+    pl = pcm.lower()
+    if pl in ("none", "state", "labels"):
+        return False
+    if _LANDSCAPE_VOL_PC_COL_RE.match(pcm):
+        return True
+    if landscape_dir:
+        try:
+            k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
+            n = int(load_vol_pca_matrix(landscape_dir, k_sketch).shape[0])
+            sorted_vols = kmeans_sorted_vol_indices(kmeans_dir)
+            vol_ids = sorted_vols[:n] if len(sorted_vols) >= n else sorted_vols
+            if (
+                _sketch_continuous_covariate_per_volume_values(
+                    landscape_dir, exp, pcm, [int(vol_ids[0])]
+                )
+                is not None
+            ):
+                return True
+        except (FileNotFoundError, ValueError, OSError):
+            pass
+    col = _resolve_covariate_column_name(exp.plot_df, pcm)
     return bool(
-        pcm not in ("none", "state", "labels")
-        and pcm in exp.plot_df.columns
-        and pcm in exp.numeric_columns
+        col is not None
+        and (
+            col in exp.numeric_columns
+            or pd.api.types.is_numeric_dtype(exp.plot_df[col])
+        )
+        and not _lower_color_series_is_discrete(exp.plot_df[col])
     )
 
 
@@ -462,32 +619,58 @@ def sketch_vol_rotate_frames_covariate_overlay(
     continuous_palette: str | None,
 ) -> dict[str, Any] | None:
     """Per-frame covariate text + palette hex for rotate-each GIF previews (continuous colour only)."""
-    pcm = (plot_color_mode or "none").strip().lower()
-    if not _plot_color_mode_is_continuous_numeric(exp, pcm):
+    pcm = (plot_color_mode or "none").strip()
+    if not _plot_color_mode_is_continuous_numeric(
+        exp, pcm, landscape_dir=landscape_dir
+    ):
         return None
 
     from cryodrgn.dashboard.landscape_full_3d import (
         VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
         attach_landscape_nearest_sketch_vol_column,
+        landscape_full_3d_ready,
+        landscape_full_sampled_plot_df,
     )
 
-    df = exp.plot_df
-    if VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in df.columns:
-        df = attach_landscape_nearest_sketch_vol_column(exp, df)
-    if VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in df.columns:
-        return None
+    ser = pd.Series(dtype=float)
+    bounds_col: pd.Series | None = None
+    if landscape_full_3d_ready(exp.workdir, exp.epoch):
+        try:
+            sdf = landscape_full_sampled_plot_df(exp)
+            col = _resolve_covariate_column_name(sdf, pcm)
+            if col is not None:
+                mask = sdf[VOL_LANDSCAPE_NEAREST_SKETCH_VOL].to_numpy(
+                    dtype=np.int64
+                ) == int(vol_index)
+                if mask.any():
+                    ser = pd.to_numeric(sdf.loc[mask, col], errors="coerce").dropna()
+                    bounds_col = pd.to_numeric(sdf[col], errors="coerce")
+        except (FileNotFoundError, ValueError, OSError):
+            ser = pd.Series(dtype=float)
 
-    mask = df[VOL_LANDSCAPE_NEAREST_SKETCH_VOL].to_numpy(dtype=np.int64) == int(
-        vol_index
-    )
-    if not mask.any():
-        return None
-    ser = pd.to_numeric(df.loc[mask, pcm], errors="coerce").dropna()
+    if ser.empty:
+        df = exp.plot_df
+        if VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in df.columns:
+            df = attach_landscape_nearest_sketch_vol_column(exp, df)
+        if VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in df.columns:
+            return None
+        col = _resolve_covariate_column_name(df, pcm)
+        if col is None:
+            return None
+        mask = df[VOL_LANDSCAPE_NEAREST_SKETCH_VOL].to_numpy(dtype=np.int64) == int(
+            vol_index
+        )
+        if not mask.any():
+            return None
+        ser = pd.to_numeric(df.loc[mask, col], errors="coerce").dropna()
+        bounds_col = pd.to_numeric(df[col], errors="coerce")
     if ser.empty:
         return None
 
     plotly_cs = normalize_continuous_palette(continuous_palette)
-    _, cmin, cmax = _continuous_series_stats(exp.plot_df[pcm])
+    _, cmin, cmax = _continuous_series_stats(
+        bounds_col if bounds_col is not None else ser
+    )
     sorted_vals = np.sort(ser.to_numpy(dtype=float))
     n = int(sorted_vals.shape[0])
     gif_frames = max(4, int(gif_frames))
@@ -918,9 +1101,11 @@ def generate_landscape_volume_animations(
         int(v): montage_cell_label(i) for i, v in enumerate(vol_indices)
     }
 
-    pcm = (plot_color_mode or "none").strip().lower()
-    if pcm == "state" and load_sketch_state_labels(landscape_dir) is None:
+    pcm = (plot_color_mode or "none").strip()
+    pcm_lower = pcm.lower()
+    if pcm_lower == "state" and load_sketch_state_labels(landscape_dir) is None:
         pcm = "none"
+        pcm_lower = "none"
     hex_by_vol_anim = sketch_vol_marker_hex_by_vol_index(
         landscape_dir,
         exp,
@@ -929,7 +1114,7 @@ def generate_landscape_volume_animations(
     )
 
     def _label_hex(vol: int) -> str:
-        if pcm == "none":
+        if pcm_lower == "none":
             return ""
         return hex_by_vol_anim.get(int(vol), "#4a5568")
 
@@ -944,7 +1129,7 @@ def generate_landscape_volume_animations(
         )
         if not s:
             return {}
-        cov_bg = _label_hex(int(vol)) if pcm != "none" else ""
+        cov_bg = _label_hex(int(vol)) if pcm_lower != "none" else ""
         out: dict[str, Any] = {
             "covariate_text": s,
             "covariate_badge_background": cov_bg,
@@ -1001,7 +1186,7 @@ def generate_landscape_volume_animations(
             h = vol_state_hex.get(int(vol))
             if h:
                 return chimerax_volume_color_spec(str(h))
-        if pcm != "none":
+        if pcm_lower != "none":
             return chimerax_volume_color_spec(
                 str(hex_by_vol_anim.get(int(vol), "#4a5568"))
             )
@@ -1159,7 +1344,7 @@ def generate_landscape_volume_animations(
                     "frame_duration_ms": frame_ms,
                     "total_frames": int(len(cyc_vols) * fpv_c),
                 }
-                if pcm != "none":
+                if pcm_lower != "none":
                     cyc_preview["segment_covariate_texts"] = [
                         sketch_vol_color_covariate_overlay_text(
                             landscape_dir,
@@ -1172,7 +1357,9 @@ def generate_landscape_volume_animations(
                         or ""
                         for vx in cyc_vols
                     ]
-                    if _plot_color_mode_is_continuous_numeric(exp, pcm):
+                    if _plot_color_mode_is_continuous_numeric(
+                        exp, pcm, landscape_dir=landscape_dir
+                    ):
                         cyc_preview["segment_covariate_backgrounds"] = [
                             _label_hex(int(vx)) for vx in cyc_vols
                         ]

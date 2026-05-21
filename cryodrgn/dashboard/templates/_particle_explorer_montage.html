@@ -32,8 +32,15 @@
           <span id="color-threshold-status" class="status"></span>
         </div>
       </div>
-      <div id="color-discrete-wrap">
-        <div id="color-discrete-switches" class="cryo-color-discrete-switches" role="group"
+      <div id="color-discrete-wrap" class="cryo-cc-discrete-wrap">
+        <div id="color-discrete-heading-row" class="cryo-cc-discrete-toggle-heading-row" hidden>
+          <button type="button" class="cryo-cc-discrete-toggle-title" data-cryo-discrete-collapse-toggle
+            aria-expanded="true" aria-controls="color-discrete-switches" title="Hide toggle selection">
+            <span class="cryo-cc-discrete-collapse-chevron" aria-hidden="true">▼</span>
+            <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
+          </button>
+        </div>
+        <div id="color-discrete-switches" class="cryo-cc-discrete-switches cryo-color-discrete-switches" role="group"
           aria-label="Discrete color filter"></div>
         <div class="cryo-color-discrete-actions">
           <button type="button" id="btn-discrete-invert-selection" class="btn btn-secondary" disabled>

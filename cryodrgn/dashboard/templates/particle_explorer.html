@@ -985,7 +985,7 @@
   .cryo-palette-select.scatter-palette-radios--suppressed {
     display: none;
   }
-  /* Same rule as particle_explorer.css — inline block must not override hide (pane uses display:block). */
+  /* Discrete: collapse is on “Toggle selection”; hide continuous palette UI */
   #color-hist-panel.cryo-explorer-discrete-hides-scatter-palette-radios
   #scatter-palette-radios.cryo-palette-select--options-pane {
     display: none !important;
@@ -1226,24 +1226,6 @@
   #color-discrete-wrap {
     display: none;
   }
-  /* Shared legend uses ``cryo-cc-discrete-wrap--show``; older paths used ``cryo-color-discrete-wrap--show``. */
-  #color-discrete-wrap.cryo-color-discrete-wrap--show,
-  #color-discrete-wrap.cryo-cc-discrete-wrap--show {
-    display: block;
-  }
-  #color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed,
-  #color-discrete-wrap.cryo-color-discrete-wrap--show.cryo-discrete-legend--collapsed {
-    display: none !important;
-  }
-  .cryo-color-discrete-switches {
-    display: grid;
-    /* Compact auto-fit: as many cells as possible per row */
-    grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
-    align-items: stretch;
-    justify-content: start;
-    gap: 1px 3px;
-    margin: 0.05rem 0 0;
-  }
   #color-discrete-switches
   .cryo-cc-discrete-cell--invert
   .cryo-cc-discrete-invert-fitbox
@@ -1298,17 +1280,21 @@
   #color-discrete-switches .cryo-cc-discrete-switch-label {
     font-weight: 600;
     font-size: 0.68rem;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.15;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   #color-discrete-switches .cryo-cc-discrete-switch-count {
     font-size: 0.58rem;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.12;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .cryo-color-discrete-switch-text {
     display: inline-flex;

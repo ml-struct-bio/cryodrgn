@@ -35,6 +35,7 @@ from cryodrgn.dashboard.plots_color_covariate import (
     _scatter_discrete_marker_arrays,
     _stable_discrete_covariate_hex_map,
     discrete_category_counts_by_filter_key,
+    numeric_array_to_plotly_hex,
     plot_df_color_filter_mask,
 )
 from cryodrgn.dashboard.plots_figure_utils import (
@@ -402,16 +403,17 @@ def scatter3d_z_json(
             }
         else:
             _cvals, cmin, cmax = _continuous_series_stats(sub[color_col])
+            if pinned_color_range is not None:
+                cmin, cmax = pinned_color_range
+            hex_colors = numeric_array_to_plotly_hex(
+                _cvals, plotly_cs, vmin=cmin, vmax=cmax
+            )
+            # Per-point hex matches Plotly's colorscale exactly (WebGL + letter overlays).
             marker = dict(
                 size=msize,
                 opacity=mopacity,
-                color=sub[color_col],
-                colorscale=plotly_cs,
+                color=hex_colors,
             )
-            if pinned_color_range is not None:
-                cmin, cmax = pinned_color_range
-                marker["cmin"] = cmin
-                marker["cmax"] = cmax
             color_legend_title = landscape_vol_pc_column_pretty_label(
                 color_col,
                 vol_pc_explained_variance_ratio,
@@ -516,7 +518,7 @@ def scatter3d_z_json(
         # Bring montage letters closer to the points (previously "top center").
         scatter3d_extras["textposition"] = "middle center"
         scatter3d_extras["textfont"] = dict(
-            size=36 * 0.8,
+            size=36 * 0.8 * 0.75 * 1.5 * 0.8 * 0.8 * 0.8 * 0.8,
             color="#1a1a1a",
             family="system-ui, Segoe UI, sans-serif",
         )
@@ -564,6 +566,8 @@ def scatter3d_z_json(
         ] = discrete_category_counts_by_filter_key(df_all, color_col)
     if color_col and color_col != "none" and color_col in sub.columns:
         plot_meta["cdrgn_color_mode"] = "discrete" if discrete_trace else "continuous"
+        if not discrete_trace:
+            plot_meta["cdrgn_continuous_palette"] = plotly_cs
     if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
         plot_meta["cdrgn_landscape_vol_animation"] = True
         if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:

@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import numpy as np
 import pandas as pd
+from plotly.colors import sample_colorscale
 
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.plots_figure_utils import (
@@ -55,6 +56,35 @@ def _continuous_series_stats(values: pd.Series) -> tuple[np.ndarray, float, floa
         cmin = float(np.min(cfinite))
         cmax = float(np.max(cfinite))
     return cvals, cmin, cmax
+
+
+def numeric_array_to_plotly_hex(
+    vals: np.ndarray,
+    plotly_cs: str,
+    *,
+    vmin: float | None = None,
+    vmax: float | None = None,
+) -> list[str]:
+    """Map finite floats through a Plotly colorscale name; NaN → neutral gray."""
+    vals = np.asarray(vals, dtype=float)
+    n = int(vals.shape[0])
+    finite = np.isfinite(vals)
+    if not finite.any():
+        return ["#9ca3af"] * n
+    if vmin is None:
+        vmin = float(np.nanmin(vals))
+    if vmax is None:
+        vmax = float(np.nanmax(vals))
+    span = float(vmax) - float(vmin)
+    out: list[str] = []
+    for i in range(n):
+        if not finite[i]:
+            out.append("#9ca3af")
+            continue
+        t = 0.5 if span <= 0 else (float(vals[i]) - vmin) / span
+        t = max(0.0, min(1.0, t))
+        out.append(sample_colorscale(plotly_cs, [t])[0])
+    return out
 
 
 def _lower_legend_entry_label(lower_color_col: str, u: Any) -> str:

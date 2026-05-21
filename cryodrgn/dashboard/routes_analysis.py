@@ -644,17 +644,21 @@ def api_landscape_volpca_generate_animations():
     gf = int(data.get("gif_frames", LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT))
     cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
     cf = int(data.get("cycle_frames_per_vol", 8))
-    plot_color_raw = (
-        str(data.get("color_mode") or data.get("color") or "none").strip().lower()
-    )
-    cm = "state" if plot_color_raw == "state" else "none"
+    plot_color_raw = str(data.get("color_mode") or data.get("color") or "none").strip()
+    pcm_lower = plot_color_raw.lower()
+    if pcm_lower == "none":
+        pcm = "none"
+    elif pcm_lower == "state":
+        pcm = "state"
+    else:
+        pcm = plot_color_raw
+    cm = "state" if pcm_lower == "state" else "none"
     palette = data.get("palette")
     if palette is not None:
         palette = str(palette).strip() or None
     landscape_dir = landscape_dir_for_epoch(e.workdir, le)
     if cm == "state" and load_sketch_state_labels(landscape_dir) is None:
         cm = "none"
-    pcm = plot_color_raw
     if pcm == "state" and load_sketch_state_labels(landscape_dir) is None:
         pcm = "none"
     reuse_tok = data.get("reuse_rotate_keyframes_token")
@@ -666,6 +670,11 @@ def api_landscape_volpca_generate_animations():
             jsonify(error="view_rotations must be an object with x, y, and z degrees."),
             400,
         )
+    view_matrix = data.get("view_matrix")
+    if view_matrix is not None and not isinstance(view_matrix, str):
+        return jsonify(error="view_matrix must be a string."), 400
+    if view_matrix is not None:
+        view_matrix = str(view_matrix).strip() or None
 
     try:
         t0 = time.perf_counter()
@@ -682,6 +691,7 @@ def api_landscape_volpca_generate_animations():
             continuous_palette=palette,
             reuse_rotate_keyframes_token=reuse_tok,
             view_rotations=view_rotations,
+            view_matrix=view_matrix,
         )
         items = animation_payload_b64(token)
         view_matrix = next(

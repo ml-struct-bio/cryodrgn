@@ -1019,7 +1019,7 @@
     padding-top: 0.36rem;
     border-top: 1px solid rgba(36, 59, 83, 0.1);
   }
-  /* Discrete colouring: palette radio block is unused — hide so no bordered gap under toggles */
+  /* Discrete colouring: collapse is on “Toggle selection”; hide continuous palette UI */
   #color-hist-panel.cryo-explorer-discrete-hides-scatter-palette-radios
     #scatter-palette-radios.cryo-palette-select--options-pane {
     display: none !important;
@@ -1147,27 +1147,6 @@
   }
   #color-discrete-wrap {
     display: none;
-  }
-  /* Shared legend uses ``cryo-cc-discrete-wrap--show``; older paths used ``cryo-color-discrete-wrap--show``. */
-  #color-discrete-wrap.cryo-color-discrete-wrap--show,
-  #color-discrete-wrap.cryo-cc-discrete-wrap--show {
-    display: block;
-  }
-  #color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed,
-  #color-discrete-wrap.cryo-color-discrete-wrap--show.cryo-discrete-legend--collapsed {
-    display: none !important;
-  }
-  .cryo-color-discrete-switches {
-    display: grid;
-    /*
-     * Filled from JS using the longest label width; fixed column tracks keep all chips
-     * the same size while auto-fit keeps row count as low as available width allows.
-     */
-    grid-template-columns: repeat(auto-fit, minmax(var(--cryo-discrete-col-w, 9.5rem), var(--cryo-discrete-col-w,
-      9.5rem)));
-    align-items: stretch;
-    gap: 0.35rem 0.5rem;
-  margin: 0.05rem 0 0;
   }
   .cryo-color-discrete-switch {
     display: inline-flex;

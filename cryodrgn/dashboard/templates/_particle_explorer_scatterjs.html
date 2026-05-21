@@ -1751,8 +1751,13 @@
         } catch (e2) {}
       }
       equalizeMontageActionButtonWidths();
-      if (explorerColorLegend && typeof explorerColorLegend.measureDiscreteInvertAsideColumn === "function") {
-        explorerColorLegend.measureDiscreteInvertAsideColumn();
+      if (explorerColorLegend) {
+        if (typeof explorerColorLegend.fitDiscreteSwitchColumnWidths === "function") {
+          explorerColorLegend.fitDiscreteSwitchColumnWidths();
+        }
+        if (typeof explorerColorLegend.measureDiscreteInvertAsideColumn === "function") {
+          explorerColorLegend.measureDiscreteInvertAsideColumn();
+        }
       }
     });
   }

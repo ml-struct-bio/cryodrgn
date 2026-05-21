@@ -964,17 +964,8 @@
   function syncScatterLegendToggleCaption() {
     if (!scatterPaletteToggle) return;
     var labelSpan = document.getElementById("scatter-palette-toggle-label");
-    if (labelSpan) {
-      if (scatterColorByIsDiscrete()) {
-        labelSpan.textContent = "K-means legend";
-      } else {
-        labelSpan.textContent = "Choose palette";
-      }
-    }
-    scatterPaletteToggle.setAttribute(
-      "aria-controls",
-      scatterColorByIsDiscrete() ? "color-discrete-wrap" : "scatter-palette-options"
-    );
+    if (labelSpan) labelSpan.textContent = "Choose palette";
+    scatterPaletteToggle.setAttribute("aria-controls", "scatter-palette-options");
   }
 
   function syncScatterPaletteFieldset() {
@@ -1010,17 +1001,15 @@
     var expanded = !!(scatterPaletteToggle && scatterPaletteToggle.getAttribute("aria-expanded") === "true");
     if (scatterColorByIsDiscrete()) {
       scatterPaletteOptions.classList.add("cryo-palette-select__options--collapsed");
-      if (colorDiscreteWrap) {
-        if (discreteLegendWrapIsActive()) {
-          colorDiscreteWrap.classList.toggle("cryo-discrete-legend--collapsed", !expanded);
-        } else {
-          colorDiscreteWrap.classList.remove("cryo-discrete-legend--collapsed");
-        }
-      }
-    } else {
-      if (colorDiscreteWrap) colorDiscreteWrap.classList.remove("cryo-discrete-legend--collapsed");
-      scatterPaletteOptions.classList.toggle("cryo-palette-select__options--collapsed", !expanded);
+      return;
     }
+    if (explorerColorLegend) {
+      explorerColorLegend.setDiscretePanelCollapsed(false);
+    } else if (colorDiscreteWrap) {
+      colorDiscreteWrap.classList.remove("cryo-discrete-legend--collapsed");
+      colorDiscreteWrap.classList.remove("cryo-cc-discrete-panel--collapsed");
+    }
+    scatterPaletteOptions.classList.toggle("cryo-palette-select__options--collapsed", !expanded);
   }
   function setRendering(on) {
     if (overlay) {
@@ -3008,6 +2997,7 @@
     thresholdModeCaption: colorHistModeCheckCaption,
     thresholdStatus: colorThresholdStatus,
     discreteSwitches: colorDiscreteSwitches,
+    invertHeadingRowEl: document.getElementById("color-discrete-heading-row"),
     invertHeadingSlotEl: document.getElementById("color-legend-region-invert-slot"),
     invertBtn: btnDiscreteInvertSelection,
     vertical: false,
@@ -3038,7 +3028,9 @@
       }
       if (mode === "discrete") {
         setExplorerLegendDiscreteKeysForSelection();
-        if (scatterPaletteToggle) scatterPaletteToggle.setAttribute("aria-expanded", "true");
+        if (prev !== "discrete" && explorerColorLegend) {
+          explorerColorLegend.setDiscretePanelCollapsed(false);
+        }
       }
       syncScatterPaletteFieldset();
     },

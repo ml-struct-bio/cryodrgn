@@ -45,6 +45,49 @@ def montage_cell_label(idx: int) -> str:
     return letters[j // n] + letters[j % n]
 
 
+_CHIMERAX_MATRIX_NUM_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def chimerax_view_matrix_camera_arg(text: str | None) -> str | None:
+    """Parse UI/API matrix text into comma-separated floats for ``view matrix camera``."""
+    if text is None:
+        return None
+    raw = str(text).strip()
+    if not raw:
+        return None
+    if raw.lower().startswith("camera"):
+        raw = raw[6:].strip()
+    nums = _CHIMERAX_MATRIX_NUM_RE.findall(raw)
+    if len(nums) < 12:
+        raise ValueError(
+            "ChimeraX view matrix must contain 12 numbers "
+            "(optionally prefixed with 'camera')."
+        )
+    floats = [float(n) for n in nums[:12]]
+    if not all(np.isfinite(f) for f in floats):
+        raise ValueError("ChimeraX view matrix numbers must be finite.")
+    return ",".join(f"{f:g}" for f in floats)
+
+
+def format_chimerax_view_matrix_display(camera_arg: str | None) -> str:
+    """Format comma-separated camera floats for the dashboard textarea."""
+    if not camera_arg or not str(camera_arg).strip():
+        return ""
+    return "camera " + str(camera_arg).strip()
+
+
+def chimerax_volume_color_spec(color: str | None) -> str:
+    """Normalize Plotly hex or ChimeraX colour names for ``volume color``."""
+    s = (color or "").strip()
+    if not s:
+        return "cornflowerblue"
+    if s.startswith("#"):
+        return s
+    if re.fullmatch(r"[0-9a-fA-F]{6}", s):
+        return "#" + s
+    return s
+
+
 def normalize_chimerax_view_turns(
     view_turns: Sequence[tuple[str, float]] | None,
 ) -> list[ChimeraxViewTurn]:
@@ -463,15 +506,14 @@ def _chimerax_render_cmds(
     turn_y: float | None,
     volume_color: str | None = None,
     view_turns: Sequence[tuple[str, float]] | None = None,
+    view_matrix_camera: str | None = None,
     report_view_matrix: bool = False,
     view_matrix_log_path: str | None = None,
 ) -> list[str]:
     """ChimeraX cmd list rendering a single view with optional camera turns."""
     qvol = shlex.quote(mrc_path)
     qpng = shlex.quote(out_png)
-    vc = (volume_color or "cornflowerblue").strip()
-    if not vc:
-        vc = "cornflowerblue"
+    vc = chimerax_volume_color_spec(volume_color)
     cmds = [
         f"open {qvol} name {vol_name} ",
         "set bgColor white ",
@@ -482,10 +524,14 @@ def _chimerax_render_cmds(
         # which lacks attributes the ortho camera path expects (e.g. stereo).
         "view #1 orient ",
     ]
-    for axis, degrees in normalize_chimerax_view_turns(view_turns):
-        cmds.append(f"turn {axis} {degrees} ")
+    if view_matrix_camera:
+        cmds.append(f"view matrix camera {view_matrix_camera} ")
+    else:
+        for axis, degrees in normalize_chimerax_view_turns(view_turns):
+            cmds.append(f"turn {axis} {degrees} ")
     if turn_y is not None:
         cmds.append(f"turn y {turn_y} ")
+        cmds.append("volume center #1")
     if report_view_matrix:
         cmds.append("view matrix ")
         if view_matrix_log_path:
@@ -502,6 +548,7 @@ def mrc_to_static_png(
     volume_color: str | None = None,
     corner_label: str | None = None,
     view_turns: Sequence[tuple[str, float]] | None = None,
+    view_matrix_camera: str | None = None,
     report_view_matrix: bool = False,
 ) -> str | None:
     """Single ChimeraX view after ``volume center`` and optional base-view turns."""
@@ -514,6 +561,7 @@ def mrc_to_static_png(
         turn_y=None,
         volume_color=volume_color,
         view_turns=view_turns,
+        view_matrix_camera=view_matrix_camera,
         report_view_matrix=report_view_matrix,
         view_matrix_log_path=matrix_log if report_view_matrix else None,
     )
@@ -592,8 +640,10 @@ def mrc_to_rotating_gif(
     ncpus: int = DEFAULT_CHIMERAX_PARALLEL,
     dpi: int = 100,
     volume_color: str | None = None,
+    volume_colors: Sequence[str] | None = None,
     corner_label: str | None = None,
     view_turns: Sequence[tuple[str, float]] | None = None,
+    view_matrix_camera: str | None = None,
     report_view_matrix: bool = False,
 ) -> str | None:
     """ChimeraX renders each rotation frame; assemble an animated GIF (cf. pipelines/tile.py)."""
@@ -602,22 +652,38 @@ def mrc_to_rotating_gif(
     gif_frames = max(4, int(gif_frames))
     ncpus = max(1, min(int(ncpus), 32))
     frame_rots = np.linspace(0, 360, gif_frames, endpoint=False)
+    per_frame_colors: list[str | None] | None = None
+    if volume_colors is not None:
+        per_frame_colors = [
+            str(c).strip() if c is not None and str(c).strip() else None
+            for c in volume_colors
+        ]
+        if len(per_frame_colors) < gif_frames:
+            per_frame_colors.extend([None] * (gif_frames - len(per_frame_colors)))
+        else:
+            per_frame_colors = per_frame_colors[:gif_frames]
     tmpdir = tempfile.mkdtemp(prefix="cryodrgn_explorer_vol_")
     try:
 
-        def one_frame(frame_rot: float) -> tuple[float, str, str | None]:
+        def one_frame(frame_i: int, frame_rot: float) -> tuple[float, str, str | None]:
             png = os.path.join(tmpdir, f"f{frame_rot:.6f}.png")
             matrix_log = os.path.join(tmpdir, f"f{frame_rot:.6f}_view_matrix.html")
             vol_name = f"vol000_frame{frame_rot:.4g}"
             report_matrix = report_view_matrix and abs(float(frame_rot)) < 1e-9
+            frame_color = chimerax_volume_color_spec(volume_color)
+            if per_frame_colors is not None:
+                fc = per_frame_colors[frame_i]
+                if fc:
+                    frame_color = chimerax_volume_color_spec(fc)
             cmds = _chimerax_render_cmds(
                 mrc_path,
                 png,
                 dpi,
                 vol_name=vol_name,
                 turn_y=float(frame_rot),
-                volume_color=volume_color,
+                volume_color=frame_color,
                 view_turns=view_turns,
+                view_matrix_camera=view_matrix_camera,
                 report_view_matrix=report_matrix,
                 view_matrix_log_path=matrix_log if report_matrix else None,
             )
@@ -636,11 +702,12 @@ def mrc_to_rotating_gif(
             pairs = cast(
                 list[tuple[float, str, str | None]],
                 Parallel(n_jobs=min(ncpus, gif_frames))(
-                    delayed(one_frame)(rot) for rot in frame_rots
+                    delayed(one_frame)(fi, float(rot))
+                    for fi, rot in enumerate(frame_rots)
                 ),
             )
         except ImportError:
-            pairs = [one_frame(float(rot)) for rot in frame_rots]
+            pairs = [one_frame(fi, float(rot)) for fi, rot in enumerate(frame_rots)]
         pairs.sort(key=lambda x: x[0])
         view_matrix = next((m for _, _, m in pairs if m), None)
         paths = [p for _, p, _ in pairs]

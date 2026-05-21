@@ -527,42 +527,11 @@
   }
   #pair-color-discrete-wrap {
     display: none;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
-    flex-direction: column;
-  }
-  #pair-color-discrete-wrap.cryo-cc-discrete-wrap--show {
-    display: flex;
-  }
-  .cryo-cc-discrete-switches {
-    display: flex;
-    flex-direction: column;
-    gap: 0.32rem;
-    overflow-y: auto;
-    flex: 1 1 auto;
-    min-height: 0;
-    padding-right: 0.15rem;
   }
   .pairplot-color-legend-aside .cryo-cc-discrete-switches--pair-2col {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
-    grid-auto-rows: minmax(1.35rem, auto);
-    gap: 1px 2px;
-    align-items: stretch;
-    padding-right: 0;
     /* --cryo-discrete-legend-w set from JS from pairplot viewport column width */
     width: var(--cryo-discrete-legend-w, 100%);
     max-width: 100%;
-    margin-left: auto;
-    margin-right: auto;
-    box-sizing: border-box;
-  }
-  .pairplot-color-legend-aside .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
-    min-height: 1.25rem;
-    height: 100%;
-    box-sizing: border-box;
-    min-width: 0;
   }
   .cryo-cc-discrete-toggle-heading-row {
     display: none;
@@ -600,34 +569,37 @@
     box-sizing: border-box;
     min-width: 0;
   }
-  .cryo-cc-discrete-switch-label {
-    font-weight: 600;
-    font-size: 0.7rem;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .cryo-cc-discrete-switch-count {
-    font-size: 0.6rem;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .cryo-cc-discrete-switch-text {
+  .pairplot-color-legend-aside .cryo-cc-discrete-switch-text {
     display: flex;
     flex-direction: column;
-    gap: 0.06rem;
-    min-width: 0;
-  }
-  .pairplot-color-legend-aside .cryo-cc-discrete-switch-text {
     gap: 1px;
-  }
-  .cryo-cc-discrete-switch-label {
-    font-weight: 600;
-    color: var(--nav-bg, #243b53);
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: visible;
+    white-space: normal;
     word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .pairplot-color-legend-aside .cryo-cc-discrete-switch-label {
+    font-weight: 600;
+    font-size: 0.7rem;
+    line-height: 1.15;
+    color: var(--nav-bg, #243b53);
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .pairplot-color-legend-aside .cryo-cc-discrete-switch-count {
+    font-size: 0.6rem;
+    line-height: 1.12;
+    color: var(--muted, #5c6b7a);
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
   .cryo-cc-discrete-switch-count {
     font-size: 0.72rem;
@@ -815,9 +787,13 @@
               </div>
             </div>
           </div>
-          <div id="pair-color-discrete-wrap">
+          <div id="pair-color-discrete-wrap" class="cryo-cc-discrete-wrap">
             <div id="pair-color-discrete-heading-row" class="cryo-cc-discrete-toggle-heading-row" hidden>
-              <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
+              <button type="button" class="cryo-cc-discrete-toggle-title" data-cryo-discrete-collapse-toggle
+                aria-expanded="true" aria-controls="pair-color-discrete-switches" title="Hide toggle selection">
+                <span class="cryo-cc-discrete-collapse-chevron" aria-hidden="true">▼</span>
+                <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
+              </button>
               <div
                 id="pair-color-discrete-invert-slot"
                 class="cryo-cc-region-invert-slot"

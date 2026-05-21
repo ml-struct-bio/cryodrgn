@@ -66,10 +66,12 @@
       <fieldset class="volsketch-gif-modes" style="margin:0 0 0.65rem;">
         <legend>Animation output</legend>
         <div class="volsketch-seg" role="radiogroup" aria-label="Animation output style">
-          <input type="radio" name="volsketch-gif-mode" id="volsketch-mode-cycle" value="cycle" checked />
-          <label for="volsketch-mode-cycle">Cycle</label>
+          <input type="radio" name="volsketch-gif-mode" id="volsketch-mode-cycle" value="cycle" />
+          <label for="volsketch-mode-cycle">Cycle<br />through volumes</label>
           <input type="radio" name="volsketch-gif-mode" id="volsketch-mode-rotate" value="rotate_each" />
-          <label for="volsketch-mode-rotate">Rotate</label>
+          <label for="volsketch-mode-rotate">Rotating<br />tiled grid</label>
+          <input type="radio" name="volsketch-gif-mode" id="volsketch-mode-disabled" value="disabled" checked />
+          <label for="volsketch-mode-disabled">Disable<br />animation</label>
         </div>
         <p id="volsketch-mode-desc" class="cryo-dash-legend-note"></p>
       </fieldset>
@@ -102,8 +104,13 @@
         <button type="button" class="btn" data-volsketch-view-axis="y">Rotate Y</button>
         <button type="button" class="btn" data-volsketch-view-axis="z">Rotate Z</button>
       </div>
-      <p id="volsketch-view-rotate-summary" class="volsketch-view-rotate-summary">ChimeraX view matrix: available after
-        animation loads.</p>
+      <div class="volsketch-view-matrix-field">
+        <label for="volsketch-view-matrix-input">ChimeraX view matrix</label>
+        <textarea id="volsketch-view-matrix-input" class="volsketch-view-matrix-input" rows="3"
+          placeholder="camera n1,n2,... (12 numbers; available after animation loads)"></textarea>
+        <button type="button" class="btn btn-secondary volsketch-view-matrix-apply" id="volsketch-view-matrix-apply"
+          disabled>Apply view matrix</button>
+      </div>
       <p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">GIF previews update automatically a moment after you
         change the selection (ChimeraX offscreen).</p>
       <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">

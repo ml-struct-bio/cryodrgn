@@ -258,7 +258,9 @@
       badge.hidden = !badge.textContent;
       applyBadgeLetterColor(badge, spec.badge_background || "");
       wrap._l3dvaReapplyLetterColor = function() {
-        applyBadgeLetterColor(badge, spec.badge_background || "");
+        applyRotateFrameIdx(
+          wrap._l3dvaCurrentRotateCovIdx != null ? wrap._l3dvaCurrentRotateCovIdx : 0
+        );
       };
       if (!frameTexts.length) {
         hideCov();
@@ -271,6 +273,9 @@
         fi = Math.max(0, Math.min(frameTexts.length - 1, fi | 0));
         var covt = frameTexts[fi] != null ? String(frameTexts[fi]).trim() : "";
         var bg = frameBgs[fi] != null ? frameBgs[fi] : "";
+        var letterBg = bg || spec.badge_background || "";
+        applyBadgeLetterColor(badge, letterBg);
+        wrap._l3dvaCurrentRotateCovIdx = fi;
         covVarEl.textContent = covVarRotate;
         covVarEl.hidden = !covVarRotate;
         if (covt) {
@@ -448,12 +453,16 @@
 
   var GIF_MODE_DESC = {
     cycle: (
-      "Single GIF, fixed camera: steps through your selected k-means volumes (nearest PCA match per particle). "
-      + "If you select more than fit, up to <strong>50</strong> are chosen at random for the cycle."
+      "Fixed camera angle, steps through your selected k-means volumes. <br /><br />"
+      + "If you select more than <strong>50</strong>, volumes are chosen at random."
     ),
     rotate_each: (
-      "One rotating GIF per selected volume. "
-      + "If you select more than fit, up to <strong>5</strong> volumes are chosen at random."
+      "One rotating angle GIF per selected volume in a tiled grid. "
+      + "If you select more than <strong>16</strong>, volumes are chosen at random."
+    ),
+    disabled: (
+      "No ChimeraX GIF previews — double-click volumes on the scatter plot to select them "
+      + "and update montage labels only."
     ),
   };
 
@@ -566,6 +575,19 @@
     return r.length >= 3 && r[2] != null ? String(r[2]) : "";
   }
 
+  /** Rebuild per-frame palette hex for rotate-each previews (continuous covariate). */
+  function rebuildRotateFrameBadgeBackgrounds(spec, trace, gd, paletteName) {
+    if (!spec || spec.style !== "rotate_frames") return;
+    var texts = spec.frame_covariate_texts || [];
+    if (!texts.length || !trace || !gd) return;
+    if (plotColorModeFromGd(gd) !== "continuous") return;
+    spec.frame_badge_backgrounds = texts.map(function(t) {
+      var fv = parseFloat(String(t));
+      if (isNaN(fv)) return "";
+      return continuousCssFromValue(fv, trace, gd, paletteName) || "";
+    });
+  }
+
   function continuousCssFromValue(val, trace, gd, paletteName) {
     if (typeof val !== "number" || !isFinite(val)) return null;
     var mk = (trace && trace.marker) || {};
@@ -668,7 +690,7 @@
 
   /** Plot letter border: white on dark covariate glyphs, black on light glyphs. */
   function montagePlotLetterStrokeForFill(fillCss) {
-    var strokeCss = _fillRelativeLuminance(fillCss) < 0.34 ? "#ffffff" : "#000000";
+    var strokeCss = _fillRelativeLuminance(fillCss) < 0.23 ? "#ffffff" : "#000000";
     return montagePlotLetterStrokeShadow(strokeCss);
   }
 
@@ -781,7 +803,6 @@
     var selIndicesSummaryLabel = $("sel-indices-summary-label");
     var selIndicesList = $("sel-indices-list");
     var gifModeDescEl = $("mode-desc");
-    var gifModeSwitch = $("gif-mode-switch");
     var gifFrames = $("gif-frames");
     var gifFramesWrap = $("gif-frames-wrap");
     var previewGrid = $("preview-grid");
@@ -789,7 +810,8 @@
     var saveGifBtn = $("save-gif");
     var viewRotateRow = document.querySelector(".l3dva-view-rotate-row");
     var viewRotateAngleEl = $("view-rotate-angle");
-    var viewRotateSummaryEl = $("view-rotate-summary");
+    var viewMatrixInputEl = $("view-matrix-input");
+    var viewMatrixApplyBtn = $("view-matrix-apply");
     var viewRotateBtns = Array.from(document.querySelectorAll("[data-l3dva-view-axis]"));
 
     var META = null;
@@ -813,6 +835,9 @@
     var viewRotations = { x: 0, y: 0, z: 0 };
     var lastChimeraxViewMatrix = "";
     var chimeraxViewMatrixUnavailable = false;
+    var appliedViewMatrix = "";
+    var viewMatrixInputDirty = false;
+    var viewMatrixFieldFocused = false;
     var landscapeAnimInFlight = false;
     /** Plotly only defines ``gd.on`` after the graph div has been drawn once. */
     var plotEventsBound = false;
@@ -869,8 +894,45 @@
     }
 
     function currentGifMode() {
-      if (!gifModeSwitch) return "cycle";
-      return gifModeSwitch.checked ? "rotate_each" : "cycle";
+      var el = document.querySelector('input[name="l3dva-gif-mode"]:checked');
+      return el ? String(el.value) : "disabled";
+    }
+
+    function animationsEnabled() {
+      return currentGifMode() !== "disabled";
+    }
+
+    function cancelPendingGifWork() {
+      if (debounceGifTimer) {
+        clearTimeout(debounceGifTimer);
+        debounceGifTimer = null;
+      }
+      gifReqGen++;
+      landscapeAnimInFlight = false;
+      safeSetPreviewAnimLoading(false);
+    }
+
+    function clearAnimPreviewState() {
+      clearPreviewGrid();
+      lastAnimToken = null;
+      lastBatchMode = null;
+      lastChimeraxViewMatrix = "";
+      chimeraxViewMatrixUnavailable = false;
+      clearAppliedViewMatrix();
+      viewMatrixInputDirty = false;
+      syncViewMatrixField();
+    }
+
+    function showAnimBusySelectionMsg() {
+      setAnimateStatus(
+        "Wait for ChimeraX to finish the current animation preview before changing the selection.",
+        false,
+        true
+      );
+    }
+
+    function volSelectionBlockedForAdd(v) {
+      return landscapeAnimInFlight && !selectedVols.has(v);
     }
 
     function syncGifModeDescription() {
@@ -891,11 +953,30 @@
       gifFramesWrap.style.display = m === "rotate_each" ? "block" : "none";
       syncPreviewGridLayout();
     }
-    syncGifModeDescription();
-    syncGifFramesVisibility();
+
+    function syncAnimOutputControls() {
+      syncGifModeDescription();
+      syncGifFramesVisibility();
+      if (randomSelBtn && META) {
+        randomSelBtn.disabled = landscapeAnimInFlight;
+        if (landscapeAnimInFlight) {
+          randomSelBtn.title = "Wait for ChimeraX to finish the current animation preview.";
+        } else {
+          randomSelBtn.removeAttribute("title");
+        }
+      }
+      syncViewRotationControls();
+    }
+    syncAnimOutputControls();
 
     function syncSaveGifButton() {
       if (!saveGifBtn) return;
+      if (!animationsEnabled()) {
+        saveGifBtn.disabled = true;
+        saveGifBtn.title = "Enable Cycle or Rotate animation output to render GIF previews.";
+        syncAnimOutputControls();
+        return;
+      }
       var hasPreviews = previewGrid && previewGrid.children.length > 0;
       var canSave = !!lastAnimToken && hasPreviews && !landscapeAnimInFlight;
       saveGifBtn.disabled = !canSave;
@@ -906,10 +987,34 @@
       } else {
         saveGifBtn.title = "Select volumes and wait for GIF previews to finish rendering.";
       }
-      syncViewRotationControls();
+      syncAnimOutputControls();
     }
 
     function syncViewRotationControls() {
+      if (!animationsEnabled()) {
+        var offHint = "Enable Cycle or Rotate animation output to render GIF previews.";
+        if (viewRotateRow) {
+          viewRotateRow.classList.add("is-disabled");
+          viewRotateRow.title = offHint;
+        }
+        if (viewRotateAngleEl) {
+          viewRotateAngleEl.disabled = true;
+          viewRotateAngleEl.title = offHint;
+        }
+        viewRotateBtns.forEach(function(btn) {
+          btn.disabled = true;
+          btn.title = offHint;
+        });
+        if (viewMatrixApplyBtn) {
+          viewMatrixApplyBtn.disabled = true;
+          viewMatrixApplyBtn.title = offHint;
+        }
+        if (viewMatrixInputEl) {
+          viewMatrixInputEl.disabled = true;
+          viewMatrixInputEl.title = offHint;
+        }
+        return;
+      }
       var hasLoadedPreview = !!(
         lastAnimToken
         && previewGrid
@@ -931,6 +1036,16 @@
         btn.disabled = !hasLoadedPreview;
         btn.title = hint;
       });
+      if (viewMatrixApplyBtn) {
+        viewMatrixApplyBtn.disabled = !hasLoadedPreview;
+        viewMatrixApplyBtn.title = hasLoadedPreview
+          ? "Re-render previews using the view matrix in the field."
+          : hint;
+      }
+      if (viewMatrixInputEl) {
+        viewMatrixInputEl.disabled = !hasLoadedPreview;
+        viewMatrixInputEl.title = hint;
+      }
     }
 
     function normalizeViewDegrees(degrees) {
@@ -939,6 +1054,61 @@
       d = d % 360;
       if (Math.abs(d) < 1e-9) return 0;
       return d;
+    }
+
+    function viewRotationsAreActive() {
+      var r = currentViewRotationPayload();
+      return Math.abs(r.x) > 1e-9 || Math.abs(r.y) > 1e-9 || Math.abs(r.z) > 1e-9;
+    }
+
+    function mat3Identity() {
+      return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    }
+
+    function mat3Mul(a, b) {
+      return [
+        a[0] * b[0] + a[1] * b[3] + a[2] * b[6],
+        a[0] * b[1] + a[1] * b[4] + a[2] * b[7],
+        a[0] * b[2] + a[1] * b[5] + a[2] * b[8],
+        a[3] * b[0] + a[4] * b[3] + a[5] * b[6],
+        a[3] * b[1] + a[4] * b[4] + a[5] * b[7],
+        a[3] * b[2] + a[4] * b[5] + a[5] * b[8],
+        a[6] * b[0] + a[7] * b[3] + a[8] * b[6],
+        a[6] * b[1] + a[7] * b[4] + a[8] * b[7],
+        a[6] * b[2] + a[7] * b[5] + a[8] * b[8],
+      ];
+    }
+
+    function mat3ForAxisTurn(axis, degrees) {
+      var rad = (degrees * Math.PI) / 180;
+      var c = Math.cos(rad);
+      var s = Math.sin(rad);
+      if (axis === "x") {
+        return [1, 0, 0, 0, c, -s, 0, s, c];
+      }
+      if (axis === "y") {
+        return [c, 0, s, 0, 1, 0, -s, 0, c];
+      }
+      return [c, -s, 0, s, c, 0, 0, 0, 1];
+    }
+
+    /** Estimated ChimeraX camera row (matches x → y → z ``turn`` order in render cmds). */
+    function estimatedChimeraxViewMatrixText() {
+      var m = mat3Identity();
+      ["x", "y", "z"].forEach(function(axis) {
+        var deg = normalizeViewDegrees(viewRotations[axis] || 0);
+        if (Math.abs(deg) > 1e-9) {
+          m = mat3Mul(m, mat3ForAxisTurn(axis, deg));
+        }
+      });
+      var nums = [
+        m[0], m[1], m[2], 0,
+        m[3], m[4], m[5], 0,
+        m[6], m[7], m[8], 0,
+      ];
+      return "camera " + nums.map(function(n) {
+        return Number(n).toFixed(6);
+      }).join(",");
     }
 
     function currentViewRotationPayload() {
@@ -956,16 +1126,67 @@
         + "°, Z " + r.z.toFixed(1) + "°";
     }
 
-    function syncViewRotationSummary() {
-      if (!viewRotateSummaryEl) return;
-      if (lastChimeraxViewMatrix) {
-        viewRotateSummaryEl.textContent = "ChimeraX view matrix:\n" + lastChimeraxViewMatrix;
-      } else if (chimeraxViewMatrixUnavailable) {
-        viewRotateSummaryEl.textContent = "ChimeraX view matrix: not reported by ChimeraX for this render.";
-      } else if (landscapeAnimInFlight) {
-        viewRotateSummaryEl.textContent = "ChimeraX view matrix: rendering…";
+    function currentViewMatrixDisplayText() {
+      if (lastChimeraxViewMatrix) return lastChimeraxViewMatrix;
+      if (viewRotationsAreActive()) return estimatedChimeraxViewMatrixText();
+      return "";
+    }
+
+    function syncViewMatrixField() {
+      if (!viewMatrixInputEl) return;
+      if (viewMatrixFieldFocused || viewMatrixInputDirty) return;
+      var text = currentViewMatrixDisplayText();
+      if (chimeraxViewMatrixUnavailable && !text) {
+        viewMatrixInputEl.placeholder = "ChimeraX view matrix not reported for this render.";
+      } else if (!text) {
+        viewMatrixInputEl.placeholder = (
+          "camera n1,n2,... (12 numbers; available after animation loads)"
+        );
       } else {
-        viewRotateSummaryEl.textContent = "ChimeraX view matrix: available after animation loads.";
+        viewMatrixInputEl.placeholder = "";
+      }
+      viewMatrixInputEl.value = text;
+    }
+
+    function validateViewMatrixText(text) {
+      var raw = String(text || "").trim();
+      if (!raw) {
+        return { ok: false, msg: "Enter a ChimeraX view matrix (12 numbers)." };
+      }
+      var body = raw.toLowerCase().indexOf("camera") === 0 ? raw.slice(6).trim() : raw;
+      var nums = body.match(/[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?/g);
+      if (!nums || nums.length < 12) {
+        return {
+          ok: false,
+          msg: "View matrix must contain 12 numbers (optionally prefixed with camera).",
+        };
+      }
+      return { ok: true, text: raw };
+    }
+
+    function clearAppliedViewMatrix() {
+      appliedViewMatrix = "";
+    }
+
+    function applyViewMatrixFromField() {
+      if (!animationsEnabled()) {
+        setAnimateStatus("Enable Cycle or Rotate animation output to render GIF previews.", false, true);
+        return;
+      }
+      if (!viewMatrixInputEl) return;
+      var check = validateViewMatrixText(viewMatrixInputEl.value);
+      if (!check.ok) {
+        setAnimateStatus(check.msg, false, true);
+        return;
+      }
+      appliedViewMatrix = check.text;
+      viewMatrixInputDirty = false;
+      syncViewMatrixField();
+      setAnimateStatus("Applying custom ChimeraX view matrix.", false, false);
+      if (selectedVols.size > 0) {
+        scheduleAutoGif("view_matrix");
+      } else {
+        syncSaveGifButton();
       }
     }
 
@@ -995,13 +1216,19 @@
     }
 
     function applyViewRotation(axis) {
+      if (!animationsEnabled()) {
+        setAnimateStatus("Enable Cycle or Rotate animation output to render GIF previews.", false, true);
+        return;
+      }
       var deg = viewRotateAngleEl ? Number(viewRotateAngleEl.value) : NaN;
       if (!isFinite(deg)) {
         setAnimateStatus("Enter a finite rotation angle in degrees.", false, true);
         return;
       }
+      clearAppliedViewMatrix();
+      viewMatrixInputDirty = false;
       viewRotations[axis] = normalizeViewDegrees(Number(viewRotations[axis] || 0) + deg);
-      syncViewRotationSummary();
+      syncViewMatrixField();
       setAnimateStatus("Updated " + viewRotationSummary() + ".", false, false);
       if (selectedVols.size > 0) {
         scheduleAutoGif("view_rotation");
@@ -1063,7 +1290,7 @@
       var nTotal = META && META.n_volumes != null ? Number(META.n_volumes) : NaN;
       if (selSummaryEl) {
         if (!isNaN(nTotal) && nTotal >= 0) {
-          selSummaryEl.textContent = arr.length + "/" + nTotal + " k-means volumes selected (nearest PCA match)";
+          selSummaryEl.textContent = arr.length + "/" + nTotal + " k-means volumes selected";
         } else {
           selSummaryEl.textContent = arr.length
             ? (arr.length + " k-means volumes selected")
@@ -1219,10 +1446,22 @@
           }
           return;
         }
-        if (spec.style === "static" || spec.style === "rotate_frames") {
-          var vol = wrap._l3dvaVol;
-          spec.badge_background = markerFillCssForVol(gd, trace, vol) || "";
+        if (spec.style === "static") {
+          var volStatic = wrap._l3dvaVol;
+          spec.badge_background = markerFillCssForVol(gd, trace, volStatic) || "";
           applyBadgeLetterColor(badge, spec.badge_background);
+          return;
+        }
+        if (spec.style === "rotate_frames") {
+          var volRot = wrap._l3dvaVol;
+          var palRot = resolvePlotPalette();
+          spec.badge_background = markerFillCssForVol(gd, trace, volRot) || "";
+          rebuildRotateFrameBadgeBackgrounds(spec, trace, gd, palRot);
+          if (typeof wrap._l3dvaReapplyLetterColor === "function") {
+            wrap._l3dvaReapplyLetterColor();
+          } else {
+            applyBadgeLetterColor(badge, spec.badge_background);
+          }
           return;
         }
         if (spec.style === "cycle_segments" && spec.segment_labels) {
@@ -1472,6 +1711,10 @@
     }
 
     function toggleVol(v, fromPointNumber) {
+      if (volSelectionBlockedForAdd(v)) {
+        showAnimBusySelectionMsg();
+        return;
+      }
       var now = Date.now();
       var dup = lastToggleVol === v && (now - lastToggleAtMs) < 260;
       // If a duplicate toggle arrives while the volume is already selected, we allow
@@ -1517,13 +1760,43 @@
       }
     }
 
+    function finishSelectionWithoutAnimation(reason) {
+      cancelPendingGifWork();
+      if (!selectedVols.size) {
+        clearAnimPreviewState();
+        setAnimateStatus("", false, false);
+      } else if (reason === "gif_mode") {
+        clearAnimPreviewState();
+        setAnimateStatus(
+          "Animation disabled — volume selection still updates the plot.",
+          false,
+          false
+        );
+      }
+      syncSaveGifButton();
+      syncAnimOutputControls();
+    }
+
     /**
      * Optional ``plotHighlightPromise``: when passed (volume selection paths), ``runAutoGif``
      * runs only after the scatter highlight + camera pin chain settles (still after the 600ms debounce).
      */
     function scheduleAutoGif(reason, plotHighlightPromise) {
-      debouncedGifReason = reason || "selection";
+      reason = reason || "selection";
+      debouncedGifReason = reason;
       if (debounceGifTimer) clearTimeout(debounceGifTimer);
+      if (!animationsEnabled()) {
+        var hpOff = plotHighlightPromise && typeof plotHighlightPromise.then === "function"
+          ? plotHighlightPromise.catch(function() {})
+          : Promise.resolve();
+        debounceGifTimer = setTimeout(function() {
+          debounceGifTimer = null;
+          hpOff.then(function() {
+            finishSelectionWithoutAnimation(reason);
+          });
+        }, 600);
+        return;
+      }
       var hp = plotHighlightPromise && typeof plotHighlightPromise.then === "function"
         ? plotHighlightPromise.catch(function() {})
         : Promise.resolve();
@@ -1539,16 +1812,15 @@
 
     function runAutoGif(reason) {
       reason = reason || "selection";
+      if (!animationsEnabled()) {
+        finishSelectionWithoutAnimation(reason);
+        return;
+      }
       var vols = Array.from(selectedVols).sort(function(a, b) { return a - b; });
       if (!vols.length) {
         landscapeAnimInFlight = false;
         safeSetPreviewAnimLoading(false);
-        clearPreviewGrid();
-        lastAnimToken = null;
-        lastBatchMode = null;
-        lastChimeraxViewMatrix = "";
-        chimeraxViewMatrixUnavailable = false;
-        syncViewRotationSummary();
+        clearAnimPreviewState();
         setAnimateStatus("", false, false);
         syncSaveGifButton();
         return;
@@ -1558,12 +1830,12 @@
       lastChimeraxViewMatrix = "";
       chimeraxViewMatrixUnavailable = false;
       syncSaveGifButton();
-      syncViewRotationSummary();
+      syncViewMatrixField();
       var cpus = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;
       var cpuPhrase = cpus === 1 ? "1 CPU" : cpus + " CPUs";
       var keepPreviews = previewGrid && previewGrid.children.length > 0 && (
         reason === "color" || reason === "gif_mode" || reason === "gif_frames"
-        || reason === "view_rotation"
+        || reason === "view_rotation" || reason === "view_matrix"
       );
       var statusMsg;
       if (keepPreviews && reason === "color") {
@@ -1578,7 +1850,7 @@
           + "the update finishes (ChimeraX, "
           + cpuPhrase + ")…"
         );
-      } else if (keepPreviews && reason === "view_rotation") {
+      } else if (keepPreviews && (reason === "view_rotation" || reason === "view_matrix")) {
         statusMsg = (
           "Re-rendering volume previews for the new view angle — current GIFs keep playing until "
           + "the update finishes (ChimeraX, "
@@ -1599,8 +1871,12 @@
         gif_frames: parseInt(gifFrames.value, 10) || 20,
         chimerax_cpus: cpus,
         color_mode: getColorMode(),
-        view_rotations: currentViewRotationPayload(),
       };
+      if (appliedViewMatrix) {
+        animPayload.view_matrix = appliedViewMatrix;
+      } else {
+        animPayload.view_rotations = currentViewRotationPayload();
+      }
       if (getPalette) {
         var pal = getPalette();
         if (pal) animPayload.palette = pal;
@@ -1623,7 +1899,8 @@
           lastChimeraxViewMatrix = String(j.items[0].view_matrix).trim();
         }
         chimeraxViewMatrixUnavailable = !lastChimeraxViewMatrix;
-        syncViewRotationSummary();
+        viewMatrixInputDirty = false;
+        syncViewMatrixField();
         var ds = j.duration_s != null ? Number(j.duration_s) : NaN;
         var doneMsg = !isNaN(ds)
           ? ("Finished animating in " + Math.round(ds) + " s.")
@@ -1722,7 +1999,7 @@
         landscapeAnimInFlight = false;
         safeSetPreviewAnimLoading(false);
         chimeraxViewMatrixUnavailable = false;
-        syncViewRotationSummary();
+        syncViewMatrixField();
         setAnimateStatus(String(e), false, true);
         syncSaveGifButton();
       });
@@ -1775,6 +2052,10 @@
 
         function maybeToggleAfterRestore() {
           if (!shouldTryToggle) return;
+          if (volSelectionBlockedForAdd(v)) {
+            showAnimBusySelectionMsg();
+            return;
+          }
           ignorePlotlyClickUntilMs = Date.now() + 900;
           beginVolAnimSelectionOverlay();
           toggleVol(v, fromPointNumber);
@@ -1810,6 +2091,10 @@
           clearTimeout(clickTimer);
           clickTimer = null;
           clickLastVol = null;
+          if (volSelectionBlockedForAdd(v)) {
+            showAnimBusySelectionMsg();
+            return;
+          }
           ignorePlotlyClickUntilMs = Date.now() + 900;
           beginVolAnimSelectionOverlay();
           requestAnimationFrame(function() {
@@ -1852,13 +2137,12 @@
         });
     }
 
-    if (gifModeSwitch) {
-      gifModeSwitch.addEventListener("change", function() {
-        syncGifModeDescription();
-        syncGifFramesVisibility();
+    document.querySelectorAll('input[name="l3dva-gif-mode"]').forEach(function(radio) {
+      radio.addEventListener("change", function() {
+        syncAnimOutputControls();
         scheduleAutoGif("gif_mode");
       });
-    }
+    });
     if (gifFrames) {
       gifFrames.addEventListener("change", function() {
         scheduleAutoGif("gif_frames");
@@ -1872,6 +2156,21 @@
         }
       });
     });
+    if (viewMatrixInputEl) {
+      viewMatrixInputEl.addEventListener("focus", function() {
+        viewMatrixFieldFocused = true;
+      });
+      viewMatrixInputEl.addEventListener("blur", function() {
+        viewMatrixFieldFocused = false;
+        syncViewMatrixField();
+      });
+      viewMatrixInputEl.addEventListener("input", function() {
+        viewMatrixInputDirty = true;
+      });
+    }
+    if (viewMatrixApplyBtn) {
+      viewMatrixApplyBtn.addEventListener("click", applyViewMatrixFromField);
+    }
 
     var clearBtn = $("clear-sel");
     if (clearBtn) {
@@ -1888,6 +2187,10 @@
 
     if (randomSelBtn) {
       randomSelBtn.addEventListener("click", function() {
+        if (landscapeAnimInFlight) {
+          showAnimBusySelectionMsg();
+          return;
+        }
         var ids = allPlotVolIds();
         if (!ids.length) {
           setAnimateStatus("Wait for the scatter plot to finish loading.", false, true);
@@ -1944,7 +2247,8 @@
 
     loadMeta(function() {
       updateSelLabel();
-      syncViewRotationSummary();
+      syncAnimOutputControls();
+      syncViewMatrixField();
       syncSaveGifButton();
     });
 

@@ -395,9 +395,10 @@
   .cryo-dash-page--volsketch .volsketch-seg label {
     flex: 1 1 0;
     text-align: center;
-    padding: 0.5rem 0.3rem;
-    font-size: 0.78rem;
-    line-height: 1.2;
+    padding: 0.38rem 0.22rem;
+    font-size: 0.65rem;
+    line-height: 1.04;
+    white-space: normal;
     cursor: pointer;
     margin: 0;
     color: var(--muted, #5c6b7a);
@@ -460,15 +461,34 @@
     line-height: 1;
     white-space: nowrap;
   }
-  .cryo-dash-page--volsketch .volsketch-view-rotate-summary {
+  .cryo-dash-page--volsketch .volsketch-view-matrix-field {
     margin: 0.28rem 0 0;
-    font-size: 0.74rem;
-    line-height: 1.25;
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-matrix-field label {
+    font-size: 0.72rem;
     color: var(--muted, #5c6b7a);
+    margin: 0;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-matrix-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0.28rem 0.35rem;
+    font-size: 0.62rem;
+    line-height: 1.2;
+    color: var(--text, #1a2332);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-variant-numeric: tabular-nums;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
+    resize: vertical;
+    min-height: 3.2rem;
+  }
+  .cryo-dash-page--volsketch .volsketch-view-matrix-apply {
+    align-self: flex-start;
+    font-size: 0.72rem;
+    padding: 0.22rem 0.5rem;
   }
   @media (max-width: 1180px) {
     .cryo-dash-page--volsketch .volsketch-grid {

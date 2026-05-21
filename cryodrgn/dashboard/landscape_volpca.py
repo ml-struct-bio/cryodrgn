@@ -25,6 +25,8 @@ from cryodrgn.dashboard.particle_explorer import (
     ChimeraxViewTurn,
     DEFAULT_CHIMERAX_PARALLEL,
     DEFAULT_GIF_FRAMES,
+    chimerax_view_matrix_camera_arg,
+    format_chimerax_view_matrix_display,
     montage_cell_label,
     mrc_to_rotating_gif,
     mrc_to_static_png,
@@ -821,6 +823,7 @@ def _lookup_rotate_keyframe_pngs(
     plot_color_mode: str,
     continuous_palette: str | None,
     view_turns: list[ChimeraxViewTurn],
+    view_matrix_camera: str | None,
 ) -> tuple[dict[int, str], str | None] | None:
     """Return reusable keyframes and their ChimeraX view matrix, if valid."""
     if (
@@ -844,7 +847,11 @@ def _lookup_rotate_keyframe_pngs(
     if "continuous_palette" in prev:
         if (prev.get("continuous_palette") or None) != (continuous_palette or None):
             return None
-    if tuple(prev.get("view_turns") or ()) != tuple(view_turns):
+    prev_camera = prev.get("view_matrix_camera")
+    if view_matrix_camera:
+        if str(prev_camera or "") != str(view_matrix_camera):
+            return None
+    elif prev_camera or tuple(prev.get("view_turns") or ()) != tuple(view_turns):
         return None
     rk = prev.get("rotate_keyframes")
     if not isinstance(rk, dict) or not rk:
@@ -874,6 +881,7 @@ def generate_landscape_volume_animations(
     continuous_palette: str | None = None,
     reuse_rotate_keyframes_token: str | None = None,
     view_rotations: dict[str, Any] | None = None,
+    view_matrix: str | None = None,
 ) -> tuple[str, list[dict[str, Any]], list[int]]:
     """Write GIF(s) under a new token directory.
 
@@ -891,7 +899,11 @@ def generate_landscape_volume_animations(
         )
     if mode not in ("rotate_each", "cycle"):
         raise ValueError('mode must be "cycle" or "rotate_each".')
-    view_turns = normalize_landscape_view_rotations(view_rotations)
+    view_matrix_camera = chimerax_view_matrix_camera_arg(view_matrix)
+    if view_matrix_camera:
+        view_turns: list[ChimeraxViewTurn] = []
+    else:
+        view_turns = normalize_landscape_view_rotations(view_rotations)
 
     k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
     valid_sketch = set(kmeans_sorted_vol_indices(kmeans_dir))
@@ -983,13 +995,17 @@ def generate_landscape_volume_animations(
 
     def _vol_chimerax_color(vol: int) -> str:
         """Solid colour for ChimeraX ``volume color`` — align with scatter / preview badges."""
+        from cryodrgn.dashboard.particle_explorer import chimerax_volume_color_spec
+
         if vol_state_hex is not None:
             h = vol_state_hex.get(int(vol))
             if h:
-                return str(h)
+                return chimerax_volume_color_spec(str(h))
         if pcm != "none":
-            return str(hex_by_vol_anim.get(int(vol), "#4a5568"))
-        return "#4a5568"
+            return chimerax_volume_color_spec(
+                str(hex_by_vol_anim.get(int(vol), "#4a5568"))
+            )
+        return chimerax_volume_color_spec("#4a5568")
 
     gif_frames = max(4, min(int(gif_frames), 120))
     chimerax_cpus = max(1, min(int(chimerax_cpus), 32))
@@ -1018,11 +1034,16 @@ def generate_landscape_volume_animations(
                 gif_frames,
                 continuous_palette,
             )
-            frame_volume_colors = (
-                list(rot_overlay["frame_badge_backgrounds"])
-                if rot_overlay and rot_overlay.get("frame_badge_backgrounds")
-                else None
-            )
+            frame_volume_colors = None
+            if rot_overlay and rot_overlay.get("frame_badge_backgrounds"):
+                from cryodrgn.dashboard.particle_explorer import (
+                    chimerax_volume_color_spec,
+                )
+
+                frame_volume_colors = [
+                    chimerax_volume_color_spec(str(c))
+                    for c in rot_overlay["frame_badge_backgrounds"]
+                ]
             vm = mrc_to_rotating_gif(
                 mp,
                 out_gif,
@@ -1031,10 +1052,15 @@ def generate_landscape_volume_animations(
                 volume_color=_vol_chimerax_color(v),
                 volume_colors=frame_volume_colors,
                 view_turns=view_turns,
+                view_matrix_camera=view_matrix_camera,
                 report_view_matrix=view_matrix_text is None,
             )
             if vm and view_matrix_text is None:
                 view_matrix_text = vm
+            elif view_matrix_camera and view_matrix_text is None:
+                view_matrix_text = format_chimerax_view_matrix_display(
+                    view_matrix_camera
+                )
             kpng = os.path.join(keyframe_dir, f"vol_{int(v):03d}.png")
             _gif_first_frame_to_png(out_gif, kpng)
             rotate_keyframes[int(v)] = kpng
@@ -1056,6 +1082,7 @@ def generate_landscape_volume_animations(
         pcm,
         continuous_palette,
         view_turns,
+        view_matrix_camera,
     )
     reuse_pngs = reuse[0] if reuse else None
     if reuse and view_matrix_text is None:
@@ -1079,10 +1106,15 @@ def generate_landscape_volume_animations(
                         dpi=100,
                         volume_color=_vol_chimerax_color(v),
                         view_turns=view_turns,
+                        view_matrix_camera=view_matrix_camera,
                         report_view_matrix=view_matrix_text is None,
                     )
                     if vm and view_matrix_text is None:
                         view_matrix_text = vm
+                    elif view_matrix_camera and view_matrix_text is None:
+                        view_matrix_text = format_chimerax_view_matrix_display(
+                            view_matrix_camera
+                        )
                     png_sequence.append(tmp)
                     tmp_cycle_pngs.append(tmp)
 
@@ -1179,6 +1211,8 @@ def generate_landscape_volume_animations(
         entry["plot_color_mode"] = pcm
         entry["continuous_palette"] = continuous_palette
         entry["view_turns"] = tuple(view_turns)
+        if view_matrix_camera:
+            entry["view_matrix_camera"] = view_matrix_camera
         if view_matrix_text:
             entry["view_matrix"] = view_matrix_text
         _LANDSCAPE_ANIM_ENTRIES[token] = entry

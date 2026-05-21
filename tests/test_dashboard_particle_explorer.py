@@ -15,6 +15,8 @@ from cryodrgn.dashboard.context import PRELOAD_CACHE
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import (
     _chimerax_render_cmds,
+    chimerax_view_matrix_camera_arg,
+    format_chimerax_view_matrix_display,
     _config_yaml_path,
     _is_drgnai_config,
     _mpl_retrim_png,
@@ -55,6 +57,14 @@ class TestChimeraxRenderCmds:
             "/tmp/x.mrc", "/tmp/x.png", 100, vol_name="vol000", turn_y=45.0
         )
         assert any("turn y 45.0" in c for c in cmds)
+        assert any(c.strip() == "volume center #1" for c in cmds)
+
+    def test_chimerax_volume_color_spec_normalizes_hex(self) -> None:
+        from cryodrgn.dashboard.particle_explorer import chimerax_volume_color_spec
+
+        assert chimerax_volume_color_spec("#ff5500") == "#ff5500"
+        assert chimerax_volume_color_spec("ff5500") == "#ff5500"
+        assert chimerax_volume_color_spec("cornflowerblue") == "cornflowerblue"
 
     def test_paths_with_spaces_are_quoted(self) -> None:
         cmds = _chimerax_render_cmds(
@@ -78,6 +88,29 @@ class TestChimeraxRenderCmds:
             volume_color="#ff5500",
         )
         assert any("volume color #ff5500" in c for c in cmds)
+
+    def test_view_matrix_camera_arg_parses_display_text(self) -> None:
+        text = "camera 1,0,0,0, 0,1,0,0, 0,0,1,0"
+        arg = chimerax_view_matrix_camera_arg(text)
+        assert arg == "1,0,0,0,0,1,0,0,0,0,1,0"
+        assert format_chimerax_view_matrix_display(arg) == "camera " + arg
+
+    def test_view_matrix_camera_arg_rejects_short_input(self) -> None:
+        with pytest.raises(ValueError, match="12 numbers"):
+            chimerax_view_matrix_camera_arg("camera 1,2,3")
+
+    def test_view_matrix_camera_overrides_turns_in_cmds(self) -> None:
+        cmds = _chimerax_render_cmds(
+            "/tmp/x.mrc",
+            "/tmp/x.png",
+            100,
+            vol_name="vol000",
+            turn_y=None,
+            view_turns=[("x", 90.0)],
+            view_matrix_camera="1,0,0,0,0,1,0,0,0,0,1,0",
+        )
+        assert any("view matrix camera 1,0,0,0,0,1,0,0,0,0,1,0" in c for c in cmds)
+        assert not any(c.startswith("turn x") for c in cmds)
 
 
 class TestPreloadTimeHints:

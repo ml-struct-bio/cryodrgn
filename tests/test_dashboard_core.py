@@ -866,6 +866,78 @@ class TestDiscreteCovariateLegendContracts:
             "after assigning a new blob src — lastPayload can desync from the visible bitmap."
         )
 
+    def test_color_covariate_legend_fits_discrete_switch_column_widths(self) -> None:
+        js = (
+            self._REPO_ROOT
+            / "cryodrgn"
+            / "dashboard"
+            / "static"
+            / "js"
+            / "color_covariate_legend.js"
+        ).read_text(encoding="utf-8")
+        assert "fitDiscreteSwitchColumnWidths" in js
+        assert "0.79" in js
+        assert "--cryo-discrete-col-w" in js
+        assert "--cryo-discrete-cell-max-w" in js
+        assert 'removeProperty("--cryo-discrete-cell-min-h")' in js
+        assert "auto-fill" in js or "scrollWidth" in js
+        css = (
+            self._REPO_ROOT
+            / "cryodrgn"
+            / "dashboard"
+            / "static"
+            / "css"
+            / "cryo_cc_legend_palette_menu.css"
+        ).read_text(encoding="utf-8")
+        assert "80svh" in css
+        assert "overflow-y: auto" in css
+        assert "justify-content: center" in css
+        assert "--cryo-discrete-grid-gap-y: 0.24rem" in css
+        assert "auto-fill" in css
+        assert "--cryo-discrete-col-w" in css
+        assert "cryo-cc-discrete-panel--collapsed" in css
+        assert ":not(.cryo-cc-discrete-toggle-heading-row)" in css
+        assert (
+            "#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed"
+            in css
+        )
+        assert "#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show" in css
+        assert "cryo-cc-discrete-toggle-title" in css
+        assert "setDiscretePanelCollapsed" in js
+        assert "_ensureDiscreteCollapseToggle" in js
+        assert "_upgradeDiscreteCollapseTitleButton" in js
+        assert "_discretePanelCollapsed" in js
+        pe_css = (
+            self._REPO_ROOT
+            / "cryodrgn"
+            / "dashboard"
+            / "static"
+            / "css"
+            / "particle_explorer.css"
+        ).read_text(encoding="utf-8")
+        montage = (
+            self._REPO_ROOT
+            / "cryodrgn"
+            / "dashboard"
+            / "templates"
+            / "_particle_explorer_montage.html"
+        ).read_text(encoding="utf-8")
+        montagejs = (
+            self._REPO_ROOT
+            / "cryodrgn"
+            / "dashboard"
+            / "templates"
+            / "_particle_explorer_montagejs.html"
+        ).read_text(encoding="utf-8")
+        assert "cryo-explorer-discrete-hides-scatter-palette-radios" in pe_css
+        assert (
+            "#scatter-palette-radios.cryo-palette-select--options-pane {\n"
+            "    display: none !important;"
+        ) in pe_css
+        assert "cryo-cc-discrete-toggle-title" in montage
+        assert "Toggle selection" in montage
+        assert "K-means legend" not in montagejs
+
     def test_color_covariate_legend_refresh_respects_notify_on_refresh(self) -> None:
         js = (
             self._REPO_ROOT
@@ -1018,9 +1090,45 @@ class TestDashboardModules:
         sz_v = vol["data"][0]["marker"]["size"]
         assert isinstance(sz_b, (int, float))
         assert isinstance(sz_v, (int, float))
-        factor = (1.0 - 0.31) * (1.0 - 0.13) ** 2 * 0.8 * 1.13
+        factor = (1.0 - 0.31) * (1.0 - 0.13) ** 2 * 0.8 * 1.13 * 1.728 * 1.11
         assert float(sz_v) == pytest.approx(float(sz_b) * factor, rel=1e-6, abs=1e-9)
         assert float(sz_v) < float(sz_b)
+
+    def test_scatter3d_continuous_covariate_uses_per_point_hex_marker_colors(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """Continuous scatter3d markers must be per-point hex so letter overlays match WebGL."""
+        import json
+
+        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
+
+        e = dashboard_experiment
+        allow = frozenset({"z0", "z1", "z2"})
+        fig = json.loads(
+            scatter3d_z_json(
+                e,
+                "z0",
+                "z1",
+                "z2",
+                "z0",
+                plot_df=e.plot_df.iloc[:80],
+                xyz_axes_allowed=allow,
+                volume_landscape_3d_style=True,
+                continuous_palette="Viridis",
+            )
+        )
+        mk = fig["data"][0]["marker"]
+        colors = mk["color"]
+        assert isinstance(colors, list)
+        assert len(colors) == 80
+        assert all(
+            isinstance(c, str) and (c.startswith("#") or c.startswith("rgb"))
+            for c in colors
+        )
+        assert "colorscale" not in mk
+        meta = (fig.get("layout") or {}).get("meta") or {}
+        assert meta.get("cdrgn_color_mode") == "continuous"
+        assert meta.get("cdrgn_continuous_palette") == "Viridis"
 
     def test_scatter3d_vol_landscape_overlay_trace_uses_markers_plus_text(
         self, dashboard_experiment: DashboardExperiment
@@ -1055,7 +1163,9 @@ class TestDashboardModules:
         assert tr["text"] == [""] * len(sub)
         assert tr.get("textposition") == "middle center"
         tf = tr.get("textfont") or {}
-        assert tf.get("size") == pytest.approx(36 * 0.8)
+        assert tf.get("size") == pytest.approx(
+            36 * 0.8 * 0.75 * 1.5 * 0.8 * 0.8 * 0.8 * 0.8
+        )
         assert tf.get("color") == "#1a1a1a"
         meta = (fig.get("layout") or {}).get("meta") or {}
         assert meta.get("cdrgn_landscape_vol_animation") is True
@@ -1153,9 +1263,11 @@ class TestDashboardModules:
         p = root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
         text = p.read_text(encoding="utf-8")
         assert "setPreviewAnimLoading:" in text
-        assert "reapplySelectionHighlightIfNeeded" in text
+        assert "latent3dVolAnimApi.afterPlotRedraw" in text
         assert "l3dva-preview-anim-overlay" in text
-        assert "setRendering(on)" in text
+        assert "function setRendering(on" in text
+        assert "setRendering(true" in text
+        assert "setLatent3dPreviewAnimLoading" in text
         assert "CryoLatent3dVolLandscapeAnim.boot" in text
         vol_js = (
             root
@@ -1166,6 +1278,17 @@ class TestDashboardModules:
             / "latent3d_landscape_vol_animations.js"
         )
         vol_text = vol_js.read_text(encoding="utf-8")
+        assert "reapplySelectionHighlightIfNeeded" in vol_text
+        assert "estimatedChimeraxViewMatrixText" in vol_text
+        assert "viewRotationsAreActive" in vol_text
+        assert "syncViewMatrixField" in vol_text
+        assert "applyViewMatrixFromField" in vol_text
+        assert "view-matrix-input" in text
+        assert 'name="l3dva-gif-mode"' in text
+        assert 'value="disabled"' in text
+        assert "animationsEnabled" in vol_text
+        assert "volSelectionBlockedForAdd" in vol_text
+        assert "ChimeraX view matrix: rendering" not in vol_text
         assert "referenceScatter3dBaseMarkerSize" in vol_text
         assert "formatVolMontageLetterText" in vol_text
         assert "<b><i>" in vol_text
@@ -1202,3 +1325,137 @@ class TestDashboardModules:
         assert "sceneRelayoutPatchCameraOnly" in js_text
         # Colour-covariate changes await legend ``refresh`` before vol-anim tail + scene restore.
         assert "pRefresh" in text and "cRefresh.then" in text
+
+
+class TestPlotlyScatter3dSceneCameraPreserve:
+    """Static contracts for ``plotly_scatter3d_scene.js`` orbit preservation."""
+
+    @staticmethod
+    def _scene_js() -> str:
+        root = Path(__file__).resolve().parents[1]
+        return (
+            root
+            / "cryodrgn"
+            / "dashboard"
+            / "static"
+            / "js"
+            / "plotly_scatter3d_scene.js"
+        ).read_text(encoding="utf-8")
+
+    def test_scene_relayout_patch_camera_only_is_camera_only(self) -> None:
+        text = self._scene_js()
+        fn = text.split("function sceneRelayoutPatchCameraOnly", 1)[1]
+        body = fn.split("function restore(", 1)[0]
+        assert '"scene.camera"' in body
+        assert "scene.xaxis.range" not in body
+        assert "scene.yaxis.range" not in body
+
+    def test_marker_restyle_preserving_camera_uses_plotly_update(self) -> None:
+        text = self._scene_js()
+        fn = text.split("function traceMarkerRestylePreservingCamera", 1)[1]
+        body = fn.split("function traceCoordsRestyleFromFigure", 1)[0]
+        assert "Plotly.update(gd, upd, layoutPatch, [0])" in body
+        assert "sceneRelayoutPatchCameraOnly(pinSnap)" in body
+
+    def test_resolve_camera_prefers_webgl_get_camera(self) -> None:
+        text = self._scene_js()
+        fn = text.split("function resolveCameraFromGd", 1)[1]
+        body = fn.split("function snapshot(", 1)[0]
+        assert "scene._scene.getCamera" in body
+
+    def test_apply_snapshot_camera_only_skips_axis_ranges(self) -> None:
+        text = self._scene_js()
+        fn = text.split("function applySnapshotCameraOnlyToFigureLayout", 1)[1]
+        body = fn.split("function layoutPatchWithoutScene", 1)[0]
+        assert "fig.layout.scene.camera" in body
+        assert "xaxis" not in body or "applyRange" not in body
+
+
+class TestLatent3dScatter3dCameraSnapBack:
+    """Regression guards for latent-3D viewing-angle snap-back fixes."""
+
+    @staticmethod
+    def _latent_html() -> str:
+        root = Path(__file__).resolve().parents[1]
+        return (
+            root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
+        ).read_text(encoding="utf-8")
+
+    def test_set_rendering_does_not_restore_camera_before_overlay(self) -> None:
+        text = self._latent_html()
+        fn = text.split("function setRendering(on, opts)", 1)[1]
+        body = fn.split("function selectedLatentPalette", 1)[0]
+        assert "Do not relayout the camera before showing the badge" in body
+        assert "restoreCameraOnly" not in body
+
+    def test_same_axes_reload_uses_nonblocking_rendering_overlay(self) -> None:
+        text = self._latent_html()
+        fn = text.split("function loadPlot()", 1)[1]
+        body = fn.split("function buildLatent3dPostPayload", 1)[0]
+        assert "useNonblockingOverlay" in body
+        assert "latent3dSameAxesAsLast" in body
+        assert "setRendering(true, { nonblocking: useNonblockingOverlay })" in body
+
+    def test_load_plot_captures_live_scene_pin_before_fetch(self) -> None:
+        text = self._latent_html()
+        fn = text.split("function loadPlot()", 1)[1]
+        body = fn.split("fetch(scatter3dUrl", 1)[0]
+        assert "latent3dCaptureScenePinPreferLive()" in body
+        assert (
+            "P3S.snapshot(gd)"
+            in text.split("function latent3dCaptureScenePinPreferLive", 1)[1].split(
+                "function latent3dCameraWatchdog", 1
+            )[0]
+        )
+
+    def test_colour_covariate_tail_awaits_legend_refresh_before_overlay_off(
+        self,
+    ) -> None:
+        text = self._latent_html()
+        assert "knocks the scatter3d camera back" in text
+        tail = text.split("function runLatent3dPostResizeTail", 1)[1]
+        assert "cRefresh.then(function()" in tail
+        idx_refresh = tail.index("cRefresh.then")
+        idx_overlay_off = tail.index("setRendering(false)")
+        assert idx_refresh < idx_overlay_off
+
+    def test_same_axes_marker_restyle_preserves_camera(self) -> None:
+        text = self._latent_html()
+        fn = text.split("function latent3dApplyFigurePreservingScene", 1)[1]
+        body = fn.split("function latent3dStabilizeSceneAfterOverlay", 1)[0]
+        assert "traceMarkerRestylePreservingCamera(fig, gd, pin)" in body
+        assert "applySnapshotCameraOnlyToFigureLayout(fig, pin)" in body
+
+    def test_rendering_overlay_is_not_stacked_over_webgl_plot(self) -> None:
+        text = self._latent_html()
+        assert "latent3d-rendering-overlay" in text
+        assert "cryo-plot-rendering-overlay--nonblocking" in text
+        # Full-bleed veil must not use backdrop-filter over the WebGL canvas.
+        head = text.split("{% block content %}", 1)[0]
+        assert "backdrop-filter" not in head or "No backdrop-filter" in head
+        assert "#latent3d-rendering-overlay" in head
+        assert "inset: 0" in head
+
+    def test_afterplot_does_not_restore_stale_load_pin_after_user_orbit(self) -> None:
+        text = self._latent_html()
+        fn = text.split("function latent3dOnPlotlyAfterplot", 1)[1]
+        body = fn.split("function latent3dPersistSceneAfterUserOrbit", 1)[0]
+        assert "User orbited during scene hold" in body
+        assert "cameraEyeDiffers(loadPin, liveAfter)" in body
+        persist = text.split("function latent3dPersistSceneAfterUserOrbit", 1)[1]
+        persist = persist.split("function latent3dOnPlotlyAfterplot", 1)[0]
+        assert "gd._cryoLatent3dLoadScenePin = holdPin" in persist
+
+    def test_volanim_discrete_legend_does_not_expand_from_plot_width(self) -> None:
+        """Discrete mode must not set ``--cryo-discrete-legend-w`` from plot stack (squeezes the 3D view)."""
+        text = self._latent_html()
+        fn = text.split("function syncLatent3dDiscreteLegendTargetWidth", 1)[1]
+        body = fn.split("function syncLatent3dLegendMiddleWidth", 1)[0]
+        assert "latent3dIsVolanimLayout()" in body
+        assert 'removeProperty("--cryo-discrete-legend-w")' in body
+        volanim = text.split(
+            ".cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band", 1
+        )[1]
+        volanim = volanim.split("{% endif %}", 1)[0]
+        assert "grid-template-columns: minmax(0, 1fr) minmax(0, 9.25rem)" in volanim
+        assert "cryo-cc-discrete-switches--pair-2col" in volanim

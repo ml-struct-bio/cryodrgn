@@ -17,6 +17,7 @@ from pathlib import Path
 import yaml
 from flask import Flask, current_app, g, jsonify, redirect, request, session, url_for
 
+from cryodrgn.dashboard.command_builder_cli_help import load_command_module_docstrings
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
@@ -545,6 +546,7 @@ def command_builder_template_kwargs(
             "default_poses": "",
             "command_builder_schema": COMMAND_BUILDER_SCHEMA,
             "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
+            "command_builder_command_docs": load_command_module_docstrings(),
         }
 
     cfg = exp.train_configs
@@ -578,6 +580,7 @@ def command_builder_template_kwargs(
         "default_poses": default_poses,
         "command_builder_schema": COMMAND_BUILDER_SCHEMA,
         "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
+        "command_builder_command_docs": load_command_module_docstrings(),
     }
 
 

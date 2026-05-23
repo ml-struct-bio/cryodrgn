@@ -12,6 +12,7 @@ from cryodrgn.commands import dashboard as dash_cli, train_vae
 from cryodrgn.dashboard.command_builder_cli_help import (
     help_map_from_command_py,
     load_cli_help_maps,
+    load_command_module_docstrings,
 )
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
@@ -24,6 +25,16 @@ from cryodrgn.dashboard.github_pages import (
     build_github_pages_site,
     render_command_builder_html,
 )
+
+
+class TestCommandModuleDocstrings:
+    def test_loads_summaries_for_all_commands(self) -> None:
+        docs = load_command_module_docstrings()
+        assert set(docs.keys()) == {"abinit", "train_vae", "train_nn", "train_dec"}
+        assert "cryoDRGN-AI" in docs["abinit"]
+        assert "VAE" in docs["train_vae"]
+        assert "neural net" in docs["train_nn"]
+        assert docs["train_dec"] == "Train an autodecoder"
 
 
 class TestDefaultOutdirForCommand:
@@ -309,6 +320,10 @@ class TestGithubPagesCommandBuilder:
         assert 'class="cmd-builder-program"' not in html
         assert "cmd-outdir-stepper" in html
         assert 'value="001_abinit"' in html
+        assert "nav-cmd-doc" in html
+        assert "nav-cmd-doc-text" in html
+        assert "CMD_COMMAND_DOCS" in html
+        assert "heterogeneous reconstruction" in html
         assert "plot.ly" not in html.lower()
         assert 'fetch("/api/set_workdir"' not in html
 

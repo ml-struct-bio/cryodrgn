@@ -1712,7 +1712,13 @@
         {% endif %}
       </div>
     </div>
-    {% if not command_builder_only %}
+    {% if github_pages_mode %}
+    <div class="nav-right nav-cmd-doc">
+      <div class="nav-cmd-doc-panel" role="region" aria-live="polite" aria-label="Command description">
+        <p class="nav-cmd-doc-text" id="nav-cmd-doc-text">{{ command_builder_command_docs.get('abinit', '')|e }}</p>
+      </div>
+    </div>
+    {% elif not command_builder_only %}
     <div class="nav-right">
       <div class="nav-right-stack">
         <div class="nav-epoch">

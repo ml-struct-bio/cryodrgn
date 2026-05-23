@@ -112,3 +112,34 @@ def load_cli_help_maps() -> dict[str, dict[str, str]]:
         if p.is_file():
             out[name] = help_map_from_command_py(p)
     return out
+
+
+def module_summary_from_command_py(path: Path) -> str:
+    """First paragraph of a command module docstring (before example blocks)."""
+    text = path.read_text(encoding="utf-8")
+    tree = ast.parse(text, filename=str(path))
+    doc = ast.get_docstring(tree) or ""
+    lines: list[str] = []
+    for line in doc.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Example usage") or stripped.startswith("---"):
+            break
+        if stripped:
+            lines.append(stripped)
+        elif lines:
+            break
+    if lines:
+        return " ".join(lines)
+    first = doc.strip().splitlines()
+    return first[0].strip() if first else ""
+
+
+def load_command_module_docstrings() -> dict[str, str]:
+    """Map command keys to one-line module summaries for the command builder."""
+    cmd_dir = Path(__file__).resolve().parent.parent / "commands"
+    out: dict[str, str] = {}
+    for name in ("abinit", "train_vae", "train_nn", "train_dec"):
+        p = cmd_dir / f"{name}.py"
+        if p.is_file():
+            out[name] = module_summary_from_command_py(p)
+    return out

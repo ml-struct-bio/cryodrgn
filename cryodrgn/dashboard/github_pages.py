@@ -14,6 +14,7 @@ from pathlib import Path
 
 from flask import Flask, render_template
 
+from cryodrgn.dashboard.command_builder_cli_help import load_command_module_docstrings
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
@@ -70,6 +71,7 @@ def _command_builder_template_kwargs() -> dict[str, object]:
         "default_poses": "",
         "command_builder_schema": COMMAND_BUILDER_SCHEMA,
         "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
+        "command_builder_command_docs": load_command_module_docstrings(),
     }
 
 

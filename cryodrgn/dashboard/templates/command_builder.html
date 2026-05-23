@@ -368,6 +368,33 @@
     color: #1a2332;
     background: #fff;
   }
+  body.cmd-builder-github-pages header.nav .nav-cmd-doc {
+    grid-column: 3;
+    justify-self: end;
+    align-self: center;
+    margin-left: 0;
+    min-width: 0;
+    max-width: min(20rem, 30vw);
+  }
+  body.cmd-builder-github-pages .nav-cmd-doc-panel {
+    margin: 0;
+    padding: 0.38rem 0.55rem;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.24);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  body.cmd-builder-github-pages .nav-cmd-doc-text {
+    margin: 0;
+    font-family: Charter, "Bitstream Charter", "Sitka Text", Palatino, "Book Antiqua", serif;
+    font-size: calc(0.54rem * var(--gp-nav-font-scale));
+    font-weight: 400;
+    font-style: normal;
+    line-height: 1.38;
+    letter-spacing: 0.01em;
+    color: rgba(232, 238, 244, 0.82);
+    text-align: left;
+  }
   body.cmd-builder-github-pages .cmd-builder-header .cryo-dash-lead { display: none; }
   body.cmd-builder-github-pages .cmd-builder-scroll {
     overflow: hidden;
@@ -1481,6 +1508,9 @@
     <script>
 (function() {
   var CMD_SCHEMA = {{ command_builder_schema | tojson }};
+  {% if github_pages_mode %}
+  var CMD_COMMAND_DOCS = {{ command_builder_command_docs | tojson }};
+  {% endif %}
 
   function shquote(s) {
     if (!s || !String(s).trim()) return "";
@@ -1685,12 +1715,19 @@
   var form = document.getElementById("cmd-form");
   var cmdType = document.getElementById("cmd-type");
 
+  function syncCmdDocText() {
+    var el = document.getElementById("nav-cmd-doc-text");
+    if (!el || typeof CMD_COMMAND_DOCS === "undefined" || !cmdType) return;
+    el.textContent = CMD_COMMAND_DOCS[cmdType.value] || "";
+  }
+
   function syncPanels() {
     var t = cmdType.value;
     var panels = document.querySelectorAll(".cmd-panel");
     for (var i = 0; i < panels.length; i++) {
       panels[i].classList.toggle("cmd-panel--active", panels[i].getAttribute("data-cmd") === t);
     }
+    syncCmdDocText();
     refresh();
   }
 

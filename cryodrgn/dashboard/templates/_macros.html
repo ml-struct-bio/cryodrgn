@@ -1,7 +1,9 @@
 {# Reusable Jinja fragments for dashboard pages (import with ``from "_macros.html" import ...``). #}
 
+{# Wrap the separator and the title so adjacent (whitespace-stripped) markup keeps no gap between them. #}
 {% macro nav_page_title_span(page_title) -%}
-  <span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">{{ page_title|nav_interface_title }}</span>
+  <span class="nav-title-sep" aria-hidden="true">·</span>
+  {#- -#}<span class="nav-page-title">{{ page_title|nav_interface_title }}</span>
 {%- endmacro %}
 
 {% macro cmd_reconstruction_command_select() -%}

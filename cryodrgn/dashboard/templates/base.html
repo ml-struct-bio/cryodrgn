@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-{# Base layout: shared nav, global CSS (static/css/dashboard.css), status helpers (static/js/*.js). #}
+{# Base layout: shared nav, inline global CSS, and status helpers (static/js/*.js). #}
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -722,60 +722,6 @@
       opacity: 0.88;
       white-space: nowrap;
     }
-    @media (max-width: 960px) {
-      .nav-center-row,
-      .nav-center-row--solo,
-      .nav-center-row--outdir-only {
-        grid-template-columns: 1fr;
-      }
-      .nav-center-row .nav-config-field {
-        grid-column: 1;
-      }
-      .nav-workdir-field {
-        grid-column: 1;
-        max-width: 100%;
-        width: 100%;
-      }
-    }
-    @media (max-width: 720px) {
-      .nav {
-        grid-template-columns: 1fr;
-        justify-items: stretch;
-      }
-      .nav-left {
-        order: 1;
-        flex-wrap: wrap;
-      }
-      .nav-center {
-        order: 2;
-        max-width: 100%;
-        align-items: stretch;
-      }
-      .nav-center-row,
-      .nav-center-row--solo,
-      .nav-center-row--outdir-only {
-        grid-template-columns: 1fr;
-      }
-      .nav-center-row .nav-config-field {
-        grid-column: 1;
-      }
-      .nav-workdir-field {
-        grid-column: 1;
-        max-width: 100%;
-        width: 100%;
-      }
-      .nav-config-field {
-        width: 100%;
-        max-width: 100%;
-        margin-left: 0;
-      }
-      .nav-right {
-        order: 3;
-        justify-self: stretch;
-        justify-content: flex-end;
-        margin-left: 0;
-      }
-    }
     main {
       max-width: 1200px;
       margin: 0 auto;
@@ -857,9 +803,6 @@
       grid-template-columns: 1fr 320px;
       gap: 1rem;
       align-items: start;
-    }
-    @media (max-width: 900px) {
-      .layout-split { grid-template-columns: 1fr; }
     }
     .preview-panel {
       position: sticky;
@@ -948,7 +891,8 @@
     }
     /*
      * Discrete covariate toggle legend — invert / “no selection” cell:
-     * idle = metallic label plaque; active = glossy button. Typography fills inner box with 7% inset (.cryo-cc-discrete-invert-fitbox).
+     * idle = metallic label plaque; active = glossy button. Typography fills
+     * inner box with 7% inset (.cryo-cc-discrete-invert-fitbox).
      */
     .cryo-cc-discrete-cell.cryo-cc-discrete-cell--invert {
       padding: 0;
@@ -1058,7 +1002,8 @@
       align-self: center;
       border-radius: 7px;
     }
-    .cryo-cc-region-invert-slot .cryo-cc-discrete-cell--invert-heading .cryo-cc-discrete-switch.cryo-cc-discrete-switch--invert {
+    .cryo-cc-region-invert-slot .cryo-cc-discrete-cell--invert-heading
+      .cryo-cc-discrete-switch.cryo-cc-discrete-switch--invert {
       width: auto;
       height: auto;
       min-height: calc(0.792 * 1lh);
@@ -1073,7 +1018,8 @@
       max-width: 100%;
       padding: 0.18em 0.558em 0.216em;
     }
-    .cryo-cc-region-invert-slot .cryo-cc-discrete-cell--invert-heading .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+    .cryo-cc-region-invert-slot .cryo-cc-discrete-cell--invert-heading
+      .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
       font-size: 0.9em;
       line-height: 1.2;
       width: auto;
@@ -1378,16 +1324,14 @@
       height: auto;
     }
     /* Fixed row height: size the square from both column width and height so the plot is never non-square. */
-    @media (min-width: 901px) {
-      .cryo-dash-page--image-viewer .cryo-dash-viewport--plotly {
-        container-type: size;
-        container-name: cryo-image-viewer-plot;
-      }
-      .cryo-dash-page--image-viewer .cryo-plotly-stack {
-        width: min(100cqw, calc(100cqh - 2.35rem));
-        max-width: 100%;
-        max-height: calc(100cqh - 2.35rem);
-      }
+    .cryo-dash-page--image-viewer .cryo-dash-viewport--plotly {
+      container-type: size;
+      container-name: cryo-image-viewer-plot;
+    }
+    .cryo-dash-page--image-viewer .cryo-plotly-stack {
+      width: min(100cqw, calc(100cqh - 2.35rem));
+      max-width: 100%;
+      max-height: calc(100cqh - 2.35rem);
     }
     .cryo-dash-page--image-viewer .cryo-plotly-graph-host {
       flex: 1 1 auto;
@@ -1501,60 +1445,6 @@
       height: 100% !important;
       width: 100%;
     }
-    @media (max-width: 900px) {
-      .cryo-dash-page .cryo-dash-row {
-        flex-direction: column;
-      }
-      .cryo-dash-row.cryo-dash-row--plot-triple {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        grid-auto-flow: row;
-      }
-      .cryo-dash-page .cryo-dash-side {
-        flex: none;
-        max-width: none;
-        width: 100%;
-      }
-      .cryo-dash-main-split {
-        flex-direction: column;
-      }
-      .cryo-dash-figure-legend {
-        position: static;
-        max-width: none;
-        flex: none;
-        width: 100%;
-        min-width: 0;
-      }
-      .cryo-dash-page--latent3d .cryo-dash-viewport--plotly {
-        height: max(20rem, calc(100svh - 18rem));
-        min-height: max(20rem, calc(100svh - 18rem));
-      }
-      .cryo-dash-page--image-viewer .cryo-dash-row {
-        height: auto;
-        min-height: auto;
-        max-height: none;
-      }
-      .cryo-dash-page--image-viewer .cryo-dash-montage {
-        max-height: none;
-      }
-      .cryo-dash-page--image-viewer .cryo-plotly-stack {
-        max-height: min(92vw, calc(100svh - 16rem));
-      }
-      .cryo-dash-page--image-viewer .cryo-dash-side,
-      .cryo-dash-page--image-viewer .cryo-dash-viewport--plotly,
-      .cryo-dash-page--image-viewer .cryo-dash-montage {
-        flex: none;
-        max-width: none;
-        width: 100%;
-      }
-      .cryo-dash-page--image-viewer .cryo-dash-montage {
-        position: static;
-      }
-      .cryo-dash-page--filter .cryo-dash-viewport--plotly {
-        height: max(20rem, calc(100svh - 18rem));
-        min-height: max(20rem, calc(100svh - 18rem));
-      }
-    }
   </style>
   <script>
     (function() {
@@ -1611,12 +1501,15 @@
           <span class="nav-brand-line1-row">
             <span class="nav-brand-line1">cryoDRGN</span>
             {% if cryodrgn_version_short %}
-            <span class="nav-brand-version nav-brand-version--inline" title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
+            <span class="nav-brand-version nav-brand-version--inline"
+              title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
             {% endif %}
           </span>
           <span class="nav-brand-line2">
             <span class="nav-brand-line2-inner">
-              <span class="nav-brand-line2-main">dashboard{% if not github_pages_mode %}<span class="nav-brand-interface-title">{% block nav_page_title %}{% endblock %}</span>{% endif %}</span>
+              <span class="nav-brand-line2-main">dashboard{% if not github_pages_mode -%}
+                <span class="nav-brand-interface-title">{% block nav_page_title %}{% endblock %}</span>
+                {%- endif %}</span>
             </span>
           </span>
         </span>
@@ -1647,7 +1540,8 @@
               <li role="presentation">
                 <button
                   type="button"
-                  class="nav-workdir-scroll-item cryo-dash-set-workdir{% if wd.value == selected_workdir %} nav-workdir-scroll-item--selected{% endif %}"
+                  class="nav-workdir-scroll-item cryo-dash-set-workdir{%
+                    if wd.value == selected_workdir %} nav-workdir-scroll-item--selected{% endif %}"
                   role="option"
                   {% if wd.value == selected_workdir %}aria-selected="true"{% else %}aria-selected="false"{% endif %}
                   data-workdir="{{ wd.value|e }}"
@@ -1725,10 +1619,16 @@
           {% if exp_epoch_output_stamp or exp_run_log_cryodrgn_version %}
           <div class="nav-epoch-meta">
             {% if exp_epoch_output_stamp %}
-            <span class="nav-epoch-stamp" {% if exp_epoch_output_stamp_title %}title="{{ exp_epoch_output_stamp_title|e }}"{% endif %}>analyze.{{ exp_epoch }} updated {{ exp_epoch_output_stamp|e }}</span>
+            <span class="nav-epoch-stamp"
+              {% if exp_epoch_output_stamp_title %}title="{{ exp_epoch_output_stamp_title|e }}"{% endif %}
+              >analyze.{{ exp_epoch }} updated {{ exp_epoch_output_stamp|e }}</span>
             {% endif %}
             {% if exp_run_log_cryodrgn_version %}
-            <span class="nav-epoch-runlog-version" {% if exp_run_log_cryodrgn_version_title %}title="{{ exp_run_log_cryodrgn_version_title|e }}"{% endif %}>trained with cryoDRGN v{{ exp_run_log_cryodrgn_version_short|e }}</span>
+            <span class="nav-epoch-runlog-version"
+              {% if exp_run_log_cryodrgn_version_title -%}
+                title="{{ exp_run_log_cryodrgn_version_title|e }}"
+              {%- endif %}
+              >trained with cryoDRGN v{{ exp_run_log_cryodrgn_version_short|e }}</span>
             {% endif %}
           </div>
           {% endif %}

@@ -124,14 +124,12 @@
   .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-viewport--plotly {
     padding-top: 0.28rem;
   }
-  @media (min-width: 901px) {
-    .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-plotly-stack {
-      /*
-       * Scatter square in the centre column; colour histogram / discrete toggles live in the montage column.
-       */
-      width: min(100cqw, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 1.05rem));
-      max-height: none;
-    }
+  /*
+   * Scatter square in the centre column; colour histogram / discrete toggles live in the montage column.
+   */
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-plotly-stack {
+    width: min(100cqw, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 1.05rem));
+    max-height: none;
   }
   .cryo-dash-page--particle-explorer .cryo-particle-explorer-plot-status {
     margin: 0 0 0.12rem !important;

@@ -259,7 +259,8 @@
       0 1px 2px rgba(255, 255, 255, 0.45),
       0 2px 3px rgba(0, 0, 0, 0.12);
   }
-  .cryo-dash-page--volsketch .volsketch-gif-overlay--circle-chip.volsketch-gif-overlay--on-tint:not(.volsketch-gif-overlay--cov) {
+  .cryo-dash-page--volsketch
+    .volsketch-gif-overlay--circle-chip.volsketch-gif-overlay--on-tint:not(.volsketch-gif-overlay--cov) {
     text-shadow:
       0 0 1px rgba(255, 255, 255, 0.85),
       0 1px 2px rgba(255, 255, 255, 0.45),
@@ -489,37 +490,4 @@
     align-self: flex-start;
     font-size: 0.72rem;
     padding: 0.22rem 0.5rem;
-  }
-  @media (max-width: 1180px) {
-    .cryo-dash-page--volsketch .volsketch-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-    .cryo-dash-page--volsketch .volsketch-side {
-      grid-column: 1 / -1;
-    }
-    .cryo-dash-page--volsketch .volsketch-plot-cell {
-      grid-column: 1 / 2;
-    }
-    .cryo-dash-page--volsketch .volsketch-animate-card {
-      grid-column: 2 / 3;
-    }
-    .cryo-dash-page--volsketch .volsketch-plot-square {
-      width: min(100%, calc(100vh - 12rem), calc(100vw - 22rem));
-    }
-  }
-  @media (max-width: 780px) {
-    .cryo-dash-page--volsketch .volsketch-grid {
-      grid-template-columns: 1fr;
-    }
-    .cryo-dash-page--volsketch .volsketch-side,
-    .cryo-dash-page--volsketch .volsketch-plot-cell,
-    .cryo-dash-page--volsketch .volsketch-animate-card {
-      grid-column: 1 / -1;
-    }
-    .cryo-dash-page--volsketch .volsketch-plot-square {
-      width: min(100%, 92vw);
-    }
-    .cryo-dash-page--volsketch .volsketch-view-rotate-row {
-      align-items: stretch;
-    }
   }

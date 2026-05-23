@@ -293,7 +293,8 @@
     if (clearExplorerSelectionBtn) {
       var nRegClear = 0;
       try {
-        if (typeof committedScatterRegions !== "undefined" && committedScatterRegions && committedScatterRegions.length) {
+        if (typeof committedScatterRegions !== "undefined" && committedScatterRegions
+            && committedScatterRegions.length) {
           nRegClear = committedScatterRegions.length;
         }
       } catch (eReg) { /* ignore */ }

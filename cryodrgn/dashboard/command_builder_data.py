@@ -1,7 +1,8 @@
 """Structured optional-arg groups for the dashboard command builder.
 
 Mirrors ``add_argument_group`` titles and flags from:
-``cryodrgn.commands.abinit``, ``train_vae``, ``train_nn``, ``train_dec``.
+``cryodrgn.commands.abinit``, ``train_vae``, ``train_nn``, ``train_dec``, and
+``analyze*`` commands.
 ``--ctf`` and ``--datadir`` are rendered in the template (required row and
 top-row dataset column), not listed here. Other required fields are template-only.
 
@@ -68,6 +69,16 @@ COMMAND_BUILDER_GROUP_DESCRIPTIONS: dict[str, str] = {
     "Latent Variables": "Latent dimension, priors, and embedding behaviour.",
     "Backprojection parameters": "Batching, CTF weighting, half-maps, FSCs, and regularization.",
     "Tilt series options": "Tomography tilt geometry and dose per tilt.",
+    "Run options": "Device, output paths, and skip flags for the analysis run.",
+    "Volumes to generate": "Principal-component traversals, k-means samples, and per-axis density.",
+    "Volume post-processing": "Apix, downsampling, filtering, cropping, and contrast for output MRCs.",
+    "Extra arguments for volume generation": "Sketch size, Apix, downsampling, and volume-generation toggles.",
+    "Extra arguments for mask generation": "Threshold, dilation, cosine edge, and custom mask for landscape volumes.",
+    "Extra arguments for clustering": "Agglomerative linkage and cluster count for landscape grouping.",
+    "Extra arguments for landscape visualization": "PCA and plot dimensionality for landscape figures.",
+    "Volume generation arguments": "Training-volume count, downsampling, and skip flags for landscape_full.",
+    "Volume mapping arguments": "Batch sizes, epochs, learning rate, and MLP architecture.",
+    "Volume PC clustering arguments": "Neighbour count and Leiden resolution for volume PC clusters.",
 }
 
 
@@ -1037,7 +1048,15 @@ BACKPROJECT_VOXEL_GROUPS: list[Group] = [
 
 # Primary-band group titles surfaced in the GitHub Pages dataset / run-parameter pair.
 COMMAND_BUILDER_PRIMARY_RUN_GROUP_TITLES: frozenset[str] = frozenset(
-    {"Training parameters", "Backprojection parameters"}
+    {
+        "Training parameters",
+        "Backprojection parameters",
+        "Run options",
+        "Volumes to generate",
+        "Extra arguments for volume generation",
+        "Volume generation arguments",
+        "Volume mapping arguments",
+    }
 )
 
 
@@ -1303,6 +1322,249 @@ def _build_abinit_homo_old_groups() -> list[Group]:
 ABINIT_HET_OLD_GROUPS: list[Group] = _build_abinit_het_old_groups()
 ABINIT_HOMO_OLD_GROUPS: list[Group] = _build_abinit_homo_old_groups()
 
+ANALYZE_GROUPS: list[Group] = [
+    _g(
+        "Run options",
+        [
+            {"id": "ana_device", "cli": ["--device"], "w": "number"},
+            {"id": "ana_skip_vol", "cli": ["--skip-vol"], "w": "flag_true"},
+            {"id": "ana_skip_umap", "cli": ["--skip-umap"], "w": "flag_true"},
+        ],
+    ),
+    _g(
+        "Volumes to generate",
+        [
+            {"id": "ana_pc", "cli": ["--pc"], "w": "number", "placeholder": "2"},
+            {
+                "id": "ana_n_per_pc",
+                "cli": ["--n-per-pc"],
+                "w": "number",
+                "placeholder": "10",
+            },
+            {
+                "id": "ana_ksample",
+                "cli": ["--ksample"],
+                "w": "number",
+                "placeholder": "20",
+            },
+        ],
+    ),
+    _g(
+        "Volume post-processing",
+        [
+            {"id": "ana_apix", "cli": ["--Apix"], "w": "text"},
+            {"id": "ana_flip", "cli": ["--flip"], "w": "flag_true"},
+            {"id": "ana_invert", "cli": ["--invert"], "w": "flag_true"},
+            {
+                "id": "ana_downsample",
+                "cli": ["-d", "--downsample"],
+                "w": "number",
+            },
+            {"id": "ana_low_pass", "cli": ["--low-pass"], "w": "text"},
+            {"id": "ana_crop", "cli": ["--crop"], "w": "number"},
+            {
+                "id": "ana_vol_start_index",
+                "cli": ["--vol-start-index"],
+                "w": "number",
+                "placeholder": "1",
+            },
+        ],
+    ),
+]
+
+ANALYZE_LANDSCAPE_GROUPS: list[Group] = [
+    _g(
+        "Run options",
+        [
+            {"id": "alsc_device", "cli": ["--device"], "w": "number"},
+            {"id": "alsc_multigpu", "cli": ["--multigpu"], "w": "flag_true"},
+            {"id": "alsc_skip_umap", "cli": ["--skip-umap"], "w": "flag_true"},
+            {"id": "alsc_vol_ind", "cli": ["--vol-ind"], "w": "text"},
+        ],
+    ),
+    _g(
+        "Extra arguments for volume generation",
+        [
+            {
+                "id": "alsc_sketch_size",
+                "cli": ["-N", "--sketch-size"],
+                "w": "number",
+                "placeholder": "1000",
+            },
+            {
+                "id": "alsc_apix",
+                "cli": ["--Apix"],
+                "w": "text",
+                "placeholder": "1",
+            },
+            {"id": "alsc_flip", "cli": ["--flip"], "w": "flag_true"},
+            {
+                "id": "alsc_downsample",
+                "cli": ["-d", "--downsample"],
+                "w": "number",
+                "placeholder": "128",
+            },
+            {"id": "alsc_skip_vol", "cli": ["--skip-vol"], "w": "flag_true"},
+            {
+                "id": "alsc_vol_start_index",
+                "cli": ["--vol-start-index"],
+                "w": "number",
+                "placeholder": "1",
+            },
+        ],
+    ),
+    _g(
+        "Extra arguments for mask generation",
+        [
+            {"id": "alsc_thresh", "cli": ["--thresh"], "w": "text"},
+            {
+                "id": "alsc_dilate",
+                "cli": ["--dilate"],
+                "w": "number",
+                "placeholder": "5",
+            },
+            {
+                "id": "alsc_cosine_edge",
+                "cli": ["--cosine-edge"],
+                "w": "number",
+                "placeholder": "0",
+            },
+            {"id": "alsc_mask", "cli": ["--mask"], "w": "text"},
+        ],
+    ),
+    _g(
+        "Extra arguments for clustering",
+        [
+            {
+                "id": "alsc_linkage",
+                "cli": ["--linkage"],
+                "w": "text",
+                "placeholder": "average",
+            },
+            {
+                "id": "alsc_n_clusters",
+                "cli": ["-M"],
+                "w": "number",
+                "placeholder": "10",
+            },
+        ],
+    ),
+    _g(
+        "Extra arguments for landscape visualization",
+        [
+            {
+                "id": "alsc_pc_dim",
+                "cli": ["--pc-dim"],
+                "w": "number",
+                "placeholder": "20",
+            },
+            {
+                "id": "alsc_plot_dim",
+                "cli": ["--plot-dim"],
+                "w": "number",
+                "placeholder": "5",
+            },
+        ],
+    ),
+]
+
+ANALYZE_LANDSCAPE_FULL_GROUPS: list[Group] = [
+    _g(
+        "Run options",
+        [
+            {"id": "alfull_device", "cli": ["--device"], "w": "number"},
+            {
+                "id": "alfull_landscape_dir",
+                "cli": ["--landscape-dir"],
+                "w": "text",
+            },
+            {
+                "id": "alfull_seed",
+                "cli": ["--seed"],
+                "w": "number",
+                "placeholder": "0",
+            },
+        ],
+    ),
+    _g(
+        "Volume generation arguments",
+        [
+            {
+                "id": "alfull_training_volumes",
+                "cli": ["-N", "--training-volumes"],
+                "w": "number",
+                "placeholder": "10000",
+            },
+            {"id": "alfull_flip", "cli": ["--flip"], "w": "flag_true"},
+            {
+                "id": "alfull_downsample",
+                "cli": ["-d", "--downsample"],
+                "w": "number",
+                "placeholder": "128",
+            },
+            {"id": "alfull_skip_vol", "cli": ["--skip-vol"], "w": "flag_true"},
+        ],
+    ),
+    _g(
+        "Volume mapping arguments",
+        [
+            {
+                "id": "alfull_batch_size",
+                "cli": ["--batch-size"],
+                "w": "number",
+                "placeholder": "64",
+            },
+            {
+                "id": "alfull_test_batch_size",
+                "cli": ["--test-batch-size"],
+                "w": "number",
+                "placeholder": "1000",
+            },
+            {
+                "id": "alfull_epochs",
+                "cli": ["--epochs"],
+                "w": "number",
+                "placeholder": "200",
+            },
+            {
+                "id": "alfull_lr",
+                "cli": ["--lr"],
+                "w": "text",
+                "placeholder": "1e-4",
+            },
+            {
+                "id": "alfull_dim",
+                "cli": ["--dim"],
+                "w": "number",
+                "placeholder": "512",
+            },
+            {
+                "id": "alfull_layers",
+                "cli": ["--layers"],
+                "w": "number",
+                "placeholder": "3",
+            },
+        ],
+    ),
+    _g(
+        "Volume PC clustering arguments",
+        [
+            {
+                "id": "alfull_num_neighbors",
+                "cli": ["--num-neighbors"],
+                "w": "number",
+                "placeholder": "50",
+            },
+            {
+                "id": "alfull_resolution",
+                "cli": ["--resolution"],
+                "w": "text",
+                "placeholder": "1.5",
+            },
+        ],
+    ),
+]
+
 COMMAND_BUILDER_COMMAND_KEYS: tuple[str, ...] = (
     "abinit",
     "abinit_het_old",
@@ -1311,6 +1573,9 @@ COMMAND_BUILDER_COMMAND_KEYS: tuple[str, ...] = (
     "train_nn",
     "train_dec",
     "backproject_voxel",
+    "analyze",
+    "analyze_landscape",
+    "analyze_landscape_full",
 )
 
 COMMAND_BUILDER_SCHEMA: Schema = {
@@ -1321,6 +1586,9 @@ COMMAND_BUILDER_SCHEMA: Schema = {
     "train_nn": TRAIN_NN_GROUPS,
     "train_dec": TRAIN_DEC_GROUPS,
     "backproject_voxel": BACKPROJECT_VOXEL_GROUPS,
+    "analyze": ANALYZE_GROUPS,
+    "analyze_landscape": ANALYZE_LANDSCAPE_GROUPS,
+    "analyze_landscape_full": ANALYZE_LANDSCAPE_FULL_GROUPS,
 }
 
 _cli_help = load_cli_help_maps()
@@ -1331,6 +1599,12 @@ attach_help_to_groups(_cli_help.get("train_vae", {}), TRAIN_VAE_GROUPS)
 attach_help_to_groups(_cli_help.get("train_nn", {}), TRAIN_NN_GROUPS)
 attach_help_to_groups(_cli_help.get("train_dec", {}), TRAIN_DEC_GROUPS)
 attach_help_to_groups(_cli_help.get("backproject_voxel", {}), BACKPROJECT_VOXEL_GROUPS)
+attach_help_to_groups(_cli_help.get("analyze", {}), ANALYZE_GROUPS)
+attach_help_to_groups(_cli_help.get("analyze_landscape", {}), ANALYZE_LANDSCAPE_GROUPS)
+attach_help_to_groups(
+    _cli_help.get("analyze_landscape_full", {}),
+    ANALYZE_LANDSCAPE_FULL_GROUPS,
+)
 attach_group_descriptions(COMMAND_BUILDER_SCHEMA)
 
 
@@ -1419,6 +1693,37 @@ def _build_required_field_titles() -> dict[str, str]:
                 "bpv_particles": "particles",
                 "bpv_out": ("-o", "--outdir"),
                 "bpv_poses": "--poses",
+            },
+        ),
+    )
+    r.update(
+        _required_field_titles(
+            _cli_help.get("analyze", {}),
+            {
+                "ana_workdir": "workdir",
+                "ana_epoch": "epoch",
+                "ana_out": ("-o", "--outdir"),
+            },
+        ),
+    )
+    r.update(
+        _required_field_titles(
+            _cli_help.get("analyze_landscape", {}),
+            {
+                "alsc_workdir": "workdir",
+                "alsc_epoch": "epoch",
+                "alsc_out": ("-o", "--outdir"),
+            },
+        ),
+    )
+    r.update(
+        _required_field_titles(
+            _cli_help.get("analyze_landscape_full", {}),
+            {
+                "alfull_workdir": "workdir",
+                "alfull_epoch": "epoch",
+                "alfull_out": ("-o", "--outdir"),
+                "alfull_landscape_dir": "--landscape-dir",
             },
         ),
     )

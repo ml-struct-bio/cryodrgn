@@ -540,6 +540,8 @@ def command_builder_template_kwargs(
         return {
             "default_particles": "",
             "default_ctf": "",
+            "default_workdir": "",
+            "default_epoch": "",
             "default_zdim": 8,
             "default_outdir_abinit": default_outdir_for_command("abinit"),
             "default_outdir_abinit_het_old": default_outdir_for_command(
@@ -581,6 +583,8 @@ def command_builder_template_kwargs(
     return {
         "default_particles": default_particles,
         "default_ctf": default_ctf,
+        "default_workdir": exp.workdir,
+        "default_epoch": str(exp.epoch),
         "default_zdim": default_zdim,
         "default_outdir_abinit": default_outdir_for_command("abinit", exp.workdir),
         "default_outdir_abinit_het_old": default_outdir_for_command(

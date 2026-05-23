@@ -7,14 +7,21 @@
 {%- endmacro %}
 
 {% macro cmd_reconstruction_command_select() -%}
-<label class="cryo-select-line" for="cmd-type">Reconstruction command</label>
+<label class="cryo-select-line" for="cmd-type">Command</label>
 <select id="cmd-type" name="cmd_type">
-  <option value="abinit" selected>cryodrgn abinit</option>
-  <option value="train_vae">cryodrgn train_vae</option>
-  <option value="train_nn">cryodrgn train_nn</option>
-  <option value="train_dec">cryodrgn train_dec</option>
-  <option value="backproject_voxel">cryodrgn backproject_voxel</option>
-  <option value="abinit_het_old">cryodrgn abinit_het_old</option>
-  <option value="abinit_homo_old">cryodrgn abinit_homo_old</option>
+  <optgroup label="Reconstruction">
+    <option value="abinit" selected>cryodrgn abinit</option>
+    <option value="train_vae">cryodrgn train_vae</option>
+    <option value="train_nn">cryodrgn train_nn</option>
+    <option value="train_dec">cryodrgn train_dec</option>
+    <option value="backproject_voxel">cryodrgn backproject_voxel</option>
+    <option value="abinit_het_old">cryodrgn abinit_het_old</option>
+    <option value="abinit_homo_old">cryodrgn abinit_homo_old</option>
+  </optgroup>
+  <optgroup label="Analysis">
+    <option value="analyze">cryodrgn analyze</option>
+    <option value="analyze_landscape">cryodrgn analyze_landscape</option>
+    <option value="analyze_landscape_full">cryodrgn analyze_landscape_full</option>
+  </optgroup>
 </select>
 {%- endmacro %}

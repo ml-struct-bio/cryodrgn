@@ -31,12 +31,26 @@ from cryodrgn.dashboard.github_pages import (
 class TestCommandModuleDocstrings:
     def test_loads_summaries_for_all_commands(self) -> None:
         docs = load_command_module_docstrings()
-        assert set(docs.keys()) == {"abinit", "train_vae", "train_nn", "train_dec"}
+        assert set(docs.keys()) == {
+            "abinit",
+            "abinit_het_old",
+            "abinit_homo_old",
+            "train_vae",
+            "train_nn",
+            "train_dec",
+            "backproject_voxel",
+            "analyze",
+            "analyze_landscape",
+            "analyze_landscape_full",
+        }
         assert "cryoDRGN-AI" in docs["abinit"]
         assert "VAE" in docs["train_vae"]
         assert "neural net" in docs["train_nn"]
         assert docs["train_dec"] == "Train an autodecoder"
         assert "backprojection" in docs["backproject_voxel"].lower()
+        assert "latent space" in docs["analyze"].lower()
+        assert "comparing volumes" in docs["analyze_landscape"].lower()
+        assert "latent space" in docs["analyze_landscape_full"].lower()
 
 
 class TestDefaultOutdirForCommand:
@@ -59,6 +73,8 @@ class TestCommandBuilderTemplateKwargs:
         assert kw["default_poses"] == ""
         assert "command_builder_schema" in kw
         assert "command_builder_required_field_titles" in kw
+        assert kw["default_workdir"] == ""
+        assert kw["default_epoch"] == ""
 
     def test_with_experiment_uses_config(
         self, dashboard_experiment: DashboardExperiment
@@ -71,6 +87,8 @@ class TestCommandBuilderTemplateKwargs:
         assert kw["default_outdir_train_vae"].endswith("001_train_vae")
         assert kw["default_outdir_train_nn"].endswith("001_train_nn")
         assert kw["default_outdir_train_dec"].endswith("001_train_dec")
+        assert kw["default_workdir"] == dashboard_experiment.workdir
+        assert kw["default_epoch"] == str(dashboard_experiment.epoch)
 
 
 class TestCommandBuilderSchemaIntegrity:
@@ -130,6 +148,10 @@ class TestRequiredFieldTitles:
             "dec_out",
             "dec_poses",
             "dec_zdim",
+            "ana_workdir",
+            "ana_epoch",
+            "alsc_workdir",
+            "alfull_workdir",
         }
         assert expected <= set(COMMAND_BUILDER_REQUIRED_FIELD_TITLES.keys())
 
@@ -334,8 +356,28 @@ class TestGithubPagesCommandBuilder:
         assert 'value="001_abinit_het_old"' in html
         assert "backproject_voxel" in html
         assert 'value="001_backproject_voxel"' in html
+        assert "analyze_landscape" in html
+        assert 'id="ana_workdir"' in html
+        assert "cryodrgn analyze" in html
+        assert "optgroup" in html
         assert "plot.ly" not in html.lower()
         assert 'fetch("/api/set_workdir"' not in html
+        assert 'id="cmd-colorize"' in html
+        assert "Colorize" in html
+        assert "cmd-colorize-rainbow" in html
+        assert "renderColoredCommand" in html
+        assert 'id="cmd-copy"' in html
+        assert "Copy" in html
+        assert "btn-copy-icon" in html
+        assert "btn-copy-label-line" in html
+        assert 'stroke="#000"' in html
+        assert "max-height: 10dvh" in html
+        assert "--gp-font-scale: 1.221" in html
+        assert "Advanced parameters" in html
+        assert "cmd-builder-advanced-region" in html
+        assert "gap: calc(0.45rem * 3)" in html
+        assert "min-width: calc(4.75rem * 1.3)" in html
+        assert "cmd-builder-cmd-dock" in html
 
     def test_build_writes_index_and_nojekyll(self, tmp_path) -> None:
         out = build_github_pages_site(

@@ -115,6 +115,9 @@ def load_cli_help_maps() -> dict[str, dict[str, str]]:
         "train_nn",
         "train_dec",
         "backproject_voxel",
+        "analyze",
+        "analyze_landscape",
+        "analyze_landscape_full",
     ):
         p = cmd_dir / f"{name}.py"
         if p.is_file():
@@ -154,6 +157,9 @@ def load_command_module_docstrings() -> dict[str, str]:
         "train_nn",
         "train_dec",
         "backproject_voxel",
+        "analyze",
+        "analyze_landscape",
+        "analyze_landscape_full",
     ):
         p = cmd_dir / f"{name}.py"
         if p.is_file():

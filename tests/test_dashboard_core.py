@@ -8,7 +8,6 @@ import pickle
 import re
 import tempfile
 from io import BytesIO
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -40,17 +39,9 @@ from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
 from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
 from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
+from tests.conftest import dashboard_repo_root, png_b64_rgb, read_dashboard_template
 
 ANALYZE_EPOCH = 2
-
-
-def _png_b64_rgb(
-    w: int = 8, h: int = 8, rgb: tuple[int, int, int] = (200, 30, 40)
-) -> str:
-    """Solid-colour PNG as standard base64 (GIF helpers + latent-3D GIF API tests)."""
-    buf = BytesIO()
-    Image.new("RGB", (w, h), rgb).save(buf, format="PNG")
-    return base64.standard_b64encode(buf.getvalue()).decode("ascii")
 
 
 class TestDashboardExperiment:
@@ -179,8 +170,8 @@ class TestDashboardScatterApis:
         assert r.data[:8] == b"\x89PNG\r\n\x1a\n"
 
     def test_api_latent3d_plot_gif_from_png_frames(self, flask_client) -> None:
-        a = _png_b64_rgb(rgb=(10, 20, 30))
-        b = _png_b64_rgb(rgb=(200, 180, 40))
+        a = png_b64_rgb(rgb=(10, 20, 30))
+        b = png_b64_rgb(rgb=(200, 180, 40))
         r = flask_client.post(
             "/api/latent3d_plot_gif_from_png_frames",
             json={"frames": [a, b], "durations_ms": [40, 80]},
@@ -268,8 +259,8 @@ class TestPlotGifUtils:
     """``plot_gif_utils.png_base64_frames_to_gif_bytes`` (PNG-frame GIF assembly)."""
 
     def test_png_base64_frames_to_gif_bytes_round_trip(self) -> None:
-        a = _png_b64_rgb(rgb=(200, 30, 40))
-        b = _png_b64_rgb(rgb=(30, 180, 60))
+        a = png_b64_rgb(rgb=(200, 30, 40))
+        b = png_b64_rgb(rgb=(30, 180, 60))
         gif = png_base64_frames_to_gif_bytes([a, b], durations_ms=[50, 120])
         assert gif[:6] in (b"GIF87a", b"GIF89a")
         im = Image.open(BytesIO(gif))
@@ -277,12 +268,12 @@ class TestPlotGifUtils:
         im.seek(1)
 
     def test_png_base64_frames_requires_two_frames(self) -> None:
-        one = _png_b64_rgb()
+        one = png_b64_rgb()
         with pytest.raises(ValueError, match="At least two"):
             png_base64_frames_to_gif_bytes([one])
 
     def test_png_base64_accepts_data_url_prefix(self) -> None:
-        raw = _png_b64_rgb()
+        raw = png_b64_rgb()
         framed = "data:image/png;base64," + raw
         gif = png_base64_frames_to_gif_bytes([framed, raw], durations_ms=40)
         assert len(gif) > 32
@@ -818,8 +809,7 @@ class TestDiscreteCovariateLegendContracts:
     described the old bitmap), so the first discrete toggle looked like a no-op.
     """
 
-    _REPO_ROOT = Path(__file__).resolve().parents[1]
-    _DASH_TEMPLATES = _REPO_ROOT / "cryodrgn" / "dashboard" / "templates"
+    _DASH_TEMPLATES = dashboard_repo_root() / "cryodrgn" / "dashboard" / "templates"
     _HOST_TEMPLATES = (
         "pair_grid.html",
         "latent_3d.html",
@@ -827,9 +817,7 @@ class TestDiscreteCovariateLegendContracts:
     )
 
     def _read_template(self, rel: str) -> str:
-        p = self._DASH_TEMPLATES / rel
-        assert p.is_file(), f"missing template {p}"
-        return p.read_text(encoding="utf-8")
+        return read_dashboard_template(rel)
 
     @pytest.mark.parametrize("rel", _HOST_TEMPLATES)
     def test_discrete_legend_hosts_set_notify_on_refresh_false(self, rel: str) -> None:
@@ -868,7 +856,7 @@ class TestDiscreteCovariateLegendContracts:
 
     def test_color_covariate_legend_fits_discrete_switch_column_widths(self) -> None:
         js = (
-            self._REPO_ROOT
+            dashboard_repo_root()
             / "cryodrgn"
             / "dashboard"
             / "static"
@@ -882,7 +870,7 @@ class TestDiscreteCovariateLegendContracts:
         assert 'removeProperty("--cryo-discrete-cell-min-h")' in js
         assert "auto-fill" in js or "scrollWidth" in js
         css = (
-            self._REPO_ROOT
+            dashboard_repo_root()
             / "cryodrgn"
             / "dashboard"
             / "static"
@@ -907,40 +895,41 @@ class TestDiscreteCovariateLegendContracts:
         assert "_ensureDiscreteCollapseToggle" in js
         assert "_upgradeDiscreteCollapseTitleButton" in js
         assert "_discretePanelCollapsed" in js
-        pe_css = (
-            self._REPO_ROOT
+        # Particle explorer styles live inline in particle_explorer.html (no
+        # standalone .css file).
+        pe_html = (
+            dashboard_repo_root()
             / "cryodrgn"
             / "dashboard"
-            / "static"
-            / "css"
-            / "particle_explorer.css"
+            / "templates"
+            / "particle_explorer.html"
         ).read_text(encoding="utf-8")
         montage = (
-            self._REPO_ROOT
+            dashboard_repo_root()
             / "cryodrgn"
             / "dashboard"
             / "templates"
             / "_particle_explorer_montage.html"
         ).read_text(encoding="utf-8")
         montagejs = (
-            self._REPO_ROOT
+            dashboard_repo_root()
             / "cryodrgn"
             / "dashboard"
             / "templates"
             / "_particle_explorer_montagejs.html"
         ).read_text(encoding="utf-8")
-        assert "cryo-explorer-discrete-hides-scatter-palette-radios" in pe_css
+        assert "cryo-explorer-discrete-hides-scatter-palette-radios" in pe_html
         assert (
             "#scatter-palette-radios.cryo-palette-select--options-pane {\n"
             "    display: none !important;"
-        ) in pe_css
+        ) in pe_html
         assert "cryo-cc-discrete-toggle-title" in montage
         assert "Toggle selection" in montage
         assert "K-means legend" not in montagejs
 
     def test_color_covariate_legend_refresh_respects_notify_on_refresh(self) -> None:
         js = (
-            self._REPO_ROOT
+            dashboard_repo_root()
             / "cryodrgn"
             / "dashboard"
             / "static"
@@ -1019,11 +1008,17 @@ class TestDashboardModules:
             ("", "Viridis"),
             ("viridis", "Viridis"),
             ("PLASMA", "Plasma"),
+            ("TURBO", "Turbo"),
+            ("  Plasma  ", "Plasma"),
             ("not_a_real_palette", "Viridis"),
         ],
     )
     def test_normalize_continuous_palette(self, raw: str | None, expected: str) -> None:
         assert palette_config.normalize_continuous_palette(raw) == expected
+
+    def test_mpl_cmap_for_palette(self) -> None:
+        assert palette_config.mpl_cmap_for_palette("Viridis") == "viridis"
+        assert palette_config.mpl_cmap_for_palette("not_a_palette") == "viridis"
 
     def test_landscape_full_ready_false_without_outputs(self) -> None:
         from cryodrgn.dashboard import landscape_full_3d  # noqa: PLC0415
@@ -1259,7 +1254,7 @@ class TestDashboardModules:
 
     def test_latent_3d_vol_anim_wires_preview_loading_callback(self) -> None:
         """ChimeraX runs use ``setPreviewAnimLoading`` on the preview stack; main ``setRendering`` is scatter reload only."""
-        root = Path(__file__).resolve().parents[1]
+        root = dashboard_repo_root()
         p = root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
         text = p.read_text(encoding="utf-8")
         assert "setPreviewAnimLoading:" in text
@@ -1292,12 +1287,12 @@ class TestDashboardModules:
         assert "referenceScatter3dBaseMarkerSize" in vol_text
 
     def test_landscape_volpca_selection_sizes_respect_trace_marker(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = dashboard_repo_root()
         js = root / "cryodrgn" / "dashboard" / "static" / "js" / "landscape_volpca.js"
         assert "referenceScatter3dBaseMarkerSize" in js.read_text(encoding="utf-8")
 
     def test_latent_3d_loads_scatter3d_scene_module_before_vol_anim(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        root = dashboard_repo_root()
         text = (
             root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
         ).read_text(encoding="utf-8")
@@ -1330,7 +1325,7 @@ class TestPlotlyScatter3dSceneCameraPreserve:
 
     @staticmethod
     def _scene_js() -> str:
-        root = Path(__file__).resolve().parents[1]
+        root = dashboard_repo_root()
         return (
             root
             / "cryodrgn"
@@ -1374,7 +1369,7 @@ class TestLatent3dScatter3dCameraSnapBack:
 
     @staticmethod
     def _latent_html() -> str:
-        root = Path(__file__).resolve().parents[1]
+        root = dashboard_repo_root()
         return (
             root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
         ).read_text(encoding="utf-8")

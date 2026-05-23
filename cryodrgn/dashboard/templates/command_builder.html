@@ -1200,6 +1200,140 @@
         </section>
       </div>
     {% endmacro %}
+    {% macro render_analyze_required_cells(prefix) %}
+      <div class="cmd-builder-required-cell">
+        <label class="cryo-select-line" for="{{ prefix }}_workdir"
+          {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_workdir') ) }}>Workdir
+        </label>
+        <input type="text"
+               id="{{ prefix }}_workdir"
+               value="{{ default_workdir|e }}"
+               placeholder="training output directory"
+               autocomplete="off"
+               {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_workdir') ) }} />
+      </div>
+      <div class="cmd-builder-required-cell">
+        <label class="cryo-select-line" for="{{ prefix }}_epoch"
+          {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }}>Epoch
+        </label>
+        <input type="number"
+               id="{{ prefix }}_epoch"
+               min="0"
+               step="1"
+               value="{{ default_epoch|e }}"
+               autocomplete="off"
+               {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }} />
+      </div>
+      <div class="cmd-builder-required-cell">
+        <label class="cryo-select-line" for="{{ prefix }}_out"
+          {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }}>
+          Output (<code>-o</code>)
+        </label>
+        <input type="text"
+               id="{{ prefix }}_out"
+               value=""
+               placeholder="(default if blank)"
+               autocomplete="off"
+               {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }} />
+      </div>
+    {% endmacro %}
+    {% macro render_github_analyze_primary_pair(cmd_key) %}
+      {% set run = (command_builder_schema[cmd_key]
+        | selectattr('title', 'equalto', 'Run options')
+        | list
+        | first) %}
+      {% set vol = namespace(group=none) %}
+      {% for g in command_builder_schema[cmd_key] %}
+        {% if g.title in ['Volumes to generate', 'Extra arguments for volume generation',
+          'Volume generation arguments'] and vol.group is none %}
+          {% set vol.group = g %}
+        {% endif %}
+      {% endfor %}
+      <div class="cmd-builder-primary-pair">
+        <section class="cmd-builder-primary-region cmd-builder-primary-region--dataset"
+                 aria-labelledby="{{ cmd_key }}-run-region-title">
+          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-run-region-title">
+            {{ run.title if run else 'Run options' }}
+          </h3>
+          <div class="cmd-builder-primary-region-body">
+            {% if run and run.args %}
+              {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
+              {{ render_github_checkbox_band(run.args) }}
+              {% for a in run.args if a.w not in check_ws %}
+                {{ render_github_primary_arg(a) }}
+              {% endfor %}
+            {% endif %}
+          </div>
+        </section>
+        <section class="cmd-builder-primary-region cmd-builder-primary-region--training"
+                 aria-labelledby="{{ cmd_key }}-vol-region-title">
+          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-vol-region-title">{{
+            vol.group.title if vol.group else 'Volume options' }}</h3>
+          <div class="cmd-builder-primary-region-body">
+            {% if vol.group and vol.group.args %}
+              {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
+              {{ render_github_checkbox_band(vol.group.args) }}
+              {% for a in vol.group.args if a.w not in check_ws %}
+                {{ render_github_primary_arg(a) }}
+              {% endfor %}
+            {% endif %}
+          </div>
+        </section>
+      </div>
+    {% endmacro %}
+    {% macro render_analyze_command_panel(cmd_key, prefix) %}
+      <div id="panel-{{ cmd_key }}" class="cmd-panel" data-cmd="{{ cmd_key }}">
+        {% if github_pages_mode %}
+        <div class="cmd-builder-github-body cmd-builder-github-body--analyze">
+          {% call render_github_required_bar(3) %}
+            {{ render_analyze_required_cells(prefix) }}
+          {% endcall %}
+          {{ render_github_analyze_primary_pair(cmd_key) }}
+          {{ render_github_panel_groups(cmd_key) }}
+        </div>
+        {% else %}
+        <div class="cmd-builder-top-row">
+          <fieldset class="cmd-builder-required-fieldset">
+            <legend>Required</legend>
+            <label class="cryo-select-line" for="{{ prefix }}_workdir"
+              {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_workdir') ) }}>Workdir
+            </label>
+            <input type="text"
+                   id="{{ prefix }}_workdir"
+                   value="{{ default_workdir|e }}"
+                   placeholder="training output directory"
+                   autocomplete="off"
+                   {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_workdir') ) }} />
+            <label class="cryo-select-line" for="{{ prefix }}_epoch"
+              {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }}>Epoch
+            </label>
+            <input type="number"
+                   id="{{ prefix }}_epoch"
+                   min="0"
+                   step="1"
+                   value="{{ default_epoch|e }}"
+                   autocomplete="off"
+                   {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }} />
+            <label class="cryo-select-line" for="{{ prefix }}_out"
+              {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }}>
+              Output directory (<code>-o</code>)
+            </label>
+            <input type="text"
+                   id="{{ prefix }}_out"
+                   value=""
+                   placeholder="(default if blank)"
+                   autocomplete="off"
+                   {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }} />
+          </fieldset>
+        </div>
+        <div class="cmd-builder-rest-grid">
+          {% for group in command_builder_schema[cmd_key] %}
+            {{ render_schema_group(group) }}
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    {% endmacro %}
     {% macro render_github_panel_groups(cmd_key) %}
       <section class="cmd-builder-advanced-region"
                aria-labelledby="{{ cmd_key }}-advanced-title">
@@ -1209,7 +1343,9 @@
         <div class="cmd-builder-group-cards">
           {% for group in command_builder_schema[cmd_key] %}
             {% set _primary_titles = ['Dataset loading', 'Training parameters',
-              'Backprojection parameters', 'Tilt series parameters'] %}
+              'Backprojection parameters', 'Tilt series parameters', 'Run options',
+              'Volumes to generate', 'Extra arguments for volume generation',
+              'Volume generation arguments'] %}
             {% if group.title not in _primary_titles %}
               {{ render_schema_group(group) }}
             {% endif %}
@@ -1290,7 +1426,7 @@
     <div class="cryo-dash-page cmd-builder-page cmd-builder-page--dock">
       <div class="cmd-builder-header">
         <p class="cryo-dash-lead" style="margin-top:0.35rem;">
-          Pick a primary reconstruction command.
+          Pick a cryoDRGN command.
           The line below lists <strong>required</strong> arguments plus options you actually set (empty fields and CLI
           defaults are omitted).
         </p>
@@ -1978,6 +2114,9 @@
             </div>
             {% endif %}
           </div>
+          {{ render_analyze_command_panel('analyze', 'ana') }}
+          {{ render_analyze_command_panel('analyze_landscape', 'alsc') }}
+          {{ render_analyze_command_panel('analyze_landscape_full', 'alfull') }}
         </form>
       </div>
       <div class="cmd-builder-cmd-dock">
@@ -1986,7 +2125,7 @@
             <div class="cmd-output-main">
               <strong class="cmd-output-heading">Command</strong>
               <pre id="cmd-out">cryodrgn abinit …</pre>
-              <p class="hint">This page does not run training — copy the line into your shell or job script.</p>
+              <p class="hint">This page does not run commands — copy the line into your shell or job script.</p>
               <p id="cmd-copy-status" class="hint cmd-copy-status"></p>
             </div>
             <div class="cmd-output-actions">
@@ -2257,6 +2396,18 @@
     return segments;
   }
 
+  function buildAnalyzeStyleSegments(cmdName, prefix) {
+    var segments = [];
+    pushPrefix(segments, cmdName);
+    var workdir = val(prefix + "_workdir");
+    var epoch = val(prefix + "_epoch");
+    if (workdir) pushSeg(segments, G_REQUIRED, shquote(workdir));
+    if (epoch !== "") pushSeg(segments, G_REQUIRED, shquote(epoch));
+    appendOptSeg(segments, G_REQUIRED, "-o", val(prefix + "_out"));
+    collectSchemaSegments(cmdName, segments);
+    return segments;
+  }
+
   function buildSegments() {
     var t = document.getElementById("cmd-type").value;
     if (t === "abinit") return buildAbinitSegments();
@@ -2266,6 +2417,13 @@
     if (t === "train_nn") return buildTrainNnSegments();
     if (t === "train_dec") return buildTrainDecSegments();
     if (t === "backproject_voxel") return buildBackprojectVoxelSegments();
+    if (t === "analyze") return buildAnalyzeStyleSegments("analyze", "ana");
+    if (t === "analyze_landscape") {
+      return buildAnalyzeStyleSegments("analyze_landscape", "alsc");
+    }
+    if (t === "analyze_landscape_full") {
+      return buildAnalyzeStyleSegments("analyze_landscape_full", "alfull");
+    }
     return [];
   }
 
@@ -2345,6 +2503,11 @@
     "Dataset loading": 214,
     "Training parameters": 207,
     "Backprojection parameters": 200,
+    "Run options": 142,
+    "Volumes to generate": 88,
+    "Extra arguments for volume generation": 95,
+    "Volume generation arguments": 102,
+    "Volume mapping arguments": 168,
   };
   var cmdGroupHueCache = {};
 

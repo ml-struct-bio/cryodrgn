@@ -11,8 +11,6 @@ import pytest
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.plots import (
     _continuous_series_stats,
-    mpl_cmap_for_palette,
-    normalize_continuous_palette,
     pair_grid_figure_aspect_ratio,
     pair_grid_margin_fractions_for_js,
     pair_grid_png,
@@ -106,29 +104,6 @@ class TestDashboardPairPlot:
         assert cells_a == cells_b
         # zdim == 4 -> 4x4 cells.
         assert len(cells_a) == dashboard_experiment.z.shape[1] ** 2
-
-
-class TestNormalizeContinuousPalette:
-    @pytest.mark.parametrize(
-        "raw,expected",
-        [
-            (None, "Viridis"),
-            ("", "Viridis"),
-            ("viridis", "Viridis"),
-            ("TURBO", "Turbo"),
-            ("  Plasma  ", "Plasma"),
-            ("not_a_palette", "Viridis"),
-            (123, "Viridis"),
-        ],
-    )
-    def test_cases(self, raw: object, expected: str) -> None:
-        pal_raw = raw if (raw is None or isinstance(raw, str)) else str(raw)
-        assert normalize_continuous_palette(pal_raw) == expected
-
-    def test_mpl_cmap_for_palette(self) -> None:
-        assert mpl_cmap_for_palette("Viridis") == "viridis"
-        # Unknown falls back to viridis.
-        assert mpl_cmap_for_palette("not_a_palette") == "viridis"
 
 
 class TestContinuousSeriesStats:

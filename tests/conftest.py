@@ -4,6 +4,7 @@ import pytest
 import os
 import argparse
 import shutil
+from pathlib import Path
 from typing import Optional, Union, Generator, Any
 from dataclasses import dataclass
 
@@ -558,3 +559,34 @@ def flask_client(dashboard_workdir: str):
     app = dash_app.create_app(workdir=dashboard_workdir)
     with app.test_client() as client:
         yield client
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers for dashboard test modules
+# ---------------------------------------------------------------------------
+
+
+def dashboard_repo_root() -> "Path":
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[1]
+
+
+def png_b64_rgb(
+    w: int = 8, h: int = 8, rgb: tuple[int, int, int] = (200, 30, 40)
+) -> str:
+    """Solid-colour PNG as standard base64 (GIF API + plot_gif_utils tests)."""
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (w, h), rgb).save(buf, format="PNG")
+    return base64.standard_b64encode(buf.getvalue()).decode("ascii")
+
+
+def read_dashboard_template(rel: str) -> str:
+    """Read a Jinja template under ``cryodrgn/dashboard/templates/``."""
+    path = dashboard_repo_root() / "cryodrgn" / "dashboard" / "templates" / rel
+    return path.read_text(encoding="utf-8")

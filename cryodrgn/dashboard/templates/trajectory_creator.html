@@ -907,9 +907,20 @@
     var n = currentVolumeCount();
     if (lastTrajectoryVolumeCacheId) {
       var saveCount = generatedTrajectoryVolumeCount > 0 ? generatedTrajectoryVolumeCount : n;
-      btnGenerateVolumesEl.textContent = "Save " + saveCount + " volumes";
+      var saveLabel = "Save " + saveCount + " volumes";
+      if (typeof CryoDashboardIcons !== "undefined"
+          && typeof CryoDashboardIcons.setSaveButtonLabel === "function") {
+        CryoDashboardIcons.setSaveButtonLabel(btnGenerateVolumesEl, saveLabel);
+      } else {
+        btnGenerateVolumesEl.textContent = saveLabel;
+      }
       return;
     }
+    btnGenerateVolumesEl.removeAttribute("data-cryo-save-icon");
+    btnGenerateVolumesEl.classList.remove(
+      "cryo-btn-with-save-icon",
+      "cryo-btn-with-save-icon--icon-only"
+    );
     btnGenerateVolumesEl.textContent = "Generate " + n + " volumes";
   }
 

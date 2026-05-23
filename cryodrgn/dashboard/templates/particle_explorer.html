@@ -216,6 +216,9 @@
     box-shadow: inset 0 0 0 0.368rem var(--paper, #fff);
     box-sizing: border-box;
   }
+  .cryo-explorer-sel-pie.cryo-explorer-sel-pie--multi-region {
+    box-shadow: inset 0 0 0 0.368rem var(--paper, #fff);
+  }
   /* Beat `.card p { margin-bottom: 1rem }` (base.html) — same specificity trick as sel-count-text. */
   .cryo-explorer-sel-count-main-row .cryo-explorer-sel-pie-pct {
     margin: 0;
@@ -256,6 +259,65 @@
     padding-bottom: 0.45rem;
     white-space: normal;
     text-align: center;
+  }
+  .cryo-explorer-save-btns .cryo-explorer-save-btn.cryo-btn-with-save-icon {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.32rem;
+    padding-left: 0.42rem;
+    padding-right: 0.42rem;
+    font-size: 0.84rem;
+    line-height: 1.2;
+  }
+  .cryo-explorer-save-btns .cryo-explorer-save-btn .cryo-btn-save-icon-slot {
+    flex: 0 0 auto;
+    align-self: center;
+  }
+  .cryo-explorer-save-btns .cryo-explorer-save-btn .cryo-btn-save-icon-slot {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+  .cryo-explorer-save-btns .cryo-explorer-save-btn__text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.04rem;
+    min-width: 0;
+    flex: 1 1 auto;
+    max-width: 100%;
+    text-align: center;
+  }
+  .cryo-explorer-save-btns .cryo-explorer-save-btn__line {
+    display: block;
+    width: 100%;
+    line-height: 1.18;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .cryo-explorer-save-btns .cryo-explorer-save-btn__line code {
+    font-size: 0.92em;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .cryo-explorer-save-modal .cryo-file-browser-save-row .cryo-btn-with-save-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.22rem;
+    max-width: 100%;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    white-space: nowrap;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+  }
+  .cryo-explorer-save-modal .cryo-file-browser-save-row .cryo-btn-save-icon-slot {
+    width: 0.82rem;
+    height: 0.82rem;
   }
   .cryo-explorer-montage-actions {
     display: flex;
@@ -622,24 +684,97 @@
     overflow-wrap: anywhere;
     word-break: break-word;
   }
-  .cryo-traj-file-browser-panel {
-    width: 100%;
+  .cryo-explorer-save-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2147482000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
     box-sizing: border-box;
-    margin-top: 0.55rem;
   }
-  .cryo-traj-file-browser-panel[hidden] {
+  .cryo-explorer-save-modal[hidden] {
     display: none !important;
   }
-  .cryo-file-browser {
-    border: 1px solid rgba(36, 59, 83, 0.15);
+  body.cryo-explorer-save-modal-open {
+    overflow: hidden;
+  }
+  .cryo-explorer-save-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(26, 32, 44, 0.45);
+    cursor: pointer;
+  }
+  .cryo-explorer-save-modal__dialog {
+    position: relative;
+    z-index: 1;
+    width: min(96vw, 28rem);
+    max-height: min(88vh, 26rem);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #fffdf8;
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(36, 59, 83, 0.22);
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    box-sizing: border-box;
+  }
+  .cryo-explorer-save-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.65rem 0.75rem 0.55rem;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.1);
+    flex-shrink: 0;
+  }
+  .cryo-explorer-save-modal__title {
+    margin: 0;
+    font-size: 1.02rem;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    line-height: 1.25;
+  }
+  .cryo-explorer-save-modal__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    padding: 0;
+    border: none;
     border-radius: 4px;
+    background: transparent;
+    color: rgba(36, 59, 83, 0.72);
+    font-size: 1.35rem;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .cryo-explorer-save-modal__close:hover {
+    background: rgba(36, 59, 83, 0.08);
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-explorer-save-modal__close:focus-visible {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 1px;
+  }
+  .cryo-explorer-save-modal__browser.cryo-file-browser {
+    border: none;
+    border-radius: 0;
     background: #fff;
-    max-height: 14rem;
+    max-height: none;
+    flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     font-size: 0.72rem;
     width: 100%;
     box-sizing: border-box;
+  }
+  .cryo-explorer-save-modal .cryo-file-browser-list {
+    max-height: min(42vh, 14rem);
   }
   .cryo-file-browser-bar {
     display: flex;
@@ -920,6 +1055,40 @@
   }
   .cryo-explorer-scatter-region-chip__wheel-solo .cryo-cc-discrete-solo-btn {
     margin-left: 1px;
+  }
+  /* Save floppy on region chips: 3× the default chip action height (0.32rem → 0.96rem). */
+  .cryo-explorer-scatter-region-chip__save {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.96rem;
+    min-width: 0.96rem;
+    height: 0.96rem;
+    margin: 0 0 0 1px;
+    padding: 0;
+    border: none;
+    border-radius: 0.2rem;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.82;
+    overflow: visible;
+  }
+  .cryo-explorer-scatter-region-chip__save.cryo-btn-with-save-icon--icon-only {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .cryo-explorer-scatter-region-chip__save .cryo-btn-save-icon-slot {
+    width: 100%;
+    height: 100%;
+  }
+  .cryo-explorer-scatter-region-chip__save:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.08);
+  }
+  .cryo-explorer-scatter-region-chip__save:focus-visible {
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 1px;
   }
   .cryo-explorer-scatter-region-chip__remove {
     display: inline-flex;
@@ -1437,6 +1606,46 @@
   {% include "_particle_explorer_scatter.html" %}
 
   {% include "_particle_explorer_montage.html" %}
+</div>
+<div
+  id="sel-file-browser-panel"
+  class="cryo-explorer-save-modal"
+  hidden
+  aria-hidden="true"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="sel-fb-modal-title"
+>
+  <div class="cryo-explorer-save-modal__backdrop" data-sel-fb-close="1" aria-hidden="true"></div>
+  <div class="cryo-explorer-save-modal__dialog">
+    <div class="cryo-explorer-save-modal__header">
+      <h2 id="sel-fb-modal-title" class="cryo-explorer-save-modal__title">Save selection</h2>
+      <button
+        type="button"
+        id="sel-fb-cancel"
+        class="cryo-explorer-save-modal__close"
+        aria-label="Close save dialog"
+      >&times;</button>
+    </div>
+    <div class="cryo-file-browser cryo-explorer-save-modal__browser">
+      <div class="cryo-file-browser-bar">
+        <button type="button" id="sel-fb-up" title="Parent directory">&#8593; Up</button>
+        <span class="cryo-file-browser-path" id="sel-fb-path"></span>
+      </div>
+      <ul class="cryo-file-browser-list" id="sel-fb-list"></ul>
+      <div class="cryo-file-browser-save-row">
+        <input
+          id="sel-fb-save-name"
+          class="cryo-file-browser-save-input"
+          type="text"
+          value="indices.pkl"
+          spellcheck="false"
+          aria-label="Selection filename"
+        />
+        <button type="button" id="sel-fb-save-btn" class="btn btn-secondary">Save here</button>
+      </div>
+    </div>
+  </div>
 </div>
 </div>
 

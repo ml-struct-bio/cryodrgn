@@ -39,9 +39,18 @@
         <p class="cryo-dash-legend-note">Active after you select particles on the plot, with the color histogram, or
           with discrete color toggles.</p>
         <div class="cryo-explorer-save-btns">
-          <button type="button" class="btn" id="save-indices-pkl">Save selection<br/>as
-            <code>indices.pkl</code></button>
-          <button type="button" class="btn btn-secondary" id="save-indices-custom">Save selection<br/>as…</button>
+          <button type="button" class="btn cryo-explorer-save-btn" id="save-indices-pkl">
+            <span class="cryo-explorer-save-btn__text">
+              <span class="cryo-explorer-save-btn__line">Save selection</span>
+              <span class="cryo-explorer-save-btn__line">as <code>indices.pkl</code></span>
+            </span>
+          </button>
+          <button type="button" class="btn btn-secondary cryo-explorer-save-btn" id="save-indices-custom">
+            <span class="cryo-explorer-save-btn__text">
+              <span class="cryo-explorer-save-btn__line">Save selection</span>
+              <span class="cryo-explorer-save-btn__line">as…</span>
+            </span>
+          </button>
         </div>
         <label class="cryo-explorer-save-inverse-label" for="save-inverse">
           <input type="checkbox" id="save-inverse"/>
@@ -49,27 +58,6 @@
         </label>
         <p id="save-status" class="status" style="margin:0.35rem 0 0;font-size:0.88rem;"></p>
       </fieldset>
-    </div>
-    <div id="sel-file-browser-panel" class="cryo-traj-file-browser-panel" hidden aria-hidden="true">
-      <div class="cryo-file-browser">
-        <div class="cryo-file-browser-bar">
-          <button type="button" id="sel-fb-up" title="Parent directory">&#8593; Up</button>
-          <span class="cryo-file-browser-path" id="sel-fb-path"></span>
-          <button type="button" id="sel-fb-cancel">Cancel</button>
-        </div>
-        <ul class="cryo-file-browser-list" id="sel-fb-list"></ul>
-        <div class="cryo-file-browser-save-row">
-          <input
-            id="sel-fb-save-name"
-            class="cryo-file-browser-save-input"
-            type="text"
-            value="indices.pkl"
-            spellcheck="false"
-            aria-label="Selection filename"
-          />
-          <button type="button" id="sel-fb-save-btn" class="btn btn-secondary">Save here</button>
-        </div>
-      </div>
     </div>
   </div>
 

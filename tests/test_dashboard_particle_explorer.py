@@ -976,6 +976,63 @@ class TestParticleExplorerTemplateRegressions:
         assert "scheduleScatterRegionLabelChipsSync" in body
         assert "removeCommittedScatterRegion" in body
         assert "cryo-explorer-scatter-region-chip__remove" in body
+        assert "cryo-explorer-scatter-region-chip__save" in body
+        assert "saveCommittedScatterRegion" in body
+        assert "openRegionSelectionFileBrowser" in body
+        assert "pendingRegionSaveRows" in body
+
+    def test_multi_region_selection_pie_coloured_slices(self, flask_client) -> None:
+        """Multi-region pie: per-region slices; total % stays black."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "buildMultiRegionSelPieBackground" in body
+        assert "applySelectionPieVisual" in body
+        assert "cryo-explorer-sel-pie--multi-region" in body
+        assert "sel-pie-union-outline" not in body
+        assert "updateSelPieUnionOutline" not in body
+
+    def test_dashboard_save_buttons_use_floppy_disk_icon(self, flask_client) -> None:
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "cryo_dashboard_icons.js" in body
+        assert "CryoDashboardIcons" in body
+
+    def test_save_floppy_icon_is_outline_reference_style(self) -> None:
+        from pathlib import Path
+
+        js = Path("cryodrgn/dashboard/static/js/cryo_dashboard_icons.js").read_text(
+            encoding="utf-8"
+        )
+        assert 'fill=\\"none\\"' in js
+        assert 'stroke=\\"currentColor\\"' in js
+        assert "M3.75 6.25" in js
+        assert 'x=\\"2.6\\"' not in js
+
+    def test_multi_region_overlap_preserves_existing_regions_on_commit(
+        self, flask_client
+    ) -> None:
+        """Overlapping lassos: unchanged regions keep prior rows; no polygon clipping."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "rowArr = prevSnap[ci].rows.slice()" in body
+        assert "polygon_clipping.umd.js" not in body
+        assert "overlayRaw" not in body
+        assert "clipScatterRawExcludingNewerRegions" not in body
+        assert "Overlapping lassos: each region keeps" in body
+
+    def test_selection_save_file_browser_is_modal_popup(self, flask_client) -> None:
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert 'id="sel-file-browser-panel"' in body
+        assert "cryo-explorer-save-modal" in body
+        assert 'role="dialog"' in body
+        assert "cryo-explorer-save-modal__backdrop" in body
+        assert "syncSelectionSaveModalTitle" in body
+        assert "cryo-explorer-save-modal-open" in body
 
     def test_plotly_selected_commits_regions_before_montage_pool_refresh(
         self, flask_client

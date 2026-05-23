@@ -786,6 +786,36 @@
       background: var(--nav-bg);
     }
     .btn-secondary:hover { background: var(--nav-border); }
+    .cryo-btn-with-save-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.38rem;
+      text-align: left;
+    }
+    .cryo-btn-with-save-icon--icon-only {
+      gap: 0;
+      padding-left: 0.28rem;
+      padding-right: 0.28rem;
+    }
+    .cryo-btn-save-icon-slot {
+      display: inline-flex;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      line-height: 0;
+      width: 1.05em;
+      height: 1.05em;
+    }
+    .cryo-btn-save-icon-slot .cryo-save-floppy-icon {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .cryo-btn-with-save-icon--icon-only .cryo-btn-save-icon-slot {
+      width: 100%;
+      height: 100%;
+    }
     label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; font-size: 0.92rem; }
     input[type="text"], select, textarea {
       width: 100%;
@@ -1479,6 +1509,7 @@
       };
     })();
   </script>
+  <script src="{{ url_for('static', filename='js/cryo_dashboard_icons.js') }}"></script>
   {% block head %}{% endblock %}
 </head>
 <body{% if github_pages_mode %} class="cmd-builder-github-pages"{% endif %}>

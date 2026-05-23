@@ -269,7 +269,9 @@
       pctStr = (100 * frac).toFixed(1) + "%";
     }
     if (selPiePctEl) selPiePctEl.textContent = pctStr;
-    if (selPieEl) {
+    if (typeof applySelectionPieVisual === "function") {
+      applySelectionPieVisual(frac, pctStr);
+    } else if (selPieEl) {
       selPieEl.style.setProperty("--sel-frac", String(frac));
       selPieEl.title = pctStr + " of dataset particles selected";
     }
@@ -668,6 +670,8 @@
   var selFbSaveName = document.getElementById("sel-fb-save-name");
   var selFbSaveBtn = document.getElementById("sel-fb-save-btn");
   var selFbCurrentDir = null;
+  /** When set, ``saveSelectionViaBrowser`` saves these rows (single region) instead of full selection. */
+  var pendingRegionSaveRows = null;
 
   function plotHasScatterData() {
     return !!(gd && gd.data && gd.data[0] && gd.data[0].customdata && gd.data[0].customdata.length);

@@ -289,6 +289,11 @@
     flex: 1 1 auto;
     min-height: 0;
     gap: 0.5rem;
+    align-items: stretch;
+  }
+  body.cmd-builder-github-pages .cmd-builder-github-body > .cmd-builder-group-cards {
+    flex: 1 1 auto;
+    min-height: 0;
   }
   body.cmd-builder-github-pages .cmd-builder-required-bar {
     flex: 0 0 auto;
@@ -338,23 +343,194 @@
     font-size: 0.84rem;
     padding: 0.28rem 0.4rem;
   }
+  body.cmd-builder-github-pages .cmd-builder-primary-pair {
+    flex: 0 0 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-height: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    padding: 0.5rem 0.65rem 0.55rem;
+    border-radius: 6px;
+    box-sizing: border-box;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region--dataset {
+    background: rgba(44, 82, 130, 0.09);
+    border: 1px solid rgba(44, 82, 130, 0.32);
+    box-shadow: inset 0 0 0 1px rgba(44, 82, 130, 0.05);
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region--training {
+    background: rgba(36, 59, 83, 0.07);
+    border: 1px solid rgba(36, 59, 83, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region-title {
+    flex: 0 0 auto;
+    margin: 0 0 0.35rem;
+    font-weight: 700;
+    font-size: 0.84rem;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region--dataset .cmd-builder-primary-region-title {
+    color: var(--link, #2c5282);
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region--training .cmd-builder-primary-region-title {
+    color: var(--nav-bg, #243b53);
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region-body {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem 0.55rem;
+    align-content: start;
+    align-items: start;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(5.25rem, 36%) minmax(0, 1fr);
+    column-gap: 0.4rem;
+    row-gap: 0.1rem;
+    align-items: center;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell--wide {
+    grid-column: 1 / -1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell .cryo-select-line {
+    display: block;
+    margin: 0;
+    font-size: 0.76rem;
+    line-height: 1.2;
+    text-align: right;
+    align-self: center;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell input[type="text"],
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell input[type="number"],
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell select {
+    width: 100%;
+    margin: 0;
+    font-size: 0.82rem;
+    padding: 0.24rem 0.38rem;
+    box-sizing: border-box;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell:has(input[id$="_a"]) {
+    grid-template-columns: minmax(5.25rem, 30%) minmax(0, 1fr) minmax(0, 1fr);
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell:has(input[id$="_a"]) .cryo-select-line {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell:has(input[id$="_a"]) input[id$="_a"] {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell:has(input[id$="_a"]) input[id$="_b"] {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell--wide:has(.choice-line) {
+    grid-template-columns: minmax(5.25rem, 24%) minmax(0, 1fr);
+    align-items: center;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell--wide .choice-line {
+    margin: 0;
+    text-align: right;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell--wide .choice-options {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.2rem 0.55rem;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region-body--dataset-split {
+    grid-template-columns: minmax(9rem, 0.95fr) minmax(0, 1.65fr);
+    gap: 0.5rem 0.75rem;
+    align-items: start;
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-primary-region-body--dataset-split:has(.cmd-builder-primary-col--fields:only-child) {
+    grid-template-columns: 1fr;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-col--checks {
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-col--checks .cmd-builder-primary-checkboxes {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0.28rem;
+    margin: 0;
+    padding: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-col--fields {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem 0.55rem;
+    align-content: start;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-col--fields .cmd-builder-primary-arg-cell--wide {
+    grid-column: 1 / -1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-checkboxes {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.9rem;
+    margin: 0;
+    padding: 0.1rem 0 0.05rem;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-checkboxes .check-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.25;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-checkboxes .check-line input {
+    width: auto;
+    margin: 0;
+    flex-shrink: 0;
+  }
   body.cmd-builder-github-pages .cmd-builder-group-cards {
     flex: 1 1 auto;
     min-height: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
-    grid-auto-rows: 1fr;
-    gap: 0.65rem;
-    align-content: stretch;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
     align-items: stretch;
+    gap: 0.5rem;
+    padding-top: 0.35rem;
+    overflow: hidden;
   }
-  body.cmd-builder-github-pages details.cmd-group-card {
+  body.cmd-builder-github-pages .cmd-builder-page--dock {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  body.cmd-builder-github-pages .cmd-group-card {
     position: relative;
+    flex: 1 1 0;
     margin: 0;
     padding: 0;
     min-width: 0;
     min-height: 0;
     height: 100%;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
     box-sizing: border-box;
     background: var(--paper, #fff);
@@ -362,12 +538,14 @@
     border: 1px solid rgba(36, 59, 83, 0.12);
     box-shadow: var(--card-shadow, 0 2px 12px rgba(36, 59, 83, 0.08));
     transition:
-      transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+      flex-grow 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+      flex-basis 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.34s cubic-bezier(0.22, 1, 0.36, 1),
       border-color 0.26s ease,
       background 0.26s ease;
   }
-  body.cmd-builder-github-pages details.cmd-group-card:hover {
+  body.cmd-builder-github-pages .cmd-group-card:not(.cmd-group-card--open):hover {
     transform: translateY(-4px) scale(1.015);
     box-shadow:
       0 6px 12px rgba(36, 59, 83, 0.08),
@@ -377,35 +555,52 @@
     border-color: rgba(196, 112, 58, 0.65);
     background: linear-gradient(165deg, #fffefb 0%, #fff 55%, #faf8f4 100%);
   }
-  body.cmd-builder-github-pages details.cmd-group-card[open] {
-    grid-column: 1 / -1;
-    grid-row: span 2;
-    transform: none;
-    z-index: 2;
-    border-color: rgba(196, 112, 58, 0.55);
+  body.cmd-builder-github-pages .cmd-group-card--open {
+    flex: 3.5 1 0;
+    min-width: min(38vw, 20rem);
+    transform: translateY(-8px);
+    z-index: 4;
+    border-color: rgba(196, 112, 58, 0.65);
+    background: linear-gradient(165deg, #fffefb 0%, #fff 52%, #faf8f4 100%);
     box-shadow:
-      0 4px 10px rgba(36, 59, 83, 0.07),
-      0 16px 36px rgba(36, 59, 83, 0.14),
-      0 0 0 1px rgba(196, 112, 58, 0.35),
-      0 0 28px rgba(196, 112, 58, 0.14);
+      0 10px 20px rgba(36, 59, 83, 0.1),
+      0 28px 56px rgba(36, 59, 83, 0.2),
+      0 0 0 1px rgba(196, 112, 58, 0.45),
+      0 0 48px rgba(196, 112, 58, 0.26);
     outline: 2px solid var(--accent, #c4703a);
-    outline-offset: 2px;
+    outline-offset: 3px;
   }
-  body.cmd-builder-github-pages details.cmd-group-card > summary {
-    list-style: none;
-    cursor: pointer;
+  body.cmd-builder-github-pages .cmd-group-card--open:hover {
+    transform: translateY(-8px);
+  }
+  body.cmd-builder-github-pages .cmd-builder-group-cards:has(.cmd-group-card--open)
+    .cmd-group-card:not(.cmd-group-card--open) {
+    flex: 0.72 1 0;
+    opacity: 0.88;
+  }
+  body.cmd-builder-github-pages .cmd-group-card-trigger {
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 0.28rem;
-    height: 100%;
-    min-height: 4.5rem;
-    padding: 0.65rem 0.75rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0.55rem 0.65rem;
     box-sizing: border-box;
+    border: none;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
     user-select: none;
   }
-  body.cmd-builder-github-pages details.cmd-group-card > summary::-webkit-details-marker {
-    display: none;
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-trigger {
+    flex: 0 0 auto;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.12);
+    background: rgba(255, 255, 255, 0.55);
   }
   body.cmd-builder-github-pages .cmd-group-card-title {
     font-weight: 700;
@@ -424,17 +619,69 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  body.cmd-builder-github-pages details.cmd-group-card[open] > summary {
-    flex: 0 0 auto;
-    height: auto;
-    min-height: 0;
-    border-bottom: 1px solid rgba(36, 59, 83, 0.1);
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-desc {
+    -webkit-line-clamp: 2;
   }
-  body.cmd-builder-github-pages .cmd-group-card-body {
-    padding: 0.55rem 0.7rem 0.65rem;
-    max-height: min(42vh, 18rem);
-    overflow-y: auto;
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body {
+    display: block;
+    flex: 1 1 0;
+    min-height: 0;
+    height: 0;
+    padding: 0.4rem 0.5rem 0.75rem;
+    overflow-x: hidden;
+    overflow-y: scroll;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(36, 59, 83, 0.4) rgba(36, 59, 83, 0.1);
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body::-webkit-scrollbar {
+    width: 8px;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body::-webkit-scrollbar-track {
+    background: rgba(36, 59, 83, 0.08);
+    border-radius: 5px;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body::-webkit-scrollbar-thumb {
+    background: rgba(36, 59, 83, 0.36);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .cryo-select-line {
+    margin: 0.2rem 0 0.06rem;
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body input[type="text"],
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body input[type="number"],
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body select {
+    margin-bottom: 0.15rem;
+    font-size: 0.74rem;
+    padding: 0.2rem 0.32rem;
+    line-height: 1.25;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line {
+    margin: 0.18rem 0;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    gap: 0.3rem;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line span {
+    font-size: 0.72rem;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line code {
+    font-size: 0.68rem;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-line {
+    margin: 0.18rem 0 0.08rem;
+    font-size: 0.7rem;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-options {
+    margin: 0 0 0.12rem;
+    gap: 0.18rem 0.45rem;
   }
   body.cmd-builder-github-pages .cmd-output pre { max-height: 3.25rem; }
   body.cmd-builder-github-pages .cmd-output .hint { display: none; }
@@ -529,17 +776,90 @@
                {{ title_attr(st) }} />
       {% endif %}
     {% endmacro %}
+    {% macro render_github_primary_arg(a) %}
+      <div class="cmd-builder-primary-arg-cell{% if a.w == 'select' %} cmd-builder-primary-arg-cell--wide{% endif %}">
+        {{ render_cmd_arg(a) }}
+      </div>
+    {% endmacro %}
+    {% macro render_github_checkbox_band(args) %}
+      {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
+      {% for a in args if a.w in check_ws %}
+        {% if loop.first %}
+          <div class="cmd-builder-primary-checkboxes">
+        {% endif %}
+        {{ render_cmd_arg(a) }}
+        {% if loop.last %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    {% endmacro %}
     {% macro render_github_required_bar(cols) %}
       <div class="cmd-builder-required-bar cmd-builder-required-bar--{{ cols }}">
         <span class="cmd-builder-required-heading">Required</span>
         <div class="cmd-builder-required-fields">{{ caller() }}</div>
       </div>
     {% endmacro %}
-    {% macro render_github_panel_groups(cmd_key, datadir_id) %}
+    {% macro render_github_primary_pair(cmd_key, datadir_id) %}
+      {% set ds = (command_builder_schema[cmd_key]
+        | selectattr('title', 'equalto', 'Dataset loading')
+        | list
+        | first) %}
+      {% set train = (command_builder_schema[cmd_key]
+        | selectattr('title', 'equalto', 'Training parameters')
+        | list
+        | first) %}
+      <div class="cmd-builder-primary-pair">
+        <section class="cmd-builder-primary-region cmd-builder-primary-region--dataset" aria-labelledby="{{ datadir_id }}-region-title">
+          <h3 class="cmd-builder-primary-region-title" id="{{ datadir_id }}-region-title">Dataset loading</h3>
+          {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
+          <div class="cmd-builder-primary-region-body cmd-builder-primary-region-body--dataset-split">
+            {% if ds and ds.args and (ds.args | selectattr('w', 'in', check_ws) | list | length > 0) %}
+            <div class="cmd-builder-primary-col cmd-builder-primary-col--checks">
+              {{ render_github_checkbox_band(ds.args) }}
+            </div>
+            {% endif %}
+            <div class="cmd-builder-primary-col cmd-builder-primary-col--fields">
+              <div class="cmd-builder-primary-arg-cell">
+                <label class="cryo-select-line" for="{{ datadir_id }}"
+                  {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
+                  ><code>--datadir</code>
+                </label>
+                <input type="text"
+                       id="{{ datadir_id }}"
+                       value=""
+                       placeholder="(omit if blank)"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }} />
+              </div>
+              {% if ds and ds.args %}
+                {% for a in ds.args if a.w not in check_ws %}
+                  {{ render_github_primary_arg(a) }}
+                {% endfor %}
+              {% endif %}
+            </div>
+          </div>
+        </section>
+        <section class="cmd-builder-primary-region cmd-builder-primary-region--training"
+                 aria-labelledby="{{ cmd_key }}-train-region-title">
+          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-train-region-title">Training parameters</h3>
+          <div class="cmd-builder-primary-region-body">
+            {% if train and train.args %}
+              {{ render_github_checkbox_band(train.args) }}
+              {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
+              {% for a in train.args if a.w not in check_ws %}
+                {{ render_github_primary_arg(a) }}
+              {% endfor %}
+            {% else %}
+              <p class="muted" style="margin:0;font-size:0.8rem;color:var(--muted,#5c6b7a);">No training-parameter flags for this command.</p>
+            {% endif %}
+          </div>
+        </section>
+      </div>
+    {% endmacro %}
+    {% macro render_github_panel_groups(cmd_key) %}
       <div class="cmd-builder-group-cards">
-        {{ render_dataset_fieldset(cmd_key, datadir_id) }}
         {% for group in command_builder_schema[cmd_key] %}
-          {% if group.title != 'Dataset loading' %}
+          {% if group.title not in ['Dataset loading', 'Training parameters'] %}
             {{ render_schema_group(group) }}
           {% endif %}
         {% endfor %}
@@ -547,15 +867,15 @@
     {% endmacro %}
     {% macro render_schema_group(group) %}
       {% if github_pages_mode %}
-        <details class="cmd-group-card">
-          <summary class="cmd-group-card-summary">
+        <div class="cmd-group-card">
+          <button type="button" class="cmd-group-card-trigger cmd-group-card-summary" aria-expanded="false">
             <span class="cmd-group-card-title">{{ group.title }}</span>
             <span class="cmd-group-card-desc">{{ group.description }}</span>
-          </summary>
-          <div class="cmd-group-card-body">
+          </button>
+          <div class="cmd-group-card-body" hidden>
             {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
           </div>
-        </details>
+        </div>
       {% else %}
         <fieldset>
           <legend>{{ group.title }}</legend>
@@ -569,31 +889,7 @@
         | list
         | first) %}
       {% if github_pages_mode %}
-        {% set ds_desc = (ds.description if ds and ds.description else 'Particle subsets, datadir layout, lazy I/O, and RELION options.') %}
-        <details class="cmd-group-card">
-          <summary class="cmd-group-card-summary">
-            <span class="cmd-group-card-title">Dataset loading</span>
-            <span class="cmd-group-card-desc">{{ ds_desc }}</span>
-          </summary>
-          <div class="cmd-group-card-body">
-            <label class="cryo-select-line" for="{{ datadir_id }}"
-              {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
-              ><code>--datadir</code>
-            </label>
-            <input type="text"
-                   id="{{ datadir_id }}"
-                   value=""
-                   placeholder="(omit if blank)"
-                   autocomplete="off"
-                   {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }} />
-            {% if ds and ds.args %}
-              <div class="cmd-builder-dataset-flags">
-                {% for a in ds.args if a.w in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
-              </div>
-              {% for a in ds.args if a.w not in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
-            {% endif %}
-          </div>
-        </details>
+        {# Dataset loading is rendered in ``render_github_primary_pair`` on GitHub Pages. #}
       {% else %}
         <fieldset>
           <legend>Dataset loading</legend>
@@ -683,7 +979,8 @@
                          {{ ctf_row_title("ab_ctf") }} />
                 </div>
               {% endcall %}
-              {{ render_github_panel_groups('abinit', 'ab_datadir') }}
+              {{ render_github_primary_pair('abinit', 'ab_datadir') }}
+              {{ render_github_panel_groups('abinit') }}
             </div>
             {% else %}
             <div class="cmd-builder-top-row">
@@ -795,7 +1092,8 @@
                          {{ ctf_row_title("vae_ctf") }} />
                 </div>
               {% endcall %}
-              {{ render_github_panel_groups('train_vae', 'vae_datadir') }}
+              {{ render_github_primary_pair('train_vae', 'vae_datadir') }}
+              {{ render_github_panel_groups('train_vae') }}
             </div>
             {% else %}
             <div class="cmd-builder-top-row">
@@ -904,7 +1202,8 @@
                          {{ ctf_row_title("nn_ctf") }} />
                 </div>
               {% endcall %}
-              {{ render_github_panel_groups('train_nn', 'nn_datadir') }}
+              {{ render_github_primary_pair('train_nn', 'nn_datadir') }}
+              {{ render_github_panel_groups('train_nn') }}
             </div>
             {% else %}
             <div class="cmd-builder-top-row">
@@ -1015,7 +1314,8 @@
                          {{ ctf_row_title("dec_ctf") }} />
                 </div>
               {% endcall %}
-              {{ render_github_panel_groups('train_dec', 'dec_datadir') }}
+              {{ render_github_primary_pair('train_dec', 'dec_datadir') }}
+              {{ render_github_panel_groups('train_dec') }}
             </div>
             {% else %}
             <div class="cmd-builder-top-row">
@@ -1294,16 +1594,83 @@
   syncPanels();
 
   {% if github_pages_mode %}
-  (function initGithubPagesGroupAccordion() {
-    var groups = document.querySelectorAll("details.cmd-group-card");
-    function closeOthers(openEl) {
-      for (var i = 0; i < groups.length; i++) {
-        if (groups[i] !== openEl) groups[i].open = false;
+  (function initGithubPagesGroupCards() {
+    function cardsInActivePanel() {
+      var panel = document.querySelector(".cmd-panel.cmd-panel--active");
+      return panel ? panel.querySelectorAll(".cmd-group-card") : [];
+    }
+    function syncBodyHeight(card) {
+      var body = card.querySelector(".cmd-group-card-body");
+      var trigger = card.querySelector(".cmd-group-card-trigger");
+      if (!body || !card.classList.contains("cmd-group-card--open")) return;
+      var triggerH = trigger ? trigger.offsetHeight : 0;
+      var maxH = Math.max(96, card.clientHeight - triggerH);
+      body.style.maxHeight = maxH + "px";
+    }
+    function bindWheelScroll(body) {
+      if (body.dataset.cmdScrollBound === "1") return;
+      body.dataset.cmdScrollBound = "1";
+      body.addEventListener(
+        "wheel",
+        function(e) {
+          if (body.scrollHeight <= body.clientHeight + 1) return;
+          var dy = e.deltaY;
+          var atTop = body.scrollTop <= 0;
+          var atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+          if ((dy < 0 && atTop) || (dy > 0 && atBottom)) return;
+          e.stopPropagation();
+        },
+        { passive: true }
+      );
+    }
+    function setCardOpen(card, open) {
+      if (open) {
+        var peers = cardsInActivePanel();
+        for (var i = 0; i < peers.length; i++) {
+          if (peers[i] !== card) setCardOpen(peers[i], false);
+        }
+      }
+      card.classList.toggle("cmd-group-card--open", open);
+      var trigger = card.querySelector(".cmd-group-card-trigger");
+      var body = card.querySelector(".cmd-group-card-body");
+      if (trigger) trigger.setAttribute("aria-expanded", open ? "true" : "false");
+      if (!body) return;
+      body.hidden = !open;
+      if (open) {
+        body.scrollTop = 0;
+        requestAnimationFrame(function() {
+          syncBodyHeight(card);
+          body.scrollTop = 0;
+        });
+      } else {
+        body.style.maxHeight = "";
       }
     }
-    for (var j = 0; j < groups.length; j++) {
-      groups[j].addEventListener("toggle", function() {
-        if (this.open) closeOthers(this);
+    var form = document.getElementById("cmd-form");
+    if (!form) return;
+    var cards = form.querySelectorAll(".cmd-group-card");
+    for (var j = 0; j < cards.length; j++) {
+      var card = cards[j];
+      var body = card.querySelector(".cmd-group-card-body");
+      if (body) bindWheelScroll(body);
+      var trigger = card.querySelector(".cmd-group-card-trigger");
+      if (trigger) {
+        trigger.addEventListener("click", function() {
+          var c = this.closest(".cmd-group-card");
+          if (!c) return;
+          setCardOpen(c, !c.classList.contains("cmd-group-card--open"));
+        });
+      }
+    }
+    window.addEventListener("resize", function() {
+      var openCard = document.querySelector(".cmd-panel.cmd-panel--active .cmd-group-card--open");
+      if (openCard) syncBodyHeight(openCard);
+    });
+    var cmdTypeEl = document.getElementById("cmd-type");
+    if (cmdTypeEl) {
+      cmdTypeEl.addEventListener("change", function() {
+        var panelCards = cardsInActivePanel();
+        for (var k = 0; k < panelCards.length; k++) setCardOpen(panelCards[k], false);
       });
     }
   })();

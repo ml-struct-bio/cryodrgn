@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Command builder · cryoDRGN{% endblock %}
-{% from "_macros.html" import nav_page_title_span %}
+{% from "_macros.html" import nav_page_title_span, cmd_reconstruction_command_select %}
 {% block nav_page_title %}{{ nav_page_title_span("Command builder") }}{% endblock %}
+{% block nav_reconstruction_command %}{{ cmd_reconstruction_command_select() }}{% endblock %}
 {% block head %}
   <style>
   /* Viewport column: scroll form, command dock pinned to bottom of main */
@@ -129,6 +130,37 @@
     max-width: none;
     box-sizing: border-box;
     margin-bottom: 0.25rem;
+  }
+  .cmd-outdir-stepper {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.35rem;
+    align-items: stretch;
+    width: 100%;
+  }
+  .cmd-outdir-stepper .cmd-outdir-input {
+    margin-bottom: 0;
+    min-width: 0;
+  }
+  .cmd-outdir-step {
+    margin: 0;
+    padding: 0 0.55rem;
+    min-width: 2.1rem;
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.2;
+    border: 1px solid rgba(36, 59, 83, 0.35);
+    border-radius: 4px;
+    background: var(--paper, #fff);
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+    font-family: var(--font-sans);
+  }
+  .cmd-outdir-step:hover,
+  .cmd-outdir-step:focus-visible {
+    background: rgba(196, 112, 58, 0.12);
+    border-color: rgba(196, 112, 58, 0.55);
+    outline: none;
   }
   .cmd-form .check-line {
     display: flex;
@@ -262,6 +294,48 @@
     line-height: 1.25;
   }
   body.cmd-builder-github-pages .github-pages-note a { color: var(--link, #2c5282); }
+  /* Default nav column gap is 1rem between brand and centre; triple for command menu breathing room. */
+  body.cmd-builder-github-pages header.nav {
+    column-gap: 3rem;
+  }
+  body.cmd-builder-github-pages .nav-reconstruction-cmd {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.45rem;
+    width: auto;
+    max-width: min(44rem, 90vw);
+    margin-left: 0;
+    font-size: calc(0.72rem * 1.3 * 1.3);
+    opacity: 1;
+  }
+  body.cmd-builder-github-pages .nav-reconstruction-cmd .cryo-select-line {
+    margin: 0;
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: calc(0.72rem * 1.3 * 1.3);
+    font-weight: 700;
+    color: #e8eef4;
+    letter-spacing: 0.02em;
+  }
+  body.cmd-builder-github-pages .nav-reconstruction-cmd select#cmd-type {
+    flex: 1 1 auto;
+    min-width: 11rem;
+    max-width: 100%;
+    margin: 0;
+    font-size: calc(0.82rem * 1.3 * 1.3);
+    font-weight: 700;
+    line-height: 1.3;
+    color: #e8eef4;
+    padding: 0.36rem 0.58rem;
+    min-height: 0;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.12);
+  }
+  body.cmd-builder-github-pages .nav-reconstruction-cmd select#cmd-type option {
+    color: #1a2332;
+    background: #fff;
+  }
   body.cmd-builder-github-pages .cmd-builder-header .cryo-dash-lead { display: none; }
   body.cmd-builder-github-pages .cmd-builder-scroll {
     overflow: hidden;
@@ -701,6 +775,19 @@
     {%- if text %} title="{{ text|e }}"
     {% endif -%}
   {%- endmacro %}
+  {% macro cmd_outdir_stepper(field_id, cmd_name, value) -%}
+  <div class="cmd-outdir-stepper" data-cmd-name="{{ cmd_name|e }}">
+    <button type="button" class="cmd-outdir-step" data-dir="-1" aria-label="Previous run number" title="Previous run number">−</button>
+    <input type="text"
+           id="{{ field_id }}"
+           class="cmd-outdir-input"
+           data-cmd-name="{{ cmd_name|e }}"
+           value="{{ value|e }}"
+           autocomplete="off"
+           {{ title_attr(command_builder_required_field_titles.get(field_id)) }} />
+    <button type="button" class="cmd-outdir-step" data-dir="1" aria-label="Next run number" title="Next run number">+</button>
+  </div>
+  {%- endmacro %}
   {% macro schema_arg_title(a) -%}
     {%- if a.help -%}{{ a.help }}{%- endif -%}
     {%- endmacro %}
@@ -922,15 +1009,11 @@
       </div>
       <div class="cmd-builder-scroll">
         <form class="cmd-form card" id="cmd-form" action="#" onsubmit="return false;">
+          {% if not github_pages_mode %}
           <div class="cmd-builder-program">
-            <label class="cryo-select-line" for="cmd-type">Reconstruction command</label>
-            <select id="cmd-type" name="cmd_type">
-              <option value="abinit" selected>cryodrgn abinit</option>
-              <option value="train_vae">cryodrgn train_vae</option>
-              <option value="train_nn">cryodrgn train_nn</option>
-              <option value="train_dec">cryodrgn train_dec</option>
-            </select>
+            {{ cmd_reconstruction_command_select() }}
           </div>
+          {% endif %}
           <div id="panel-abinit" class="cmd-panel cmd-panel--active" data-cmd="abinit">
             {% if github_pages_mode %}
             <div class="cmd-builder-github-body">
@@ -951,11 +1034,7 @@
                          {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }}>
                     Output (<code>-o</code>)
                   </label>
-                  <input type="text"
-                         id="ab_out"
-                         value="{{ default_outdir_abinit|e }}"
-                         autocomplete="off"
-                         {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }} />
+                  {{ cmd_outdir_stepper('ab_out', 'abinit', default_outdir_abinit) }}
                 </div>
                 <div class="cmd-builder-required-cell">
                   <label class="cryo-select-line" for="ab_zdim"
@@ -999,11 +1078,7 @@
                        {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }}>
                   Output directory (<code>-o</code>)
                 </label>
-                <input type="text"
-                       id="ab_out"
-                       value="{{ default_outdir_abinit|e }}"
-                       autocomplete="off"
-                       {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }} />
+                {{ cmd_outdir_stepper('ab_out', 'abinit', default_outdir_abinit) }}
                 <label class="cryo-select-line" for="ab_zdim"
                   {{ title_attr(command_builder_required_field_titles.get('ab_zdim') ) }}><code>--zdim</code>
                 </label>
@@ -1054,11 +1129,7 @@
                          {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }}>
                     Output (<code>-o</code>)
                   </label>
-                  <input type="text"
-                         id="vae_out"
-                         value="{{ default_outdir_train|e }}"
-                         autocomplete="off"
-                         {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }} />
+                  {{ cmd_outdir_stepper('vae_out', 'train_vae', default_outdir_train_vae) }}
                 </div>
                 <div class="cmd-builder-required-cell">
                   <label class="cryo-select-line" for="vae_poses"
@@ -1113,11 +1184,7 @@
                        {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }}>
                   Output directory (<code>-o</code>)
                 </label>
-                <input type="text"
-                       id="vae_out"
-                       value="{{ default_outdir_train|e }}"
-                       autocomplete="off"
-                       {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }} />
+                {{ cmd_outdir_stepper('vae_out', 'train_vae', default_outdir_train_vae) }}
                 <label class="cryo-select-line" for="vae_poses"
                   {{ title_attr(command_builder_required_field_titles.get('vae_poses') ) }}><code>--poses</code>
                 </label>
@@ -1175,11 +1242,7 @@
                          {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }}>
                     Output (<code>-o</code>)
                   </label>
-                  <input type="text"
-                         id="nn_out"
-                         value="{{ default_outdir_train|e }}"
-                         autocomplete="off"
-                         {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }} />
+                  {{ cmd_outdir_stepper('nn_out', 'train_nn', default_outdir_train_nn) }}
                 </div>
                 <div class="cmd-builder-required-cell">
                   <label class="cryo-select-line" for="nn_poses"
@@ -1222,11 +1285,7 @@
                        {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }}>
                   Output directory (<code>-o</code>)
                 </label>
-                <input type="text"
-                       id="nn_out"
-                       value="{{ default_outdir_train|e }}"
-                       autocomplete="off"
-                       {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }} />
+                {{ cmd_outdir_stepper('nn_out', 'train_nn', default_outdir_train_nn) }}
                 <label class="cryo-select-line" for="nn_poses"
                   {{ title_attr(command_builder_required_field_titles.get('nn_poses') ) }}><code>--poses</code>
                 </label>
@@ -1276,11 +1335,7 @@
                          {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }}>
                     Output (<code>-o</code>)
                   </label>
-                  <input type="text"
-                         id="dec_out"
-                         value="{{ default_outdir_train|e }}"
-                         autocomplete="off"
-                         {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }} />
+                  {{ cmd_outdir_stepper('dec_out', 'train_dec', default_outdir_train_dec) }}
                 </div>
                 <div class="cmd-builder-required-cell">
                   <label class="cryo-select-line" for="dec_poses"
@@ -1335,11 +1390,7 @@
                        {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }}>
                   Output directory (<code>-o</code>)
                 </label>
-                <input type="text"
-                       id="dec_out"
-                       value="{{ default_outdir_train|e }}"
-                       autocomplete="off"
-                       {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }} />
+                {{ cmd_outdir_stepper('dec_out', 'train_dec', default_outdir_train_dec) }}
                 <label class="cryo-select-line" for="dec_poses"
                   {{ title_attr(command_builder_required_field_titles.get('dec_poses') ) }}><code>--poses</code>
                 </label>
@@ -1553,6 +1604,51 @@
     return "";
   }
 
+  function parseOutdirValue(raw, fallbackSuffix) {
+    var s = String(raw || "").trim();
+    if (!s) return { n: 1, suffix: fallbackSuffix, prefix: "" };
+    var sep = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+    var prefix = sep >= 0 ? s.slice(0, sep + 1) : "";
+    var base = sep >= 0 ? s.slice(sep + 1) : s;
+    var m = base.match(/^(\d{1,3})_(.+)$/);
+    if (m) {
+      return { n: parseInt(m[1], 10) || 1, suffix: m[2], prefix: prefix };
+    }
+    return { n: 1, suffix: fallbackSuffix, prefix: prefix };
+  }
+
+  function formatOutdir(parsed) {
+    var n = Math.max(1, Math.min(999, Math.floor(parsed.n)));
+    var num = String(n);
+    while (num.length < 3) num = "0" + num;
+    return parsed.prefix + num + "_" + parsed.suffix;
+  }
+
+  function initOutdirSteppers() {
+    if (!form) return;
+    var steppers = form.querySelectorAll(".cmd-outdir-stepper");
+    for (var i = 0; i < steppers.length; i++) {
+      (function(wrap) {
+        if (wrap.dataset.outdirBound === "1") return;
+        wrap.dataset.outdirBound = "1";
+        var cmdName = wrap.getAttribute("data-cmd-name") || "";
+        var input = wrap.querySelector(".cmd-outdir-input");
+        if (!input) return;
+        var steps = wrap.querySelectorAll(".cmd-outdir-step");
+        for (var j = 0; j < steps.length; j++) {
+          steps[j].addEventListener("click", function() {
+            var dir = parseInt(this.getAttribute("data-dir"), 10);
+            if (!input || !cmdName) return;
+            var parsed = parseOutdirValue(input.value, cmdName);
+            parsed.n = Math.max(1, Math.min(999, parsed.n + dir));
+            input.value = formatOutdir(parsed);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          });
+        }
+      })(steppers[i]);
+    }
+  }
+
   var out = document.getElementById("cmd-out");
   var form = document.getElementById("cmd-form");
   var cmdType = document.getElementById("cmd-type");
@@ -1591,6 +1687,7 @@
     }
   });
 
+  initOutdirSteppers();
   syncPanels();
 
   {% if github_pages_mode %}

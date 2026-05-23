@@ -3,3 +3,13 @@
 {% macro nav_page_title_span(page_title) -%}
   <span class="nav-title-sep" aria-hidden="true">·</span><span class="nav-page-title">{{ page_title|nav_interface_title }}</span>
 {%- endmacro %}
+
+{% macro cmd_reconstruction_command_select() -%}
+<label class="cryo-select-line" for="cmd-type">Reconstruction command</label>
+<select id="cmd-type" name="cmd_type">
+  <option value="abinit" selected>cryodrgn abinit</option>
+  <option value="train_vae">cryodrgn train_vae</option>
+  <option value="train_nn">cryodrgn train_nn</option>
+  <option value="train_dec">cryodrgn train_dec</option>
+</select>
+{%- endmacro %}

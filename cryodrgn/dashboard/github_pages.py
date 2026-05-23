@@ -17,6 +17,7 @@ from flask import Flask, render_template
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
+    default_outdir_for_command,
 )
 
 _THIS_DIR = Path(__file__).resolve().parent
@@ -62,8 +63,10 @@ def _command_builder_template_kwargs() -> dict[str, object]:
         "default_particles": "",
         "default_ctf": "",
         "default_zdim": 8,
-        "default_outdir_abinit": "abinit_run",
-        "default_outdir_train": "train_next",
+        "default_outdir_abinit": default_outdir_for_command("abinit"),
+        "default_outdir_train_vae": default_outdir_for_command("train_vae"),
+        "default_outdir_train_nn": default_outdir_for_command("train_nn"),
+        "default_outdir_train_dec": default_outdir_for_command("train_dec"),
         "default_poses": "",
         "command_builder_schema": COMMAND_BUILDER_SCHEMA,
         "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
@@ -122,13 +125,8 @@ def _adapt_html_for_github_pages(html: str, base_path: str, repo_url: str) -> st
         count=1,
     )
     note = (
-        f'<p class="github-pages-note" style="margin:0.35rem 1.15rem 0;'
-        f'font-size:0.88rem;color:var(--muted,#5c6b7a);">'
-        f"Hosted command builder for cryoDRGN "
-        f'<a href="{repo_url}" style="color:var(--link,#2c5282);">'
-        f"{repo_url.removeprefix('https://')}</a>. "
-        f"Copy the command below into your shell or job script."
-        f"</p>"
+        f'<p class="github-pages-note">Hosted command builder · '
+        f'<a href="{repo_url}">{repo_url.removeprefix("https://")}</a></p>'
     )
     html = html.replace("<main>", f"{note}\n  <main>", 1)
     # ``base.html`` workdir/epoch handlers are dashboard-only; disable on static hosting.
@@ -189,6 +187,7 @@ def render_command_builder_html(
         "exp_run_log_cryodrgn_version": None,
         "exp_run_log_cryodrgn_version_short": None,
         "exp_run_log_cryodrgn_version_title": None,
+        "github_pages_mode": True,
     }
 
     with app.test_request_context("/command-builder"):

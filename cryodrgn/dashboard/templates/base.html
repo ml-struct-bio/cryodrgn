@@ -1591,7 +1591,7 @@
   </script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body{% if github_pages_mode %} class="cmd-builder-github-pages"{% endif %}>
   <header class="nav">
     <div class="nav-left">
       <a href="/" class="nav-brand-link" aria-label="cryoDRGN dashboard home">
@@ -1616,7 +1616,7 @@
           </span>
           <span class="nav-brand-line2">
             <span class="nav-brand-line2-inner">
-              <span class="nav-brand-line2-main">dashboard<span class="nav-brand-interface-title">{% block nav_page_title %}{% endblock %}</span></span>
+              <span class="nav-brand-line2-main">dashboard{% if not github_pages_mode %}<span class="nav-brand-interface-title">{% block nav_page_title %}{% endblock %}</span>{% endif %}</span>
             </span>
           </span>
         </span>
@@ -1671,7 +1671,11 @@
           {% endif %}
         </div>
         {% endif %}
-        {% if not command_builder_only %}
+        {% if github_pages_mode %}
+        <div class="nav-config-field nav-reconstruction-cmd" aria-label="Reconstruction command">
+          {% block nav_reconstruction_command %}{% endblock %}
+        </div>
+        {% elif not command_builder_only %}
         <div class="nav-config-field" aria-label="Training command">
           {% if cfg_train_command %}
             {% set _nav_cmd_title = cfg_train_command|e %}

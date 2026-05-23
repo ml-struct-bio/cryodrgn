@@ -16,16 +16,33 @@ from cryodrgn.dashboard.command_builder_cli_help import (
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
+    default_outdir_for_command,
 )
 from cryodrgn.dashboard.context import command_builder_template_kwargs
 from cryodrgn.dashboard.data import DashboardExperiment
+from cryodrgn.dashboard.github_pages import (
+    build_github_pages_site,
+    render_command_builder_html,
+)
+
+
+class TestDefaultOutdirForCommand:
+    def test_basename(self) -> None:
+        assert default_outdir_for_command("train_vae") == "001_train_vae"
+
+    def test_with_workdir(self, tmp_path) -> None:
+        wd = str(tmp_path / "run")
+        assert default_outdir_for_command("abinit", wd) == os.path.join(
+            wd, "001_abinit"
+        )
 
 
 class TestCommandBuilderTemplateKwargs:
     def test_no_experiment_uses_defaults(self) -> None:
         kw = command_builder_template_kwargs(None)
         assert kw["default_zdim"] == 8
-        assert kw["default_outdir_abinit"] == "abinit_run"
+        assert kw["default_outdir_abinit"] == "001_abinit"
+        assert kw["default_outdir_train_vae"] == "001_train_vae"
         assert kw["default_poses"] == ""
         assert "command_builder_schema" in kw
         assert "command_builder_required_field_titles" in kw
@@ -37,8 +54,10 @@ class TestCommandBuilderTemplateKwargs:
         assert kw["default_zdim"] == int(
             dashboard_experiment.train_configs["model_args"]["zdim"]
         )
-        assert kw["default_outdir_abinit"].endswith("abinit_run")
-        assert kw["default_outdir_train"].endswith("train_next")
+        assert kw["default_outdir_abinit"].endswith("001_abinit")
+        assert kw["default_outdir_train_vae"].endswith("001_train_vae")
+        assert kw["default_outdir_train_nn"].endswith("001_train_nn")
+        assert kw["default_outdir_train_dec"].endswith("001_train_dec")
 
 
 class TestCommandBuilderSchemaIntegrity:
@@ -51,6 +70,11 @@ class TestCommandBuilderSchemaIntegrity:
             "train_nn",
             "train_dec",
         }
+
+    def test_groups_have_descriptions(self) -> None:
+        for cmd, groups in COMMAND_BUILDER_SCHEMA.items():
+            for g in groups:
+                assert g.get("description"), f"{cmd}:{g['title']} missing description"
 
     @pytest.mark.parametrize("cmd", ["abinit", "train_vae", "train_nn", "train_dec"])
     def test_arg_ids_are_unique(self, cmd: str) -> None:
@@ -257,3 +281,44 @@ class TestDashboardCLI:
             logging.getLogger("werkzeug._internal").getEffectiveLevel()
             >= logging.WARNING
         )
+
+
+class TestGithubPagesCommandBuilder:
+    def test_render_includes_schema_and_builder_ui(self) -> None:
+        html = render_command_builder_html(
+            base_path="/cryodrgn/",
+            repo_url="https://github.com/ml-struct-bio/cryodrgn",
+        )
+        assert '<base href="/cryodrgn/"/>' in html
+        assert 'class="cmd-builder-github-pages"' in html
+        assert "github-pages-note" in html
+        assert "var CMD_SCHEMA" in html
+        assert "cryodrgn abinit" in html
+        assert 'class="cmd-group-card"' in html
+        assert "cmd-group-card-trigger" in html
+        assert "cmd-group-card-desc" in html
+        assert "cmd-builder-required-bar" in html
+        assert "cmd-builder-primary-pair" in html
+        assert "cmd-builder-primary-region--dataset" in html
+        assert "cmd-builder-primary-region--training" in html
+        assert "initGithubPagesGroupCards" in html
+        assert "nav-reconstruction-cmd" in html
+        assert html.count('id="cmd-type"') == 1
+        assert "No experiment loaded" not in html
+        assert '<span class="nav-page-title">' not in html
+        assert 'class="cmd-builder-program"' not in html
+        assert "cmd-outdir-stepper" in html
+        assert 'value="001_abinit"' in html
+        assert "plot.ly" not in html.lower()
+        assert 'fetch("/api/set_workdir"' not in html
+
+    def test_build_writes_index_and_nojekyll(self, tmp_path) -> None:
+        out = build_github_pages_site(
+            tmp_path / "site",
+            base_path="/cryodrgn/",
+            repo_url="https://github.com/ml-struct-bio/cryodrgn",
+        )
+        assert (out / "index.html").is_file()
+        assert (out / ".nojekyll").is_file()
+        body = (out / "index.html").read_text(encoding="utf-8")
+        assert "cmd-form" in body

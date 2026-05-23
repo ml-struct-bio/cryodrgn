@@ -20,6 +20,7 @@ from flask import Flask, current_app, g, jsonify, redirect, request, session, ur
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
+    default_outdir_for_command,
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs, load_experiment
 
@@ -537,8 +538,10 @@ def command_builder_template_kwargs(
             "default_particles": "",
             "default_ctf": "",
             "default_zdim": 8,
-            "default_outdir_abinit": "abinit_run",
-            "default_outdir_train": "train_next",
+            "default_outdir_abinit": default_outdir_for_command("abinit"),
+            "default_outdir_train_vae": default_outdir_for_command("train_vae"),
+            "default_outdir_train_nn": default_outdir_for_command("train_nn"),
+            "default_outdir_train_dec": default_outdir_for_command("train_dec"),
             "default_poses": "",
             "command_builder_schema": COMMAND_BUILDER_SCHEMA,
             "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
@@ -564,8 +567,14 @@ def command_builder_template_kwargs(
         "default_particles": default_particles,
         "default_ctf": default_ctf,
         "default_zdim": default_zdim,
-        "default_outdir_abinit": os.path.join(exp.workdir, "abinit_run"),
-        "default_outdir_train": os.path.join(exp.workdir, "train_next"),
+        "default_outdir_abinit": default_outdir_for_command("abinit", exp.workdir),
+        "default_outdir_train_vae": default_outdir_for_command(
+            "train_vae", exp.workdir
+        ),
+        "default_outdir_train_nn": default_outdir_for_command("train_nn", exp.workdir),
+        "default_outdir_train_dec": default_outdir_for_command(
+            "train_dec", exp.workdir
+        ),
         "default_poses": default_poses,
         "command_builder_schema": COMMAND_BUILDER_SCHEMA,
         "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,

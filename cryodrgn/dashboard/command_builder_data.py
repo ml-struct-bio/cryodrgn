@@ -11,6 +11,7 @@ When CLI argument groups change, update this module and
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from cryodrgn.dashboard.command_builder_cli_help import (
@@ -32,8 +33,49 @@ Group = dict[str, Any]
 Schema = dict[str, list[Group]]
 
 
-def _g(title: str, args: list[Arg]) -> Group:
-    return {"title": title, "args": args}
+def default_outdir_for_command(cmd: str, workdir: str | None = None) -> str:
+    """Default ``-o`` / ``--outdir`` value: ``001_<cmd>``, optionally under *workdir*."""
+    leaf = f"001_{cmd}"
+    return os.path.join(workdir, leaf) if workdir else leaf
+
+
+def _g(title: str, args: list[Arg], description: str = "") -> Group:
+    return {"title": title, "args": args, "description": description}
+
+
+# Short blurbs for GitHub Pages group cards (also used when ``description`` is omitted on a group).
+COMMAND_BUILDER_GROUP_DESCRIPTIONS: dict[str, str] = {
+    "Checkpoint & seed": "Restart from saved weights or poses; set RNG seed and verbosity.",
+    "Dataset loading": "Particle subsets, datadir layout, lazy I/O, and RELION options.",
+    "Logging": "Log frequency, checkpoint intervals, and timing diagnostics.",
+    "Training parameters": "Epoch counts, batching, workers, and training schedule.",
+    "Optimizers": "Learning rates, schedules, and optimizer hyperparameters.",
+    "Masking": "Solvent mask generation, softness, and radial limits.",
+    "Losses": "Reconstruction and regularization loss weights.",
+    "Z / heterogeneity": "Latent dimensionality and continuous heterogeneity settings.",
+    "Hypervolume": "Hypervolume decoder grid and related architecture options.",
+    "Pretrain": "Warm-up and pretraining before full reconstruction.",
+    "Pose search": "Ab initio pose search iterations and image subsampling.",
+    "Normalization & analysis": "Input normalization and post-run analysis flags.",
+    "I/O & logging": "Output layout, save cadence, and training logs.",
+    "Tilt series parameters": "Tomography tilt geometry and per-tilt treatments.",
+    "Pose SGD": "SGD steps for refining particle poses during training.",
+    "Encoder Network": "VAE encoder depth, width, and activation choices.",
+    "Decoder Network": "VAE decoder architecture and expressiveness.",
+    "Network Architecture": "Layer sizes, activations, and backbone layout.",
+    "Latent Variables": "Latent dimension, priors, and embedding behaviour.",
+}
+
+
+def attach_group_descriptions(schema: Schema) -> None:
+    """Fill ``description`` on each group for static command-builder cards."""
+    for groups in schema.values():
+        for g in groups:
+            if not g.get("description"):
+                g["description"] = COMMAND_BUILDER_GROUP_DESCRIPTIONS.get(
+                    g["title"],
+                    f"Optional flags for {g['title'].lower()}.",
+                )
 
 
 ABINIT_GROUPS: list[Group] = [
@@ -923,6 +965,7 @@ attach_help_to_groups(_cli_help.get("abinit", {}), ABINIT_GROUPS)
 attach_help_to_groups(_cli_help.get("train_vae", {}), TRAIN_VAE_GROUPS)
 attach_help_to_groups(_cli_help.get("train_nn", {}), TRAIN_NN_GROUPS)
 attach_help_to_groups(_cli_help.get("train_dec", {}), TRAIN_DEC_GROUPS)
+attach_group_descriptions(COMMAND_BUILDER_SCHEMA)
 
 
 def _required_field_titles(

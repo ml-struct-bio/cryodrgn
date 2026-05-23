@@ -16,6 +16,10 @@ a *continuous* distribution over 3D structures by using a neural network based r
 The latest documentation for cryoDRGN is available in our [user guide](https://ez-lab.gitbook.io/cryodrgn/), including
 an overview and walkthrough of cryoDRGN installation, training and analysis. A brief quick start is provided below.
 
+Try the hosted [**command builder**](https://ml-struct-bio.github.io/cryodrgn/) (GitHub Pages) to assemble
+`cryodrgn abinit`, `train_vae`, `train_nn`, and `train_dec` CLI commands in your browser without running the full
+dashboard.
+
 For any feedback, questions, or bugs, please file a Github issue or start a Github discussion.
 
 

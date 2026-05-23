@@ -34,7 +34,8 @@
     transform: none;
     backface-visibility: visible;
   }
-  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__inner {
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__inner {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -44,14 +45,16 @@
     width: 100%;
     box-sizing: border-box;
   }
-  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__label {
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__label {
     font-size: clamp(1.45rem, 3.2vw, 2.35rem);
     font-weight: 700;
     letter-spacing: 0.02em;
     color: #1a202c;
     text-shadow: 0 0 1px rgba(255, 255, 255, 0.95), 0 2px 18px rgba(255, 255, 255, 0.75);
   }
-  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__track {
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__track {
     width: min(100%, 22rem);
     height: 10px;
     border-radius: 999px;
@@ -59,7 +62,8 @@
     box-shadow: inset 0 0 0 1px rgba(36, 59, 83, 0.18);
     overflow: hidden;
   }
-  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show .cryo-plot-rendering-overlay__indeterminate {
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__indeterminate {
     height: 100%;
   }
 </style>
@@ -196,15 +200,11 @@
     justify-content: center;
     justify-items: center;
   }
-  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim
+    .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell {
     width: max-content;
     max-width: min(var(--cryo-discrete-cell-max-w, 100%), 100%);
     min-width: 0;
-  }
-  @media (max-width: 900px) {
-    .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-legend #latent3d-color-hist {
-      min-height: 4.4rem;
-    }
   }
   .cryo-dash-page--latent3d .latent3d-volanim-aside {
     display: flex;
@@ -425,7 +425,8 @@
   .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-summary::marker {
     content: "";
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-details[open] > .volsketch-sel-indices-summary {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-details[open]
+    > .volsketch-sel-indices-summary {
     border-bottom: 1px solid rgba(36, 59, 83, 0.12);
     border-radius: 5px 5px 0 0;
   }
@@ -530,13 +531,15 @@
       0 1px 2px rgba(255, 255, 255, 0.45),
       0 2px 3px rgba(0, 0, 0, 0.12);
   }
-  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--circle-chip.volsketch-gif-overlay--on-tint:not(.volsketch-gif-overlay--cov) {
+  .cryo-dash-page--latent3d #l3dva-preview-grid
+    .volsketch-gif-overlay--circle-chip.volsketch-gif-overlay--on-tint:not(.volsketch-gif-overlay--cov) {
     text-shadow:
       0 0 1px rgba(255, 255, 255, 0.85),
       0 1px 2px rgba(255, 255, 255, 0.45),
       0 2px 3px rgba(0, 0, 0, 0.12);
   }
-  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--letter-cov-glyph:not(.volsketch-gif-overlay--cov) {
+  .cryo-dash-page--latent3d #l3dva-preview-grid
+    .volsketch-gif-overlay--letter-cov-glyph:not(.volsketch-gif-overlay--cov) {
     padding: 0.1rem 0.22rem;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.86);
@@ -561,13 +564,15 @@
     font-size: clamp(0.62rem, 1.9vw, 0.82rem);
     padding: 0.11rem 0.3rem;
   }
-  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint .volsketch-gif-cov-var {
+  .cryo-dash-page--latent3d #l3dva-preview-grid
+    .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint .volsketch-gif-cov-var {
     text-shadow:
       0 0 2px rgba(255, 255, 248, 0.5),
       0 1px 2px rgba(0, 0, 0, 0.1);
     color: #141418;
   }
-  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint .volsketch-gif-cov-val {
+  .cryo-dash-page--latent3d #l3dva-preview-grid
+    .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint .volsketch-gif-cov-val {
     text-shadow:
       0 0 2px rgba(255, 255, 255, 0.55),
       0 2px 3px rgba(0, 0, 0, 0.12);
@@ -699,14 +704,17 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     transition: transform 0.18s ease;
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:checked + .l3dva-light-switch-track {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:checked
+    + .l3dva-light-switch-track {
     background: var(--nav-bg, #243b53);
     border-color: rgba(36, 59, 83, 0.35);
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:checked + .l3dva-light-switch-track .l3dva-light-switch-thumb {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:checked
+    + .l3dva-light-switch-track .l3dva-light-switch-thumb {
     transform: translateX(1.12rem);
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:focus-visible + .l3dva-light-switch-track {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-light-switch input:focus-visible
+    + .l3dva-light-switch-track {
     outline: 2px solid var(--nav-bg, #243b53);
     outline-offset: 2px;
   }
@@ -743,7 +751,8 @@
     padding-top: 0.24rem;
     padding-bottom: 0.24rem;
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row button.l3dva-view-rotate-btn {
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row
+    button.l3dva-view-rotate-btn {
     flex: 1 1 0;
     min-width: 0;
     padding-left: 0.22rem;
@@ -821,21 +830,6 @@
     width: min(10rem, 100%);
     flex: 0 0 auto;
   }
-  @media (max-width: 900px) {
-    .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-volanim {
-      grid-template-columns: minmax(0, 1fr);
-      height: auto;
-      min-height: 0;
-    }
-    .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band .cryo-dash-viewport--plotly {
-      --latent3d-volanim-plot-side: max(20rem, calc(100svh - 18rem));
-      width: min(100%, var(--latent3d-volanim-plot-side));
-      height: min(100%, var(--latent3d-volanim-plot-side));
-    }
-    .cryo-dash-page--latent3d .latent3d-volanim-aside {
-      position: static;
-    }
-  }
 </style>
 {% endif %}
 <style>
@@ -893,21 +887,6 @@
     color: inherit;
     font-weight: inherit;
     text-decoration: none;
-  }
-  @media (max-width: 900px) {
-    .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple > .cryo-dash-side {
-      margin-right: 0;
-    }
-    .cryo-dash-page--latent3d .latent3d-color-legend-aside {
-      flex: none;
-      width: 100%;
-      max-width: 100%;
-      min-width: 0;
-      align-self: center;
-    }
-    .cryo-dash-page--latent3d .cryo-cc-legend #latent3d-color-hist {
-      min-height: 5.5rem;
-    }
   }
   .cryo-dash-page--latent3d #latent3d-color-legend-panel {
     box-sizing: border-box;
@@ -1023,7 +1002,8 @@
     color: var(--nav-bg, #243b53);
     box-sizing: border-box;
   }
-  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-select.latent3d-palette-select--hidden-during-plot-render {
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside
+    #latent3d-palette-select.latent3d-palette-select--hidden-during-plot-render {
     opacity: 0.45;
     pointer-events: none;
   }
@@ -1050,7 +1030,8 @@
     font-size: 0.7rem;
     transition: transform 0.12s ease;
   }
-  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title[aria-expanded="true"] .pairplot-palette-select__chevron {
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside
+    .pairplot-palette-select__title[aria-expanded="true"] .pairplot-palette-select__chevron {
     transform: rotate(90deg);
   }
   #latent3d-color-continuous-wrap[hidden] {
@@ -1136,7 +1117,9 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  .cryo-dash-page--latent3d #latent3d-color-discrete-invert-slot .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox .cryo-cc-discrete-switch-label {
+  .cryo-dash-page--latent3d #latent3d-color-discrete-invert-slot
+    .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox
+    .cryo-cc-discrete-switch-label {
     white-space: normal;
     overflow: visible;
     text-overflow: unset;
@@ -1278,7 +1261,8 @@
 {% endblock %}
 {% block content %}
 <div class="cryo-dash-page cryo-dash-page--latent3d">
-<div class="cryo-dash-row cryo-dash-row--plot-triple{% if show_landscape_vol_animations %} cryo-dash-row--latent3d-volanim{% endif %}">
+<div class="cryo-dash-row cryo-dash-row--plot-triple{% if show_landscape_vol_animations %}
+            cryo-dash-row--latent3d-volanim{% endif %}">
   <div class="cryo-dash-side">
     {{ lead_html | safe }}
     <div class="card cryo-dash-controls" id="latent3d-controls-card">
@@ -1320,12 +1304,19 @@
           <div class="l3dva-quick-actions-inner">
 {% if show_landscape_vol_animations %}
             <button type="button" class="btn btn-secondary" id="l3dva-clear-sel">Clear selection</button>
-            <button type="button" class="btn btn-secondary" id="l3dva-random-sel" disabled>Choose volumes at random</button>
+            <button type="button" class="btn btn-secondary" id="l3dva-random-sel" disabled>
+              Choose volumes at random
+            </button>
 {% endif %}
-            <button type="button" class="btn btn-secondary" id="l3d-gif-orbit-360" title="Full turn around the vertical direction in the view plane (orthogonal to your line of sight); saves as a GIF">
+            <button type="button" class="btn btn-secondary" id="l3d-gif-orbit-360"
+          title="Full turn around the vertical view-plane axis (perpendicular to your line of sight); saves as a GIF">
               Create orbit<br/>animation
             </button>
-            <button type="button" class="btn btn-secondary l3d-gif-discrete-btn" id="l3d-gif-discrete-levels" disabled title="Choose a discrete colour covariate to enable this animation.">Create<br/>colour covariate<br/>animation</button>
+            <button type="button" class="btn btn-secondary l3d-gif-discrete-btn"
+                    id="l3d-gif-discrete-levels" disabled
+                    title="Choose a discrete colour covariate to enable this animation.">
+              Create<br/>colour covariate<br/>animation
+            </button>
           </div>
           <div id="l3d-discrete-gif-progress" class="l3d-discrete-gif-progress" hidden aria-live="polite">
             <span class="l3d-discrete-gif-progress__label">Building discrete GIF on the server…</span>
@@ -1382,15 +1373,19 @@
                   <span id="latent3d-color-threshold-status" class="status"></span>
                 </div>
                 <div id="latent3d-palette-select"
-                  class="cryo-cc-legend-palette-shell pairplot-palette-select cryo-palette-select latent3d-palette-select"
+                  class="cryo-cc-legend-palette-shell pairplot-palette-select cryo-palette-select
+                         latent3d-palette-select"
                   aria-label="Continuous color palette">
-                  <button type="button" id="latent3d-palette-toggle" class="pairplot-palette-select__title cryo-palette-select__title"
+                  <button type="button" id="latent3d-palette-toggle"
+                    class="pairplot-palette-select__title cryo-palette-select__title"
                     aria-expanded="false" aria-controls="latent3d-palette-options">
-                    <span class="pairplot-palette-select__chevron cryo-palette-select__chevron" aria-hidden="true">▶</span>
+                    <span class="pairplot-palette-select__chevron cryo-palette-select__chevron"
+                      aria-hidden="true">▶</span>
                     <span>Choose<br/>palette</span>
                   </button>
                   <div id="latent3d-palette-options"
-                    class="cryo-cc-legend-palette-menu pairplot-palette-select__options cryo-palette-select__options pairplot-palette-select__options--collapsed">
+                    class="cryo-cc-legend-palette-menu pairplot-palette-select__options
+                           cryo-palette-select__options pairplot-palette-select__options--collapsed">
                     {{ continuous_palette_options("latent3d_palette") }}
                   </div>
                 </div>
@@ -1404,9 +1399,11 @@
                 <span class="cryo-cc-discrete-collapse-chevron" aria-hidden="true">▼</span>
                 <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
               </button>
-              <div id="latent3d-color-discrete-invert-slot" class="cryo-cc-region-invert-slot" hidden aria-hidden="true"></div>
+              <div id="latent3d-color-discrete-invert-slot" class="cryo-cc-region-invert-slot"
+                hidden aria-hidden="true"></div>
             </div>
-            <div id="latent3d-color-discrete-switches" class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
+            <div id="latent3d-color-discrete-switches"
+              class="cryo-cc-discrete-switches cryo-cc-discrete-switches--pair-2col"
               role="group" aria-label="Discrete colour filter"></div>
             <div class="cryo-cc-discrete-actions">
               <button type="button" id="latent3d-btn-discrete-invert" class="btn btn-secondary" disabled>
@@ -1421,8 +1418,8 @@
   </div>
     <aside class="latent3d-volanim-aside" aria-label="Volume GIF animations">
       <div class="card volsketch-animate-card latent3d-volanim-card" id="l3dva-animate-panel">
-        <p id="l3dva-gif-preview-note" class="cryo-dash-legend-note">GIF previews update automatically a moment after you
-          change the selection (ChimeraX offscreen).</p>
+        <p id="l3dva-gif-preview-note" class="cryo-dash-legend-note">GIF previews update
+          automatically a moment after you change the selection (ChimeraX offscreen).</p>
         <div class="l3dva-display-col">
           <p id="l3dva-sel-summary" class="status" role="status" aria-live="polite">No k-means volumes selected</p>
           <div class="volsketch-sel-indices-wrap">
@@ -1441,7 +1438,8 @@
             <div id="l3dva-preview-anim-overlay" class="l3dva-preview-anim-overlay" aria-hidden="true">
               <div class="l3dva-preview-anim-overlay__inner">
                 <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
-                <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading volume animations">
+                <div class="cryo-plot-rendering-overlay__track" role="progressbar"
+                  aria-valuetext="Loading volume animations">
                   <div class="cryo-plot-rendering-overlay__indeterminate"></div>
                 </div>
               </div>
@@ -1476,32 +1474,44 @@
           <label class="cryo-select-line" for="l3dva-gif-frames">GIF frames (rotation)</label>
           <input id="l3dva-gif-frames" type="number" min="4" max="120" value="20" style="width:5rem"/>
         </div>
-        <div class="volsketch-view-rotate-row l3dva-view-rotate-row is-disabled" aria-label="Rotate animation viewing angle"
+        <div class="volsketch-view-rotate-row l3dva-view-rotate-row is-disabled"
+          aria-label="Rotate animation viewing angle"
           title="Load an animation preview before rotating the view.">
           <label for="l3dva-view-rotate-angle">
             Degrees
             <input id="l3dva-view-rotate-angle" type="number" step="1" value="15" />
           </label>
-          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="x" title="Rotate view around the X axis">
-            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.42"/>
-              <path d="M15.2 6.2a6.2 6.2 0 0 0 0 11.6" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round"/>
+          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="x"
+            title="Rotate view around the X axis">
+            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24"
+              aria-hidden="true" focusable="false">
+              <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor"
+                stroke-width="1.5" stroke-linecap="round" opacity="0.42"/>
+              <path d="M15.2 6.2a6.2 6.2 0 0 0 0 11.6" fill="none" stroke="currentColor"
+                stroke-width="1.85" stroke-linecap="round"/>
               <path d="M14.1 16.8l2.1 1.1-1.1-2.1" fill="currentColor" stroke="none"/>
             </svg>
             <span class="l3dva-view-rotate-btn__label">Rotate X</span>
           </button>
-          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="y" title="Rotate view around the Y axis">
-            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.42"/>
-              <path d="M6.2 8.8a6.2 6.2 0 0 0 11.6 0" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round"/>
+          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="y"
+            title="Rotate view around the Y axis">
+            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24"
+              aria-hidden="true" focusable="false">
+              <line x1="12" y1="3" x2="12" y2="21" stroke="currentColor"
+                stroke-width="1.5" stroke-linecap="round" opacity="0.42"/>
+              <path d="M6.2 8.8a6.2 6.2 0 0 0 11.6 0" fill="none" stroke="currentColor"
+                stroke-width="1.85" stroke-linecap="round"/>
               <path d="M16.8 9.9l1.1-2.1 2.1 1.1" fill="currentColor" stroke="none"/>
             </svg>
             <span class="l3dva-view-rotate-btn__label">Rotate Y</span>
           </button>
-          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="z" title="Rotate view around the Z axis">
-            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <button type="button" class="btn l3dva-view-rotate-btn" data-l3dva-view-axis="z"
+            title="Rotate view around the Z axis">
+            <svg class="l3dva-view-rotate-btn__axis-icon" viewBox="0 0 24 24"
+              aria-hidden="true" focusable="false">
               <circle cx="12" cy="12" r="1.65" fill="currentColor" opacity="0.42"/>
-              <path d="M12 5.4a6.6 6.6 0 0 1 0 13.2a6.6 6.6 0 0 1-.1-13.2" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round"/>
+              <path d="M12 5.4a6.6 6.6 0 0 1 0 13.2a6.6 6.6 0 0 1-.1-13.2" fill="none"
+                stroke="currentColor" stroke-width="1.85" stroke-linecap="round"/>
               <path d="M6.1 11.4l-1.8 1.8 2.5.4" fill="currentColor" stroke="none"/>
             </svg>
             <span class="l3dva-view-rotate-btn__label">Rotate Z</span>
@@ -1525,7 +1535,8 @@
 </div>
 
 {% if show_vol_landscape_quick_actions %}
-<div id="l3d-plot-gif-modal" class="l3d-plot-gif-modal" hidden aria-hidden="true" role="dialog" aria-labelledby="l3d-plot-gif-modal-title">
+<div id="l3d-plot-gif-modal" class="l3d-plot-gif-modal" hidden aria-hidden="true"
+  role="dialog" aria-labelledby="l3d-plot-gif-modal-title">
   <div class="l3d-plot-gif-modal__backdrop" data-l3d-plot-gif-close="1" aria-label="Close preview"></div>
   <div class="l3d-plot-gif-modal__dialog">
     <h2 id="l3d-plot-gif-modal-title" class="l3d-plot-gif-modal__title">GIF preview</h2>
@@ -2271,7 +2282,8 @@
     getDiscreteColorOverrides: function() { return latent3dDiscreteColorOverrides; },
     discreteChipMatplotlibBlend: false,
     notifyOnRefresh: false,
-    // Hide the whole legend panel until a colour covariate is chosen (see ``#latent3d-color-legend-panel[hidden]`` CSS).
+    // Hide the legend panel until a colour covariate is chosen
+    // (see ``#latent3d-color-legend-panel[hidden]`` CSS).
     hideLegendPanelWhenNoCovariate: true,
     covariateDisplayMap: covariateDisplayMap,
     getColorColumn: function() { return sc.value; },

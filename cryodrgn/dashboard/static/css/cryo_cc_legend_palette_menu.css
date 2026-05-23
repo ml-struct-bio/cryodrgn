@@ -248,7 +248,8 @@ button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:focus-visi
   transition: transform 0.12s ease;
 }
 
-/* Collapse hides toggle grid + footer; keep “Toggle selection” title row (IDs — wraps lack .cryo-cc-discrete-wrap in HTML). */
+/* Collapse hides toggle grid + footer; keep “Toggle selection” title row.
+   (IDs are needed because some wraps lack .cryo-cc-discrete-wrap in HTML.) */
 #color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed,
 #color-discrete-wrap.cryo-color-discrete-wrap--show.cryo-cc-discrete-panel--collapsed,
 #color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-discrete-legend--collapsed,

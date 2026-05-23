@@ -76,9 +76,6 @@
     gap: 0.75rem 1rem;
     align-items: stretch;
   }
-  @media (max-width: 720px) {
-    .cmd-builder-top-row { grid-template-columns: 1fr; }
-  }
   .cmd-builder-required-fieldset {
     background: rgba(196, 112, 58, 0.1);
     border-color: rgba(196, 112, 58, 0.45);
@@ -99,9 +96,6 @@
   }
   @media (max-width: 1000px) {
     .cmd-builder-rest-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-  @media (max-width: 640px) {
-    .cmd-builder-rest-grid { grid-template-columns: 1fr; }
   }
   .cmd-form fieldset {
     border: 1px solid rgba(36, 59, 83, 0.15);
@@ -268,17 +262,6 @@
   .cmd-output .cmd-copy-status {
     margin-top: 0.2rem;
     min-height: 1em;
-  }
-  @media (max-width: 520px) {
-    .cmd-output-grid {
-      grid-template-columns: 1fr;
-      gap: 0.45rem;
-      align-items: start;
-    }
-    .cmd-output-actions {
-      justify-content: flex-start;
-      align-self: auto;
-    }
   }
   {% if github_pages_mode %}
   /* GitHub Pages: full-width required row + landing-style option cards filling the viewport. */
@@ -503,16 +486,6 @@
     gap: 0.35rem 0.55rem;
     align-content: start;
     align-items: start;
-  }
-  @media (max-width: 900px) {
-    body.cmd-builder-github-pages .cmd-builder-tilt-region-fields {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-  @media (max-width: 560px) {
-    body.cmd-builder-github-pages .cmd-builder-tilt-region-fields {
-      grid-template-columns: 1fr;
-    }
   }
   body.cmd-builder-github-pages .cmd-builder-required-bar {
     flex: 0 0 auto;
@@ -907,14 +880,6 @@
   }
   body.cmd-builder-github-pages .cmd-output pre { max-height: calc(3.25rem * 1.35 * 1.1); }
   body.cmd-builder-github-pages .cmd-output .hint { display: none; }
-  @media (max-width: 900px) {
-    body.cmd-builder-github-pages .cmd-builder-required-bar--5 .cmd-builder-required-fields {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    body.cmd-builder-github-pages .cmd-builder-required-bar--4 .cmd-builder-required-fields {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
   {% endif %}
   </style>
 {% endblock %}
@@ -925,7 +890,8 @@
   {%- endmacro %}
   {% macro cmd_outdir_stepper(field_id, cmd_name, value) -%}
   <div class="cmd-outdir-stepper" data-cmd-name="{{ cmd_name|e }}">
-    <button type="button" class="cmd-outdir-step" data-dir="-1" aria-label="Previous run number" title="Previous run number">−</button>
+    <button type="button" class="cmd-outdir-step" data-dir="-1"
+            aria-label="Previous run number" title="Previous run number">−</button>
     <input type="text"
            id="{{ field_id }}"
            class="cmd-outdir-input"
@@ -933,7 +899,8 @@
            value="{{ value|e }}"
            autocomplete="off"
            {{ title_attr(command_builder_required_field_titles.get(field_id)) }} />
-    <button type="button" class="cmd-outdir-step" data-dir="1" aria-label="Next run number" title="Next run number">+</button>
+    <button type="button" class="cmd-outdir-step" data-dir="1"
+            aria-label="Next run number" title="Next run number">+</button>
   </div>
   {%- endmacro %}
   {% macro schema_arg_title(a) -%}
@@ -1046,7 +1013,8 @@
         {% endif %}
       {% endfor %}
       <div class="cmd-builder-primary-pair">
-        <section class="cmd-builder-primary-region cmd-builder-primary-region--dataset" aria-labelledby="{{ datadir_id }}-region-title">
+        <section class="cmd-builder-primary-region cmd-builder-primary-region--dataset"
+                 aria-labelledby="{{ datadir_id }}-region-title">
           <h3 class="cmd-builder-primary-region-title" id="{{ datadir_id }}-region-title">Dataset loading</h3>
           {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
           <div class="cmd-builder-primary-region-body cmd-builder-primary-region-body--dataset-split">
@@ -1078,7 +1046,8 @@
         </section>
         <section class="cmd-builder-primary-region cmd-builder-primary-region--training"
                  aria-labelledby="{{ cmd_key }}-train-region-title">
-          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-train-region-title">{{ train.group.title if train.group else 'Run parameters' }}</h3>
+          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-train-region-title">{{
+            train.group.title if train.group else 'Run parameters' }}</h3>
           <div class="cmd-builder-primary-region-body">
             {% if train.group and train.group.args %}
               {{ render_github_checkbox_band(train.group.args) }}
@@ -1087,7 +1056,8 @@
                 {{ render_github_primary_arg(a) }}
               {% endfor %}
             {% else %}
-              <p class="muted" style="margin:0;font-size:0.8rem;color:var(--muted,#5c6b7a);">No run-parameter flags for this command.</p>
+              <p class="muted" style="margin:0;font-size:0.8rem;color:var(--muted,#5c6b7a);">
+                No run-parameter flags for this command.</p>
             {% endif %}
           </div>
         </section>
@@ -1096,7 +1066,9 @@
     {% macro render_github_panel_groups(cmd_key) %}
       <div class="cmd-builder-group-cards">
         {% for group in command_builder_schema[cmd_key] %}
-          {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters', 'Tilt series parameters'] %}
+          {% set _primary_titles = ['Dataset loading', 'Training parameters',
+            'Backprojection parameters', 'Tilt series parameters'] %}
+          {% if group.title not in _primary_titles %}
             {{ render_schema_group(group) }}
           {% endif %}
         {% endfor %}

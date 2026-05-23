@@ -458,7 +458,8 @@
   var P3S = global.CryoPlotlyScatter3dScene;
   if (!P3S || typeof P3S.snapshot !== "function") {
     throw new Error(
-      "CryoPlotlyScatter3dScene is required — include plotly_scatter3d_scene.js before latent3d_landscape_vol_animations.js"
+      "CryoPlotlyScatter3dScene is required — include plotly_scatter3d_scene.js"
+      + " before latent3d_landscape_vol_animations.js"
     );
   }
 

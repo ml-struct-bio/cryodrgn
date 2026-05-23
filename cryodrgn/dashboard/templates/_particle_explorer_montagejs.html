@@ -1243,6 +1243,52 @@
     "#b45309", "#1d4ed8", "#0f766e", "#86198f", "#b91c1c", "#365314", "#a16207"
   ];
 
+  function buildMultiRegionSelPieBackground() {
+    if (!committedScatterRegions || committedScatterRegions.length < 2) {
+      return null;
+    }
+    if (!totalParticles || totalParticles <= 0) return null;
+    var stops = ["from -90deg"];
+    var acc = 0;
+    for (var ri = 0; ri < committedScatterRegions.length; ri++) {
+      var nPr = committedScatterRegions[ri].nParticles || 0;
+      if (!nPr) continue;
+      var fracR = Math.min(1, Math.max(0, nPr / totalParticles));
+      var col = scatterRegionPlotStyle(ri).line;
+      var startPct = acc * 100;
+      acc += fracR;
+      var endPct = acc * 100;
+      stops.push(col + " " + startPct + "% " + endPct + "%");
+    }
+    if (stops.length < 2) return null;
+    var grey = "rgba(36, 59, 83, 0.14)";
+    if (acc < 1) {
+      stops.push(grey + " " + (acc * 100) + "% 100%");
+    } else if (acc < 1.0001) {
+      stops.push(grey + " 100% 100%");
+    }
+    return "conic-gradient(" + stops.join(", ") + ")";
+  }
+
+  function applySelectionPieVisual(frac, pctStr) {
+    if (!selPieEl) return;
+    var multi = committedScatterRegions && committedScatterRegions.length >= 2;
+    var bg = multi ? buildMultiRegionSelPieBackground() : null;
+    if (multi && bg) {
+      selPieEl.classList.add("cryo-explorer-sel-pie--multi-region");
+      selPieEl.style.background = bg;
+      selPieEl.style.removeProperty("--sel-frac");
+    } else {
+      selPieEl.classList.remove("cryo-explorer-sel-pie--multi-region");
+      selPieEl.style.removeProperty("background");
+      selPieEl.style.setProperty("--sel-frac", String(frac));
+    }
+    selPieEl.title = pctStr + " of dataset particles selected";
+    if (selPiePctEl) {
+      selPiePctEl.style.color = multi ? "#1a2332" : "";
+    }
+  }
+
   function scatterRegionPlotStyle(regionIdx) {
     var hex = "";
     try {
@@ -1327,6 +1373,139 @@
     return false;
   }
 
+  function parsePlotlyPathVertices(pathStr) {
+    var nums = String(pathStr || "").match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi);
+    if (!nums || nums.length < 6) return [];
+    var out = [];
+    for (var k = 0; k + 1 < nums.length; k += 2) {
+      var px = parseFloat(nums[k]);
+      var py = parseFloat(nums[k + 1]);
+      if (isFinite(px) && isFinite(py)) out.push({ x: px, y: py });
+    }
+    return out;
+  }
+
+  function polygonRingArea(ring) {
+    if (!ring || ring.length < 3) return 0;
+    var a = 0;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      a += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    }
+    return a * 0.5;
+  }
+
+  /** ``polygon-clipping`` MultiPolygon ring from a committed lasso/box ``raw``. */
+  function scatterRawToPolygonClipping(raw) {
+    if (!raw) return [];
+    if (raw.type === "rect" || (raw.x0 != null && raw.x1 != null && raw.y0 != null && raw.y1 != null)) {
+      var x0 = Number(raw.x0);
+      var x1 = Number(raw.x1);
+      var y0 = Number(raw.y0);
+      var y1 = Number(raw.y1);
+      if (!isFinite(x0 + x1 + y0 + y1)) return [];
+      var xmin = Math.min(x0, x1);
+      var xmax = Math.max(x0, x1);
+      var ymin = Math.min(y0, y1);
+      var ymax = Math.max(y0, y1);
+      return [[[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax], [xmin, ymin]]];
+    }
+    if (raw.type === "path" && raw.path) {
+      var verts = parsePlotlyPathVertices(raw.path);
+      if (verts.length < 3) return [];
+      var ring = [];
+      for (var vi = 0; vi < verts.length; vi++) {
+        ring.push([verts[vi].x, verts[vi].y]);
+      }
+      var r0 = ring[0];
+      var rL = ring[ring.length - 1];
+      if (r0[0] !== rL[0] || r0[1] !== rL[1]) ring.push([r0[0], r0[1]]);
+      return [ring];
+    }
+    return [];
+  }
+
+  function polygonClippingToScatterRaw(multiPoly, templateRaw) {
+    if (!multiPoly || !multiPoly.length) return null;
+    var bestPoly = null;
+    var bestArea = 0;
+    for (var pi = 0; pi < multiPoly.length; pi++) {
+      var poly = multiPoly[pi];
+      if (!poly || !poly.length || !poly[0] || poly[0].length < 3) continue;
+      var a = Math.abs(polygonRingArea(poly[0]));
+      if (a > bestArea) {
+        bestArea = a;
+        bestPoly = poly;
+      }
+    }
+    if (!bestPoly) return null;
+    var pathParts = [];
+    for (var ri = 0; ri < bestPoly.length; ri++) {
+      var ring = bestPoly[ri];
+      if (!ring || ring.length < 3) continue;
+      var seg = "M " + ring[0][0] + "," + ring[0][1];
+      for (var k = 1; k < ring.length; k++) {
+        seg += "L" + ring[k][0] + "," + ring[k][1];
+      }
+      seg += "Z";
+      pathParts.push(seg);
+    }
+    if (!pathParts.length) return null;
+    var out = {
+      type: "path",
+      path: pathParts.join(" "),
+      xref: (templateRaw && templateRaw.xref) || "x",
+      yref: (templateRaw && templateRaw.yref) || "y"
+    };
+    return out;
+  }
+
+  function clipScatterRawExcludingNewerRegions(rawSubj, newerFromIdx) {
+    if (!rawSubj) return null;
+    if (typeof polygonClipping === "undefined"
+        || typeof polygonClipping.difference !== "function") {
+      return rawSubj;
+    }
+    var acc = scatterRawToPolygonClipping(rawSubj);
+    if (!acc || !acc.length) return rawSubj;
+    for (var j = newerFromIdx; j < committedScatterRegions.length; j++) {
+      var clipPoly = scatterRawToPolygonClipping(committedScatterRegions[j].raw);
+      if (!clipPoly || !clipPoly.length) continue;
+      try {
+        acc = polygonClipping.difference(acc, clipPoly);
+      } catch (eDiff) {
+        return rawSubj;
+      }
+      if (!acc || !acc.length) return null;
+    }
+    return polygonClippingToScatterRaw(acc, rawSubj);
+  }
+
+  /**
+   * Plot overlays use ``overlayRaw`` (lasso minus newer regions) so fills match row buckets.
+   * Original ``raw`` is kept for merge/history; row membership uses newer-wins assignment.
+   */
+  function refreshCommittedRegionOverlayShapes() {
+    if (!committedScatterRegions || !committedScatterRegions.length) return;
+    var nReg = committedScatterRegions.length;
+    for (var ri = 0; ri < nReg; ri++) {
+      committedScatterRegions[ri].overlayRaw = null;
+    }
+    if (nReg < 2) return;
+    for (var si = 0; si < nReg - 1; si++) {
+      committedScatterRegions[si].overlayRaw = clipScatterRawExcludingNewerRegions(
+        committedScatterRegions[si].raw,
+        si + 1
+      );
+    }
+  }
+
+  function scatterRawForRegionOverlayDraw(regionIdx) {
+    var reg = committedScatterRegions[regionIdx];
+    if (!reg) return null;
+    if (reg.overlayRaw) return reg.overlayRaw;
+    return reg.raw;
+  }
+
   function traceIndexForPlotDfRow(row) {
     if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return -1;
     var cd = gd.data[0].customdata;
@@ -1342,34 +1521,41 @@
    * Fill ``committedScatterRegions[*].rows`` from ``saveSelectionRows`` + region geometry.
    * Plotly merge logic only tags ``rowsSnap`` onto the last shape; without this, montage /
    * grid-letter colours cannot resolve which region a particle belongs to after multi-lasso.
-   * Overlap: last region in array wins (same order as ``selectionRegionIndexForRow``).
+   * Overlap: newer regions (higher index) claim particles first; older regions lose overlap.
    */
   function recomputeCommittedScatterRegionRowsFromGeometry() {
     if (!gd || !gd.data || !gd.data[0] || !committedScatterRegions || !committedScatterRegions.length) {
       return;
     }
     var rowsSel = saveSelectionRows && saveSelectionRows.length ? saveSelectionRows : [];
-    if (!rowsSel.length) return;
     var nReg = committedScatterRegions.length;
     var buckets = new Array(nReg);
     for (var bi = 0; bi < nReg; bi++) {
       buckets[bi] = [];
     }
-    for (var si = 0; si < rowsSel.length; si++) {
-      var row = rowsSel[si];
-      var ti = traceIndexForPlotDfRow(row);
-      if (ti < 0) continue;
-      var xd = gd.data[0].x[ti];
-      var yd = gd.data[0].y[ti];
-      if (!isFinite(xd) || !isFinite(yd)) continue;
-      var lastHit = -1;
-      for (var ri = 0; ri < nReg; ri++) {
-        var raw = committedScatterRegions[ri].raw;
-        if (scatterRawShapeContainsDataXY(raw, xd, yd)) lastHit = ri;
+    if (!rowsSel.length) {
+      for (var ej = 0; ej < nReg; ej++) {
+        committedScatterRegions[ej].rows = [];
+        committedScatterRegions[ej].nParticles = 0;
       }
-      if (lastHit >= 0) {
-        var rB = Number(row);
-        buckets[lastHit].push(isFinite(rB) ? rB : row);
+      return;
+    }
+    var assigned = new Set();
+    for (var ri = nReg - 1; ri >= 0; ri--) {
+      var raw = committedScatterRegions[ri].raw;
+      for (var si = 0; si < rowsSel.length; si++) {
+        var row = rowsSel[si];
+        var rNum = Number(row);
+        if (!isFinite(rNum) || assigned.has(rNum)) continue;
+        var ti = traceIndexForPlotDfRow(row);
+        if (ti < 0) continue;
+        var xd = gd.data[0].x[ti];
+        var yd = gd.data[0].y[ti];
+        if (!isFinite(xd) || !isFinite(yd)) continue;
+        if (scatterRawShapeContainsDataXY(raw, xd, yd)) {
+          buckets[ri].push(rNum);
+          assigned.add(rNum);
+        }
       }
     }
     for (var rj = 0; rj < nReg; rj++) {
@@ -1471,6 +1657,7 @@
   function syncCommittedScatterRegionOverlays(opts) {
     if (!gd) return;
     opts = opts || {};
+    refreshCommittedRegionOverlayShapes();
     var clearSel = !!opts.clearSelections;
     var nReg = committedScatterRegions.length;
     var baseShapes;
@@ -1482,7 +1669,9 @@
     }
     var overlayShapes = [];
     for (var ri = 0; ri < nReg; ri++) {
-      var sh = scatterRawSelectionToCommitShape(committedScatterRegions[ri].raw, ri);
+      var rawDraw = scatterRawForRegionOverlayDraw(ri);
+      if (!rawDraw) continue;
+      var sh = scatterRawSelectionToCommitShape(rawDraw, ri);
       if (sh) overlayShapes.push(sh);
     }
     var shapesOut = baseShapes.concat(overlayShapes);
@@ -1527,6 +1716,7 @@
     var rawClone = cloneScatterSelectionShapes([keep.raw])[0];
     committedScatterRegions = [{
       raw: rawClone,
+      overlayRaw: null,
       nParticles: 0,
       rows: [],
       labelX: keep.labelX,
@@ -1677,6 +1867,30 @@
         wheelSolo.appendChild(wheelSlot);
         wheelSolo.appendChild(soloBtn);
 
+        var saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "cryo-explorer-scatter-region-chip__save";
+        saveBtn.title = "Save this region's indices as…";
+        saveBtn.setAttribute(
+          "aria-label",
+          "Save indices for region " + (regionIdx + 1) + " as…"
+        );
+        if (
+          typeof CryoDashboardIcons !== "undefined"
+          && typeof CryoDashboardIcons.decorateSaveButton === "function"
+        ) {
+          CryoDashboardIcons.decorateSaveButton(saveBtn, { iconOnly: true });
+        }
+        saveBtn.addEventListener("mousedown", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+        saveBtn.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          saveCommittedScatterRegion(regionIdx);
+        });
+
         var rmBtn = document.createElement("button");
         rmBtn.type = "button";
         rmBtn.className = "cryo-explorer-scatter-region-chip__remove";
@@ -1694,6 +1908,7 @@
         });
 
         actions.appendChild(wheelSolo);
+        actions.appendChild(saveBtn);
         actions.appendChild(rmBtn);
 
         rowInner.appendChild(sw);
@@ -2455,6 +2670,7 @@
       ev.target
       && (ev.target.closest(".cryo-cc-discrete-colorwheel-btn")
         || ev.target.closest(".cryo-cc-discrete-solo-btn")
+        || ev.target.closest(".cryo-explorer-scatter-region-chip__save")
         || ev.target.closest(".cryo-explorer-scatter-region-chip__remove"))
     ) {
       return;
@@ -2682,24 +2898,19 @@
             var labelY;
             var colorHex;
             if (ci < prevSnap.length && scatterSelectionShapesEqual(prevSnap[ci].raw, rawI)) {
-              np = prevSnap[ci].n;
-              rowArr = (prevSnap[ci].rows && prevSnap[ci].rows.slice) ? prevSnap[ci].rows.slice() : [];
               labelX = prevSnap[ci].labelX;
               labelY = prevSnap[ci].labelY;
               colorHex = prevSnap[ci].colorHex;
             } else {
-              np = uniqSnapCount;
-              if (ci === mergedRaw.length - 1) {
-                rowArr = rowsSnap.slice();
-              } else {
-                rowArr = (prevSnap[ci].rows && prevSnap[ci].rows.slice) ? prevSnap[ci].rows.slice() : [];
-              }
               labelX = undefined;
               labelY = undefined;
               colorHex = undefined;
             }
+            np = 0;
+            rowArr = [];
             committedScatterRegions.push({
               raw: rawI,
+              overlayRaw: null,
               nParticles: np,
               rows: rowArr,
               labelX: labelX,
@@ -2816,21 +3027,100 @@
     return el && el.checked;
   }
 
-  function openSelectionFileBrowser(startDir) {
+  function clearPendingRegionSave() {
+    pendingRegionSaveRows = null;
+  }
+
+  function saveCommittedScatterRegion(regionIdx) {
+    if (!committedScatterRegions || regionIdx < 0 || regionIdx >= committedScatterRegions.length) {
+      return;
+    }
+    var reg = committedScatterRegions[regionIdx];
+    var regRows = reg && reg.rows && reg.rows.length ? reg.rows.slice() : [];
+    if (!regRows.length) {
+      var statusEmpty = document.getElementById("save-status");
+      if (statusEmpty) {
+        statusEmpty.textContent = "Region " + (regionIdx + 1) + " has no particles to save.";
+        statusEmpty.title = statusEmpty.textContent;
+      }
+      return;
+    }
+    openRegionSelectionFileBrowser(regionIdx, regRows);
+  }
+
+  var selFbModalTitle = document.getElementById("sel-fb-modal-title");
+  var selFbModalBackdrop = selFileBrowserPanel
+    ? selFileBrowserPanel.querySelector("[data-sel-fb-close]")
+    : null;
+  var selectionSaveModalTriggerEl = null;
+
+  function syncSelectionSaveModalTitle() {
+    if (!selFbModalTitle) return;
+    if (pendingRegionSaveRows && pendingRegionSaveRows.length) {
+      selFbModalTitle.textContent = "Save region selection";
+    } else {
+      selFbModalTitle.textContent = "Save selection";
+    }
+  }
+
+  function onSelectionSaveModalKeydown(ev) {
+    if (ev.key !== "Escape" || !selFileBrowserPanel || selFileBrowserPanel.hidden) return;
+    ev.preventDefault();
+    closeSelectionFileBrowser();
+  }
+
+  function openRegionSelectionFileBrowser(regionIdx, regRows) {
+    pendingRegionSaveRows = regRows.slice();
+    if (selFbSaveName) {
+      selFbSaveName.value = "indices_region_" + (regionIdx + 1) + ".pkl";
+    }
+    var status = document.getElementById("save-status");
+    if (status) {
+      status.textContent = "";
+      status.title = "";
+    }
+    openSelectionFileBrowser(workdirForSaveHint || "", { keepPendingRegionRows: true });
+  }
+
+  function openSelectionFileBrowser(startDir, opts) {
+    opts = opts || {};
+    if (!opts.keepPendingRegionRows) {
+      clearPendingRegionSave();
+    }
     if (!selFileBrowserPanel || !selFbList || !selFbPath) return;
     if (selFbSaveName && !String(selFbSaveName.value || "").trim()) {
       selFbSaveName.value = "indices.pkl";
     }
+    syncSelectionSaveModalTitle();
+    selectionSaveModalTriggerEl = document.activeElement;
     selFileBrowserPanel.hidden = false;
     selFileBrowserPanel.setAttribute("aria-hidden", "false");
+    document.body.classList.add("cryo-explorer-save-modal-open");
     loadSelectionFileBrowserDir(startDir || "");
+    requestAnimationFrame(function() {
+      if (selFbSaveName) {
+        try {
+          selFbSaveName.focus();
+          selFbSaveName.select();
+        } catch (eFocus) { /* ignore */ }
+      }
+    });
   }
 
   function closeSelectionFileBrowser() {
     if (!selFileBrowserPanel) return;
     selFileBrowserPanel.hidden = true;
     selFileBrowserPanel.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("cryo-explorer-save-modal-open");
     selFbCurrentDir = null;
+    clearPendingRegionSave();
+    var restore = selectionSaveModalTriggerEl;
+    selectionSaveModalTriggerEl = null;
+    if (restore && typeof restore.focus === "function") {
+      try {
+        restore.focus();
+      } catch (eRestore) { /* ignore */ }
+    }
   }
 
   function normalizedSelectionBasename() {
@@ -2899,21 +3189,30 @@
       status.textContent = "Filename cannot contain path separators.";
       return;
     }
+    var payload = { force: false, sel_dir: selFbCurrentDir, basename: basename };
+    if (pendingRegionSaveRows && pendingRegionSaveRows.length) {
+      payload.rows = pendingRegionSaveRows.slice();
+      payload.save_inverse = false;
+    }
+    clearPendingRegionSave();
     closeSelectionFileBrowser();
-    postSaveSelection({ force: false, sel_dir: selFbCurrentDir, basename: basename });
+    postSaveSelection(payload);
   }
 
   function postSaveSelection(payload) {
     var status = document.getElementById("save-status");
     status.textContent = "";
     status.title = "";
-    if (!saveSelectionRows.length) {
+    var rows = payload.rows != null ? payload.rows : saveSelectionRows;
+    if (!rows || !rows.length) {
       status.textContent = "Select particles (plot, color histogram, or discrete toggles) before saving.";
       status.title = status.textContent;
       return;
     }
-    payload.rows = saveSelectionRows;
-    payload.save_inverse = saveInverseChecked();
+    payload.rows = rows;
+    if (payload.save_inverse == null) {
+      payload.save_inverse = saveInverseChecked();
+    }
     fetch("{{ url_for('api_save_selection') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2964,6 +3263,12 @@
       closeSelectionFileBrowser();
     });
   }
+  if (selFbModalBackdrop) {
+    selFbModalBackdrop.addEventListener("click", function() {
+      closeSelectionFileBrowser();
+    });
+  }
+  document.addEventListener("keydown", onSelectionSaveModalKeydown);
   if (selFbSaveBtn) {
     selFbSaveBtn.addEventListener("click", function() {
       saveSelectionViaBrowser();

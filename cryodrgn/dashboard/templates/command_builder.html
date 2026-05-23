@@ -327,6 +327,33 @@
   body.cmd-builder-github-pages header.nav .nav-brand-line2 {
     font-size: calc(0.98rem * 1.15 * 0.8 * var(--gp-nav-font-scale));
   }
+  /* Plain subtitle text — no glass/pane styling from the dashboard nav. */
+  body.cmd-builder-github-pages .nav-brand-line2-main {
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    -webkit-text-stroke: 0;
+    text-shadow: none;
+    color: rgba(232, 238, 244, 0.92);
+    opacity: 0.92;
+  }
+  body.cmd-builder-github-pages .nav-brand-line2::after {
+    display: none;
+  }
+  body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line2-main,
+  body.cmd-builder-github-pages a.nav-brand-link:focus-visible .nav-brand-line2-main {
+    background: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    color: #fff;
+    text-shadow: none;
+  }
   body.cmd-builder-github-pages header.nav .nav-brand-version--inline {
     font-size: calc(0.95rem * 1.25 * 1.2 * 0.72 * 0.64 * var(--gp-nav-font-scale));
   }
@@ -344,7 +371,7 @@
     margin: 0;
     flex-shrink: 0;
     white-space: nowrap;
-    font-size: calc(0.72rem * 1.3 * 1.3 * var(--gp-nav-font-scale));
+    font-size: calc(0.72rem * 1.3 * 1.3 * var(--gp-nav-font-scale) * 0.7);
     font-weight: 700;
     color: #e8eef4;
     letter-spacing: 0.02em;
@@ -387,7 +414,7 @@
   body.cmd-builder-github-pages .nav-cmd-doc-text {
     margin: 0;
     font-family: Charter, "Bitstream Charter", "Sitka Text", Palatino, "Book Antiqua", serif;
-    font-size: calc(0.54rem * var(--gp-nav-font-scale));
+    font-size: calc(0.54rem * var(--gp-nav-font-scale) * 1.2);
     font-weight: 400;
     font-style: normal;
     line-height: 1.38;
@@ -424,9 +451,68 @@
     gap: 0.5rem;
     align-items: stretch;
   }
-  body.cmd-builder-github-pages .cmd-builder-github-body > .cmd-builder-group-cards {
+  body.cmd-builder-github-pages .cmd-builder-github-body > .cmd-builder-group-cards,
+  body.cmd-builder-github-pages .cmd-builder-github-body > .cmd-builder-tilt-region {
     flex: 1 1 auto;
     min-height: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-tilt-region {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 0.5rem 0.65rem 0.55rem;
+    border-radius: 6px;
+    box-sizing: border-box;
+    background: rgba(72, 120, 90, 0.08);
+    border: 1px solid rgba(72, 120, 90, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(72, 120, 90, 0.05);
+    overflow: hidden;
+  }
+  body.cmd-builder-github-pages .cmd-builder-tilt-region-title {
+    flex: 0 0 auto;
+    margin: 0 0 0.35rem;
+    font-weight: 700;
+    font-size: 0.84rem;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    color: #3d6b4f;
+  }
+  body.cmd-builder-github-pages .cmd-builder-tilt-region-desc {
+    flex: 0 0 auto;
+    margin: 0 0 0.45rem;
+    font-size: 0.76rem;
+    line-height: 1.3;
+    color: var(--muted, #5c6b7a);
+  }
+  body.cmd-builder-github-pages .cmd-builder-tilt-region-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    align-content: start;
+  }
+  body.cmd-builder-github-pages .cmd-builder-tilt-region-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.35rem 0.55rem;
+    align-content: start;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    body.cmd-builder-github-pages .cmd-builder-tilt-region-fields {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 560px) {
+    body.cmd-builder-github-pages .cmd-builder-tilt-region-fields {
+      grid-template-columns: 1fr;
+    }
   }
   body.cmd-builder-github-pages .cmd-builder-required-bar {
     flex: 0 0 auto;
@@ -953,10 +1039,12 @@
         | selectattr('title', 'equalto', 'Dataset loading')
         | list
         | first) %}
-      {% set train = (command_builder_schema[cmd_key]
-        | selectattr('title', 'equalto', 'Training parameters')
-        | list
-        | first) %}
+      {% set train = namespace(group=none) %}
+      {% for g in command_builder_schema[cmd_key] %}
+        {% if g.title in ['Training parameters', 'Backprojection parameters'] %}
+          {% set train.group = g %}
+        {% endif %}
+      {% endfor %}
       <div class="cmd-builder-primary-pair">
         <section class="cmd-builder-primary-region cmd-builder-primary-region--dataset" aria-labelledby="{{ datadir_id }}-region-title">
           <h3 class="cmd-builder-primary-region-title" id="{{ datadir_id }}-region-title">Dataset loading</h3>
@@ -990,16 +1078,16 @@
         </section>
         <section class="cmd-builder-primary-region cmd-builder-primary-region--training"
                  aria-labelledby="{{ cmd_key }}-train-region-title">
-          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-train-region-title">Training parameters</h3>
+          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-train-region-title">{{ train.group.title if train.group else 'Run parameters' }}</h3>
           <div class="cmd-builder-primary-region-body">
-            {% if train and train.args %}
-              {{ render_github_checkbox_band(train.args) }}
+            {% if train.group and train.group.args %}
+              {{ render_github_checkbox_band(train.group.args) }}
               {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
-              {% for a in train.args if a.w not in check_ws %}
+              {% for a in train.group.args if a.w not in check_ws %}
                 {{ render_github_primary_arg(a) }}
               {% endfor %}
             {% else %}
-              <p class="muted" style="margin:0;font-size:0.8rem;color:var(--muted,#5c6b7a);">No training-parameter flags for this command.</p>
+              <p class="muted" style="margin:0;font-size:0.8rem;color:var(--muted,#5c6b7a);">No run-parameter flags for this command.</p>
             {% endif %}
           </div>
         </section>
@@ -1008,11 +1096,34 @@
     {% macro render_github_panel_groups(cmd_key) %}
       <div class="cmd-builder-group-cards">
         {% for group in command_builder_schema[cmd_key] %}
-          {% if group.title not in ['Dataset loading', 'Training parameters'] %}
+          {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters', 'Tilt series parameters'] %}
             {{ render_schema_group(group) }}
           {% endif %}
         {% endfor %}
       </div>
+    {% endmacro %}
+    {% macro render_github_tilt_region(cmd_key) %}
+      {% set tilt = (command_builder_schema[cmd_key]
+        | selectattr('title', 'equalto', 'Tilt series parameters')
+        | list
+        | first) %}
+      {% if tilt and tilt.args %}
+      <section class="cmd-builder-tilt-region" aria-labelledby="{{ cmd_key }}-tilt-region-title">
+        <h3 class="cmd-builder-tilt-region-title" id="{{ cmd_key }}-tilt-region-title">{{ tilt.title }}</h3>
+        {% if tilt.description %}
+        <p class="cmd-builder-tilt-region-desc">{{ tilt.description }}</p>
+        {% endif %}
+        <div class="cmd-builder-tilt-region-body">
+          {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
+          {{ render_github_checkbox_band(tilt.args) }}
+          <div class="cmd-builder-tilt-region-fields">
+            {% for a in tilt.args if a.w not in check_ws %}
+              {{ render_github_primary_arg(a) }}
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+      {% endif %}
     {% endmacro %}
     {% macro render_schema_group(group) %}
       {% if github_pages_mode %}
@@ -1163,7 +1274,7 @@
             </div>
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['abinit'] %}
-                {% if group.title != 'Dataset loading' %}
+                {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters'] %}
                   {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
@@ -1277,7 +1388,7 @@
             </div>
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['train_vae'] %}
-                {% if group.title != 'Dataset loading' %}
+                {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters'] %}
                   {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
@@ -1369,7 +1480,7 @@
             </div>
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['train_nn'] %}
-                {% if group.title != 'Dataset loading' %}
+                {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters'] %}
                   {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
@@ -1483,7 +1594,101 @@
             </div>
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['train_dec'] %}
-                {% if group.title != 'Dataset loading' %}
+                {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters'] %}
+                  {{ render_schema_group(group) }}
+                {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          <div id="panel-backproject_voxel" class="cmd-panel" data-cmd="backproject_voxel">
+            {% if github_pages_mode %}
+            <div class="cmd-builder-github-body cmd-builder-github-body--backproject">
+              {% call render_github_required_bar(4) %}
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="bpv_particles"
+                         {{ title_attr(command_builder_required_field_titles.get('bpv_particles') ) }}>Particles
+                  </label>
+                  <input type="text"
+                         id="bpv_particles"
+                         value="{{ default_particles|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('bpv_particles') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="bpv_out"
+                         {{ title_attr(command_builder_required_field_titles.get('bpv_out') ) }}>
+                    Output (<code>-o</code>)
+                  </label>
+                  {{ cmd_outdir_stepper('bpv_out', 'backproject_voxel', default_outdir_backproject_voxel) }}
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="bpv_poses"
+                    {{ title_attr(command_builder_required_field_titles.get('bpv_poses') ) }}><code>--poses</code>
+                  </label>
+                  <input type="text"
+                         id="bpv_poses"
+                         value="{{ default_poses|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('bpv_poses') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="bpv_ctf"{{ ctf_row_title("bpv_ctf") }}><code>--ctf</code>
+                  </label>
+                  <input type="text"
+                         id="bpv_ctf"
+                         value="{{ default_ctf|e }}"
+                         placeholder="path to CTF .pkl"
+                         autocomplete="off"
+                         {{ ctf_row_title("bpv_ctf") }} />
+                </div>
+              {% endcall %}
+              {{ render_github_primary_pair('backproject_voxel', 'bpv_datadir') }}
+              {{ render_github_tilt_region('backproject_voxel') }}
+            </div>
+            {% else %}
+            <div class="cmd-builder-top-row">
+              <fieldset class="cmd-builder-required-fieldset">
+                <legend>Required</legend>
+                <label class="cryo-select-line"
+                       for="bpv_particles"
+                       {{ title_attr(command_builder_required_field_titles.get('bpv_particles') ) }}>Particles
+                </label>
+                <input type="text"
+                       id="bpv_particles"
+                       value="{{ default_particles|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('bpv_particles') ) }} />
+                <label class="cryo-select-line"
+                       for="bpv_out"
+                       {{ title_attr(command_builder_required_field_titles.get('bpv_out') ) }}>
+                  Output directory (<code>-o</code>)
+                </label>
+                {{ cmd_outdir_stepper('bpv_out', 'backproject_voxel', default_outdir_backproject_voxel) }}
+                <label class="cryo-select-line" for="bpv_poses"
+                  {{ title_attr(command_builder_required_field_titles.get('bpv_poses') ) }}><code>--poses</code>
+                </label>
+                <input type="text"
+                       id="bpv_poses"
+                       value="{{ default_poses|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('bpv_poses') ) }} />
+                <label class="cryo-select-line" for="bpv_ctf"{{ ctf_row_title("bpv_ctf") }}><code>--ctf</code>
+                </label>
+                <input type="text"
+                       id="bpv_ctf"
+                       value="{{ default_ctf|e }}"
+                       placeholder="path to CTF .pkl"
+                       autocomplete="off"
+                       {{ ctf_row_title("bpv_ctf") }} />
+              </fieldset>
+              {{ render_dataset_fieldset('backproject_voxel', 'bpv_datadir') }}
+            </div>
+            <div class="cmd-builder-rest-grid">
+              {% for group in command_builder_schema['backproject_voxel'] %}
+                {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters'] %}
                   {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
@@ -1577,7 +1782,7 @@
             </div>
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['abinit_het_old'] %}
-                {% if group.title != 'Dataset loading' %}
+                {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters'] %}
                   {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
@@ -1651,7 +1856,7 @@
             </div>
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['abinit_homo_old'] %}
-                {% if group.title != 'Dataset loading' %}
+                {% if group.title not in ['Dataset loading', 'Training parameters', 'Backprojection parameters'] %}
                   {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
@@ -1838,6 +2043,18 @@
     return parts.join(" ");
   }
 
+  function buildBackprojectVoxel() {
+    var parts = ["cryodrgn", "backproject_voxel"];
+    var p = val("bpv_particles");
+    if (p) parts.push(shquote(p));
+    appendOpt(parts, "--poses", val("bpv_poses"));
+    appendOpt(parts, "-o", val("bpv_out"));
+    appendOpt(parts, "--ctf", val("bpv_ctf"));
+    appendOpt(parts, "--datadir", val("bpv_datadir"));
+    collectSchemaParts("backproject_voxel", parts);
+    return parts.join(" ");
+  }
+
   function buildTrainDec() {
     var parts = ["cryodrgn", "train_dec"];
     var p = val("dec_particles");
@@ -1863,6 +2080,7 @@
     if (t === "train_vae") return buildTrainVae();
     if (t === "train_nn") return buildTrainNn();
     if (t === "train_dec") return buildTrainDec();
+    if (t === "backproject_voxel") return buildBackprojectVoxel();
     return "";
   }
 

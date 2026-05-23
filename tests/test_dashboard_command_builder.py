@@ -36,6 +36,7 @@ class TestCommandModuleDocstrings:
         assert "VAE" in docs["train_vae"]
         assert "neural net" in docs["train_nn"]
         assert docs["train_dec"] == "Train an autodecoder"
+        assert "backprojection" in docs["backproject_voxel"].lower()
 
 
 class TestDefaultOutdirForCommand:
@@ -98,8 +99,13 @@ class TestCommandBuilderSchemaIntegrity:
                 if arg.get("w") == "no_amp":
                     continue
                 flags = arg.get("cli") or []
-                # At least one of the declared CLI tokens should exist in help.
-                if flags and not any(c in help_map for c in flags):
+                # At least one of the declared CLI tokens should exist in help,
+                # or the schema carries an explicit ``help`` string (e.g. --ctf-alg).
+                if (
+                    flags
+                    and not any(c in help_map for c in flags)
+                    and not arg.get("help")
+                ):
                     missing.append(f"{arg['id']}:{flags}")
         assert not missing, f"{cmd}: schema flags missing from argparse help: {missing}"
 
@@ -117,6 +123,9 @@ class TestRequiredFieldTitles:
             "nn_particles",
             "nn_out",
             "nn_poses",
+            "bpv_particles",
+            "bpv_out",
+            "bpv_poses",
             "dec_particles",
             "dec_out",
             "dec_poses",
@@ -323,6 +332,8 @@ class TestGithubPagesCommandBuilder:
         assert "abinit_het_old" in html
         assert "abinit_homo_old" in html
         assert 'value="001_abinit_het_old"' in html
+        assert "backproject_voxel" in html
+        assert 'value="001_backproject_voxel"' in html
         assert "plot.ly" not in html.lower()
         assert 'fetch("/api/set_workdir"' not in html
 

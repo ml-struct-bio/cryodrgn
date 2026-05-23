@@ -70,6 +70,9 @@ def _command_builder_template_kwargs() -> dict[str, object]:
         "default_outdir_train_vae": default_outdir_for_command("train_vae"),
         "default_outdir_train_nn": default_outdir_for_command("train_nn"),
         "default_outdir_train_dec": default_outdir_for_command("train_dec"),
+        "default_outdir_backproject_voxel": default_outdir_for_command(
+            "backproject_voxel"
+        ),
         "default_poses": "",
         "command_builder_schema": COMMAND_BUILDER_SCHEMA,
         "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,

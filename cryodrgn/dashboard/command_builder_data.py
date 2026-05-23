@@ -65,6 +65,8 @@ COMMAND_BUILDER_GROUP_DESCRIPTIONS: dict[str, str] = {
     "Decoder Network": "VAE decoder architecture and expressiveness.",
     "Network Architecture": "Layer sizes, activations, and backbone layout.",
     "Latent Variables": "Latent dimension, priors, and embedding behaviour.",
+    "Backprojection parameters": "Batching, CTF weighting, half-maps, FSCs, and regularization.",
+    "Tilt series options": "Tomography tilt geometry and dose per tilt.",
 }
 
 
@@ -954,6 +956,89 @@ TRAIN_DEC_GROUPS: list[Group] = [
     ),
 ]
 
+BACKPROJECT_VOXEL_GROUPS: list[Group] = [
+    _g(
+        "Dataset loading",
+        [
+            {"id": "bpv_uninvert", "cli": ["--uninvert-data"], "w": "flag_true"},
+            {"id": "bpv_lazy", "cli": ["--lazy"], "w": "flag_true"},
+            {"id": "bpv_ind", "cli": ["--ind"], "w": "text"},
+            {"id": "bpv_first", "cli": ["--first"], "w": "number"},
+        ],
+    ),
+    _g(
+        "Backprojection parameters",
+        [
+            {
+                "id": "bpv_half_maps",
+                "cli": ["--no-half-maps"],
+                "w": "flag_false",
+            },
+            {
+                "id": "bpv_fsc_vals",
+                "cli": ["--no-fsc-vals"],
+                "w": "flag_false",
+            },
+            {
+                "id": "bpv_batch_size",
+                "cli": ["-b", "--batch-size"],
+                "w": "number",
+                "placeholder": "1000",
+            },
+            {
+                "id": "bpv_ctf_alg",
+                "cli": ["--ctf-alg"],
+                "w": "select",
+                "choices": ["flip", "mul"],
+                "default": "mul",
+                "help": "CTF algorithm: phase flip (flip) or multiply (mul).",
+            },
+            {
+                "id": "bpv_reg_weight",
+                "cli": ["--reg-weight"],
+                "w": "text",
+                "placeholder": "1.0",
+            },
+            {
+                "id": "bpv_output_sumcount",
+                "cli": ["--output-sumcount"],
+                "w": "flag_true",
+            },
+            {
+                "id": "bpv_log_interval",
+                "cli": ["--log-interval"],
+                "w": "text",
+                "placeholder": "5000",
+            },
+        ],
+    ),
+    _g(
+        "Tilt series parameters",
+        [
+            {"id": "bpv_tilt", "cli": ["--tilt"], "w": "flag_true"},
+            {
+                "id": "bpv_ntilts",
+                "cli": ["--ntilts"],
+                "w": "number",
+                "placeholder": "10",
+            },
+            {"id": "bpv_force_ntilts", "cli": ["--force-ntilts"], "w": "flag_true"},
+            {"id": "bpv_dose_per_tilt", "cli": ["-d", "--dose-per-tilt"], "w": "text"},
+            {
+                "id": "bpv_angle_per_tilt",
+                "cli": ["-a", "--angle-per-tilt"],
+                "w": "text",
+                "placeholder": "3",
+            },
+        ],
+    ),
+]
+
+# Primary-band group titles surfaced in the GitHub Pages dataset / run-parameter pair.
+COMMAND_BUILDER_PRIMARY_RUN_GROUP_TITLES: frozenset[str] = frozenset(
+    {"Training parameters", "Backprojection parameters"}
+)
+
 
 def _remap_group_ids(
     groups: list[Group], from_prefix: str, to_prefix: str
@@ -1224,6 +1309,7 @@ COMMAND_BUILDER_COMMAND_KEYS: tuple[str, ...] = (
     "train_vae",
     "train_nn",
     "train_dec",
+    "backproject_voxel",
 )
 
 COMMAND_BUILDER_SCHEMA: Schema = {
@@ -1233,6 +1319,7 @@ COMMAND_BUILDER_SCHEMA: Schema = {
     "train_vae": TRAIN_VAE_GROUPS,
     "train_nn": TRAIN_NN_GROUPS,
     "train_dec": TRAIN_DEC_GROUPS,
+    "backproject_voxel": BACKPROJECT_VOXEL_GROUPS,
 }
 
 _cli_help = load_cli_help_maps()
@@ -1242,6 +1329,7 @@ attach_help_to_groups(_cli_help.get("abinit_homo_old", {}), ABINIT_HOMO_OLD_GROU
 attach_help_to_groups(_cli_help.get("train_vae", {}), TRAIN_VAE_GROUPS)
 attach_help_to_groups(_cli_help.get("train_nn", {}), TRAIN_NN_GROUPS)
 attach_help_to_groups(_cli_help.get("train_dec", {}), TRAIN_DEC_GROUPS)
+attach_help_to_groups(_cli_help.get("backproject_voxel", {}), BACKPROJECT_VOXEL_GROUPS)
 attach_group_descriptions(COMMAND_BUILDER_SCHEMA)
 
 
@@ -1323,6 +1411,16 @@ def _build_required_field_titles() -> dict[str, str]:
             },
         ),
     )
+    r.update(
+        _required_field_titles(
+            _cli_help.get("backproject_voxel", {}),
+            {
+                "bpv_particles": "particles",
+                "bpv_out": ("-o", "--outdir"),
+                "bpv_poses": "--poses",
+            },
+        ),
+    )
     for prefix, cmd in (
         ("ab", "abinit"),
         ("ahet", "abinit_het_old"),
@@ -1330,6 +1428,7 @@ def _build_required_field_titles() -> dict[str, str]:
         ("vae", "train_vae"),
         ("nn", "train_nn"),
         ("dec", "train_dec"),
+        ("bpv", "backproject_voxel"),
     ):
         hm = _cli_help.get(cmd, {})
         if "--ctf" in hm:

@@ -54,7 +54,10 @@ from cryodrgn.dashboard.plots_figure_utils import (
 def _dashboard_scatter3d_glyph_visual_scale(
     size: float, opacity: float
 ) -> tuple[float, float]:
-    """In-dashboard Plotly scatter3d: ~30% larger glyphs, ~20% lower alpha (more transparent)."""
+    """In-dashboard Plotly scatter3d glyph scaling.
+
+    ~30% larger glyphs, ~20% lower alpha (more transparent).
+    """
     return (
         float(size * 1.3),
         float(max(0.06, min(0.98, opacity * 0.8))),
@@ -68,7 +71,10 @@ def _scatter_color_hover_texts(
     discrete_trace: bool,
     vol_pc_explained_variance_ratio: np.ndarray | None = None,
 ) -> list[str]:
-    """Per-point second line for scatter hover (covariate text; continuous uses ``name: value``)."""
+    """Per-point second line for scatter hover (covariate text).
+
+    Continuous mode uses ``name: value``.
+    """
     ser = sub[color_col]
     n = len(sub)
     out: list[str] = []
@@ -175,13 +181,16 @@ def scatter_json(
         ).reshape(-1, 1)
         customdata = np.column_stack([customdata, hov2])
         hover_kwargs: dict[str, Any] = dict(
-            hovertemplate="particle: %{customdata[0]}<br>%{customdata[3]}<extra></extra>",
+            hovertemplate=(
+                "particle: %{customdata[0]}<br>" "%{customdata[3]}<extra></extra>"
+            ),
         )
     else:
         hover_kwargs = dict(hovertemplate="particle: %{customdata[0]}<extra></extra>")
 
-    # Scattergl can leave Plotly.react() pending on some GPUs; SVG Scatter is unusably slow
-    # at dashboard point caps (~1e5+). The explorer client uses ``plotly_afterplot`` plus a timeout.
+    # Scattergl can leave Plotly.react() pending on some GPUs;
+    # SVG Scatter is unusably slow at dashboard point caps (~1e5+).
+    # The explorer client uses ``plotly_afterplot`` plus a timeout.
     trace_cls = go.Scattergl if use_webgl else go.Scatter
     sc = trace_cls(
         x=sub[xcol],
@@ -288,23 +297,30 @@ def scatter3d_z_json(
 ) -> str:
     """Interactive 3D scatter of three latent ``z*`` columns.
 
-    Pass ``plot_df`` to use an alternate table (e.g. ``analyze_landscape_full`` sampled rows)
+    Pass ``plot_df`` to use an alternate table
+    (e.g. ``analyze_landscape_full`` sampled rows)
     while still validating axes against ``exp.z`` shape.
 
-    When ``xyz_axes_allowed`` is set (e.g. volume PCA column names), ``xcol``/``ycol``/``zcol``
+    When ``xyz_axes_allowed`` is set (e.g. volume PCA column names),
+    ``xcol``/``ycol``/``zcol``
     must be three distinct members of that set instead of latent ``z*`` dimensions.
 
-    ``scene_axis_titles`` overrides Plotly scene axis titles (defaults to ``xcol``/``ycol``/``zcol``).
+    ``scene_axis_titles`` overrides Plotly scene axis titles
+    (defaults to ``xcol``/``ycol``/``zcol``).
 
     ``vol_pc_explained_variance_ratio`` improves hover and colour-legend titles for
     ``landscape_vol_PC*`` covariates when present.
 
-    ``volume_landscape_3d_style`` tightens marker size (vs the usual n-points curve, then two
-    further ~13% steps for this 3D UI), emboldens axis titles, and bumps scene tick label size for the
+    ``volume_landscape_3d_style`` tightens marker size
+    (vs the usual n-points curve, then two
+    further ~13% steps for this 3D UI), emboldens axis titles,
+    and bumps scene tick label size for the
     full-volume-landscape 3D view.
 
-    When ``no_subsample`` is true, every row in the (possibly colour-filtered) table is plotted
-    instead of capping at ``max_points`` — used for discrete-level GIF frames so rare categories
+    When ``no_subsample`` is true, every row in the
+    (possibly colour-filtered) table is plotted
+    instead of capping at ``max_points`` — used for discrete-level GIF
+    frames so rare categories
     are not randomly thinned away.
     """
     plotly_cs = normalize_continuous_palette(continuous_palette)
@@ -347,12 +363,14 @@ def scatter3d_z_json(
     cap = max(len(sub), 1) if no_subsample else max_points
     msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
     if volume_landscape_3d_style:
-        # ~31% smaller vs the usual n-points curve, then two ~13% reductions for this 3D UI,
+        # ~31% smaller vs the usual n-points curve,
+        # then two ~13% reductions for this 3D UI,
         # then a further 20% shrink for the volume-landscape glyph size.
         msize *= (1.0 - 0.31) * (1.0 - 0.13) * (1.0 - 0.13) * 0.8
     msize, mopacity = _dashboard_scatter3d_glyph_visual_scale(msize, mopacity)
     if volume_landscape_3d_style:
-        # ~13% larger points, then +73% radius vs pre-landscape baseline (three +20% steps); ~19% more transparent.
+        # ~13% larger points, then +73% radius vs pre-landscape baseline
+        # (three +20% steps); ~19% more transparent.
         msize *= 1.13 * 1.728 * 1.11
         mopacity = float(max(0.0, min(1.0, mopacity * 0.81)))
 
@@ -408,7 +426,8 @@ def scatter3d_z_json(
             hex_colors = numeric_array_to_plotly_hex(
                 _cvals, plotly_cs, vmin=cmin, vmax=cmax
             )
-            # Per-point hex matches Plotly's colorscale exactly (WebGL + letter overlays).
+            # Per-point hex matches Plotly's colorscale exactly
+            # (WebGL + letter overlays).
             marker = dict(
                 size=msize,
                 opacity=mopacity,
@@ -470,7 +489,9 @@ def scatter3d_z_json(
         ).reshape(-1, 1)
         customdata = np.column_stack([customdata, hov2_3d])
         hover_kwargs_3d: dict[str, Any] = dict(
-            hovertemplate="particle: %{customdata[0]}<br>%{customdata[3]}<extra></extra>",
+            hovertemplate=(
+                "particle: %{customdata[0]}<br>" "%{customdata[3]}<extra></extra>"
+            ),
         )
     else:
         hover_kwargs_3d = dict(
@@ -506,8 +527,10 @@ def scatter3d_z_json(
                     + "<extra></extra>"
                 )
 
-    # Match the volume-selection overlay (``latent3d_landscape_vol_animations.js``): keep
-    # ``markers+text`` from the first draw so the first selection only restyles marker/text
+    # Match the volume-selection overlay
+    # (``latent3d_landscape_vol_animations.js``): keep
+    # ``markers+text`` from the first draw so the first selection
+    # only restyles marker/text
     # fields — not ``mode`` — which avoids Plotly resetting orbit, zoom, or axis limits.
     vol_landscape_sel_overlay = VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns
     n_pts = len(sub)
@@ -644,9 +667,10 @@ def scatter3d_z_preview_png(
     elev: float = 22.0,
     azim: float = -65.0,
 ) -> bytes:
-    """Matplotlib 3D scatter PNG using the same subsample/coloring rules as ``scatter3d_z_json``.
+    """Matplotlib 3D scatter PNG using the same rules as ``scatter3d_z_json``.
 
-    Used for dashboard GIF capture where headless browsers often fail to composite WebGL.
+    Used for dashboard GIF capture where headless browsers often fail
+    to composite WebGL.
     """
     plotly_cs = normalize_continuous_palette(continuous_palette)
     mpl_cmap_name = mpl_cmap_for_palette(plotly_cs)
@@ -741,7 +765,9 @@ def scatter3d_discrete_level_png_bytes(
     azim: float = -65.0,
     dpi: int = 100,
 ) -> bytes:
-    """One Matplotlib 3D frame: every row in a single discrete category (no subsampling).
+    """One Matplotlib 3D frame: every row in a single discrete category.
+
+    No subsampling.
 
     Used for server-side discrete-level GIFs. Axis limits use padded min/max on the full
     ``plot_df`` (same idea as the colour-filtered Plotly scene).
@@ -754,7 +780,8 @@ def scatter3d_discrete_level_png_bytes(
     else:
         if exp is None:
             raise ValueError(
-                "exp is required for latent-axis discrete PNG export when xyz_axes_allowed is unset."
+                "exp is required for latent-axis discrete PNG export "
+                "when xyz_axes_allowed is unset."
             )
         _validate_three_latent_axes(exp, plot_df, (xcol, ycol, zcol))
     if not color_col or color_col == "none" or color_col not in plot_df.columns:
@@ -847,7 +874,10 @@ def scatter3d_landscape_full_discrete_level_png_bytes(
     azim: float = -65.0,
     dpi: int = 100,
 ) -> bytes:
-    """Volume-landscape discrete frame (smaller markers); prefer :func:`scatter3d_discrete_level_png_bytes`."""
+    """Volume-landscape discrete frame (smaller markers).
+
+    Prefer :func:`scatter3d_discrete_level_png_bytes`.
+    """
     return scatter3d_discrete_level_png_bytes(
         plot_df,
         xcol,

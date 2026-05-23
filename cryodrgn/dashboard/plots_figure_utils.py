@@ -110,7 +110,10 @@ def _subsample_preserving_sketch_centroids(
 def _scatter3d_marker_size_opacity(
     n_points: int, *, point_cap: int
 ) -> tuple[float, float]:
-    """Scale 3D point glyphs for readability — larger / more opaque when fewer points."""
+    """Scale 3D point glyphs for readability.
+
+    Larger / more opaque when fewer points.
+    """
     n = max(1, int(n_points))
     hi_n = float(max(2, int(point_cap)))
     if n >= hi_n:
@@ -149,7 +152,9 @@ def plot_df_row_indices_for_explorer_scatter(
     *,
     seed: int = 0,
 ) -> np.ndarray:
-    """``plot_df`` row positions shown in the particle explorer scatter (``api_scatter`` defaults).
+    """``plot_df`` row positions shown in the particle explorer scatter.
+
+    Matches ``api_scatter`` defaults.
 
     Matches :func:`scatter_json` / ``api_scatter`` when the request does not set
     ``filter_ui`` or ``full`` — same ``max_points`` cap and fixed RNG ``seed``.
@@ -157,7 +162,8 @@ def plot_df_row_indices_for_explorer_scatter(
     Returns
     -------
     np.ndarray
-        Integer indices into ``plot_df`` (same as ``customdata[:, 1]`` for those points).
+        Integer indices into ``plot_df`` (same as ``customdata[:, 1]`` for
+        those points).
     """
     _, row_indices = _subsample(plot_df, max_points, seed=seed)
     return row_indices

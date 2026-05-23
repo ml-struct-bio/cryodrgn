@@ -1,4 +1,7 @@
-"""Volume-space PCA scatter and ChimeraX animations for ``analyze_landscape`` outputs."""
+"""Volume-space PCA scatter and ChimeraX animations.
+
+For ``analyze_landscape`` outputs.
+"""
 
 from __future__ import annotations
 
@@ -66,7 +69,8 @@ LANDSCAPE_ANIM_MAX_CYCLE = 50
 LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT = 20
 _LANDSCAPE_VIEW_ROTATION_AXES: tuple[str, ...] = ("x", "y", "z")
 
-# Vol-PCA scatter: legacy 9 → −13%; match dashboard 3D (+30% size, −20% opacity vs that base).
+# Vol-PCA scatter: legacy 9 → −13%; match dashboard 3D
+# (+30% size, −20% opacity vs that base).
 _VOLSKETCH_SCATTER_MARKER = float(9 * (1.0 - 0.13) * 1.3)
 _VOLSKETCH_SCATTER_OPACITY = float(min(0.98, 0.75 * 0.8))
 
@@ -140,7 +144,10 @@ def resolve_kmeans_sketch_bundle(landscape_dir: str) -> tuple[int, str]:
 
 
 def landscape_analysis_ready(workdir: str, epoch: int) -> bool:
-    """True when ``landscape.{epoch}`` exists and has a matching ``vol_pca_*`` + ``kmeans*`` bundle."""
+    """True when ``landscape.{epoch}`` exists with vol_pca + kmeans bundle.
+
+    Requires a matching ``vol_pca_*`` + ``kmeans*`` pair.
+    """
     try:
         resolve_kmeans_sketch_bundle(landscape_dir_for_epoch(workdir, int(epoch)))
     except FileNotFoundError:
@@ -149,7 +156,10 @@ def landscape_analysis_ready(workdir: str, epoch: int) -> bool:
 
 
 def kmeans_sorted_vol_indices(kmeans_dir: str) -> list[int]:
-    """Sorted numeric indices for ``vol_NNN.mrc`` sketch maps only (excludes ``vol_mean.mrc``, etc.)."""
+    """Sorted numeric indices for ``vol_NNN.mrc`` sketch maps only.
+
+    Excludes ``vol_mean.mrc`` and similar non-indexed maps.
+    """
     if not os.path.isdir(kmeans_dir):
         return []
     idx: list[int] = []
@@ -211,7 +221,10 @@ def landscape_vol_state_hex_by_vol_index(
     kmeans_dir: str,
     k_sketch: int,
 ) -> dict[int, str] | None:
-    """Vol index (``11`` for ``vol_011.mrc``) → fill hex, matching state scatter colors."""
+    """Vol index (``11`` for ``vol_011.mrc``) → fill hex.
+
+    Matches state scatter colors.
+    """
     states = load_sketch_state_labels(landscape_dir)
     if states is None:
         return None
@@ -354,7 +367,10 @@ def _sketch_continuous_covariate_per_volume_values(
     pcm: str,
     vol_ids: list[int],
 ) -> tuple[np.ndarray, float, float] | None:
-    """Per sketch-volume covariate floats + global vmin/vmax (aligned with 3D volume landscape scatter)."""
+    """Per sketch-volume covariate floats + global vmin/vmax.
+
+    Aligned with 3D volume landscape scatter.
+    """
     pcm = (pcm or "").strip()
     pl = pcm.lower()
     if pl in ("none", "state", "labels"):
@@ -466,7 +482,10 @@ def sketch_vol_marker_hex_by_vol_index(
     color_mode: str,
     continuous_palette: str | None = None,
 ) -> dict[int, str]:
-    """Sketch volume id → marker fill hex (same logic as the scatter); used for preview badge fills."""
+    """Sketch volume id → marker fill hex (same logic as the scatter).
+
+    Used for preview badge fills.
+    """
     k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
     pc = load_vol_pca_matrix(landscape_dir, k_sketch)
     n = int(pc.shape[0])
@@ -527,7 +546,10 @@ def sketch_vol_color_covariate_overlay_text(
     plot_color_mode: str,
     vol_index: int,
 ) -> str | None:
-    """Display string for the plot color column at this sketch volume (preview badge)."""
+    """Display string for the plot color column at this sketch volume.
+
+    Used for preview badge text.
+    """
     pcm = (plot_color_mode or "none").strip()
     pl = pcm.lower()
     if pl == "none":
@@ -618,7 +640,10 @@ def sketch_vol_rotate_frames_covariate_overlay(
     gif_frames: int,
     continuous_palette: str | None,
 ) -> dict[str, Any] | None:
-    """Per-frame covariate text + palette hex for rotate-each GIF previews (continuous colour only)."""
+    """Per-frame covariate text + palette hex for rotate-each GIF previews.
+
+    Continuous colour only.
+    """
     pcm = (plot_color_mode or "none").strip()
     if not _plot_color_mode_is_continuous_numeric(
         exp, pcm, landscape_dir=landscape_dir
@@ -950,14 +975,20 @@ atexit.register(clear_landscape_animation_cache)
 
 
 def _landscape_cycle_gif_timing(frames_per_vol: int) -> tuple[int, int]:
-    """Clamp ``frames_per_vol`` and return ``(frames_per_vol, duration_ms_per_frame)`` for cycle GIFs."""
+    """Clamp ``frames_per_vol`` and return cycle GIF timing.
+
+    Returns ``(frames_per_vol, duration_ms_per_frame)``.
+    """
     fpv = max(2, min(int(frames_per_vol), 30))
     duration_ms = max(30, int(800 / fpv))
     return fpv, duration_ms
 
 
 def _gif_first_frame_to_png(gif_path: str, out_png: str) -> None:
-    """Save frame 0 of an animated GIF as a PNG (e.g. rotate preview → cycle keyframe)."""
+    """Save frame 0 of an animated GIF as a PNG.
+
+    E.g. rotate preview → cycle keyframe.
+    """
     from PIL import Image
 
     with Image.open(gif_path) as im:
@@ -971,7 +1002,10 @@ def _cycle_gif_from_png_paths(
     *,
     cycle_frames_per_vol: int,
 ) -> None:
-    """Hold each static PNG for ``frames_per_vol`` GIF frames (one ChimeraX view per volume)."""
+    """Hold each static PNG for ``frames_per_vol`` GIF frames.
+
+    One ChimeraX view per volume.
+    """
     from PIL import Image
 
     fpv, duration_ms = _landscape_cycle_gif_timing(cycle_frames_per_vol)
@@ -1179,7 +1213,10 @@ def generate_landscape_volume_animations(
         )
 
     def _vol_chimerax_color(vol: int) -> str:
-        """Solid colour for ChimeraX ``volume color`` — align with scatter / preview badges."""
+        """Solid colour for ChimeraX ``volume color``.
+
+        Align with scatter / preview badges.
+        """
         from cryodrgn.dashboard.particle_explorer import chimerax_volume_color_spec
 
         if vol_state_hex is not None:
@@ -1444,7 +1481,10 @@ def save_landscape_animations(
     exp: DashboardExperiment,
     landscape_epoch: int,
 ) -> list[str]:
-    """Copy GIFs from the temp batch to ``out_dir`` (default: landscape kmeans folder)."""
+    """Copy GIFs from the temp batch to ``out_dir``.
+
+    Default destination: landscape kmeans folder.
+    """
     landscape_dir = landscape_dir_for_epoch(exp.workdir, landscape_epoch)
     k_sketch, kmeans_dir = resolve_kmeans_sketch_bundle(landscape_dir)
 
@@ -1488,7 +1528,10 @@ def save_landscape_animations(
 
 
 def meta_for_api(exp: DashboardExperiment) -> dict[str, Any]:
-    """JSON-serializable summary for the volume sketched landscape explorer (current epoch)."""
+    """JSON-serializable summary for the volume sketched landscape explorer.
+
+    Uses the current epoch.
+    """
     epochs = list_landscape_epochs(exp.workdir)
     if not epochs:
         return {"ok": False, "error": "No landscape.N directories found.", "epochs": []}

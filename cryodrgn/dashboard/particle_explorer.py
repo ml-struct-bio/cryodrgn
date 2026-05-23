@@ -1,4 +1,7 @@
-"""On-demand decoder volumes + ChimeraX static PNGs and rotating GIFs for the particle explorer."""
+"""On-demand decoder volumes + ChimeraX static PNGs and rotating GIFs.
+
+For the particle explorer.
+"""
 
 from __future__ import annotations
 
@@ -33,7 +36,10 @@ _MONTAGE_SAFE_LETTERS: tuple[str, ...] = tuple(
 
 
 def montage_cell_label(idx: int) -> str:
-    """Montage-style label for linear index ``idx`` (0-based), matching the particle explorer grid."""
+    """Montage-style label for linear index ``idx`` (0-based).
+
+    Matches the particle explorer grid.
+    """
     idx = int(idx)
     if idx < 0:
         raise ValueError("montage_cell_label idx must be non-negative")
@@ -49,7 +55,10 @@ _CHIMERAX_MATRIX_NUM_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\
 
 
 def chimerax_view_matrix_camera_arg(text: str | None) -> str | None:
-    """Parse UI/API matrix text into comma-separated floats for ``view matrix camera``."""
+    """Parse UI/API matrix text into comma-separated floats.
+
+    For ``view matrix camera``.
+    """
     if text is None:
         return None
     raw = str(text).strip()
@@ -204,7 +213,10 @@ def volume_cell_gif_from_cache(
     gif_frames: int = DEFAULT_GIF_FRAMES,
     chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
 ) -> bytes:
-    """One rotating GIF from a .mrc path kept after :func:`generate_montage_volume_pngs`."""
+    """One rotating GIF from a .mrc path kept after montage PNG generation.
+
+    See :func:`generate_montage_volume_pngs`.
+    """
     gif_frames = max(4, min(int(gif_frames), 120))
     chimerax_cpus = max(1, min(int(chimerax_cpus), 32))
     with _VOL_CACHE_LOCK:
@@ -293,7 +305,10 @@ def chimerax_path() -> str:
 def run_chimerax_cmds(
     cmds: list[str], *, catch_errors: bool = False
 ) -> tuple[str, str]:
-    """Run ChimeraX offscreen with semicolon-separated commands (see pipelines/tile.py)."""
+    """Run ChimeraX offscreen with semicolon-separated commands.
+
+    See ``pipelines/tile.py``.
+    """
     cx = chimerax_path()
     joined = " ; ".join(cmds)
     proc = subprocess.run(
@@ -646,7 +661,10 @@ def mrc_to_rotating_gif(
     view_matrix_camera: str | None = None,
     report_view_matrix: bool = False,
 ) -> str | None:
-    """ChimeraX renders each rotation frame; assemble an animated GIF (cf. pipelines/tile.py)."""
+    """ChimeraX renders each rotation frame; assemble an animated GIF.
+
+    Cf. ``pipelines/tile.py``.
+    """
     from PIL import Image
 
     gif_frames = max(4, int(gif_frames))

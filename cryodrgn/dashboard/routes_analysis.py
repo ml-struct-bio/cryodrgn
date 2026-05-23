@@ -76,7 +76,10 @@ logger = logging.getLogger(__name__)
 
 
 def pairplot_page():
-    """Pair-grid UI: latent vs latent with chosen color covariate (needs PCA + numeric color column)."""
+    """Pair-grid UI: latent vs latent with chosen color covariate.
+
+    Needs PCA + numeric color column.
+    """
     e: DashboardExperiment = g.dashboard_exp
     zdim = int(e.z.shape[1])
     if zdim < 2:
@@ -116,7 +119,10 @@ def pairplot_page():
 
 
 def api_pairplot():
-    """Render the z-dimensional pair grid to an in-memory PNG; returns base64 + cell layout JSON."""
+    """Render the z-dimensional pair grid to an in-memory PNG.
+
+    Returns base64 + cell layout JSON.
+    """
     e: DashboardExperiment = g.dashboard_exp
     payload = _request_json_dict()
     try:
@@ -599,7 +605,8 @@ def api_landscape_volpca_scatter():
             return (
                 jsonify(
                     error=(
-                        "Agglomerative state coloring is not available for this landscape."
+                        "Agglomerative state coloring is not available "
+                        "for this landscape."
                     ),
                 ),
                 400,
@@ -719,7 +726,10 @@ def api_landscape_volpca_generate_animations():
 
 
 def api_landscape_volpca_save_animations():
-    """Persist generated GIF bytes from ``generate_animations`` to disk (JSON: token, out_dir)."""
+    """Persist generated GIF bytes from ``generate_animations`` to disk.
+
+    JSON body: token, out_dir.
+    """
     e: DashboardExperiment = g.dashboard_exp
     data = _request_json_dict()
     token = data.get("token")

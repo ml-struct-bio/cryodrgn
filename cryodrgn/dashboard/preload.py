@@ -46,7 +46,10 @@ def explorer_cache_size_power10_step(scatter_plotted_point_count: int) -> int:
 
 
 def explorer_initial_preload_image_limit(scatter_plotted_point_count: int) -> int:
-    """Default first-build cache size: :func:`explorer_cache_size_power10_step` capped by plotted *n*."""
+    """Default first-build cache size.
+
+    :func:`explorer_cache_size_power10_step` capped by plotted *n*.
+    """
     n = max(0, int(scatter_plotted_point_count))
     if n == 0:
         return 1
@@ -160,13 +163,17 @@ def particle_thumbnail_b64_from_row(
         return None
 
 
-# k-th NN distance for outlier scoring; grid sizing uses sqrt(n_outlier * factor) bins per axis.
+# k-th NN distance for outlier scoring; grid sizing uses
+# sqrt(n_outlier * factor) bins per axis.
 _PRELOAD_KNN_OUTLIER_K = 10
 _PRELOAD_SPACING_BIN_FACTOR = 2.0
 
 
 def _kth_nn_distances(coords: np.ndarray, k: int) -> np.ndarray:
-    """Per-point distance to the *k*-th nearest neighbor in 2-D (requires ``k < n_points``)."""
+    """Per-point distance to the *k*-th nearest neighbor in 2-D.
+
+    Requires ``k < n_points``.
+    """
     from scipy.spatial import cKDTree
 
     m = int(coords.shape[0])
@@ -190,7 +197,10 @@ def _grid_spaced_outlier_pick(
     *,
     n_bins: int,
 ) -> list[int]:
-    """Take up to ``want`` local indices: prefer high scores, at most one per grid cell."""
+    """Take up to ``want`` local indices.
+
+    Prefer high scores, at most one per grid cell.
+    """
     m = int(coords.shape[0])
     if want <= 0 or m == 0:
         return []
@@ -238,7 +248,10 @@ def _hybrid_random_knn_spaced_local_indices(
     k_nn: int = _PRELOAD_KNN_OUTLIER_K,
     spacing_bin_factor: float = _PRELOAD_SPACING_BIN_FACTOR,
 ) -> set[int]:
-    """``total_k`` local indices: half uniform random, half high k-NN distance with XY grid spacing."""
+    """``total_k`` local indices: half uniform random, half high k-NN distance.
+
+    XY grid spacing applied to the k-NN half.
+    """
     m = int(coords.shape[0])
     if m == 0:
         return set()

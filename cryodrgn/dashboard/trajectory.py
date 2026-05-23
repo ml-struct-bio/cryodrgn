@@ -113,7 +113,10 @@ def trajectory_axes_from_payload(e: DashboardExperiment, data: dict) -> tuple[st
 
 
 def parse_int_from_dict(data: dict, key: str, *, default: int, lo: int, hi: int) -> int:
-    """Coerce ``data[key]`` to an int; clamp to ``[lo, hi]``; fall back to ``default``."""
+    """Coerce ``data[key]`` to an int.
+
+    Clamp to ``[lo, hi]``; fall back to ``default``.
+    """
     try:
         v = int(data.get(key, default))
     except (TypeError, ValueError):
@@ -390,7 +393,10 @@ def _compute_graph_anchor_trajectory(
 
 
 def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
-    """Validate a trajectory POST JSON body (shared by coords-only and volume decode)."""
+    """Validate a trajectory POST JSON body.
+
+    Shared by coords-only and volume decode.
+    """
     raw_anchors = data.get("anchor_indices")
     if isinstance(raw_anchors, list) and len(raw_anchors) >= 2:
         try:
@@ -459,7 +465,8 @@ def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
     xcol, ycol = trajectory_axes_from_payload(e, data)
     if mode == "direct" and not _trajectory_xy_ok_for_direct(xcol, ycol):
         raise ValueError(
-            "Direct traversal is only available for principal-component or z latent axes."
+            "Direct traversal is only available for principal-component "
+            "or z latent axes."
         )
     n_points = parse_traj_points_value(data, default=4)
     return {

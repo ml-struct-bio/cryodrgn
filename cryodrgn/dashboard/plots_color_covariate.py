@@ -136,7 +136,10 @@ def _labels_colors_and_legend_items(
 
 
 def covariate_row_filter_key(color_col: str, u: Any) -> str:
-    """Stable string key for a covariate value (matches dashboard scatter customdata)."""
+    """Stable string key for a covariate value.
+
+    Matches dashboard scatter customdata.
+    """
     if pd.isna(u):
         return "__na__"
     if color_col == "labels":
@@ -202,7 +205,10 @@ def _stable_discrete_covariate_hex_map(
     color_col: str,
     discrete_label_colors: dict[str, str] | None,
 ) -> dict[str, str]:
-    """Filter-key → marker hex; palette order matches :func:`covariate_legend_context_payload`."""
+    """Filter-key → marker hex.
+
+    Palette order matches :func:`covariate_legend_context_payload`.
+    """
     raw_full = plot_df[color_col]
     _, uniques_f = pd.factorize(raw_full, sort=True)
     pal = _dashboard_chimerax_colors(max(len(uniques_f), 1))
@@ -239,7 +245,10 @@ def _scatter_discrete_marker_arrays(
     color_col: str,
     discrete_label_colors: dict[str, str] | None,
 ) -> tuple[list[str], list[str]]:
-    """Per-row ChimeraX hex colours + covariate filter keys for Plotly ``marker.color`` / ``customdata``."""
+    """Per-row ChimeraX hex colours + covariate filter keys.
+
+    For Plotly ``marker.color`` / ``customdata``.
+    """
     lookup = _stable_discrete_covariate_hex_map(
         plot_df, color_col, discrete_label_colors
     )

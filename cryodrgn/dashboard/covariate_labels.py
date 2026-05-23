@@ -12,7 +12,7 @@ def landscape_vol_pc_pretty_label(
     pc_index_1_based: int,
     explained_variance_ratio: np.ndarray | Sequence[float] | None,
 ) -> str:
-    """Label for a volume PCA component, e.g. ``Vol PC2 (14.2%)`` when ratios are known."""
+    """Label for a volume PCA component, e.g. ``Vol PC2 (14.2%)`` if ratios known."""
     i = int(pc_index_1_based)
     base = f"Vol PC{i}"
     if explained_variance_ratio is None or i < 1:
@@ -31,7 +31,7 @@ def landscape_vol_pc_column_pretty_label(
     column: str,
     explained_variance_ratio: np.ndarray | Sequence[float] | None,
 ) -> str:
-    """Pretty label for ``landscape_vol_PC*`` columns; other names returned unchanged."""
+    """Pretty label for ``landscape_vol_PC*`` columns; other names left unchanged."""
     m = re.fullmatch(r"landscape_vol_PC(\d+)", str(column))
     if not m:
         return str(column)

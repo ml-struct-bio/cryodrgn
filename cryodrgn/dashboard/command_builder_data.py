@@ -35,7 +35,7 @@ Schema = dict[str, list[Group]]
 
 
 def default_outdir_for_command(cmd: str, workdir: str | None = None) -> str:
-    """Default ``-o`` / ``--outdir`` value: ``001_<cmd>``, optionally under *workdir*."""
+    """Default ``-o`` / ``--outdir``: ``001_<cmd>``, optionally under ``workdir``."""
     leaf = f"001_{cmd}"
     return os.path.join(workdir, leaf) if workdir else leaf
 
@@ -44,7 +44,8 @@ def _g(title: str, args: list[Arg], description: str = "") -> Group:
     return {"title": title, "args": args, "description": description}
 
 
-# Short blurbs for GitHub Pages group cards (also used when ``description`` is omitted on a group).
+# Short blurbs for GitHub Pages group cards
+# (also used when ``description`` is omitted on a group).
 COMMAND_BUILDER_GROUP_DESCRIPTIONS: dict[str, str] = {
     "Checkpoint & seed": "Restart from saved weights or poses; set RNG seed and verbosity.",
     "Dataset loading": "Particle subsets, datadir layout, lazy I/O, and RELION options.",
@@ -1074,7 +1075,7 @@ def _filter_groups_to_help_map(
 
 
 def _build_abinit_het_old_groups() -> list[Group]:
-    """Schema for deprecated ``cryodrgn abinit_het_old`` (VAE + hierarchical pose search)."""
+    """Schema for deprecated ``abinit_het_old`` (VAE + hierarchical pose search)."""
     groups = _remap_group_ids(TRAIN_VAE_GROUPS, "vae_", "ahet_")
     groups = [g for g in groups if g["title"] != "Pose SGD"]
     pose_search = _g(

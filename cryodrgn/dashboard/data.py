@@ -1,4 +1,7 @@
-"""Load heterogeneous-reconstruction outputs for dashboard UIs (mirrors `filter` command)."""
+"""Load heterogeneous-reconstruction outputs for dashboard UIs.
+
+Mirrors the ``filter`` command for the dashboard pages.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +21,8 @@ from cryodrgn.dataset import ImageDataset, TiltSeriesData
 
 
 def list_z_epochs(workdir: str) -> list[int]:
-    """Return sorted epochs with both ``z.{{epoch}}.pkl`` and ``analyze.{{epoch}}/`` under ``workdir``."""
+    """Sorted epochs with both ``z.{{epoch}}.pkl`` and ``analyze.{{epoch}}/``
+    under ``workdir``."""
     if not os.path.isdir(workdir):
         return []
     out: list[int] = []
@@ -36,7 +40,10 @@ def list_z_epochs(workdir: str) -> list[int]:
 
 
 def discover_analyzed_workdirs(parent: str) -> list[str]:
-    """Direct subfolders of ``parent`` with at least one analyzed epoch (``z.N.pkl`` + ``analyze.N/``)."""
+    """Direct subfolders of ``parent`` with at least one analyzed epoch.
+
+    Each candidate must have a ``z.N.pkl`` next to an ``analyze.N/`` folder.
+    """
     if not os.path.isdir(parent):
         return []
     out: list[str] = []
@@ -74,7 +81,10 @@ class DashboardExperiment:
 
     @cached_property
     def numeric_columns(self) -> list[str]:
-        """Numeric ``plot_df`` columns except ``index`` (cached per instance; ``plot_df`` is fixed after load)."""
+        """Numeric ``plot_df`` columns except ``index``.
+
+        Cached per instance; ``plot_df`` is fixed after load.
+        """
         return [
             c
             for c in self.plot_df.select_dtypes(include=[np.number]).columns
@@ -114,8 +124,8 @@ def load_experiment(
         analyzed = list_z_epochs(workdir)
         if not analyzed:
             raise ValueError(
-                "No epochs with analysis outputs — run `cryodrgn analyze` for at least one epoch "
-                f"(need {workdir}/analyze.N/ next to z.N.pkl)."
+                "No epochs with analysis outputs — run `cryodrgn analyze` for at "
+                f"least one epoch (need {workdir}/analyze.N/ next to z.N.pkl)."
             )
         epoch = max(analyzed)
 

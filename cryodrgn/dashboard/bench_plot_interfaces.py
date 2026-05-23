@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Time initial plot payloads for each dashboard analysis view (same paths as the Flask app).
+"""Time initial plot payloads for each dashboard analysis view.
+
+Uses the same code paths as the Flask app.
 
 Usage::
     python -m cryodrgn.dashboard.bench_plot_interfaces /path/to/train_outdir
 
 Uses CRYODRGN_DASHBOARD_FILTER_MAX_POINTS like ``/api/scatter?filter_ui=1``.
 """
+
 from __future__ import annotations
 
 import argparse

@@ -27,6 +27,8 @@ from cryodrgn.dashboard.data import discover_analyzed_workdirs, list_z_epochs
 
 # Scatter caps: re-exported for tests that
 # use ``from cryodrgn.dashboard import app`` (logic in route_helpers).
+from cryodrgn.dashboard import routes_analysis as ra
+from cryodrgn.dashboard import routes_explorer as re
 from cryodrgn.dashboard.route_helpers import (
     _filter_ui_scatter_max_points,
     _particle_explorer_scatter_cap_from_env,
@@ -41,8 +43,6 @@ __all__ = [
     "_particle_explorer_scatter_cap_from_env",
     "_particle_explorer_scatter_max_points",
 ]
-from cryodrgn.dashboard import routes_analysis as ra
-from cryodrgn.dashboard import routes_explorer as re
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ def create_app(
     cpus: int = 4,
     discovery_root: str | None = None,
 ) -> Flask:
-    """Construct the Flask app: config, discovery mode, ``before_request``, and all routes."""
+    """Construct the Flask app: config, discovery mode, ``before_request``, routes."""
     app = Flask(
         __name__,
         template_folder=_TEMPLATE_DIR,

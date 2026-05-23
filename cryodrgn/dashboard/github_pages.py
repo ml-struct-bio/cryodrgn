@@ -136,7 +136,8 @@ def _adapt_html_for_github_pages(html: str, base_path: str, repo_url: str) -> st
         f'<a href="{repo_url}">{repo_url.removeprefix("https://")}</a></p>'
     )
     html = html.replace("<main>", f"{note}\n  <main>", 1)
-    # ``base.html`` workdir/epoch handlers are dashboard-only; disable on static hosting.
+    # ``base.html`` workdir/epoch handlers are dashboard-only;
+    # disable on static hosting.
     html = html.replace('fetch("/api/set_workdir"', 'fetch("#"')
     html = html.replace('fetch("/api/set_epoch"', 'fetch("#"')
     return html
@@ -236,12 +237,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--base-path",
         default=None,
-        help="GitHub Pages project base path (default: /$REPO_NAME/ from GITHUB_REPOSITORY)",
+        help=(
+            "GitHub Pages project base path "
+            "(default: /$REPO_NAME/ from GITHUB_REPOSITORY)"
+        ),
     )
     parser.add_argument(
         "--repo-url",
         default=None,
-        help="repository URL for nav link (default: https://github.com/$GITHUB_REPOSITORY)",
+        help=(
+            "repository URL for nav link "
+            "(default: https://github.com/$GITHUB_REPOSITORY)"
+        ),
     )
     args = parser.parse_args(argv)
     build_github_pages_site(

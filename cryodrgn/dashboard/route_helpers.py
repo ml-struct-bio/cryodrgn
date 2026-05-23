@@ -76,7 +76,10 @@ def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
 
 
 def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str | None]:
-    """Parse ``preselect_rows`` query (comma-separated ints). Returns ``(rows, err)``."""
+    """Parse ``preselect_rows`` query (comma-separated ints).
+
+    Returns ``(rows, err)``.
+    """
     s = (raw or "").strip()
     if not s:
         return None, None

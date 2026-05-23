@@ -52,7 +52,10 @@ _PAIR_GRID_RIGHT_PLACEHOLDER = _PAIR_GRID_RIGHT
 
 
 def _pair_jointplot_hex_cmap(color: str | None = None):
-    """Same sequential colormap as ``sns.jointplot(..., kind=\"hex\")`` (default ``color``)."""
+    """Same sequential colormap as ``sns.jointplot(..., kind=\"hex\")``.
+
+    Uses default ``color`` when omitted.
+    """
     if color is None:
         color = "C0"
     color_rgb = mcolors.to_rgb(color)
@@ -133,7 +136,10 @@ def pair_grid_skeleton_placeholder_layout(
 
 
 def pair_grid_margin_fractions_for_js() -> dict[str, float]:
-    """Figure-edge parameters for pair-plot skeleton labels (aligned with ``_draw_pair_grid_edge_labels``)."""
+    """Figure-edge parameters for pair-plot skeleton labels.
+
+    Aligned with ``_draw_pair_grid_edge_labels``.
+    """
     edge_gap = 0.008
     return {
         "left_m": float(_PAIR_GRID_LEFT),
@@ -146,7 +152,10 @@ def pair_grid_margin_fractions_for_js() -> dict[str, float]:
 
 
 def pair_grid_figure_aspect_ratio(zdim: int) -> float:
-    """Figure width ÷ height for :func:`pair_grid_png` (stable layout before the PNG loads)."""
+    """Figure width ÷ height for :func:`pair_grid_png`.
+
+    Stable layout before the PNG loads.
+    """
     if zdim < 1:
         return 1.0
     inch_per = max(2.45, min(3.35, 13.0 / max(zdim, 1)))
@@ -304,9 +313,12 @@ def pair_grid_png(
     color_filter: dict[str, Any] | None = None,
     discrete_label_colors: dict[str, str] | None = None,
 ) -> tuple[bytes, list[dict[str, float]]]:
-    """z_dim × z_dim Matplotlib grid (square cells); upper hex matches ``sns.jointplot(..., kind=\"hex\")``.
+    """z_dim × z_dim Matplotlib grid (square cells).
 
-    Returns PNG bytes and per-cell axis bboxes in figure coordinates (for HTML overlay alignment).
+    Upper hex matches ``sns.jointplot(..., kind=\"hex\")``.
+
+    Returns PNG bytes and per-cell axis bboxes in figure coordinates
+    (for HTML overlay alignment).
     """
     mpl_cmap = mpl_cmap_for_palette(normalize_continuous_palette(continuous_palette))
     full_df = exp.plot_df
@@ -407,7 +419,8 @@ def pair_grid_png(
     else:
         if bool(pd.to_numeric(raw_color, errors="coerce").isna().all()):
             raise ValueError(
-                f"Lower-triangle color column `{lower_color_col}` has no numeric values."
+                f"Lower-triangle color column `{lower_color_col}` "
+                f"has no numeric values."
             )
         _, cmin, cmax = _continuous_series_stats(full_df[lower_color_col])
         color_num = cast(pd.Series, pd.to_numeric(raw_color, errors="coerce"))
@@ -562,7 +575,8 @@ def pair_grid_png(
 
                 ax.set_xticks([])
                 ax.set_yticks([])
-                # Freeze axes to the unfiltered table so legend selections only subset points.
+                # Freeze axes to the unfiltered table so legend selections
+                # only subset points.
                 if i == j:
                     xl, yl = _pair_grid_square_xy_limits(emb_x_lim, emb_y_lim)
                     ax.set_xlim(xl[0], xl[1])
@@ -571,7 +585,8 @@ def pair_grid_png(
                     xl, yl = _pair_grid_square_xy_limits(z_axis_lim[j], z_axis_lim[i])
                     ax.set_xlim(xl[0], xl[1])
                     ax.set_ylim(yl[0], yl[1])
-                # Equal data aspect without shrinking panels unevenly (``box`` gives ragged cell sizes).
+                # Equal data aspect without shrinking panels unevenly
+                # (``box`` gives ragged cell sizes).
                 ax.set_aspect("equal", adjustable="datalim")
                 ax.set_box_aspect(1)
                 ax.set_facecolor(_DASHBOARD_CREAM)
@@ -611,7 +626,8 @@ def pair_grid_png(
         cell_layout = _axes_cell_bboxes(np.asarray(axes))
 
         buf = io.BytesIO()
-        # Full figure bbox (no tight crop) so figure fractions match PNG pixels for the overlay.
+        # Full figure bbox (no tight crop) so figure fractions match
+        # PNG pixels for the overlay.
         fig.savefig(
             buf,
             format="png",

@@ -1,4 +1,7 @@
-"""HTTP routes: landing, explorer, latent 3-D, pair-grid-adjacent APIs through preload."""
+"""HTTP routes: landing, explorer, latent 3-D, pair-grid-adjacent APIs.
+
+Through preload.
+"""
 
 from __future__ import annotations
 
@@ -94,7 +97,7 @@ logger = logging.getLogger(__name__)
 def _scatter3d_no_subsample_for_discrete_gif_frame(
     payload: dict, color_filter: dict | None
 ) -> bool:
-    """Return True when the client is capturing one discrete level at a time for a GIF."""
+    """Return True when the client captures one discrete level per GIF frame."""
     if not payload.get("discrete_level_gif_frame"):
         return False
     if not color_filter or color_filter.get("kind") != "discrete":
@@ -106,20 +109,24 @@ def _scatter3d_no_subsample_for_discrete_gif_frame(
 def _landscape_full_vol_pc_explained_variance(
     workdir: str, epoch: int
 ) -> np.ndarray | None:
-    """Explained variance ratios from ``landscape.{epoch}/vol_pca_obj.pkl``, if present."""
+    """Explained variance ratios from ``landscape.{epoch}/vol_pca_obj.pkl``.
+
+    Returns None when missing.
+    """
     return load_pca_explained_variance(landscape_dir_for_epoch(workdir, int(epoch)))
 
 
 _LEAD_LATENT_3D = (
-    '<p class="cryo-dash-lead">Each point is a particle in the space of three latent coordinates '
-    "you choose (drag to rotate, scroll to zoom). Optional colour encodes another quantity from "
-    "the analysis table. Use the histogram or discrete toggles in the legend beside the plot to "
-    "filter particles.</p>"
+    '<p class="cryo-dash-lead">Each point is a particle in the space of '
+    "three latent coordinates you choose (drag to rotate, scroll to zoom). "
+    "Optional colour encodes another quantity from the analysis table. "
+    "Use the histogram or discrete toggles in the legend beside the plot "
+    "to filter particles.</p>"
 )
 
 _LATENT_3D_AXES_NOTE = (
-    '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Pick three <strong>different</strong> coordinates '
-    "(z0, z1, …).</p>"
+    '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">'
+    "Pick three <strong>different</strong> coordinates (z0, z1, …).</p>"
 )
 
 # ---------------------------------------------------------------------------
@@ -128,7 +135,10 @@ _LATENT_3D_AXES_NOTE = (
 
 
 def index():
-    """Landing page: feature flags and links depend on workdir / GPU / landscape outputs."""
+    """Landing page: feature flags and links.
+
+    Depends on workdir / GPU / landscape outputs.
+    """
     if not active_workdir(current_app):
         return render_template(
             "index.html",
@@ -156,7 +166,10 @@ def index():
 
 
 def command_builder_page():
-    """CryoDRGN CLI command builder (optional experiment defaults when a workdir is selected)."""
+    """CryoDRGN CLI command builder.
+
+    Optional experiment defaults when a workdir is selected.
+    """
     e: DashboardExperiment | None = None
     if active_workdir(current_app):
         e = g.dashboard_exp
@@ -177,7 +190,10 @@ def filter_page_redirect():
 
 
 def api_save_selection():
-    """Persist selected ``plot_df`` rows as a dataset-index pickle (and optional inverse)."""
+    """Persist selected ``plot_df`` rows as a dataset-index pickle.
+
+    Optional inverse index included when requested.
+    """
     e: DashboardExperiment = g.dashboard_exp
     data = _request_json_dict()
     rows_raw = data.get("rows")
@@ -287,7 +303,10 @@ def api_covariate_threshold_rows():
 
 
 def api_covariate_legend_context():
-    """Histogram sample or discrete category list for covariate colour UI (pair-grid, 3D)."""
+    """Histogram sample or discrete category list for covariate colour UI.
+
+    Used by pair-grid and 3D views.
+    """
     e: DashboardExperiment = g.dashboard_exp
     data = _request_json_dict()
     col = data.get("column")
@@ -373,7 +392,10 @@ def explorer():
 
 
 def api_explorer_volume_media():
-    """Decode montage cells to PNG or per-cell rotating GIF (ChimeraX); returns cache id for GIFs."""
+    """Decode montage cells to PNG or per-cell rotating GIF (ChimeraX).
+
+    Returns cache id for GIFs.
+    """
     e: DashboardExperiment = g.dashboard_exp
     if not explorer_volumes_eligible(e):
         return jsonify(error=_EXPLORER_VOLUMES_INELIGIBLE_MSG), 400
@@ -444,7 +466,10 @@ def api_explorer_volume_media():
 
 
 def api_scatter():
-    """Plotly JSON for the explorer / filter scatter (subsample caps via query flags)."""
+    """Plotly JSON for the explorer / filter scatter.
+
+    Subsample caps via query flags.
+    """
     e: DashboardExperiment = g.dashboard_exp
     xcol = request.args.get("x", e.numeric_columns[0])
     ycol = request.args.get("y", e.numeric_columns[0])
@@ -538,7 +563,10 @@ def latent_3d_page():
 
 
 def landscape_full_3d_page():
-    """3-D scatter of sampled particles in ``vol_pca_all.pkl`` space (optional ChimeraX GIF previews)."""
+    """3-D scatter of sampled particles in ``vol_pca_all.pkl`` space.
+
+    Optional ChimeraX GIF previews.
+    """
     e: DashboardExperiment = g.dashboard_exp
     if not landscape_full_3d_ready(e.workdir, e.epoch):
         return render_template(
@@ -561,8 +589,8 @@ def landscape_full_3d_page():
             "volume_landscape_3d_need_outputs.html",
             exp_epoch=int(e.epoch),
             error_message=(
-                "Expected at least three columns in vol_pca_all.pkl (landscape_vol_PC1 …) "
-                "for this epoch."
+                "Expected at least three columns in vol_pca_all.pkl "
+                "(landscape_vol_PC1 …) for this epoch."
             ),
         )
     dx, dy, dz = vol_axes[0], vol_axes[1], vol_axes[2]
@@ -657,14 +685,18 @@ def api_scatter3d_z():
 
 
 def api_scatter3d_z_landscape_full():
-    """Plotly JSON for 3D scatter: axes are ``vol_pca_all.pkl`` columns (``landscape_vol_PC*``)."""
+    """Plotly JSON for 3D scatter on ``vol_pca_all.pkl`` columns.
+
+    Axes are ``landscape_vol_PC*``.
+    """
     e: DashboardExperiment = g.dashboard_exp
     if not landscape_full_3d_ready(e.workdir, e.epoch):
         return (
             jsonify(
                 error=(
-                    f"Need landscape.{int(e.epoch)}/landscape_full/ with z.sampled.pkl, ind.sampled.pkl, "
-                    "and vol_pca_all.pkl (at least three PCA columns)."
+                    f"Need landscape.{int(e.epoch)}/landscape_full/ with "
+                    "z.sampled.pkl, ind.sampled.pkl, and vol_pca_all.pkl "
+                    "(at least three PCA columns)."
                 )
             ),
             400,
@@ -678,7 +710,10 @@ def api_scatter3d_z_landscape_full():
     if len(vol_axes) < 3:
         return (
             jsonify(
-                error="vol_pca_all.pkl must yield at least three landscape_vol_PC* columns in the sampled table."
+                error=(
+                    "vol_pca_all.pkl must yield at least three "
+                    "landscape_vol_PC* columns in the sampled table."
+                )
             ),
             400,
         )
@@ -799,7 +834,10 @@ def api_latent3d_preview_png():
 
 
 def api_latent3d_plot_gif_from_png_frames():
-    """Assemble base64-encoded PNG frames into an animated GIF (browser-captured Plotly views)."""
+    """Assemble base64-encoded PNG frames into an animated GIF.
+
+    Browser-captured Plotly views.
+    """
     _ = g.dashboard_exp
     data = _request_json_dict()
     frames = data.get("frames")
@@ -824,14 +862,18 @@ def api_latent3d_plot_gif_from_png_frames():
 
 
 def api_latent3d_landscape_full_discrete_gif():
-    """Discrete-level GIF via Matplotlib frames (parallel); avoids browser WebGL capture."""
+    """Discrete-level GIF via Matplotlib frames (parallel).
+
+    Avoids browser WebGL capture.
+    """
     e: DashboardExperiment = g.dashboard_exp
     if not landscape_full_3d_ready(e.workdir, e.epoch):
         return (
             jsonify(
                 error=(
-                    f"Need landscape.{int(e.epoch)}/landscape_full/ with z.sampled.pkl, ind.sampled.pkl, "
-                    "and vol_pca_all.pkl (at least three PCA columns)."
+                    f"Need landscape.{int(e.epoch)}/landscape_full/ with "
+                    "z.sampled.pkl, ind.sampled.pkl, and vol_pca_all.pkl "
+                    "(at least three PCA columns)."
                 )
             ),
             400,
@@ -845,7 +887,10 @@ def api_latent3d_landscape_full_discrete_gif():
     if len(vol_axes) < 3:
         return (
             jsonify(
-                error="vol_pca_all.pkl must yield at least three landscape_vol_PC* columns in the sampled table."
+                error=(
+                    "vol_pca_all.pkl must yield at least three "
+                    "landscape_vol_PC* columns in the sampled table."
+                )
             ),
             400,
         )

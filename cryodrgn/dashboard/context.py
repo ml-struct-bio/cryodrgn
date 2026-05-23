@@ -72,7 +72,7 @@ _RUN_LOG_HEAD_SCAN_LINES = 900
 def _run_log_cryodrgn_version(
     workdir: str,
 ) -> tuple[str | None, str | None, str | None]:
-    """Version string from training ``run.log`` (first ``cryoDRGN <semver>``-style line).
+    """Version from training ``run.log`` (first ``cryoDRGN <semver>``-style line).
 
     Returns ``(full, short, title_tooltip)``; pieces may be ``None`` if missing.
     """
@@ -118,8 +118,9 @@ _EPOCHS_BY_WORKDIR_CACHE: dict[str, list[int]] = {}
 def clear_preload_cache_for_experiment(e: object) -> int:
     """Drop explorer thumbnail preload entries for this experiment (epoch + kmeans).
 
-    Keeps preload keys from other epochs or analysis folders untouched. Matches the
-    first two components of :data:`PRELOAD_CACHE` keys: ``(epoch, kmeans_folder_id, ...)``.
+    Keeps preload keys from other epochs or analysis folders untouched. Matches
+    the first two components of :data:`PRELOAD_CACHE` keys:
+    ``(epoch, kmeans_folder_id, ...)``.
     """
     epoch = int(getattr(e, "epoch"))
     km = int(getattr(e, "kmeans_folder_id"))
@@ -201,7 +202,7 @@ def _config_has_cryodrgn_cmd(config: object) -> bool:
 
 
 def discover_cryodrgn_workdirs(cwd: str) -> list[str]:
-    """Direct subfolders of ``cwd`` with ``config.yaml`` recording a cryodrgn command."""
+    """Direct subfolders of ``cwd`` whose ``config.yaml`` records a cryodrgn command."""
     out: list[str] = []
     base = Path(cwd)
     if not base.is_dir():
@@ -285,7 +286,8 @@ def resolve_epoch(app: Flask) -> int:
     epochs = epochs_for_workdir(wd)
     if not epochs:
         raise RuntimeError("No z.N.pkl epochs in workdir.")
-    # New server process: drop stale session epoch so ``cryodrgn dashboard -e N`` applies.
+    # New server process: drop stale session epoch so ``cryodrgn dashboard -e N``
+    # applies on the first request.
     boot = app.config.get("DASHBOARD_SESSION_BOOT_ID")
     if boot and session.get("dashboard_session_boot") != boot:
         session["dashboard_session_boot"] = boot
@@ -554,7 +556,9 @@ def command_builder_template_kwargs(
             ),
             "default_poses": "",
             "command_builder_schema": COMMAND_BUILDER_SCHEMA,
-            "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
+            "command_builder_required_field_titles": (
+                COMMAND_BUILDER_REQUIRED_FIELD_TITLES
+            ),
             "command_builder_command_docs": load_command_module_docstrings(),
         }
 

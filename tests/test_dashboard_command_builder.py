@@ -15,6 +15,7 @@ from cryodrgn.dashboard.command_builder_cli_help import (
     load_command_module_docstrings,
 )
 from cryodrgn.dashboard.command_builder_data import (
+    COMMAND_BUILDER_COMMAND_KEYS,
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
     default_outdir_for_command,
@@ -74,25 +75,20 @@ class TestCommandBuilderTemplateKwargs:
 class TestCommandBuilderSchemaIntegrity:
     """Guard against drift between dashboard schema and real cryoDRGN CLIs."""
 
-    def test_schema_covers_all_four_commands(self) -> None:
-        assert set(COMMAND_BUILDER_SCHEMA.keys()) == {
-            "abinit",
-            "train_vae",
-            "train_nn",
-            "train_dec",
-        }
+    def test_schema_covers_all_commands(self) -> None:
+        assert set(COMMAND_BUILDER_SCHEMA.keys()) == set(COMMAND_BUILDER_COMMAND_KEYS)
 
     def test_groups_have_descriptions(self) -> None:
         for cmd, groups in COMMAND_BUILDER_SCHEMA.items():
             for g in groups:
                 assert g.get("description"), f"{cmd}:{g['title']} missing description"
 
-    @pytest.mark.parametrize("cmd", ["abinit", "train_vae", "train_nn", "train_dec"])
+    @pytest.mark.parametrize("cmd", list(COMMAND_BUILDER_COMMAND_KEYS))
     def test_arg_ids_are_unique(self, cmd: str) -> None:
         ids = [a["id"] for g in COMMAND_BUILDER_SCHEMA[cmd] for a in g["args"]]
         assert len(ids) == len(set(ids)), f"duplicate ids in {cmd!r}"
 
-    @pytest.mark.parametrize("cmd", ["abinit", "train_vae", "train_nn", "train_dec"])
+    @pytest.mark.parametrize("cmd", list(COMMAND_BUILDER_COMMAND_KEYS))
     def test_every_cli_flag_has_help_entry(self, cmd: str) -> None:
         """Every ``--flag`` listed in the schema must exist in the CLI help map."""
         help_map = load_cli_help_maps().get(cmd, {})
@@ -324,6 +320,9 @@ class TestGithubPagesCommandBuilder:
         assert "nav-cmd-doc-text" in html
         assert "CMD_COMMAND_DOCS" in html
         assert "heterogeneous reconstruction" in html
+        assert "abinit_het_old" in html
+        assert "abinit_homo_old" in html
+        assert 'value="001_abinit_het_old"' in html
         assert "plot.ly" not in html.lower()
         assert 'fetch("/api/set_workdir"' not in html
 

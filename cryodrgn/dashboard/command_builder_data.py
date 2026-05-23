@@ -11,6 +11,7 @@ When CLI argument groups change, update this module and
 
 from __future__ import annotations
 
+import copy
 import os
 from typing import Any
 
@@ -953,8 +954,282 @@ TRAIN_DEC_GROUPS: list[Group] = [
     ),
 ]
 
+
+def _remap_group_ids(
+    groups: list[Group], from_prefix: str, to_prefix: str
+) -> list[Group]:
+    out: list[Group] = []
+    for g in groups:
+        ng = copy.deepcopy(g)
+        for a in ng["args"]:
+            aid = a.get("id", "")
+            if aid.startswith(from_prefix):
+                a["id"] = to_prefix + aid[len(from_prefix) :]
+        out.append(ng)
+    return out
+
+
+def _arg_in_help_map(a: Arg, help_map: dict[str, str]) -> bool:
+    w = a.get("w")
+    if w == "no_amp":
+        return "--no-amp" in help_map
+    cli = a.get("cli") or []
+    return bool(cli) and any(c in help_map for c in cli)
+
+
+def _filter_groups_to_help_map(
+    groups: list[Group], help_map: dict[str, str]
+) -> list[Group]:
+    filtered: list[Group] = []
+    for g in groups:
+        args = [a for a in g["args"] if _arg_in_help_map(a, help_map)]
+        if args:
+            filtered.append({**g, "args": args})
+    return filtered
+
+
+def _build_abinit_het_old_groups() -> list[Group]:
+    """Schema for deprecated ``cryodrgn abinit_het_old`` (VAE + hierarchical pose search)."""
+    groups = _remap_group_ids(TRAIN_VAE_GROUPS, "vae_", "ahet_")
+    groups = [g for g in groups if g["title"] != "Pose SGD"]
+    pose_search = _g(
+        "Pose Search parameters",
+        [
+            {
+                "id": "ahet_l_start",
+                "cli": ["--l-start"],
+                "w": "number",
+                "placeholder": "12",
+            },
+            {
+                "id": "ahet_l_end",
+                "cli": ["--l-end"],
+                "w": "number",
+                "placeholder": "32",
+            },
+            {"id": "ahet_niter", "cli": ["--niter"], "w": "number", "placeholder": "4"},
+            {
+                "id": "ahet_t_extent",
+                "cli": ["--t-extent"],
+                "w": "text",
+                "placeholder": "10",
+            },
+            {
+                "id": "ahet_t_ngrid",
+                "cli": ["--t-ngrid"],
+                "w": "number",
+                "placeholder": "7",
+            },
+            {
+                "id": "ahet_t_xshift",
+                "cli": ["--t-xshift"],
+                "w": "text",
+                "placeholder": "0",
+            },
+            {
+                "id": "ahet_t_yshift",
+                "cli": ["--t-yshift"],
+                "w": "text",
+                "placeholder": "0",
+            },
+            {
+                "id": "ahet_pretrain_ps",
+                "cli": ["--pretrain"],
+                "w": "number",
+                "placeholder": "10000",
+            },
+            {
+                "id": "ahet_ps_freq",
+                "cli": ["--ps-freq"],
+                "w": "number",
+                "placeholder": "5",
+            },
+            {
+                "id": "ahet_nkeptposes",
+                "cli": ["--nkeptposes"],
+                "w": "number",
+                "placeholder": "8",
+            },
+            {
+                "id": "ahet_base_healpy",
+                "cli": ["--base-healpy"],
+                "w": "number",
+                "placeholder": "2",
+            },
+            {
+                "id": "ahet_pose_model_update_freq",
+                "cli": ["--pose-model-update-freq"],
+                "w": "number",
+            },
+        ],
+    )
+    for i, g in enumerate(groups):
+        if g["title"] == "Tilt series parameters":
+            g["title"] = "Tilt series"
+            g["args"].append(
+                {"id": "ahet_enc_only", "cli": ["--enc-only"], "w": "flag_true"}
+            )
+        elif g["title"] == "I/O & logging":
+            g["args"].insert(
+                1, {"id": "ahet_load_poses", "cli": ["--load-poses"], "w": "text"}
+            )
+        elif g["title"] == "Training parameters":
+            g["args"].extend(
+                [
+                    {
+                        "id": "ahet_equivariance",
+                        "cli": ["--equivariance"],
+                        "w": "text",
+                    },
+                    {
+                        "id": "ahet_eq_start_it",
+                        "cli": ["--eq-start-it"],
+                        "w": "number",
+                    },
+                    {"id": "ahet_eq_end_it", "cli": ["--eq-end-it"], "w": "number"},
+                    {
+                        "id": "ahet_l_ramp_epochs",
+                        "cli": ["--l-ramp-epochs"],
+                        "w": "number",
+                        "placeholder": "0",
+                    },
+                    {
+                        "id": "ahet_l_ramp_model",
+                        "cli": ["--l-ramp-model"],
+                        "w": "number",
+                        "placeholder": "0",
+                    },
+                    {
+                        "id": "ahet_reset_model_every",
+                        "cli": ["--reset-model-every"],
+                        "w": "number",
+                    },
+                    {
+                        "id": "ahet_reset_optim_every",
+                        "cli": ["--reset-optim-every"],
+                        "w": "number",
+                    },
+                    {
+                        "id": "ahet_reset_optim_after_pretrain",
+                        "cli": ["--reset-optim-after-pretrain"],
+                        "w": "number",
+                    },
+                ]
+            )
+            groups.insert(i + 1, pose_search)
+            break
+    hm = load_cli_help_maps().get("abinit_het_old", {})
+    return _filter_groups_to_help_map(groups, hm)
+
+
+def _build_abinit_homo_old_groups() -> list[Group]:
+    """Schema for deprecated ``cryodrgn abinit_homo_old`` (homo NN + pose search)."""
+    groups = _remap_group_ids(TRAIN_NN_GROUPS, "nn_", "ahom_")
+    groups = [g for g in groups if g["title"] != "Pose SGD"]
+    tilt = _g(
+        "Tilt series",
+        [
+            {"id": "ahom_tilt", "cli": ["--tilt"], "w": "text"},
+            {
+                "id": "ahom_tilt_deg",
+                "cli": ["--tilt-deg"],
+                "w": "text",
+                "placeholder": "45",
+            },
+        ],
+    )
+    pose_search = _g(
+        "Pose search parameters",
+        [
+            {
+                "id": "ahom_l_start",
+                "cli": ["--l-start"],
+                "w": "number",
+                "placeholder": "12",
+            },
+            {
+                "id": "ahom_l_end",
+                "cli": ["--l-end"],
+                "w": "number",
+                "placeholder": "32",
+            },
+            {"id": "ahom_niter", "cli": ["--niter"], "w": "number", "placeholder": "4"},
+            {
+                "id": "ahom_l_ramp_epochs",
+                "cli": ["--l-ramp-epochs"],
+                "w": "number",
+                "placeholder": "25",
+            },
+            {"id": "ahom_probabilistic", "cli": ["--probabilistic"], "w": "flag_true"},
+            {
+                "id": "ahom_nkeptposes",
+                "cli": ["--nkeptposes"],
+                "w": "number",
+                "placeholder": "8",
+            },
+            {
+                "id": "ahom_base_healpy",
+                "cli": ["--base-healpy"],
+                "w": "number",
+                "placeholder": "2",
+            },
+            {
+                "id": "ahom_pose_model_update_freq",
+                "cli": ["--pose-model-update-freq"],
+                "w": "number",
+            },
+        ],
+    )
+    homo_train_extra: list[Arg] = [
+        {
+            "id": "ahom_t_extent",
+            "cli": ["--t-extent"],
+            "w": "text",
+            "placeholder": "10",
+        },
+        {"id": "ahom_t_ngrid", "cli": ["--t-ngrid"], "w": "number", "placeholder": "7"},
+        {"id": "ahom_t_xshift", "cli": ["--t-xshift"], "w": "text", "placeholder": "0"},
+        {"id": "ahom_t_yshift", "cli": ["--t-yshift"], "w": "text", "placeholder": "0"},
+        {"id": "ahom_no_trans", "cli": ["--no-trans"], "w": "flag_true"},
+        {
+            "id": "ahom_pretrain_train",
+            "cli": ["--pretrain"],
+            "w": "number",
+            "placeholder": "10000",
+        },
+        {"id": "ahom_ps_freq", "cli": ["--ps-freq"], "w": "number", "placeholder": "5"},
+    ]
+    for i, g in enumerate(groups):
+        if g["title"] == "I/O & logging":
+            g["args"].insert(
+                1, {"id": "ahom_load_poses", "cli": ["--load-poses"], "w": "text"}
+            )
+        elif g["title"] == "Dataset loading":
+            groups.insert(i + 1, tilt)
+        elif g["title"] == "Training parameters":
+            g["args"] = homo_train_extra + g["args"]
+            groups.insert(i + 1, pose_search)
+            break
+    hm = load_cli_help_maps().get("abinit_homo_old", {})
+    return _filter_groups_to_help_map(groups, hm)
+
+
+ABINIT_HET_OLD_GROUPS: list[Group] = _build_abinit_het_old_groups()
+ABINIT_HOMO_OLD_GROUPS: list[Group] = _build_abinit_homo_old_groups()
+
+COMMAND_BUILDER_COMMAND_KEYS: tuple[str, ...] = (
+    "abinit",
+    "abinit_het_old",
+    "abinit_homo_old",
+    "train_vae",
+    "train_nn",
+    "train_dec",
+)
+
 COMMAND_BUILDER_SCHEMA: Schema = {
     "abinit": ABINIT_GROUPS,
+    "abinit_het_old": ABINIT_HET_OLD_GROUPS,
+    "abinit_homo_old": ABINIT_HOMO_OLD_GROUPS,
     "train_vae": TRAIN_VAE_GROUPS,
     "train_nn": TRAIN_NN_GROUPS,
     "train_dec": TRAIN_DEC_GROUPS,
@@ -962,6 +1237,8 @@ COMMAND_BUILDER_SCHEMA: Schema = {
 
 _cli_help = load_cli_help_maps()
 attach_help_to_groups(_cli_help.get("abinit", {}), ABINIT_GROUPS)
+attach_help_to_groups(_cli_help.get("abinit_het_old", {}), ABINIT_HET_OLD_GROUPS)
+attach_help_to_groups(_cli_help.get("abinit_homo_old", {}), ABINIT_HOMO_OLD_GROUPS)
 attach_help_to_groups(_cli_help.get("train_vae", {}), TRAIN_VAE_GROUPS)
 attach_help_to_groups(_cli_help.get("train_nn", {}), TRAIN_NN_GROUPS)
 attach_help_to_groups(_cli_help.get("train_dec", {}), TRAIN_DEC_GROUPS)
@@ -992,6 +1269,25 @@ def _build_required_field_titles() -> dict[str, str]:
                 "ab_particles": "particles",
                 "ab_out": ("-o", "--outdir"),
                 "ab_zdim": "--zdim",
+            },
+        ),
+    )
+    r.update(
+        _required_field_titles(
+            _cli_help.get("abinit_het_old", {}),
+            {
+                "ahet_particles": "particles",
+                "ahet_out": ("-o", "--outdir"),
+                "ahet_zdim": "--zdim",
+            },
+        ),
+    )
+    r.update(
+        _required_field_titles(
+            _cli_help.get("abinit_homo_old", {}),
+            {
+                "ahom_particles": "particles",
+                "ahom_out": ("-o", "--outdir"),
             },
         ),
     )
@@ -1029,6 +1325,8 @@ def _build_required_field_titles() -> dict[str, str]:
     )
     for prefix, cmd in (
         ("ab", "abinit"),
+        ("ahet", "abinit_het_old"),
+        ("ahom", "abinit_homo_old"),
         ("vae", "train_vae"),
         ("nn", "train_nn"),
         ("dec", "train_dec"),

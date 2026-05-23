@@ -65,6 +65,8 @@ def _command_builder_template_kwargs() -> dict[str, object]:
         "default_ctf": "",
         "default_zdim": 8,
         "default_outdir_abinit": default_outdir_for_command("abinit"),
+        "default_outdir_abinit_het_old": default_outdir_for_command("abinit_het_old"),
+        "default_outdir_abinit_homo_old": default_outdir_for_command("abinit_homo_old"),
         "default_outdir_train_vae": default_outdir_for_command("train_vae"),
         "default_outdir_train_nn": default_outdir_for_command("train_nn"),
         "default_outdir_train_dec": default_outdir_for_command("train_dec"),

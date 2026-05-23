@@ -107,7 +107,14 @@ def attach_help_to_groups(
 def load_cli_help_maps() -> dict[str, dict[str, str]]:
     cmd_dir = Path(__file__).resolve().parent.parent / "commands"
     out: dict[str, dict[str, str]] = {}
-    for name in ("abinit", "train_vae", "train_nn", "train_dec"):
+    for name in (
+        "abinit",
+        "abinit_het_old",
+        "abinit_homo_old",
+        "train_vae",
+        "train_nn",
+        "train_dec",
+    ):
         p = cmd_dir / f"{name}.py"
         if p.is_file():
             out[name] = help_map_from_command_py(p)
@@ -138,7 +145,14 @@ def load_command_module_docstrings() -> dict[str, str]:
     """Map command keys to one-line module summaries for the command builder."""
     cmd_dir = Path(__file__).resolve().parent.parent / "commands"
     out: dict[str, str] = {}
-    for name in ("abinit", "train_vae", "train_nn", "train_dec"):
+    for name in (
+        "abinit",
+        "abinit_het_old",
+        "abinit_homo_old",
+        "train_vae",
+        "train_nn",
+        "train_dec",
+    ):
         p = cmd_dir / f"{name}.py"
         if p.is_file():
             out[name] = module_summary_from_command_py(p)

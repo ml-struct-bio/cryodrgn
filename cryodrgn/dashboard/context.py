@@ -540,6 +540,12 @@ def command_builder_template_kwargs(
             "default_ctf": "",
             "default_zdim": 8,
             "default_outdir_abinit": default_outdir_for_command("abinit"),
+            "default_outdir_abinit_het_old": default_outdir_for_command(
+                "abinit_het_old"
+            ),
+            "default_outdir_abinit_homo_old": default_outdir_for_command(
+                "abinit_homo_old"
+            ),
             "default_outdir_train_vae": default_outdir_for_command("train_vae"),
             "default_outdir_train_nn": default_outdir_for_command("train_nn"),
             "default_outdir_train_dec": default_outdir_for_command("train_dec"),
@@ -570,6 +576,12 @@ def command_builder_template_kwargs(
         "default_ctf": default_ctf,
         "default_zdim": default_zdim,
         "default_outdir_abinit": default_outdir_for_command("abinit", exp.workdir),
+        "default_outdir_abinit_het_old": default_outdir_for_command(
+            "abinit_het_old", exp.workdir
+        ),
+        "default_outdir_abinit_homo_old": default_outdir_for_command(
+            "abinit_homo_old", exp.workdir
+        ),
         "default_outdir_train_vae": default_outdir_for_command(
             "train_vae", exp.workdir
         ),

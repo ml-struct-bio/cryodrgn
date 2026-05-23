@@ -458,6 +458,9 @@
     align-items: end;
     min-width: 0;
   }
+  body.cmd-builder-github-pages .cmd-builder-required-bar--3 .cmd-builder-required-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   body.cmd-builder-github-pages .cmd-builder-required-bar--4 .cmd-builder-required-fields {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -1487,6 +1490,174 @@
             </div>
             {% endif %}
           </div>
+          <div id="panel-abinit_het_old" class="cmd-panel" data-cmd="abinit_het_old">
+            {% if github_pages_mode %}
+            <div class="cmd-builder-github-body">
+              {% call render_github_required_bar(4) %}
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="ahet_particles"
+                    {{ title_attr(command_builder_required_field_titles.get('ahet_particles') ) }}>Particles
+                  </label>
+                  <input type="text"
+                         id="ahet_particles"
+                         value="{{ default_particles|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('ahet_particles') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="ahet_out"
+                         {{ title_attr(command_builder_required_field_titles.get('ahet_out') ) }}>
+                    Output (<code>-o</code>)
+                  </label>
+                  {{ cmd_outdir_stepper('ahet_out', 'abinit_het_old', default_outdir_abinit_het_old) }}
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="ahet_zdim"
+                    {{ title_attr(command_builder_required_field_titles.get('ahet_zdim') ) }}><code>--zdim</code>
+                  </label>
+                  <input type="number"
+                         id="ahet_zdim"
+                         min="1"
+                         step="1"
+                         value="{{ default_zdim }}"
+                         {{ title_attr(command_builder_required_field_titles.get('ahet_zdim') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="ahet_ctf"{{ ctf_row_title("ahet_ctf") }}><code>--ctf</code>
+                  </label>
+                  <input type="text"
+                         id="ahet_ctf"
+                         value="{{ default_ctf|e }}"
+                         placeholder="path to CTF .pkl"
+                         autocomplete="off"
+                         {{ ctf_row_title("ahet_ctf") }} />
+                </div>
+              {% endcall %}
+              {{ render_github_primary_pair('abinit_het_old', 'ahet_datadir') }}
+              {{ render_github_panel_groups('abinit_het_old') }}
+            </div>
+            {% else %}
+            <div class="cmd-builder-top-row">
+              <fieldset class="cmd-builder-required-fieldset">
+                <legend>Required</legend>
+                <label class="cryo-select-line" for="ahet_particles"
+                  {{ title_attr(command_builder_required_field_titles.get('ahet_particles') ) }}>Particles
+                </label>
+                <input type="text"
+                       id="ahet_particles"
+                       value="{{ default_particles|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('ahet_particles') ) }} />
+                <label class="cryo-select-line"
+                       for="ahet_out"
+                       {{ title_attr(command_builder_required_field_titles.get('ahet_out') ) }}>
+                  Output directory (<code>-o</code>)
+                </label>
+                {{ cmd_outdir_stepper('ahet_out', 'abinit_het_old', default_outdir_abinit_het_old) }}
+                <label class="cryo-select-line" for="ahet_zdim"
+                  {{ title_attr(command_builder_required_field_titles.get('ahet_zdim') ) }}><code>--zdim</code>
+                </label>
+                <input type="number"
+                       id="ahet_zdim"
+                       min="1"
+                       step="1"
+                       value="{{ default_zdim }}"
+                       {{ title_attr(command_builder_required_field_titles.get('ahet_zdim') ) }} />
+                <label class="cryo-select-line" for="ahet_ctf"{{ ctf_row_title("ahet_ctf") }}><code>--ctf</code>
+                </label>
+                <input type="text"
+                       id="ahet_ctf"
+                       value="{{ default_ctf|e }}"
+                       placeholder="path to CTF .pkl"
+                       autocomplete="off"
+                       {{ ctf_row_title("ahet_ctf") }} />
+              </fieldset>
+              {{ render_dataset_fieldset('abinit_het_old', 'ahet_datadir') }}
+            </div>
+            <div class="cmd-builder-rest-grid">
+              {% for group in command_builder_schema['abinit_het_old'] %}
+                {% if group.title != 'Dataset loading' %}
+                  {{ render_schema_group(group) }}
+                {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          <div id="panel-abinit_homo_old" class="cmd-panel" data-cmd="abinit_homo_old">
+            {% if github_pages_mode %}
+            <div class="cmd-builder-github-body">
+              {% call render_github_required_bar(3) %}
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="ahom_particles"
+                    {{ title_attr(command_builder_required_field_titles.get('ahom_particles') ) }}>Particles
+                  </label>
+                  <input type="text"
+                         id="ahom_particles"
+                         value="{{ default_particles|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('ahom_particles') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="ahom_out"
+                         {{ title_attr(command_builder_required_field_titles.get('ahom_out') ) }}>
+                    Output (<code>-o</code>)
+                  </label>
+                  {{ cmd_outdir_stepper('ahom_out', 'abinit_homo_old', default_outdir_abinit_homo_old) }}
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="ahom_ctf"{{ ctf_row_title("ahom_ctf") }}><code>--ctf</code>
+                  </label>
+                  <input type="text"
+                         id="ahom_ctf"
+                         value="{{ default_ctf|e }}"
+                         placeholder="path to CTF .pkl"
+                         autocomplete="off"
+                         {{ ctf_row_title("ahom_ctf") }} />
+                </div>
+              {% endcall %}
+              {{ render_github_primary_pair('abinit_homo_old', 'ahom_datadir') }}
+              {{ render_github_panel_groups('abinit_homo_old') }}
+            </div>
+            {% else %}
+            <div class="cmd-builder-top-row">
+              <fieldset class="cmd-builder-required-fieldset">
+                <legend>Required</legend>
+                <label class="cryo-select-line" for="ahom_particles"
+                  {{ title_attr(command_builder_required_field_titles.get('ahom_particles') ) }}>Particles
+                </label>
+                <input type="text"
+                       id="ahom_particles"
+                       value="{{ default_particles|e }}"
+                       autocomplete="off"
+                       {{ title_attr(command_builder_required_field_titles.get('ahom_particles') ) }} />
+                <label class="cryo-select-line"
+                       for="ahom_out"
+                       {{ title_attr(command_builder_required_field_titles.get('ahom_out') ) }}>
+                  Output directory (<code>-o</code>)
+                </label>
+                {{ cmd_outdir_stepper('ahom_out', 'abinit_homo_old', default_outdir_abinit_homo_old) }}
+                <label class="cryo-select-line" for="ahom_ctf"{{ ctf_row_title("ahom_ctf") }}><code>--ctf</code>
+                </label>
+                <input type="text"
+                       id="ahom_ctf"
+                       value="{{ default_ctf|e }}"
+                       placeholder="path to CTF .pkl"
+                       autocomplete="off"
+                       {{ ctf_row_title("ahom_ctf") }} />
+              </fieldset>
+              {{ render_dataset_fieldset('abinit_homo_old', 'ahom_datadir') }}
+            </div>
+            <div class="cmd-builder-rest-grid">
+              {% for group in command_builder_schema['abinit_homo_old'] %}
+                {% if group.title != 'Dataset loading' %}
+                  {{ render_schema_group(group) }}
+                {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
         </form>
       </div>
       <div class="cmd-builder-cmd-dock">
@@ -1595,6 +1766,33 @@
     }
   }
 
+  function buildAbinitHetOld() {
+    var parts = ["cryodrgn", "abinit_het_old"];
+    var particles = val("ahet_particles");
+    if (particles) parts.push(shquote(particles));
+    appendOpt(parts, "-o", val("ahet_out"));
+    var zdim = val("ahet_zdim");
+    if (zdim !== "") {
+      parts.push("--zdim");
+      parts.push(shquote(zdim));
+    }
+    appendOpt(parts, "--ctf", val("ahet_ctf"));
+    appendOpt(parts, "--datadir", val("ahet_datadir"));
+    collectSchemaParts("abinit_het_old", parts);
+    return parts.join(" ");
+  }
+
+  function buildAbinitHomoOld() {
+    var parts = ["cryodrgn", "abinit_homo_old"];
+    var particles = val("ahom_particles");
+    if (particles) parts.push(shquote(particles));
+    appendOpt(parts, "-o", val("ahom_out"));
+    appendOpt(parts, "--ctf", val("ahom_ctf"));
+    appendOpt(parts, "--datadir", val("ahom_datadir"));
+    collectSchemaParts("abinit_homo_old", parts);
+    return parts.join(" ");
+  }
+
   function buildAbinit() {
     var parts = ["cryodrgn", "abinit"];
     var particles = val("ab_particles");
@@ -1660,6 +1858,8 @@
   function build() {
     var t = document.getElementById("cmd-type").value;
     if (t === "abinit") return buildAbinit();
+    if (t === "abinit_het_old") return buildAbinitHetOld();
+    if (t === "abinit_homo_old") return buildAbinitHomoOld();
     if (t === "train_vae") return buildTrainVae();
     if (t === "train_nn") return buildTrainNn();
     if (t === "train_dec") return buildTrainDec();

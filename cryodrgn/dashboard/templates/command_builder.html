@@ -42,10 +42,14 @@
   }
   .cmd-builder-cmd-dock {
     flex-shrink: 0;
+    max-height: 10vh;
+    max-height: 10dvh;
     margin-top: 0.25rem;
     padding-top: 0.4rem;
     border-top: 1px solid rgba(36, 59, 83, 0.12);
     background: linear-gradient(to bottom, rgba(250, 248, 244, 0) 0%, var(--cream, #faf8f4) 12%);
+    overflow: hidden;
+    box-sizing: border-box;
   }
   .cmd-form.card { padding: 1rem 1.25rem; }
   .cmd-builder-program {
@@ -196,22 +200,38 @@
   .cmd-panel { display: none; }
   .cmd-panel.cmd-panel--active { display: block; }
   .cmd-output.card {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    max-height: 100%;
+    height: 100%;
+    min-height: 0;
     padding: 0.55rem 0.75rem 0.6rem;
     background: #1a2332;
     color: #e8eef4;
     border: 1px solid rgba(36, 59, 83, 0.4);
+    overflow: hidden;
   }
   .cmd-output-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.35rem 0.85rem;
-    align-items: center;
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
   }
   .cmd-output-main {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
   .cmd-output-heading {
     display: block;
+    flex-shrink: 0;
     font-size: calc(0.78rem * 1.35 * 1.1);
     font-weight: 700;
     margin: 0 0 0.25rem;
@@ -219,41 +239,114 @@
     opacity: 0.95;
   }
   .cmd-output pre {
+    flex: 1 1 auto;
     margin: 0;
+    min-height: 0;
     font-size: calc(0.72rem * 1.35 * 1.1);
     line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-all;
     font-family: ui-monospace, "Cascadia Code", monospace;
-    max-height: 4.75rem;
     overflow-y: auto;
   }
   .cmd-output-actions {
     display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
+    gap: 0.45rem;
     align-self: stretch;
+    min-height: 0;
+    box-sizing: border-box;
   }
   .cmd-output .btn-copy {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    box-sizing: border-box;
+    height: 89%;
+    max-height: 89%;
+    min-width: 4.75rem;
+    padding: 0.15rem 0.55rem;
     background: var(--accent, #c4703a);
     color: #fff;
     border: none;
-    padding: 0.35rem 0.75rem;
     border-radius: 3px;
     font-weight: 600;
     cursor: pointer;
     font-family: inherit;
-    font-size: calc(0.82rem * 1.35 * 1.1);
-    white-space: nowrap;
+    white-space: normal;
   }
   .cmd-output .btn-copy:hover { background: var(--accent-hover, #a85a2e); }
+  .cmd-output .btn-copy-icon {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    height: 70%;
+    max-height: 70%;
+    width: auto;
+    aspect-ratio: 1;
+    line-height: 0;
+  }
+  .cmd-output .btn-copy-icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .cmd-output .btn-copy-icon--clipboard svg {
+    stroke: #000;
+  }
+  .cmd-output .btn-copy-label {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    align-self: center;
+    height: 95%;
+    max-height: 95%;
+    min-width: 0;
+    flex: 1 1 auto;
+    line-height: 1;
+    text-align: center;
+  }
+  .cmd-output .btn-copy-label-line {
+    display: flex;
+    flex: 1 1 50%;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    font-size: calc(0.62rem * 1.35 * 1.1);
+    letter-spacing: 0.01em;
+  }
+  .cmd-output .btn-copy--colorize {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(232, 238, 244, 0.35);
+  }
+  .cmd-output .btn-copy--colorize:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  .cmd-output .btn-copy--colorize[aria-pressed="true"] {
+    background: rgba(196, 112, 58, 0.35);
+    border-color: rgba(196, 112, 58, 0.75);
+    box-shadow: inset 0 0 0 1px rgba(196, 112, 58, 0.25);
+  }
+  .cmd-output pre .cmd-seg--prefix {
+    color: #e8eef4;
+  }
   .cmd-output .hint {
+    flex-shrink: 0;
     margin: 0.3rem 0 0;
     font-size: calc(0.76rem * 1.35 * 1.1);
     opacity: 0.82;
     line-height: 1.3;
   }
   .cmd-output .cmd-copy-status {
+    flex-shrink: 0;
     margin-top: 0.2rem;
     min-height: 1em;
   }
@@ -872,7 +965,6 @@
     margin: 0 0 0.12rem;
     gap: 0.18rem 0.45rem;
   }
-  body.cmd-builder-github-pages .cmd-output pre { max-height: calc(3.25rem * 1.35 * 1.1); }
   body.cmd-builder-github-pages .cmd-output .hint { display: none; }
   {% endif %}
   </style>
@@ -1841,7 +1933,50 @@
               <p id="cmd-copy-status" class="hint cmd-copy-status"></p>
             </div>
             <div class="cmd-output-actions">
-              <button type="button" class="btn-copy" id="cmd-copy">Copy command</button>
+              {% if github_pages_mode %}
+              <button type="button"
+                      class="btn-copy btn-copy--colorize"
+                      id="cmd-colorize"
+                      aria-pressed="false"
+                      title="Highlight flags by argument group">
+                <span class="btn-copy-icon" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" focusable="false">
+                    <defs>
+                      <linearGradient id="cmd-colorize-rainbow" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#ff0000"/>
+                        <stop offset="16%" stop-color="#ff8000"/>
+                        <stop offset="33%" stop-color="#ffff00"/>
+                        <stop offset="50%" stop-color="#00ff00"/>
+                        <stop offset="66%" stop-color="#0080ff"/>
+                        <stop offset="83%" stop-color="#4000ff"/>
+                        <stop offset="100%" stop-color="#ff00ff"/>
+                      </linearGradient>
+                    </defs>
+                    <circle cx="12" cy="12" r="9" stroke="rgba(232,238,244,0.45)" stroke-width="1.2"
+                            fill="url(#cmd-colorize-rainbow)"/>
+                    <circle cx="12" cy="12" r="3.5" fill="#1a2332" opacity="0.92"/>
+                  </svg>
+                </span>
+                <span class="btn-copy-label">
+                  <span class="btn-copy-label-line">Colorize</span>
+                  <span class="btn-copy-label-line">command</span>
+                </span>
+              </button>
+              {% endif %}
+              <button type="button" class="btn-copy" id="cmd-copy">
+                <span class="btn-copy-icon btn-copy-icon--clipboard" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                       stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                       focusable="false">
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                  </svg>
+                </span>
+                <span class="btn-copy-label">
+                  <span class="btn-copy-label-line">Copy</span>
+                  <span class="btn-copy-label-line">command</span>
+                </span>
+              </button>
             </div>
           </div>
         </div>
@@ -1866,54 +2001,68 @@
     return el ? String(el.value || "").trim() : "";
   }
 
-  function appendOpt(parts, flag, value) {
+  var G_REQUIRED = "Required";
+  var G_DATASET = "Dataset loading";
+
+  function pushSeg(segments, group, text) {
+    if (text == null || text === "") return;
+    segments.push({ g: group, t: String(text) });
+  }
+
+  function appendOptSeg(segments, group, flag, value) {
     if (!value) return;
-    parts.push(flag);
-    parts.push(shquote(value));
+    pushSeg(segments, group, flag);
+    pushSeg(segments, group, shquote(value));
+  }
+
+  function pushPrefix(segments, cmdName) {
+    pushSeg(segments, "_prefix", "cryodrgn");
+    pushSeg(segments, "_prefix", cmdName);
   }
 
   function cliFlag(a) {
     return a.cli && a.cli.length ? a.cli[0] : "";
   }
 
-  function collectSchemaParts(cmdKey, parts) {
+  function collectSchemaSegments(cmdKey, segments) {
     var groups = CMD_SCHEMA[cmdKey];
     if (!groups) return;
     for (var gi = 0; gi < groups.length; gi++) {
       var g = groups[gi];
+      var groupTitle = g.title;
       for (var ai = 0; ai < g.args.length; ai++) {
         var a = g.args[ai];
         var w = a.w;
         if (w === "no_amp") {
           var ampEl = document.getElementById(a.id);
-          if (ampEl && !ampEl.checked) parts.push("--no-amp");
+          if (ampEl && !ampEl.checked) pushSeg(segments, groupTitle, "--no-amp");
           continue;
         }
         if (w === "flag_true") {
           var ft = document.getElementById(a.id);
-          if (ft && ft.checked) parts.push(cliFlag(a));
+          if (ft && ft.checked) pushSeg(segments, groupTitle, cliFlag(a));
           continue;
         }
         if (w === "flag_false") {
           var ff = document.getElementById(a.id);
-          if (ff && !ff.checked) parts.push(cliFlag(a));
+          if (ff && !ff.checked) pushSeg(segments, groupTitle, cliFlag(a));
           continue;
         }
         if (w === "norm2") {
           var n0 = val(a.id + "_a");
           var n1 = val(a.id + "_b");
           if (n0 !== "" && n1 !== "") {
-            parts.push(cliFlag(a));
-            parts.push(shquote(n0));
-            parts.push(shquote(n1));
+            pushSeg(segments, groupTitle, cliFlag(a));
+            pushSeg(segments, groupTitle, shquote(n0));
+            pushSeg(segments, groupTitle, shquote(n1));
           }
           continue;
         }
         if (w === "text" || w === "number") {
           var tv = val(a.id);
           if (tv !== "") {
-            parts.push(cliFlag(a));
-            parts.push(shquote(tv));
+            pushSeg(segments, groupTitle, cliFlag(a));
+            pushSeg(segments, groupTitle, shquote(tv));
           }
           continue;
         }
@@ -1928,8 +2077,8 @@
             defaultChoice = String(a.choices[0]);
           }
           if (sv !== "" && sv !== defaultChoice) {
-            parts.push(cliFlag(a));
-            parts.push(shquote(sv));
+            pushSeg(segments, groupTitle, cliFlag(a));
+            pushSeg(segments, groupTitle, shquote(sv));
           }
           continue;
         }
@@ -1937,117 +2086,134 @@
     }
   }
 
-  function buildAbinitHetOld() {
-    var parts = ["cryodrgn", "abinit_het_old"];
+  function segmentsToText(segments) {
+    var out = [];
+    for (var i = 0; i < segments.length; i++) out.push(segments[i].t);
+    return out.join(" ");
+  }
+
+  function buildAbinitHetOldSegments() {
+    var segments = [];
+    pushPrefix(segments, "abinit_het_old");
     var particles = val("ahet_particles");
-    if (particles) parts.push(shquote(particles));
-    appendOpt(parts, "-o", val("ahet_out"));
+    if (particles) pushSeg(segments, G_REQUIRED, shquote(particles));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("ahet_out"));
     var zdim = val("ahet_zdim");
     if (zdim !== "") {
-      parts.push("--zdim");
-      parts.push(shquote(zdim));
+      pushSeg(segments, G_REQUIRED, "--zdim");
+      pushSeg(segments, G_REQUIRED, shquote(zdim));
     }
-    appendOpt(parts, "--ctf", val("ahet_ctf"));
-    appendOpt(parts, "--datadir", val("ahet_datadir"));
-    collectSchemaParts("abinit_het_old", parts);
-    return parts.join(" ");
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("ahet_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("ahet_datadir"));
+    collectSchemaSegments("abinit_het_old", segments);
+    return segments;
   }
 
-  function buildAbinitHomoOld() {
-    var parts = ["cryodrgn", "abinit_homo_old"];
+  function buildAbinitHomoOldSegments() {
+    var segments = [];
+    pushPrefix(segments, "abinit_homo_old");
     var particles = val("ahom_particles");
-    if (particles) parts.push(shquote(particles));
-    appendOpt(parts, "-o", val("ahom_out"));
-    appendOpt(parts, "--ctf", val("ahom_ctf"));
-    appendOpt(parts, "--datadir", val("ahom_datadir"));
-    collectSchemaParts("abinit_homo_old", parts);
-    return parts.join(" ");
+    if (particles) pushSeg(segments, G_REQUIRED, shquote(particles));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("ahom_out"));
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("ahom_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("ahom_datadir"));
+    collectSchemaSegments("abinit_homo_old", segments);
+    return segments;
   }
 
-  function buildAbinit() {
-    var parts = ["cryodrgn", "abinit"];
+  function buildAbinitSegments() {
+    var segments = [];
+    pushPrefix(segments, "abinit");
     var particles = val("ab_particles");
-    if (particles) parts.push(shquote(particles));
-    appendOpt(parts, "-o", val("ab_out"));
+    if (particles) pushSeg(segments, G_REQUIRED, shquote(particles));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("ab_out"));
     var zdim = val("ab_zdim");
     if (zdim !== "") {
-      parts.push("--zdim");
-      parts.push(shquote(zdim));
+      pushSeg(segments, G_REQUIRED, "--zdim");
+      pushSeg(segments, G_REQUIRED, shquote(zdim));
     }
-    appendOpt(parts, "--ctf", val("ab_ctf"));
-    appendOpt(parts, "--datadir", val("ab_datadir"));
-    collectSchemaParts("abinit", parts);
-    return parts.join(" ");
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("ab_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("ab_datadir"));
+    collectSchemaSegments("abinit", segments);
+    return segments;
   }
 
-  function buildTrainVae() {
-    var parts = ["cryodrgn", "train_vae"];
+  function buildTrainVaeSegments() {
+    var segments = [];
+    pushPrefix(segments, "train_vae");
     var p = val("vae_particles");
-    if (p) parts.push(shquote(p));
-    appendOpt(parts, "-o", val("vae_out"));
-    appendOpt(parts, "--poses", val("vae_poses"));
+    if (p) pushSeg(segments, G_REQUIRED, shquote(p));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("vae_out"));
+    appendOptSeg(segments, G_REQUIRED, "--poses", val("vae_poses"));
     var zd = val("vae_zdim");
     if (zd !== "") {
-      parts.push("--zdim");
-      parts.push(shquote(zd));
+      pushSeg(segments, G_REQUIRED, "--zdim");
+      pushSeg(segments, G_REQUIRED, shquote(zd));
     }
-    appendOpt(parts, "--ctf", val("vae_ctf"));
-    appendOpt(parts, "--datadir", val("vae_datadir"));
-    collectSchemaParts("train_vae", parts);
-    return parts.join(" ");
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("vae_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("vae_datadir"));
+    collectSchemaSegments("train_vae", segments);
+    return segments;
   }
 
-  function buildTrainNn() {
-    var parts = ["cryodrgn", "train_nn"];
+  function buildTrainNnSegments() {
+    var segments = [];
+    pushPrefix(segments, "train_nn");
     var p = val("nn_particles");
-    if (p) parts.push(shquote(p));
-    appendOpt(parts, "-o", val("nn_out"));
-    appendOpt(parts, "--poses", val("nn_poses"));
-    appendOpt(parts, "--ctf", val("nn_ctf"));
-    appendOpt(parts, "--datadir", val("nn_datadir"));
-    collectSchemaParts("train_nn", parts);
-    return parts.join(" ");
+    if (p) pushSeg(segments, G_REQUIRED, shquote(p));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("nn_out"));
+    appendOptSeg(segments, G_REQUIRED, "--poses", val("nn_poses"));
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("nn_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("nn_datadir"));
+    collectSchemaSegments("train_nn", segments);
+    return segments;
   }
 
-  function buildBackprojectVoxel() {
-    var parts = ["cryodrgn", "backproject_voxel"];
+  function buildBackprojectVoxelSegments() {
+    var segments = [];
+    pushPrefix(segments, "backproject_voxel");
     var p = val("bpv_particles");
-    if (p) parts.push(shquote(p));
-    appendOpt(parts, "--poses", val("bpv_poses"));
-    appendOpt(parts, "-o", val("bpv_out"));
-    appendOpt(parts, "--ctf", val("bpv_ctf"));
-    appendOpt(parts, "--datadir", val("bpv_datadir"));
-    collectSchemaParts("backproject_voxel", parts);
-    return parts.join(" ");
+    if (p) pushSeg(segments, G_REQUIRED, shquote(p));
+    appendOptSeg(segments, G_REQUIRED, "--poses", val("bpv_poses"));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("bpv_out"));
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("bpv_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("bpv_datadir"));
+    collectSchemaSegments("backproject_voxel", segments);
+    return segments;
   }
 
-  function buildTrainDec() {
-    var parts = ["cryodrgn", "train_dec"];
+  function buildTrainDecSegments() {
+    var segments = [];
+    pushPrefix(segments, "train_dec");
     var p = val("dec_particles");
-    if (p) parts.push(shquote(p));
-    appendOpt(parts, "-o", val("dec_out"));
-    appendOpt(parts, "--poses", val("dec_poses"));
+    if (p) pushSeg(segments, G_REQUIRED, shquote(p));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("dec_out"));
+    appendOptSeg(segments, G_REQUIRED, "--poses", val("dec_poses"));
     var zd = val("dec_zdim");
     if (zd !== "") {
-      parts.push("--zdim");
-      parts.push(shquote(zd));
+      pushSeg(segments, G_REQUIRED, "--zdim");
+      pushSeg(segments, G_REQUIRED, shquote(zd));
     }
-    appendOpt(parts, "--ctf", val("dec_ctf"));
-    appendOpt(parts, "--datadir", val("dec_datadir"));
-    collectSchemaParts("train_dec", parts);
-    return parts.join(" ");
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("dec_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("dec_datadir"));
+    collectSchemaSegments("train_dec", segments);
+    return segments;
+  }
+
+  function buildSegments() {
+    var t = document.getElementById("cmd-type").value;
+    if (t === "abinit") return buildAbinitSegments();
+    if (t === "abinit_het_old") return buildAbinitHetOldSegments();
+    if (t === "abinit_homo_old") return buildAbinitHomoOldSegments();
+    if (t === "train_vae") return buildTrainVaeSegments();
+    if (t === "train_nn") return buildTrainNnSegments();
+    if (t === "train_dec") return buildTrainDecSegments();
+    if (t === "backproject_voxel") return buildBackprojectVoxelSegments();
+    return [];
   }
 
   function build() {
-    var t = document.getElementById("cmd-type").value;
-    if (t === "abinit") return buildAbinit();
-    if (t === "abinit_het_old") return buildAbinitHetOld();
-    if (t === "abinit_homo_old") return buildAbinitHomoOld();
-    if (t === "train_vae") return buildTrainVae();
-    if (t === "train_nn") return buildTrainNn();
-    if (t === "train_dec") return buildTrainDec();
-    if (t === "backproject_voxel") return buildBackprojectVoxel();
-    return "";
+    return segmentsToText(buildSegments());
   }
 
   function parseOutdirValue(raw, fallbackSuffix) {
@@ -2115,13 +2281,91 @@
     refresh();
   }
 
+  {% if github_pages_mode %}
+  var cmdColorize = false;
+  var CMD_GROUP_HUES = {
+    "Required": 28,
+    "Dataset loading": 214,
+    "Training parameters": 207,
+    "Backprojection parameters": 200,
+  };
+  var cmdGroupHueCache = {};
+
+  function hueForCmdGroup(group) {
+    if (group === "_prefix") return null;
+    if (Object.prototype.hasOwnProperty.call(CMD_GROUP_HUES, group)) {
+      return CMD_GROUP_HUES[group];
+    }
+    if (!cmdGroupHueCache[group]) {
+      var h = 0;
+      for (var i = 0; i < group.length; i++) {
+        h = (h * 31 + group.charCodeAt(i)) % 360;
+      }
+      cmdGroupHueCache[group] = Math.round((47 + h * 137.508) % 360);
+    }
+    return cmdGroupHueCache[group];
+  }
+
+  function escCmdHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderColoredCommand(segments) {
+    var shadeIdx = {};
+    var html = [];
+    for (var i = 0; i < segments.length; i++) {
+      if (i > 0) html.push(" ");
+      var seg = segments[i];
+      if (seg.g === "_prefix") {
+        html.push('<span class="cmd-seg cmd-seg--prefix">');
+        html.push(escCmdHtml(seg.t));
+        html.push("</span>");
+        continue;
+      }
+      var idx = shadeIdx[seg.g] || 0;
+      shadeIdx[seg.g] = idx + 1;
+      var hue = hueForCmdGroup(seg.g);
+      var light = 86 - (idx % 4) * 9;
+      var sat = 56 + (idx % 3) * 11;
+      html.push('<span class="cmd-seg" style="color:hsl(' + hue + "," + sat + "%," + light + '%)">');
+      html.push(escCmdHtml(seg.t));
+      html.push("</span>");
+    }
+    return html.join("");
+  }
+  {% endif %}
+
   function refresh() {
-    out.textContent = build();
+    var segments = buildSegments();
+    {% if github_pages_mode %}
+    if (cmdColorize) {
+      out.innerHTML = renderColoredCommand(segments);
+    } else {
+      out.textContent = segmentsToText(segments);
+    }
+    {% else %}
+    out.textContent = segmentsToText(segments);
+    {% endif %}
   }
 
   cmdType.addEventListener("change", syncPanels);
   form.addEventListener("input", refresh);
   form.addEventListener("change", refresh);
+
+  {% if github_pages_mode %}
+  var colorizeBtn = document.getElementById("cmd-colorize");
+  if (colorizeBtn) {
+    colorizeBtn.addEventListener("click", function() {
+      cmdColorize = !cmdColorize;
+      colorizeBtn.setAttribute("aria-pressed", cmdColorize ? "true" : "false");
+      refresh();
+    });
+  }
+  {% endif %}
 
   document.getElementById("cmd-copy").addEventListener("click", function() {
     var text = build();

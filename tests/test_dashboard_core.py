@@ -1290,8 +1290,6 @@ class TestDashboardModules:
         assert "volSelectionBlockedForAdd" in vol_text
         assert "ChimeraX view matrix: rendering" not in vol_text
         assert "referenceScatter3dBaseMarkerSize" in vol_text
-        assert "formatVolMontageLetterText" in vol_text
-        assert "<b><i>" in vol_text
 
     def test_landscape_volpca_selection_sizes_respect_trace_marker(self) -> None:
         root = Path(__file__).resolve().parents[1]

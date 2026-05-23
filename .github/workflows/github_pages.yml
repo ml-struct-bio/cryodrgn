@@ -1,0 +1,59 @@
+name: GitHub Pages (command builder)
+
+on:
+  push:
+    tags:
+      # Stable releases (same pattern as release.yml)
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '!*-[a-z]+[0-9]+'
+      # Pre-releases / betas (same pattern as beta_release.yml)
+      - '[0-9]+\.[0-9]+\.[0-9]+-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package (version from tag)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: Build command builder site
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CRYODRGN_VERSION: ${{ github.ref_name }}
+        run: |
+          python -m cryodrgn.dashboard.github_pages -o _site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

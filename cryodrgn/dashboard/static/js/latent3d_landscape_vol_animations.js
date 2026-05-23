@@ -434,17 +434,6 @@
       + SAFE_LETTERS[j % SAFE_LETTERS.length];
   }
 
-  // Legacy helper: scatter3d WebGL text doesn't reliably support HTML tags like <b>/<i>,
-  // but some dashboard wiring tests assert the presence of this formatter.
-  function formatVolMontageLetterText(letter, isBold, isItalic) {
-    var s = letter == null ? "" : String(letter);
-    if (!s) return "";
-    if (isBold && isItalic) return "<b><i>" + s + "</i></b>";
-    if (isBold) return "<b>" + s + "</b>";
-    if (isItalic) return "<i>" + s + "</i>";
-    return s;
-  }
-
   function volFilenameIndex(v) {
     var n = typeof v === "number" ? v : parseInt(String(v), 10);
     if (isNaN(n)) return String(v);

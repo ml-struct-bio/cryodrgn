@@ -248,6 +248,205 @@
       align-self: auto;
     }
   }
+  {% if github_pages_mode %}
+  /* GitHub Pages: full-width required row + landing-style option cards filling the viewport. */
+  body.cmd-builder-github-pages {
+    overflow: hidden;
+    height: 100dvh;
+    --cryo-dash-below-nav: 7.75rem;
+  }
+  body.cmd-builder-github-pages .github-pages-note {
+    margin: 0.2rem 1.15rem 0;
+    font-size: 0.82rem;
+    color: var(--muted, #5c6b7a);
+    line-height: 1.25;
+  }
+  body.cmd-builder-github-pages .github-pages-note a { color: var(--link, #2c5282); }
+  body.cmd-builder-github-pages .cmd-builder-header .cryo-dash-lead { display: none; }
+  body.cmd-builder-github-pages .cmd-builder-scroll {
+    overflow: hidden;
+    padding-bottom: 0.15rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  body.cmd-builder-github-pages .cmd-form.card {
+    padding: 0.55rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  body.cmd-builder-github-pages .cmd-panel.cmd-panel--active {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-github-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 0.5rem;
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-bar {
+    flex: 0 0 auto;
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(4.25rem, auto) 1fr;
+    gap: 0.35rem 0.75rem;
+    align-items: stretch;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background: rgba(196, 112, 58, 0.1);
+    border: 1px solid rgba(196, 112, 58, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(196, 112, 58, 0.06);
+    box-sizing: border-box;
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-heading {
+    grid-column: 1;
+    align-self: center;
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--accent, #c4703a);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-fields {
+    grid-column: 2;
+    display: grid;
+    gap: 0.25rem 0.55rem;
+    align-items: end;
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-bar--4 .cmd-builder-required-fields {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-bar--5 .cmd-builder-required-fields {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-cell {
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-cell .cryo-select-line {
+    margin: 0 0 0.12rem;
+    font-size: 0.78rem;
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-cell input {
+    margin-bottom: 0;
+    font-size: 0.84rem;
+    padding: 0.28rem 0.4rem;
+  }
+  body.cmd-builder-github-pages .cmd-builder-group-cards {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+    grid-auto-rows: 1fr;
+    gap: 0.65rem;
+    align-content: stretch;
+    align-items: stretch;
+  }
+  body.cmd-builder-github-pages details.cmd-group-card {
+    position: relative;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    background: var(--paper, #fff);
+    border-radius: 6px;
+    border: 1px solid rgba(36, 59, 83, 0.12);
+    box-shadow: var(--card-shadow, 0 2px 12px rgba(36, 59, 83, 0.08));
+    transition:
+      transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.26s ease,
+      background 0.26s ease;
+  }
+  body.cmd-builder-github-pages details.cmd-group-card:hover {
+    transform: translateY(-4px) scale(1.015);
+    box-shadow:
+      0 6px 12px rgba(36, 59, 83, 0.08),
+      0 18px 40px rgba(36, 59, 83, 0.16),
+      0 0 0 1px rgba(196, 112, 58, 0.4),
+      0 0 32px rgba(196, 112, 58, 0.18);
+    border-color: rgba(196, 112, 58, 0.65);
+    background: linear-gradient(165deg, #fffefb 0%, #fff 55%, #faf8f4 100%);
+  }
+  body.cmd-builder-github-pages details.cmd-group-card[open] {
+    grid-column: 1 / -1;
+    grid-row: span 2;
+    transform: none;
+    z-index: 2;
+    border-color: rgba(196, 112, 58, 0.55);
+    box-shadow:
+      0 4px 10px rgba(36, 59, 83, 0.07),
+      0 16px 36px rgba(36, 59, 83, 0.14),
+      0 0 0 1px rgba(196, 112, 58, 0.35),
+      0 0 28px rgba(196, 112, 58, 0.14);
+    outline: 2px solid var(--accent, #c4703a);
+    outline-offset: 2px;
+  }
+  body.cmd-builder-github-pages details.cmd-group-card > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.28rem;
+    height: 100%;
+    min-height: 4.5rem;
+    padding: 0.65rem 0.75rem;
+    box-sizing: border-box;
+    user-select: none;
+  }
+  body.cmd-builder-github-pages details.cmd-group-card > summary::-webkit-details-marker {
+    display: none;
+  }
+  body.cmd-builder-github-pages .cmd-group-card-title {
+    font-weight: 700;
+    font-size: 0.92rem;
+    line-height: 1.2;
+    color: var(--nav-bg, #243b53);
+    letter-spacing: 0.01em;
+  }
+  body.cmd-builder-github-pages .cmd-group-card-desc {
+    font-size: 0.76rem;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+    font-weight: 400;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  body.cmd-builder-github-pages details.cmd-group-card[open] > summary {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    border-bottom: 1px solid rgba(36, 59, 83, 0.1);
+  }
+  body.cmd-builder-github-pages .cmd-group-card-body {
+    padding: 0.55rem 0.7rem 0.65rem;
+    max-height: min(42vh, 18rem);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  body.cmd-builder-github-pages .cmd-output pre { max-height: 3.25rem; }
+  body.cmd-builder-github-pages .cmd-output .hint { display: none; }
+  @media (max-width: 900px) {
+    body.cmd-builder-github-pages .cmd-builder-required-bar--5 .cmd-builder-required-fields {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    body.cmd-builder-github-pages .cmd-builder-required-bar--4 .cmd-builder-required-fields {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  {% endif %}
   </style>
 {% endblock %}
 {% block content %}
@@ -330,30 +529,92 @@
                {{ title_attr(st) }} />
       {% endif %}
     {% endmacro %}
+    {% macro render_github_required_bar(cols) %}
+      <div class="cmd-builder-required-bar cmd-builder-required-bar--{{ cols }}">
+        <span class="cmd-builder-required-heading">Required</span>
+        <div class="cmd-builder-required-fields">{{ caller() }}</div>
+      </div>
+    {% endmacro %}
+    {% macro render_github_panel_groups(cmd_key, datadir_id) %}
+      <div class="cmd-builder-group-cards">
+        {{ render_dataset_fieldset(cmd_key, datadir_id) }}
+        {% for group in command_builder_schema[cmd_key] %}
+          {% if group.title != 'Dataset loading' %}
+            {{ render_schema_group(group) }}
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endmacro %}
+    {% macro render_schema_group(group) %}
+      {% if github_pages_mode %}
+        <details class="cmd-group-card">
+          <summary class="cmd-group-card-summary">
+            <span class="cmd-group-card-title">{{ group.title }}</span>
+            <span class="cmd-group-card-desc">{{ group.description }}</span>
+          </summary>
+          <div class="cmd-group-card-body">
+            {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
+          </div>
+        </details>
+      {% else %}
+        <fieldset>
+          <legend>{{ group.title }}</legend>
+          {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
+        </fieldset>
+      {% endif %}
+    {% endmacro %}
     {% macro render_dataset_fieldset(cmd_key, datadir_id) %}
       {% set ds = (command_builder_schema[cmd_key]
         | selectattr('title', 'equalto', 'Dataset loading')
         | list
         | first) %}
-      <fieldset>
-        <legend>Dataset loading</legend>
-        <label class="cryo-select-line" for="{{ datadir_id }}"
-          {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
-          ><code>--datadir</code>
-        </label>
-        <input type="text"
-               id="{{ datadir_id }}"
-               value=""
-               placeholder="(omit if blank)"
-               autocomplete="off"
-               {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }} />
-        {% if ds and ds.args %}
-          <div class="cmd-builder-dataset-flags">
-            {% for a in ds.args if a.w in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
+      {% if github_pages_mode %}
+        {% set ds_desc = (ds.description if ds and ds.description else 'Particle subsets, datadir layout, lazy I/O, and RELION options.') %}
+        <details class="cmd-group-card">
+          <summary class="cmd-group-card-summary">
+            <span class="cmd-group-card-title">Dataset loading</span>
+            <span class="cmd-group-card-desc">{{ ds_desc }}</span>
+          </summary>
+          <div class="cmd-group-card-body">
+            <label class="cryo-select-line" for="{{ datadir_id }}"
+              {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
+              ><code>--datadir</code>
+            </label>
+            <input type="text"
+                   id="{{ datadir_id }}"
+                   value=""
+                   placeholder="(omit if blank)"
+                   autocomplete="off"
+                   {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }} />
+            {% if ds and ds.args %}
+              <div class="cmd-builder-dataset-flags">
+                {% for a in ds.args if a.w in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
+              </div>
+              {% for a in ds.args if a.w not in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
+            {% endif %}
           </div>
-          {% for a in ds.args if a.w not in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
-        {% endif %}
-      </fieldset>
+        </details>
+      {% else %}
+        <fieldset>
+          <legend>Dataset loading</legend>
+          <label class="cryo-select-line" for="{{ datadir_id }}"
+            {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
+            ><code>--datadir</code>
+          </label>
+          <input type="text"
+                 id="{{ datadir_id }}"
+                 value=""
+                 placeholder="(omit if blank)"
+                 autocomplete="off"
+                 {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }} />
+          {% if ds and ds.args %}
+            <div class="cmd-builder-dataset-flags">
+              {% for a in ds.args if a.w in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
+            </div>
+            {% for a in ds.args if a.w not in ['flag_true', 'flag_false'] %}{{ render_cmd_arg(a) }}{% endfor %}
+          {% endif %}
+        </fieldset>
+      {% endif %}
     {% endmacro %}
     <div class="cryo-dash-page cmd-builder-page cmd-builder-page--dock">
       <div class="cmd-builder-header">
@@ -375,6 +636,56 @@
             </select>
           </div>
           <div id="panel-abinit" class="cmd-panel cmd-panel--active" data-cmd="abinit">
+            {% if github_pages_mode %}
+            <div class="cmd-builder-github-body">
+              {% call render_github_required_bar(4) %}
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="ab_particles"
+                    {{ title_attr(command_builder_required_field_titles.get('ab_particles') ) }}>Particles
+                  </label>
+                  <input type="text"
+                         id="ab_particles"
+                         value="{{ default_particles|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('ab_particles') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="ab_out"
+                         {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }}>
+                    Output (<code>-o</code>)
+                  </label>
+                  <input type="text"
+                         id="ab_out"
+                         value="{{ default_outdir_abinit|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="ab_zdim"
+                    {{ title_attr(command_builder_required_field_titles.get('ab_zdim') ) }}><code>--zdim</code>
+                  </label>
+                  <input type="number"
+                         id="ab_zdim"
+                         min="0"
+                         step="1"
+                         value="{{ default_zdim }}"
+                         {{ title_attr(command_builder_required_field_titles.get('ab_zdim') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="ab_ctf"{{ ctf_row_title("ab_ctf") }}><code>--ctf</code>
+                  </label>
+                  <input type="text"
+                         id="ab_ctf"
+                         value="{{ default_ctf|e }}"
+                         placeholder="path to CTF .pkl"
+                         autocomplete="off"
+                         {{ ctf_row_title("ab_ctf") }} />
+                </div>
+              {% endcall %}
+              {{ render_github_panel_groups('abinit', 'ab_datadir') }}
+            </div>
+            {% else %}
             <div class="cmd-builder-top-row">
               <fieldset class="cmd-builder-required-fieldset">
                 <legend>Required</legend>
@@ -419,15 +730,74 @@
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['abinit'] %}
                 {% if group.title != 'Dataset loading' %}
-                  <fieldset>
-                    <legend>{{ group.title }}</legend>
-                    {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
-                  </fieldset>
+                  {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
             </div>
+            {% endif %}
           </div>
           <div id="panel-train_vae" class="cmd-panel" data-cmd="train_vae">
+            {% if github_pages_mode %}
+            <div class="cmd-builder-github-body">
+              {% call render_github_required_bar(5) %}
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="vae_particles"
+                         {{ title_attr(command_builder_required_field_titles.get('vae_particles') ) }}>Particles
+                  </label>
+                  <input type="text"
+                         id="vae_particles"
+                         value="{{ default_particles|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('vae_particles') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="vae_out"
+                         {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }}>
+                    Output (<code>-o</code>)
+                  </label>
+                  <input type="text"
+                         id="vae_out"
+                         value="{{ default_outdir_train|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="vae_poses"
+                    {{ title_attr(command_builder_required_field_titles.get('vae_poses') ) }}><code>--poses</code>
+                  </label>
+                  <input type="text"
+                         id="vae_poses"
+                         value="{{ default_poses|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('vae_poses') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="vae_zdim"
+                    {{ title_attr(command_builder_required_field_titles.get('vae_zdim') ) }}><code>--zdim</code>
+                  </label>
+                  <input type="number"
+                         id="vae_zdim"
+                         min="1"
+                         step="1"
+                         value="{{ default_zdim }}"
+                         {{ title_attr(command_builder_required_field_titles.get('vae_zdim') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="vae_ctf"{{ ctf_row_title("vae_ctf") }}><code>--ctf</code>
+                  </label>
+                  <input type="text"
+                         id="vae_ctf"
+                         value="{{ default_ctf|e }}"
+                         placeholder="path to CTF .pkl"
+                         autocomplete="off"
+                         {{ ctf_row_title("vae_ctf") }} />
+                </div>
+              {% endcall %}
+              {{ render_github_panel_groups('train_vae', 'vae_datadir') }}
+            </div>
+            {% else %}
             <div class="cmd-builder-top-row">
               <fieldset class="cmd-builder-required-fieldset">
                 <legend>Required</legend>
@@ -481,15 +851,62 @@
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['train_vae'] %}
                 {% if group.title != 'Dataset loading' %}
-                  <fieldset>
-                    <legend>{{ group.title }}</legend>
-                    {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
-                  </fieldset>
+                  {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
             </div>
+            {% endif %}
           </div>
           <div id="panel-train_nn" class="cmd-panel" data-cmd="train_nn">
+            {% if github_pages_mode %}
+            <div class="cmd-builder-github-body">
+              {% call render_github_required_bar(4) %}
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="nn_particles"
+                    {{ title_attr(command_builder_required_field_titles.get('nn_particles') ) }}>Particles
+                  </label>
+                  <input type="text"
+                         id="nn_particles"
+                         value="{{ default_particles|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('nn_particles') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="nn_out"
+                         {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }}>
+                    Output (<code>-o</code>)
+                  </label>
+                  <input type="text"
+                         id="nn_out"
+                         value="{{ default_outdir_train|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="nn_poses"
+                    {{ title_attr(command_builder_required_field_titles.get('nn_poses') ) }}><code>--poses</code>
+                  </label>
+                  <input type="text"
+                         id="nn_poses"
+                         value="{{ default_poses|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('nn_poses') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="nn_ctf"{{ ctf_row_title("nn_ctf") }}><code>--ctf</code>
+                  </label>
+                  <input type="text"
+                         id="nn_ctf"
+                         value="{{ default_ctf|e }}"
+                         placeholder="path to CTF .pkl"
+                         autocomplete="off"
+                         {{ ctf_row_title("nn_ctf") }} />
+                </div>
+              {% endcall %}
+              {{ render_github_panel_groups('train_nn', 'nn_datadir') }}
+            </div>
+            {% else %}
             <div class="cmd-builder-top-row">
               <fieldset class="cmd-builder-required-fieldset">
                 <legend>Required</legend>
@@ -533,15 +950,74 @@
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['train_nn'] %}
                 {% if group.title != 'Dataset loading' %}
-                  <fieldset>
-                    <legend>{{ group.title }}</legend>
-                    {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
-                  </fieldset>
+                  {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
             </div>
+            {% endif %}
           </div>
           <div id="panel-train_dec" class="cmd-panel" data-cmd="train_dec">
+            {% if github_pages_mode %}
+            <div class="cmd-builder-github-body">
+              {% call render_github_required_bar(5) %}
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="dec_particles"
+                         {{ title_attr(command_builder_required_field_titles.get('dec_particles') ) }}>Particles
+                  </label>
+                  <input type="text"
+                         id="dec_particles"
+                         value="{{ default_particles|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('dec_particles') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line"
+                         for="dec_out"
+                         {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }}>
+                    Output (<code>-o</code>)
+                  </label>
+                  <input type="text"
+                         id="dec_out"
+                         value="{{ default_outdir_train|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="dec_poses"
+                    {{ title_attr(command_builder_required_field_titles.get('dec_poses') ) }}><code>--poses</code>
+                  </label>
+                  <input type="text"
+                         id="dec_poses"
+                         value="{{ default_poses|e }}"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get('dec_poses') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="dec_zdim"
+                    {{ title_attr(command_builder_required_field_titles.get('dec_zdim') ) }}><code>--zdim</code>
+                  </label>
+                  <input type="number"
+                         id="dec_zdim"
+                         min="1"
+                         step="1"
+                         value="{{ default_zdim }}"
+                         {{ title_attr(command_builder_required_field_titles.get('dec_zdim') ) }} />
+                </div>
+                <div class="cmd-builder-required-cell">
+                  <label class="cryo-select-line" for="dec_ctf"{{ ctf_row_title("dec_ctf") }}><code>--ctf</code>
+                  </label>
+                  <input type="text"
+                         id="dec_ctf"
+                         value="{{ default_ctf|e }}"
+                         placeholder="path to CTF .pkl"
+                         autocomplete="off"
+                         {{ ctf_row_title("dec_ctf") }} />
+                </div>
+              {% endcall %}
+              {{ render_github_panel_groups('train_dec', 'dec_datadir') }}
+            </div>
+            {% else %}
             <div class="cmd-builder-top-row">
               <fieldset class="cmd-builder-required-fieldset">
                 <legend>Required</legend>
@@ -595,13 +1071,11 @@
             <div class="cmd-builder-rest-grid">
               {% for group in command_builder_schema['train_dec'] %}
                 {% if group.title != 'Dataset loading' %}
-                  <fieldset>
-                    <legend>{{ group.title }}</legend>
-                    {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
-                  </fieldset>
+                  {{ render_schema_group(group) }}
                 {% endif %}
               {% endfor %}
             </div>
+            {% endif %}
           </div>
         </form>
       </div>
@@ -818,6 +1292,22 @@
   });
 
   syncPanels();
+
+  {% if github_pages_mode %}
+  (function initGithubPagesGroupAccordion() {
+    var groups = document.querySelectorAll("details.cmd-group-card");
+    function closeOthers(openEl) {
+      for (var i = 0; i < groups.length; i++) {
+        if (groups[i] !== openEl) groups[i].open = false;
+      }
+    }
+    for (var j = 0; j < groups.length; j++) {
+      groups[j].addEventListener("toggle", function() {
+        if (this.open) closeOthers(this);
+      });
+    }
+  })();
+  {% endif %}
 })();
     </script>
   {% endblock %}

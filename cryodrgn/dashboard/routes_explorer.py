@@ -507,6 +507,7 @@ def api_scatter():
             marker_size = max(0.5, min(float(raw_ms), 20))
         except ValueError:
             pass
+    use_svg = request.args.get("use_svg") == "1"
     try:
         # WebGL trace (Scattergl) is required at explorer / filter caps: SVG Scatter
         # cannot paint O(10^5) markers in reasonable time, so the plot stays blank and
@@ -520,7 +521,7 @@ def api_scatter():
             None if ccol == "none" else ccol,
             max_points=max_pts,
             preselect_plot_df_rows=preselect_rows,
-            use_webgl=True,
+            use_webgl=not use_svg,
             marker_size=marker_size,
             continuous_palette=request.args.get("palette"),
         )

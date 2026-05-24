@@ -94,17 +94,16 @@ def _scatter_color_hover_texts(
         )
         if cov_label == color_col:
             cov_label = covariate_display_name(color_col)
-        color_num = cast(pd.Series, pd.to_numeric(ser, errors="coerce"))
-        for i in range(n):
-            v = color_num.iloc[i]
-            if pd.isna(v):
-                out.append(f"{cov_label}: —")
-            else:
-                fv = float(v)
-                if np.isfinite(fv):
-                    out.append(f"{cov_label}: {fv:.5g}")
-                else:
-                    out.append(f"{cov_label}: —")
+        # Vectorized formatting: matches Python's ``{fv:.5g}`` (general format).
+        color_vals = pd.to_numeric(ser, errors="coerce").to_numpy(
+            dtype=np.float64, copy=False
+        )
+        finite_mask = np.isfinite(color_vals)
+        prefix = f"{cov_label}: "
+        missing = f"{cov_label}: —"
+        formatted = np.char.mod("%.5g", color_vals)
+        out_arr = np.where(finite_mask, np.char.add(prefix, formatted), missing)
+        out = out_arr.tolist()
     return out
 
 
@@ -121,11 +120,10 @@ def scatter_json(
     continuous_palette: str | None = None,
 ) -> str:
     plotly_cs = normalize_continuous_palette(continuous_palette)
-    sub, row_indices = _subsample(exp.plot_df, max_points, seed=0)
 
+    sub, row_indices = _subsample(exp.plot_df, max_points, seed=0)
     idx_arr = sub["index"].to_numpy()
     row_arr = np.asarray(row_indices, dtype=np.int64)
-    n_pts = len(sub)
 
     discrete_trace = (
         color_col
@@ -156,15 +154,12 @@ def scatter_json(
             color=sub[color_col],
             colorscale=plotly_cs,
         )
-        disp = np.empty(n_pts, dtype=object)
-        color_num = cast(pd.Series, pd.to_numeric(sub[color_col], errors="coerce"))
-        for i in range(n_pts):
-            v = color_num.iloc[i]
-            if pd.isna(v):
-                disp[i] = None
-            else:
-                fv = float(v)
-                disp[i] = fv if np.isfinite(fv) else None
+        color_vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
+            dtype=np.float64, copy=False
+        )
+        finite_mask = np.isfinite(color_vals)
+        disp = color_vals.astype(object)
+        disp[~finite_mask] = None
         customdata = np.column_stack([idx_arr, row_arr, disp])
     else:
         marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
@@ -462,16 +457,12 @@ def scatter3d_z_json(
         fk_arr = np.asarray(fk_list, dtype=object)
         customdata = np.column_stack([idx_cd, row_cd, fk_arr])
     elif has_cov_color:
-        n_sub = len(sub)
-        disp_cd = np.empty(n_sub, dtype=object)
-        color_num = cast(pd.Series, pd.to_numeric(sub[color_col], errors="coerce"))
-        for i in range(n_sub):
-            v = color_num.iloc[i]
-            if pd.isna(v):
-                disp_cd[i] = None
-            else:
-                fv = float(v)
-                disp_cd[i] = fv if np.isfinite(fv) else None
+        color_vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
+            dtype=np.float64, copy=False
+        )
+        finite_mask = np.isfinite(color_vals)
+        disp_cd = color_vals.astype(object)
+        disp_cd[~finite_mask] = None
         customdata = np.column_stack([idx_cd, row_cd, disp_cd])
     else:
         customdata = np.column_stack([idx_cd, row_cd])

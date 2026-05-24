@@ -1075,10 +1075,38 @@ class TestParticleExplorerTemplateRegressions:
         pos_restyle = debounce_block.find(
             "Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);"
         )
-        assert pos_comment != -1 and pos_restyle != -1
+        pos_overlay = debounce_block.find("updateScatterSelectionOverlay(selectedTi);")
+        assert pos_comment != -1
         assert (
-            pos_sync < pos_comment < pos_restyle
-        ), "region overlays must sync before selectedpoints restyle (restyle can clear layout.selections)"
+            pos_restyle != -1 or pos_overlay != -1
+        ), "expected either selectedpoints restyle or selection overlay update in debounce block"
+        pos_selection_apply = pos_restyle if pos_restyle != -1 else pos_overlay
+        assert pos_sync < pos_comment < pos_selection_apply, (
+            "region overlays must sync before selection highlight apply "
+            "(restyle/overlay can clear layout.selections)"
+        )
+
+    def test_multi_region_lasso_combo_uses_overlay_trace_in_debounce(
+        self, flask_client
+    ) -> None:
+        """Latency combo: multi-region lasso debounce highlights via overlay trace, not base selectedpoints."""
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert "selectionOverlayTraceName" in body
+        assert "updateScatterSelectionOverlay" in body
+        assert "rowsUnionFromCommittedScatterRegions" in body
+        assert "mergePersistedScatterSelectionShapes" in body
+        start = body.find('gd.on("plotly_selected", function(ev)')
+        assert start != -1
+        mid = body.find("lassoSelectionDebounceTimer = setTimeout(function()", start)
+        end = body.find("}, LASSO_SELECTION_DEBOUNCE_MS);", mid)
+        debounce_block = body[mid:end]
+        assert "updateScatterSelectionOverlay(selectedTi);" in debounce_block
+        assert (
+            "Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);"
+            not in debounce_block
+        ), "combo debounce must not restyle base trace selectedpoints"
 
     def test_multi_region_row_membership_recomputed_from_geometry(
         self, flask_client

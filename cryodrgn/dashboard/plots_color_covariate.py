@@ -144,7 +144,11 @@ def covariate_row_filter_key(color_col: str, u: Any) -> str:
         return "__na__"
     if color_col == "labels":
         return str(_lower_legend_entry_label(color_col, u))
-    num = pd.to_numeric(pd.Series([u], dtype=object), errors="coerce").iloc[0]
+    # Avoid pandas Series construction for scalar conversion.
+    try:
+        num = float(u)
+    except (TypeError, ValueError):
+        return str(u)
     if pd.notna(num):
         fv = float(num)
         if np.isfinite(fv) and abs(fv - round(fv)) < 1e-8:
@@ -186,7 +190,10 @@ def plot_df_color_filter_mask(
     if kind == "discrete":
         keys_inc = frozenset(str(k) for k in color_filter.get("keys") or ())
         ser = df[color_col]
-        keys_series = ser.map(lambda u, cc=color_col: covariate_row_filter_key(cc, u))
+        # Precompute conversion for unique values once (instead of per-row scalar→Series).
+        uniques = ser[~ser.isna()].unique()
+        fk_by_val = {u: covariate_row_filter_key(color_col, u) for u in uniques}
+        keys_series = ser.map(fk_by_val).fillna("__na__")
         return keys_series.isin(keys_inc).to_numpy(dtype=bool)
     return np.ones(len(df), dtype=bool)
 
@@ -253,18 +260,11 @@ def _scatter_discrete_marker_arrays(
         plot_df, color_col, discrete_label_colors
     )
     ser = sub_df[color_col]
-    n = len(sub_df)
-    colors: list[str] = []
-    keys: list[str] = []
-    for i in range(n):
-        v = ser.iloc[i]
-        if pd.isna(v):
-            fk = "__na__"
-        else:
-            fk = covariate_row_filter_key(color_col, v)
-        colors.append(lookup.get(fk, "#aab4bf"))
-        keys.append(fk)
-    return colors, keys
+    uniques = ser[~ser.isna()].unique()
+    fk_by_val = {u: covariate_row_filter_key(color_col, u) for u in uniques}
+    keys_series = ser.map(fk_by_val).fillna("__na__")
+    colors_series = keys_series.map(lookup).fillna("#aab4bf")
+    return colors_series.tolist(), keys_series.tolist()
 
 
 def discrete_category_counts_by_filter_key(

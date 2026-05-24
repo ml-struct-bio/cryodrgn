@@ -345,18 +345,37 @@
     queueHighlightRestyle(patch);
   }
 
+  // row (plot_df row index) → trace index lookup for the current scatter load.
+  // This removes repeated O(N) scans during selection + geometry bucketing.
+  var rowToTraceIndexMap = null;
+
+  function buildTraceMapFromRows(rows) {
+    rows = rows || [];
+    rowToTraceIndexMap = new Map();
+    for (var i = 0; i < rows.length; i++) {
+      var rowN = Number(rows[i]);
+      if (isFinite(rowN)) rowToTraceIndexMap.set(rowN, i);
+    }
+  }
+
   function buildTraceMap() {
-    if (!preloaded || !gd.data || !gd.data[0]) return;
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return;
     var cd = gd.data[0].customdata;
+    rowToTraceIndexMap = new Map();
     var tm = [];
+    var hasPreloaded = !!preloaded;
     for (var i = 0; i < cd.length; i++) {
       var row = cd[i][1];
-      if (preloaded.rows.has(row)) {
+      var rowN = Number(row);
+      if (isFinite(rowN)) rowToTraceIndexMap.set(rowN, i);
+      if (hasPreloaded && preloaded.rows.has(row)) {
         tm.push({ti: i, src: preloaded.rowToSrc.get(row), row: row});
       }
     }
-    preloaded.traceMap = tm;
-    syncMontageResampleFromCacheButton();
+    if (hasPreloaded) {
+      preloaded.traceMap = tm;
+      syncMontageResampleFromCacheButton();
+    }
   }
 
   /** Montage chip border: top stays thin; left, right, and bottom 50% thicker (3px vs 2px). */
@@ -1069,6 +1088,13 @@
   var suppressMontageResampleUntil = 0;
   var highlightRestyleRaf = null;
   var pendingHighlightRestyle = null;
+
+  /* ---------- selection overlay (avoid expensive Plotly selectedpoints restyles) ---------- */
+  var selectionOverlayTraceName = "cdrgnSelectionOverlay";
+  var selectionOverlayTraceAdded = false;
+  var scatterBaseTraceOpacity = null;
+  var selectionOverlayDimTraceOpacity = 0.15;
+  var selectionOverlayMarkerOpacity = 1;
   /**
    * Finished lasso/box regions: raw ``layout.selections``-style objects plus particle count.
    * Drawn as ``layout.shapes`` / ``layout.annotations`` so they survive while a new selection is in progress.
@@ -1376,14 +1402,11 @@
   }
 
   function traceIndexForPlotDfRow(row) {
-    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return -1;
-    var cd = gd.data[0].customdata;
+    if (!rowToTraceIndexMap) return -1;
     var r = Number(row);
     if (!isFinite(r)) return -1;
-    for (var i = 0; i < cd.length; i++) {
-      if (cd[i] && cd[i].length > 1 && Number(cd[i][1]) === r) return i;
-    }
-    return -1;
+    var ti = rowToTraceIndexMap.get(r);
+    return ti === undefined ? -1 : ti;
   }
 
   /**
@@ -1905,7 +1928,7 @@
     var pre = meta && meta.cdrgn_preselected;
     if (!pre || !pre.length) return;
     try {
-      Plotly.restyle(gd, { selectedpoints: [pre] }, [0]);
+      updateScatterSelectionOverlay(pre);
     } catch (err) {
       console.error(err);
     }
@@ -1917,23 +1940,18 @@
     var rows = saveSelectionRows && saveSelectionRows.length ? saveSelectionRows : [];
     if (!rows.length) {
       beginScatterSelectionRenderingOverlay();
-      try { Plotly.restyle(gd, { selectedpoints: [null] }, [0]); } catch (err) {}
+      try { updateScatterSelectionOverlay([]); } catch (err) {}
       finally { endScatterSelectionRenderingOverlay(); }
       lassoSelectedRowSet = null;
       nudgeHighlightTraceAfterScatterglSelectRestyle();
       refreshGridHighlightMarkerStylesFromLastRows();
       return;
     }
-    var rowSet = new Set(rows);
     var cd = gd.data[0].customdata;
-    var selected = [];
-    for (var i = 0; i < cd.length; i++) {
-      var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
-      if (rowSet.has(row)) selected.push(i);
-    }
+    var selected = selectionRowsToTraceIndices(rows);
     beginScatterSelectionRenderingOverlay();
     try {
-      Plotly.restyle(gd, { selectedpoints: [selected] }, [0]);
+      updateScatterSelectionOverlay(selected);
     } catch (err) {
       console.error(err);
     } finally {
@@ -2021,6 +2039,8 @@
     var hasActiveSelection = !!(saveSelectionRows && saveSelectionRows.length);
     suppressSelectionEvents = true;
     highlightTraceAdded = false;
+    selectionOverlayTraceAdded = false;
+    scatterBaseTraceOpacity = null;
     cancelLassoSelectionDebounce();
     cancelPendingHighlightRestyle();
     cancelPendingScatterAfterPlot();
@@ -2226,13 +2246,28 @@
 
   function selectionRowsToTraceIndices(rows) {
     rows = rows || [];
+    if (rowToTraceIndexMap) {
+      var selected = [];
+      var seen = new Set();
+      for (var rti = 0; rti < rows.length; rti++) {
+        var rtv = Number(rows[rti]);
+        if (!isFinite(rtv)) continue;
+        var ti = rowToTraceIndexMap.get(rtv);
+        if (ti === undefined) continue;
+        if (seen.has(ti)) continue;
+        seen.add(ti);
+        selected.push(ti);
+      }
+      return selected;
+    }
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return [];
+    // Fallback: O(N) scan when the lookup map hasn't been built yet.
     var rowSet = new Set();
     for (var rti = 0; rti < rows.length; rti++) {
       var rtv = Number(rows[rti]);
       if (isFinite(rtv)) rowSet.add(rtv);
     }
     var selected = [];
-    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return selected;
     var cd = gd.data[0].customdata;
     for (var i = 0; i < cd.length; i++) {
       var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
@@ -2240,6 +2275,87 @@
       if (isFinite(rowN) && rowSet.has(rowN)) selected.push(i);
     }
     return selected;
+  }
+
+  /* ---------- selection overlay updates (trace indices) ---------- */
+  function selectionOverlayTraceIndex() {
+    if (!gd || !gd.data) return null;
+    for (var i = 0; i < gd.data.length; i++) {
+      var t = gd.data[i];
+      if (t && t.name === selectionOverlayTraceName) return i;
+    }
+    return null;
+  }
+
+  function ensureSelectionOverlayTrace() {
+    var idx = selectionOverlayTraceIndex();
+    if (idx != null) return idx;
+    if (!gd || !gd.data || !gd.data[0]) return null;
+    var baseTrace = gd.data[0];
+    var baseMarker = baseTrace.marker || {};
+    var overlayMarker = Object.assign({}, baseMarker);
+    overlayMarker.opacity = selectionOverlayMarkerOpacity;
+    // Avoid copying per-point color arrays at trace creation; we set them on selection updates.
+    if (overlayMarker.color != null && typeof overlayMarker.color !== "string") {
+      overlayMarker.color = [];
+    }
+    var overlay = {
+      name: selectionOverlayTraceName,
+      type: baseTrace.type || "scatter",
+      x: [],
+      y: [],
+      mode: "markers",
+      customdata: [],
+      marker: overlayMarker,
+      hovertemplate: baseTrace.hovertemplate,
+      showlegend: false
+    };
+    try { Plotly.addTraces(gd, [overlay]); } catch (e) {}
+    idx = selectionOverlayTraceIndex();
+    selectionOverlayTraceAdded = idx != null;
+    return idx;
+  }
+
+  function updateScatterSelectionOverlay(traceIndices) {
+    traceIndices = traceIndices || [];
+    if (!gd || !gd.data || !gd.data[0]) return null;
+    var hasSel = !!(traceIndices && traceIndices.length);
+
+    var baseTrace = gd.data[0];
+    var overlayIdx = ensureSelectionOverlayTrace();
+    if (overlayIdx == null) return null;
+
+    var xAll = baseTrace.x;
+    var yAll = baseTrace.y;
+    var cdAll = baseTrace.customdata;
+    var markerColorAll = baseTrace.marker ? baseTrace.marker.color : null;
+    var wantMarkerColor = markerColorAll != null && typeof markerColorAll !== "string";
+
+    if (!hasSel) {
+      var clearUpdate = { x: [[]], y: [[]], customdata: [[]] };
+      if (wantMarkerColor) clearUpdate["marker.color"] = [[]];
+      try { return Plotly.restyle(gd, clearUpdate, [overlayIdx]); } catch (e2) { return null; }
+    }
+
+    var xSel = new Array(traceIndices.length);
+    var ySel = new Array(traceIndices.length);
+    var cdSel = new Array(traceIndices.length);
+    var colorSel = wantMarkerColor ? new Array(traceIndices.length) : null;
+
+    for (var k = 0; k < traceIndices.length; k++) {
+      var ti = traceIndices[k];
+      xSel[k] = xAll ? xAll[ti] : null;
+      ySel[k] = yAll ? yAll[ti] : null;
+      cdSel[k] = cdAll ? cdAll[ti] : null;
+      if (wantMarkerColor) colorSel[k] = markerColorAll[ti];
+    }
+
+    var update = { x: [xSel], y: [ySel], customdata: [cdSel] };
+    if (wantMarkerColor) update["marker.color"] = [colorSel];
+
+    var ret2 = null;
+    try { ret2 = Plotly.restyle(gd, update, [overlayIdx]); } catch (e3) {}
+    return ret2;
   }
 
   function applyRowsSelection(rows, statusPrefix, holdSuppressMs) {
@@ -2259,14 +2375,16 @@
     var selectedTi = selectionRowsToTraceIndices(saveSelectionRows);
     suppressSelectionEvents = true;
     beginScatterSelectionRenderingOverlay();
+    var restyleRet = null;
     try {
-      Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);
+      restyleRet = updateScatterSelectionOverlay(selectedTi);
     } catch (err) {
       console.error(err);
     } finally {
       endScatterSelectionRenderingOverlay();
     }
-    nudgeHighlightTraceAfterScatterglSelectRestyle();
+    var sp = gd && gd.data && gd.data[0] ? gd.data[0].selectedpoints : null;
+    if (sp) nudgeHighlightTraceAfterScatterglSelectRestyle();
     /* Legend-driven discrete/threshold restyles still emit plotly_selected after a tick; its
        debounced handler (200ms) would overwrite saveSelectionRows and clear toggle checkboxes
        unless we keep suppression past that window. */
@@ -2804,7 +2922,7 @@
         suppressSelectionEvents = true;
         beginScatterSelectionRenderingOverlay();
         try {
-          Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);
+          updateScatterSelectionOverlay(selectedTi);
         } catch (err) {
           console.error(err);
         } finally {
@@ -2831,7 +2949,7 @@
         suppressSelectionEvents = true;
         beginScatterSelectionRenderingOverlay();
         try {
-          Plotly.restyle(gd, { selectedpoints: [selectedTi.length ? selectedTi : null] }, [0]);
+          updateScatterSelectionOverlay(selectedTi);
         } catch (err) {
           console.error(err);
         } finally {

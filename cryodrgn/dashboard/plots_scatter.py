@@ -446,77 +446,97 @@ def scatter3d_z_json(
     # Plotly Scatter3d otherwise picks up a default marker outline in WebGL.
     marker["line"] = dict(width=0)
 
-    idx_cd = sub["index"].to_numpy()
     if VOL_LANDSCAPE_3D_PLOT_DF_ROW in sub.columns:
         row_cd = np.asarray(sub[VOL_LANDSCAPE_3D_PLOT_DF_ROW], dtype=np.int64)
     else:
         row_cd = np.asarray(row_indices, dtype=np.int64)
 
     has_cov_color = bool(color_col and color_col != "none" and color_col in sub.columns)
-    if discrete_trace:
-        fk_arr = np.asarray(fk_list, dtype=object)
-        customdata = np.column_stack([idx_cd, row_cd, fk_arr])
-    elif has_cov_color:
-        color_vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
-            dtype=np.float64, copy=False
-        )
-        finite_mask = np.isfinite(color_vals)
-        disp_cd = color_vals.astype(object)
-        disp_cd[~finite_mask] = None
-        customdata = np.column_stack([idx_cd, row_cd, disp_cd])
-    else:
-        customdata = np.column_stack([idx_cd, row_cd])
-
-    if has_cov_color:
-        cc = cast(str, color_col)
-        hov2_3d = np.asarray(
-            _scatter_color_hover_texts(
-                sub,
-                cc,
-                discrete_trace=bool(discrete_trace),
-                vol_pc_explained_variance_ratio=vol_pc_explained_variance_ratio,
-            ),
-            dtype=object,
-        ).reshape(-1, 1)
-        customdata = np.column_stack([customdata, hov2_3d])
-        hover_kwargs_3d: dict[str, Any] = dict(
-            hovertemplate=(
-                "particle: %{customdata[0]}<br>" "%{customdata[3]}<extra></extra>"
-            ),
-        )
-    else:
-        hover_kwargs_3d = dict(
-            hovertemplate="particle: %{customdata[0]}<extra></extra>",
-        )
-
-    if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
-        nv = np.asarray(sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL], dtype=np.int64)
+    hover_kwargs_3d: dict[str, Any]
+    # L3-E7: slim customdata; L3-E7fix: hovertemplate only (no per-point hovertext bloat)
+    if volume_landscape_3d_style:
+        parts: list[np.ndarray] = [row_cd]
         if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
-            cd_cent = np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
-            customdata = np.column_stack([customdata, cd_cent])
-        customdata = np.column_stack([customdata, nv])
-
-        # Volume-landscape hover: show which k-means volume each particle belongs to.
-        # We append `nv` as the last customdata column, so use `customdata[-1]`.
-        if volume_landscape_3d_style:
-            nv_cd_idx = int(customdata.shape[1] - 1)
-            if has_cov_color:
-                hover_kwargs_3d["hovertemplate"] = (
-                    "particle: %{customdata[0]}"
-                    + "<br>%{customdata[3]}"
-                    + "<br>k_means_vol=%{customdata["
-                    + str(nv_cd_idx)
-                    + "]}"
-                    + "<extra></extra>"
-                )
+            parts.append(
+                np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
+            )
+        cov_cd_idx: int | None = None
+        if has_cov_color:
+            if discrete_trace:
+                parts.append(np.asarray(fk_list, dtype=object))
             else:
-                hover_kwargs_3d["hovertemplate"] = (
-                    "particle: %{customdata[0]}"
-                    + "<br>k_means_vol=%{customdata["
-                    + str(nv_cd_idx)
-                    + "]}"
-                    + "<extra></extra>"
+                parts.append(
+                    pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
+                        dtype=np.float64, copy=False
+                    )
                 )
+            cov_cd_idx = len(parts) - 1
+        nv_cd_idx: int | None = None
+        if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
+            parts.append(
+                np.asarray(sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL], dtype=np.int64)
+            )
+            nv_cd_idx = len(parts) - 1
+        customdata = np.column_stack(parts) if len(parts) > 1 else row_cd.reshape(-1, 1)
+        hov = "particle: %{customdata[0]}"
+        if has_cov_color and cov_cd_idx is not None:
+            cc = cast(str, color_col)
+            if discrete_trace:
+                hov += f"<br>%{{customdata[{cov_cd_idx}]}}"
+            else:
+                cov_label = landscape_vol_pc_column_pretty_label(
+                    cc, vol_pc_explained_variance_ratio
+                )
+                if cov_label == cc:
+                    cov_label = covariate_display_name(cc)
+                hov += f"<br>{cov_label}: %{{customdata[{cov_cd_idx}]:.5g}}"
+        if nv_cd_idx is not None:
+            hov += f"<br>k_means_vol=%{{customdata[{nv_cd_idx}]}}"
+        hover_kwargs_3d = dict(hovertemplate=hov + "<extra></extra>")
+    else:
+        idx_cd = sub["index"].to_numpy()
+        if discrete_trace:
+            fk_arr = np.asarray(fk_list, dtype=object)
+            customdata = np.column_stack([idx_cd, row_cd, fk_arr])
+        elif has_cov_color:
+            color_vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
+                dtype=np.float64, copy=False
+            )
+            finite_mask = np.isfinite(color_vals)
+            disp_cd = color_vals.astype(object)
+            disp_cd[~finite_mask] = None
+            customdata = np.column_stack([idx_cd, row_cd, disp_cd])
+        else:
+            customdata = np.column_stack([idx_cd, row_cd])
+        if has_cov_color:
+            cc = cast(str, color_col)
+            hov2_3d = np.asarray(
+                _scatter_color_hover_texts(
+                    sub,
+                    cc,
+                    discrete_trace=bool(discrete_trace),
+                    vol_pc_explained_variance_ratio=vol_pc_explained_variance_ratio,
+                ),
+                dtype=object,
+            ).reshape(-1, 1)
+            customdata = np.column_stack([customdata, hov2_3d])
+            hover_kwargs_3d = dict(
+                hovertemplate=(
+                    "particle: %{customdata[0]}<br>" "%{customdata[3]}<extra></extra>"
+                ),
+            )
+        else:
+            hover_kwargs_3d = dict(
+                hovertemplate="particle: %{customdata[0]}<extra></extra>",
+            )
+        if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
+            nv = np.asarray(sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL], dtype=np.int64)
+            if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
+                cd_cent = np.asarray(
+                    sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64
+                )
+                customdata = np.column_stack([customdata, cd_cent])
+            customdata = np.column_stack([customdata, nv])
 
     # Match the volume-selection overlay
     # (``latent3d_landscape_vol_animations.js``): keep

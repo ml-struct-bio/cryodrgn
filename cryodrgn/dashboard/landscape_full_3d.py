@@ -27,6 +27,27 @@ from cryodrgn.dashboard.data import DashboardExperiment
 _LANDSCAPE_FULL_SUBDIR = "landscape_full"
 _LANDSCAPE_VOL_PC_COL_RE = re.compile(r"^landscape_vol_PC(\d+)$")
 _SKETCH_CENTERS_IND_CACHE: dict[tuple[str, int], np.ndarray] = {}
+_LANDSCAPE_FULL_SAMPLED_DF_CACHE: dict[tuple, pd.DataFrame] = {}
+
+
+def _landscape_full_sampled_df_cache_key(exp: DashboardExperiment) -> tuple:
+    """L3-E1 cache key from output mtimes + table size."""
+    outdir = landscape_full_outdir(exp.workdir, exp.epoch)
+    ind_path = os.path.join(outdir, "ind.sampled.pkl")
+    z_path = os.path.join(outdir, "z.sampled.pkl")
+    vol_path = os.path.join(outdir, "vol_pca_all.pkl")
+
+    def _mt(p: str) -> float:
+        return os.path.getmtime(p) if os.path.isfile(p) else 0.0
+
+    return (
+        os.path.abspath(exp.workdir),
+        int(exp.epoch),
+        _mt(ind_path),
+        _mt(z_path),
+        _mt(vol_path),
+        len(exp.plot_df),
+    )
 
 
 def _sketch_centers_ind_for_epoch(workdir: str, epoch: int) -> np.ndarray | None:
@@ -194,7 +215,7 @@ def attach_landscape_nearest_sketch_vol_column(
     return out
 
 
-def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
+def _build_landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
     """Merge ``ind.sampled.pkl`` / ``z.sampled.pkl`` with the analysis table.
 
     Adds volume covariates from ``vol_pca_all.pkl`` to the sampled rows.
@@ -267,6 +288,17 @@ def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
             base["landscape_vol_cluster"] = cl[ind_used]
 
     return attach_landscape_nearest_sketch_vol_column(exp, base)
+
+
+def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
+    """L3-E1: process-level cache for sampled plot table."""
+    key = _landscape_full_sampled_df_cache_key(exp)
+    hit = _LANDSCAPE_FULL_SAMPLED_DF_CACHE.get(key)
+    if hit is not None:
+        return hit
+    built = _build_landscape_full_sampled_plot_df(exp)
+    _LANDSCAPE_FULL_SAMPLED_DF_CACHE[key] = built
+    return built
 
 
 def landscape_full_3d_scatter_plotly_json(

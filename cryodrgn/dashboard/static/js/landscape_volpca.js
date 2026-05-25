@@ -434,6 +434,28 @@
 
   var META = null;
   var selectedVols = new Set();
+  /** Stable A/B/… label per sketch volume id (order of first selection). */
+  var volMontageLabel = {};
+  var nextMontageLabelIdx = 0;
+  /** Ignore ``plotly_selected`` until this timestamp (click-toggle vs Plotly re-select race). */
+  var suppressPlotlySelectedUntil = 0;
+  /** True while the user is drawing a lasso/box (``plotly_selecting``); false for click-only selects. */
+  var volLassoBoxGestureActive = false;
+  var volsketchSelectingDimTok = 0;
+  /** True during lasso/box drag — suppress mid-gesture selection commits. */
+  var volsketchLassoDimArmed = false;
+  var volsketchLassoDimPreviewDone = false;
+  var volsketchLassoSelectTimer = null;
+  /** Last opacity dimming index set applied (committed selection / clear). */
+  var volsketchLastDimIndicesKey = "";
+  var volsketchDimRestyleBusy = false;
+  var volsketchDimRestyleQueued = null;
+  /** Bumped on click-toggle; stale GIF responses must not rewrite ``selectedVols``. */
+  var volSelectionEpoch = 0;
+  var volSelectionOverlayTraceName = "cdrgnVolSelectionOverlay";
+  var volSelectionOverlayTraceAdded = false;
+  /** Sketch volume id → plot trace point index (rebuilt after each scatter load). */
+  var volIdToPointIndex = {};
   var lastAnimToken = null;
   var lastBatchMode = null;
   var clickTimer = null;
@@ -796,7 +818,62 @@
     return a.slice(0, k);
   }
 
+  function resetVolMontageLabels() {
+    volMontageLabel = {};
+    nextMontageLabelIdx = 0;
+  }
+
+  /** Fresh A/B/… in sorted sketch-volume order (each new lasso/box selection). */
+  function assignVolMontageLabelsSorted() {
+    resetVolMontageLabels();
+    var sorted = Array.from(selectedVols).sort(function(a, b) { return a - b; });
+    for (var li = 0; li < sorted.length; li++) {
+      volMontageLabel[sorted[li]] = montageLabelAt(li);
+    }
+    nextMontageLabelIdx = sorted.length;
+  }
+
+  function syncStableSelectionLabels() {
+    if (!selectedVols.size) {
+      resetVolMontageLabels();
+      return;
+    }
+    var k;
+    var toDrop = [];
+    for (k in volMontageLabel) {
+      if (!Object.prototype.hasOwnProperty.call(volMontageLabel, k)) continue;
+      var vk = parseInt(k, 10);
+      if (!selectedVols.has(vk)) toDrop.push(k);
+    }
+    for (var di = 0; di < toDrop.length; di++) {
+      delete volMontageLabel[toDrop[di]];
+    }
+    selectedVols.forEach(function(v) {
+      if (volMontageLabel[v] === undefined) {
+        volMontageLabel[v] = montageLabelAt(nextMontageLabelIdx++);
+      }
+    });
+  }
+
+  function montageLabelForVol(v) {
+    syncStableSelectionLabels();
+    return volMontageLabel[v] != null ? volMontageLabel[v] : "";
+  }
+
+  function clearVolsketchGeometricSelection() {
+    if (!gd) return;
+    try {
+      Plotly.relayout(gd, {
+        selections: [],
+        selectionrevision: (gd.layout && gd.layout.selectionrevision != null
+          ? gd.layout.selectionrevision + 1
+          : Date.now())
+      });
+    } catch (e) { /* ignore */ }
+  }
+
   function updateSelLabel() {
+    syncStableSelectionLabels();
     var arr = Array.from(selectedVols).sort(function(a,b){ return a-b; });
     var nTotal = META && META.n_volumes != null ? Number(META.n_volumes) : NaN;
     if (selSummaryEl) {
@@ -819,21 +896,28 @@
           "Selected volume indices (" + arr.length + ")"
         );
         var listParts = [];
-        arr.forEach(function(v, i) {
-          listParts.push(volSketchFilenameIndex(v) + " (" + montageLabelAt(i) + ")");
+        arr.forEach(function(v) {
+          listParts.push(volSketchFilenameIndex(v) + " (" + montageLabelForVol(v) + ")");
         });
         var listLabel = listParts.join(", ");
         selIndicesList.setAttribute(
           "aria-label",
           "Selected sketch volume indices: " + listLabel
         );
-        arr.forEach(function(v, i) {
+        arr.forEach(function(v) {
           var li = document.createElement("li");
-          li.textContent = volSketchFilenameIndex(v) + " (" + montageLabelAt(i) + ")";
+          li.textContent = volSketchFilenameIndex(v) + " (" + montageLabelForVol(v) + ")";
           selIndicesList.appendChild(li);
         });
       }
     }
+  }
+
+  function traceForPlotlyPoint(pt) {
+    if (!gd || !gd.data || !pt) return null;
+    var cn = pt.curveNumber;
+    if (cn != null && gd.data[cn]) return gd.data[cn];
+    return gd.data[0] || null;
   }
 
   function volFromPoint(pt) {
@@ -842,13 +926,31 @@
       var idv = parseInt(String(pt.id), 10);
       if (!isNaN(idv)) return idv;
     }
-    var trace = gd && gd.data && gd.data[0];
+    var row = customDataRowAsArray(pt.customdata);
+    if (row.length) {
+      var cdv = parseInt(String(row[0]), 10);
+      if (!isNaN(cdv)) return cdv;
+    }
+    var trace = traceForPlotlyPoint(pt);
     if (trace && pt.pointNumber != null && pt.pointNumber >= 0) {
       var vi = volIdAtPointIndex(trace, pt.pointNumber);
       if (!isNaN(vi)) return vi;
     }
-    var row = customDataRowAsArray(pt.customdata);
-    return row.length ? parseInt(String(row[0]), 10) : NaN;
+    return NaN;
+  }
+
+  function baseTracePointsFromSelectedEvent(ev) {
+    var pts = (ev && ev.points) ? ev.points : [];
+    if (!pts.length) return [];
+    var overlayIdx = volSelectionOverlayTraceIndex();
+    var out = [];
+    var pi;
+    for (pi = 0; pi < pts.length; pi++) {
+      var pt = pts[pi];
+      if (overlayIdx != null && pt.curveNumber === overlayIdx) continue;
+      if (pt.curveNumber === 0 || pt.curveNumber == null) out.push(pt);
+    }
+    return out.length ? out : pts;
   }
 
   function _hexToRgbVs(hex) {
@@ -924,88 +1026,366 @@
     return null;
   }
 
-  function refreshSelectionHighlight() {
+  function rebuildVolIdPointIndexMap() {
+    volIdToPointIndex = {};
     if (!gd || !gd.data || !gd.data[0]) return;
     var trace = gd.data[0];
-    var xs = trace.x;
-    if (!xs || !xs.length) return;
-    var n = xs.length;
+    var n = trace.x ? trace.x.length : 0;
     var hasIds = trace.ids && trace.ids.length === n;
     var cd = trace.customdata;
     if (!hasIds && (!cd || cd.length !== n)) return;
-    var mkFallback = 9 * (1 - 0.13);
-    var refSz = referenceScatter3dBaseMarkerSize(trace, gd);
-    var baseSize = refSz != null ? Math.max(2, refSz) : Math.max(2, mkFallback);
-    var hiSize = refSz != null ? Math.max(3, refSz * (11 / 9)) : Math.max(3, mkFallback * (11 / 9));
-    var baseOp = 0.75 * 0.8;
-    var hiOp = 0.86 * 0.8;
-    var dimOp = 0.66 * 0.8;
-    var hasSel = selectedVols.size > 0;
-    var sizes = new Array(n);
-    var opacities = new Array(n);
-    var lineWidths = new Array(n);
-    var lineColors = new Array(n);
-    var sortedSel = Array.from(selectedVols).sort(function(a, b) { return a - b; });
-    var labelByVol = {};
-    for (var li = 0; li < sortedSel.length; li++) {
-      labelByVol[sortedSel[li]] = montageLabelAt(li);
-    }
-    var texts = new Array(n);
     for (var i = 0; i < n; i++) {
       var v = volIdAtPointIndex(trace, i);
-      var on = !isNaN(v) && selectedVols.has(v);
-      texts[i] = on ? labelByVol[v] : "";
-      if (on) {
-        sizes[i] = hiSize;
-        opacities[i] = hiOp;
-        lineWidths[i] = 1;
-        lineColors[i] = selectionOutlineForFillVs(markerFillCssAtIndexVs(trace, gd, i));
-      } else {
-        sizes[i] = baseSize;
-        opacities[i] = hasSel ? dimOp : baseOp;
-        lineWidths[i] = 0;
-        lineColors[i] = "rgba(0,0,0,0)";
-      }
+      if (!isNaN(v)) volIdToPointIndex[v] = i;
+    }
+  }
+
+  function volSelectionOverlayTraceIndex() {
+    if (!gd || !gd.data) return null;
+    for (var i = 0; i < gd.data.length; i++) {
+      if (gd.data[i] && gd.data[i].name === volSelectionOverlayTraceName) return i;
+    }
+    return null;
+  }
+
+  function volSelectionHiMarkerSize(trace, graphDiv) {
+    var mkFallback = 9 * (1 - 0.13);
+    var refSz = referenceScatter3dBaseMarkerSize(trace, graphDiv);
+    return refSz != null ? Math.max(3, refSz * (11 / 9)) : Math.max(3, mkFallback * (11 / 9));
+  }
+
+  function ensureVolSelectionOverlayTrace(baseTrace) {
+    var idx = volSelectionOverlayTraceIndex();
+    if (idx != null) return idx;
+    if (!gd || !baseTrace) return null;
+    var baseMarker = baseTrace.marker || {};
+    var overlayMarker = {
+      size: volSelectionHiMarkerSize(baseTrace, gd),
+      opacity: 0.86 * 0.8,
+      line: { width: 1, color: "#0f172a" },
+    };
+    overlayMarker.color = overlayMarker.color || "#4a5568";
+    if (baseMarker.color != null && typeof baseMarker.color === "string") {
+      overlayMarker.color = baseMarker.color;
     }
     var tf = {
       size: 12,
       color: "#1a1a1a",
       family: "system-ui, Segoe UI, sans-serif",
     };
-    var snap = snapshotVolsketchAxesView(gd);
-    var upd = {
-      "marker.size": [sizes],
-      "marker.opacity": [opacities],
-      "marker.line.width": [lineWidths],
-      "marker.line.color": [lineColors],
+    var overlay = {
+      name: volSelectionOverlayTraceName,
+      // SVG scatter overlay: Scattergl + text restyle can trip WebGL (glText) in headless runs.
+      type: "scatter",
+      x: [],
+      y: [],
       mode: "markers+text",
-      text: [texts],
+      text: [],
       textposition: "top center",
       textfont: tf,
+      customdata: [],
+      marker: overlayMarker,
+      hovertemplate: baseTrace.hovertemplate,
+      showlegend: false,
     };
-    var fallback = {
-      "marker.size": [sizes],
-      "marker.opacity": [opacities],
-      "marker.line.width": [lineWidths],
-      "marker.line.color": [lineColors],
-      mode: "markers+text",
-      text: [texts],
-      textposition: "top center",
-      textfont: tf,
-    };
-    var p = Plotly.restyle(gd, upd, [0]);
-    function finishAxisRestore() {
-      return restoreVolsketchAxesView(gd, snap);
+    try { Plotly.addTraces(gd, [overlay]); } catch (e) { /* ignore */ }
+    idx = volSelectionOverlayTraceIndex();
+    volSelectionOverlayTraceAdded = idx != null;
+    return idx;
+  }
+
+  /** Match baseline ``landscape_volpca`` per-point opacities (``baseOp`` / ``dimOp``). */
+  var VOLSKETCH_SCATTER_BASE_OP = 0.75 * 0.8;
+  var VOLSKETCH_SCATTER_DIM_OP = 0.66 * 0.8;
+  var VOLSKETCH_LASSO_DEBOUNCE_MS = 200;
+
+  function volsketchDimIndicesKey(indices) {
+    if (!indices || !indices.length) return "";
+    var sorted = indices.slice().sort(function(a, b) { return a - b; });
+    return sorted.join(",");
+  }
+
+  function pointIndicesFromSelectEvent(ev) {
+    var selPts = baseTracePointsFromSelectedEvent(ev);
+    var indices = [];
+    var seen = {};
+    var pi;
+    for (pi = 0; pi < selPts.length; pi++) {
+      var pn = selPts[pi].pointNumber;
+      if (pn == null || pn < 0 || seen[pn]) continue;
+      seen[pn] = true;
+      indices.push(pn);
     }
-    if (p && typeof p.then === "function") {
-      p.catch(function() {
-        return Plotly.restyle(gd, fallback, [0]);
-      }).then(function() {
-        requestAnimationFrame(finishAxisRestore);
-      });
+    if (indices.length) return indices;
+    var trace = gd && gd.data && gd.data[0];
+    var sp = trace && trace.selectedpoints;
+    if (sp && sp.length) return sp.slice();
+    return [];
+  }
+
+  /**
+   * Start lasso/box drag: drop committed per-point opacity arrays so Plotly ``selectedpoints``
+   * preview stays stable (matches particle explorer scattergl dimming).
+   */
+  function beginVolsketchLassoDimmingGesture() {
+    if (volsketchLassoDimPreviewDone) return;
+    volsketchLassoDimPreviewDone = true;
+    if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== "scattergl") return;
+    var trace = gd.data[0];
+    var n = trace.x ? trace.x.length : 0;
+    if (!n) return;
+    var mo = trace.marker && trace.marker.opacity;
+    var perPoint =
+      mo != null &&
+      typeof mo !== "number" &&
+      Array.isArray(mo) &&
+      mo.length === n;
+    var patch = {
+      selectedpoints: [null],
+      "unselected.marker.opacity": [VOLSKETCH_SCATTER_DIM_OP],
+    };
+    if (perPoint) patch["marker.opacity"] = [VOLSKETCH_SCATTER_BASE_OP];
+    try {
+      Plotly.restyle(gd, patch, [0]);
+    } catch (e) { /* ignore */ }
+  }
+
+  /** Committed selection / clear: scattergl ``selectedpoints`` dimming (no per-point opacity arrays). */
+  function applyBaseTraceOpacityDimming(pointIndices, opts) {
+    opts = opts || {};
+    if (!gd || !gd.data || !gd.data[0]) return Promise.resolve();
+    var trace = gd.data[0];
+    var n = trace.x ? trace.x.length : 0;
+    if (!n) return Promise.resolve();
+    var indices = pointIndices || [];
+    if (opts.skipEmpty && !indices.length) return Promise.resolve();
+    var key = volsketchDimIndicesKey(indices);
+    if (opts.dedupe && key === volsketchLastDimIndicesKey) return Promise.resolve();
+    if (volsketchDimRestyleBusy) {
+      volsketchDimRestyleQueued = {
+        pointIndices: indices.slice(),
+        opts: opts,
+      };
+      return Promise.resolve();
+    }
+    volsketchDimRestyleBusy = true;
+    var hasSel = indices.length > 0;
+    var restyle;
+    if (!hasSel) {
+      restyle = {
+        selectedpoints: [null],
+        "marker.opacity": [VOLSKETCH_SCATTER_BASE_OP],
+        "unselected.marker.opacity": [VOLSKETCH_SCATTER_BASE_OP],
+      };
     } else {
-      requestAnimationFrame(finishAxisRestore);
+      restyle = {
+        selectedpoints: [indices.slice()],
+        "marker.opacity": [VOLSKETCH_SCATTER_BASE_OP],
+        "unselected.marker.opacity": [VOLSKETCH_SCATTER_DIM_OP],
+      };
     }
+    function finishDimRestyle() {
+      volsketchDimRestyleBusy = false;
+      volsketchLastDimIndicesKey = key;
+      var queued = volsketchDimRestyleQueued;
+      volsketchDimRestyleQueued = null;
+      if (queued) {
+        applyBaseTraceOpacityDimming(queued.pointIndices, queued.opts);
+      }
+    }
+    try {
+      var p = Plotly.restyle(gd, restyle, [0]);
+      if (p && typeof p.then === "function") {
+        return p.then(finishDimRestyle).catch(function() {
+          finishDimRestyle();
+          return null;
+        });
+      }
+    } catch (e) { /* ignore */ }
+    finishDimRestyle();
+    return Promise.resolve();
+  }
+
+  /** Scattergl may keep selection paint until dragmode is nudged (see particle explorer). */
+  function scheduleVolsketchScatterglPaintFlush() {
+    if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== "scattergl") return;
+    var dm = gd.layout && gd.layout.dragmode != null ? gd.layout.dragmode : "lasso";
+    window.requestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
+        try {
+          Plotly.relayout(gd, { dragmode: false });
+          Plotly.relayout(gd, { dragmode: dm });
+        } catch (e) {
+          try {
+            Plotly.relayout(gd, { dragmode: "pan" });
+            Plotly.relayout(gd, { dragmode: dm });
+          } catch (e2) { /* ignore */ }
+        }
+      });
+    });
+  }
+
+  function updateVolSelectionOverlay(pointIndices, labelByVol, baseTrace) {
+    pointIndices = pointIndices || [];
+    labelByVol = labelByVol || {};
+    if (!gd || !baseTrace) return Promise.resolve();
+    var overlayIdx = ensureVolSelectionOverlayTrace(baseTrace);
+    if (overlayIdx == null) return Promise.resolve();
+    var xAll = baseTrace.x;
+    var yAll = baseTrace.y;
+    var cdAll = baseTrace.customdata;
+    var hiSize = volSelectionHiMarkerSize(baseTrace, gd);
+    var hiOp = 0.86 * 0.8;
+    var tf = {
+      size: 12,
+      color: "#1a1a1a",
+      family: "system-ui, Segoe UI, sans-serif",
+    };
+    if (!pointIndices.length) {
+      return Plotly.restyle(
+        gd,
+        {
+          x: [[]],
+          y: [[]],
+          text: [[]],
+          customdata: [[]],
+          "marker.size": [[hiSize]],
+          "marker.opacity": [[hiOp]],
+        },
+        [overlayIdx]
+      ).catch(function() { return null; });
+    }
+    var k = pointIndices.length;
+    var xSel = new Array(k);
+    var ySel = new Array(k);
+    var texts = new Array(k);
+    var cdSel = new Array(k);
+    var sizes = new Array(k);
+    var opacities = new Array(k);
+    var lineWidths = new Array(k);
+    var lineColors = new Array(k);
+    var markerColors = null;
+    var mcAll = baseTrace.marker ? baseTrace.marker.color : null;
+    if (mcAll != null && typeof mcAll !== "string" && Array.isArray(mcAll)) {
+      markerColors = new Array(k);
+    }
+    for (var ki = 0; ki < k; ki++) {
+      var ti = pointIndices[ki];
+      xSel[ki] = xAll ? xAll[ti] : null;
+      ySel[ki] = yAll ? yAll[ti] : null;
+      cdSel[ki] = cdAll ? cdAll[ti] : null;
+      var v = volIdAtPointIndex(baseTrace, ti);
+      texts[ki] = !isNaN(v) && labelByVol[v] != null ? labelByVol[v] : "";
+      sizes[ki] = hiSize;
+      opacities[ki] = hiOp;
+      lineWidths[ki] = 1;
+      lineColors[ki] = selectionOutlineForFillVs(markerFillCssAtIndexVs(baseTrace, gd, ti));
+      if (markerColors) markerColors[ki] = mcAll[ti];
+    }
+    var upd = {
+      x: [xSel],
+      y: [ySel],
+      text: [texts],
+      customdata: [cdSel],
+      "marker.size": [sizes],
+      "marker.opacity": [opacities],
+      "marker.line.width": [lineWidths],
+      "marker.line.color": [lineColors],
+      mode: "markers+text",
+      textposition: "top center",
+      textfont: tf,
+    };
+    if (markerColors) upd["marker.color"] = [markerColors];
+    return Plotly.restyle(gd, upd, [overlayIdx]).catch(function() { return null; });
+  }
+
+  function refreshSelectionHighlight() {
+    if (volsketchLassoDimArmed) return;
+    if (!gd || !gd.data || !gd.data[0]) return;
+    var trace = gd.data[0];
+    var snap = snapshotVolsketchAxesView(gd);
+    syncStableSelectionLabels();
+    var sortedSel = Array.from(selectedVols).sort(function(a, b) { return a - b; });
+    var labelByVol = {};
+    var pointIndices = [];
+    for (var li = 0; li < sortedSel.length; li++) {
+      var vid = sortedSel[li];
+      labelByVol[vid] = montageLabelForVol(vid);
+      var pi = volIdToPointIndex[vid];
+      if (pi != null) pointIndices.push(pi);
+    }
+    var flushDim = !pointIndices.length;
+    if (flushDim) volsketchLastDimIndicesKey = "";
+    var dimP = applyBaseTraceOpacityDimming(pointIndices, {
+      dedupe: false,
+      skipEmpty: false,
+    });
+    if (flushDim && dimP && typeof dimP.then === "function") {
+      dimP = dimP.then(function() {
+        scheduleVolsketchScatterglPaintFlush();
+        return null;
+      });
+    } else if (flushDim) {
+      scheduleVolsketchScatterglPaintFlush();
+    }
+    var overlayP = updateVolSelectionOverlay(pointIndices, labelByVol, trace);
+    function finish() {
+      restoreVolsketchAxesView(gd, snap);
+    }
+    var jobs = [];
+    if (dimP && typeof dimP.then === "function") jobs.push(dimP);
+    if (overlayP && typeof overlayP.then === "function") jobs.push(overlayP);
+    if (jobs.length) {
+      Promise.all(jobs).then(finish).catch(finish);
+    } else {
+      requestAnimationFrame(finish);
+    }
+  }
+
+  function plotlySelectedSuppressed() {
+    return Date.now() < suppressPlotlySelectedUntil || clickTimer !== null;
+  }
+
+  function beginClickToggleSelection() {
+    volLassoBoxGestureActive = false;
+    volsketchLassoDimArmed = false;
+    volsketchLassoDimPreviewDone = false;
+    suppressPlotlySelectedUntil = Date.now() + 1000;
+    volSelectionEpoch++;
+    cancelPendingGifWork();
+    clearVolsketchGeometricSelection();
+  }
+
+  function volFromClickEvent(ev) {
+    if (!ev || !ev.points || !ev.points.length) return NaN;
+    var pi;
+    var overlayIdx = volSelectionOverlayTraceIndex();
+    if (overlayIdx != null) {
+      for (pi = 0; pi < ev.points.length; pi++) {
+        if (ev.points[pi].curveNumber === overlayIdx) {
+          var vOv = volFromPoint(ev.points[pi]);
+          if (!isNaN(vOv)) return vOv;
+        }
+      }
+    }
+    for (pi = 0; pi < ev.points.length; pi++) {
+      var pt = ev.points[pi];
+      if (pt.curveNumber !== 0 && pt.curveNumber != null) continue;
+      var v = volFromPoint(pt);
+      if (!isNaN(v)) return v;
+    }
+    for (pi = 0; pi < ev.points.length; pi++) {
+      var v2 = volFromPoint(ev.points[pi]);
+      if (!isNaN(v2)) return v2;
+    }
+    return NaN;
+  }
+
+  function plotlySelectedFromLassoOrBox(ev, fromLassoBoxGesture) {
+    if (!ev || !ev.points || !ev.points.length) return false;
+    if (plotlySelectedSuppressed()) return false;
+    if (fromLassoBoxGesture) return true;
+    return ev.points.length > 1;
   }
 
   function toggleVol(v) {
@@ -1063,6 +1443,7 @@
       return;
     }
     var myGen = ++gifReqGen;
+    var epochAtRequest = volSelectionEpoch;
     landscapeAnimInFlight = true;
     lastChimeraxViewMatrix = "";
     chimeraxViewMatrixUnavailable = false;
@@ -1170,7 +1551,11 @@
         previewGrid.appendChild(fig);
       });
       syncPreviewGridLayout();
-      if (j.rendered_vol_indices && j.rendered_vol_indices.length) {
+      if (
+        j.rendered_vol_indices
+        && j.rendered_vol_indices.length
+        && epochAtRequest === volSelectionEpoch
+      ) {
         var synced = new Set();
         j.rendered_vol_indices.forEach(function(x) {
           var v = parseInt(x, 10);
@@ -1295,33 +1680,73 @@
       });
   }
 
+  function handleVolSketchPlotlySelected(ev, fromLassoBox) {
+    if (landscapeAnimInFlight) {
+      showAnimBusySelectionMsg();
+      return;
+    }
+    if (!ev || !ev.points || !ev.points.length) return;
+    if (!plotlySelectedFromLassoOrBox(ev, fromLassoBox)) return;
+    var selPts = baseTracePointsFromSelectedEvent(ev);
+    if (!selPts.length) return;
+    selectedVols.clear();
+    selPts.forEach(function(pt) {
+      var v = volFromPoint(pt);
+      if (!isNaN(v)) selectedVols.add(v);
+    });
+    if (selectedVols.size > maxSelectable()) {
+      var arr = Array.from(selectedVols).sort(function(a,b){ return a-b; });
+      selectedVols = new Set(arr.slice(0, maxSelectable()));
+      setAnimateStatus("Selection capped at the number of sketch volumes.", false, true);
+    } else {
+      setAnimateStatus("", false, false);
+    }
+    assignVolMontageLabelsSorted();
+    updateSelLabel();
+    refreshSelectionHighlight();
+    scheduleAutoGif("selection");
+  }
+
   function bindPlotEvents() {
+    gd.on("plotly_selecting", function() {
+      volLassoBoxGestureActive = true;
+      beginVolsketchLassoDimmingGesture();
+      volsketchLassoDimArmed = true;
+      if (volsketchLassoSelectTimer) {
+        clearTimeout(volsketchLassoSelectTimer);
+        volsketchLassoSelectTimer = null;
+      }
+    });
+    gd.on("plotly_deselect", function() {
+      /* Do not clear ``volLassoBoxGestureActive`` here — Plotly often emits deselect
+         immediately before ``plotly_selected`` on lasso/box release. */
+    });
     gd.on("plotly_selected", function(ev) {
-      if (landscapeAnimInFlight) {
-        showAnimBusySelectionMsg();
+      if (plotlySelectedSuppressed()) return;
+      volsketchSelectingDimTok++;
+      var fromLassoBox = volLassoBoxGestureActive;
+      if (volsketchLassoDimArmed || fromLassoBox) {
+        if (volsketchLassoSelectTimer) clearTimeout(volsketchLassoSelectTimer);
+        volsketchLassoSelectTimer = setTimeout(function() {
+          volsketchLassoSelectTimer = null;
+          volsketchLassoDimArmed = false;
+          volsketchLassoDimPreviewDone = false;
+          volLassoBoxGestureActive = false;
+          handleVolSketchPlotlySelected(ev, true);
+        }, VOLSKETCH_LASSO_DEBOUNCE_MS);
         return;
       }
-      if (!ev || !ev.points || !ev.points.length) return;
-      selectedVols.clear();
-      ev.points.forEach(function(pt) {
-        var v = volFromPoint(pt);
-        if (!isNaN(v)) selectedVols.add(v);
-      });
-      if (selectedVols.size > maxSelectable()) {
-        var arr = Array.from(selectedVols).sort(function(a,b){ return a-b; });
-        selectedVols = new Set(arr.slice(0, maxSelectable()));
-        setAnimateStatus("Selection capped at the number of sketch volumes.", false, true);
-      } else {
-        setAnimateStatus("", false, false);
-      }
-      updateSelLabel();
-      refreshSelectionHighlight();
-      scheduleAutoGif("selection");
+      volLassoBoxGestureActive = false;
+      volsketchLassoDimArmed = false;
+      volsketchLassoDimPreviewDone = false;
+      handleVolSketchPlotlySelected(ev, fromLassoBox);
     });
     gd.on("plotly_click", function(ev) {
-      if (!ev || !ev.points || !ev.points.length) return;
-      var v = volFromPoint(ev.points[0]);
+      var v = volFromClickEvent(ev);
       if (isNaN(v)) return;
+      if (clickTimer === null) {
+        suppressPlotlySelectedUntil = Date.now() + 1000;
+      }
       if (clickTimer !== null && clickLastVol === v) {
         clearTimeout(clickTimer);
         clickTimer = null;
@@ -1330,6 +1755,7 @@
           showAnimBusySelectionMsg();
           return;
         }
+        beginClickToggleSelection();
         toggleVol(v);
         return;
       }
@@ -1370,6 +1796,7 @@
         }
         var plotPromise;
         function redrawFull() {
+          volSelectionOverlayTraceAdded = false;
           if (afterColor && hasPlot && typeof Plotly.react === "function") {
             return Plotly.react(gd, fig.data, fig.layout, plotOpts);
           }
@@ -1415,6 +1842,7 @@
           .then(function() {
             setPlotStatus("", false);
             bindPlotEvents();
+            rebuildVolIdPointIndexMap();
             refreshSelectionHighlight();
             Plotly.Plots.resize(gd);
             if (scatterOpts.afterColorChange && selectedVols.size > 0) {
@@ -1447,6 +1875,17 @@
 
   document.getElementById("volsketch-clear-sel").addEventListener("click", function() {
     selectedVols.clear();
+    resetVolMontageLabels();
+    volsketchLastDimIndicesKey = "";
+    volsketchLassoDimArmed = false;
+    volsketchLassoDimPreviewDone = false;
+    volLassoBoxGestureActive = false;
+    if (volsketchLassoSelectTimer) {
+      clearTimeout(volsketchLassoSelectTimer);
+      volsketchLassoSelectTimer = null;
+    }
+    volsketchSelectingDimTok++;
+    clearVolsketchGeometricSelection();
     updateSelLabel();
     refreshSelectionHighlight();
     setAnimateStatus("", false, false);
@@ -1527,6 +1966,7 @@
         k = Math.max(1, Math.min(k, ids.length, maxSelectable()));
         selectedVols.clear();
         shufflePick(ids, k).forEach(function(v) { selectedVols.add(v); });
+        assignVolMontageLabelsSorted();
         updateSelLabel();
         refreshSelectionHighlight();
         scheduleAutoGif("selection");

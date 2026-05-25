@@ -372,7 +372,12 @@ class TestGithubPagesCommandBuilder:
         assert "btn-copy-label-line" in html
         assert 'stroke="#000"' in html
         assert "max-height: 10dvh" in html
-        assert "--gp-font-scale: 1.221" in html
+        assert "--gp-font-scale-root: calc(1.221 * 0.9)" in html
+        assert "--gp-nav-cmd-label-font:" in html
+        assert "--gp-arg-region-title-font:" in html
+        assert "CMD_WRAP_MIN_CHARS = 80" in html
+        assert "layoutCommandLineGroups" in html
+        assert "updateCommandDisplay" in html
         assert "Advanced parameters" in html
         assert "cmd-builder-advanced-region" in html
         assert "gap: calc(0.45rem * 3)" in html

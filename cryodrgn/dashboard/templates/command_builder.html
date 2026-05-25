@@ -356,7 +356,17 @@
     overflow: hidden;
     height: 100dvh;
     --cryo-dash-below-nav: 7.75rem;
-    --gp-font-scale: 1.221;
+    --gp-font-scale-root: calc(1.221 * 0.9);
+    --gp-font-scale: var(--gp-font-scale-root);
+    /* Nav "Command" label; Required title is 30% larger than arg region titles. */
+    --gp-nav-cmd-label-font: calc(0.72rem * 1.3 * 1.3 * 1.21 * 0.7 * var(--gp-font-scale-root));
+    --gp-arg-region-title-font: calc(var(--gp-nav-cmd-label-font) / 1.3);
+  }
+  body.cmd-builder-github-pages .cmd-builder-github-body {
+    --gp-font-scale: calc(var(--gp-font-scale-root) * 0.9 * 0.88);
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-bar {
+    --gp-font-scale: var(--gp-font-scale-root);
   }
   body.cmd-builder-github-pages .github-pages-note {
     margin: 0.2rem 1.15rem 0;
@@ -442,7 +452,7 @@
     margin: 0;
     flex-shrink: 0;
     white-space: nowrap;
-    font-size: calc(0.72rem * 1.3 * 1.3 * var(--gp-nav-font-scale) * 0.7);
+    font-size: var(--gp-nav-cmd-label-font);
     font-weight: 700;
     color: #e8eef4;
     letter-spacing: 0.02em;
@@ -496,7 +506,7 @@
   body.cmd-builder-github-pages .cmd-builder-header .cryo-dash-lead { display: none; }
   body.cmd-builder-github-pages .cmd-builder-scroll {
     overflow: hidden;
-    padding-bottom: 0.15rem;
+    padding-bottom: 0.3rem;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -541,7 +551,7 @@
     margin: 0;
     padding: 0.35rem 0 0.15rem;
     font-weight: 700;
-    font-size: calc(0.88rem * var(--gp-font-scale));
+    font-size: var(--gp-arg-region-title-font);
     line-height: 1.2;
     letter-spacing: 0.02em;
     color: var(--nav-bg, #243b53);
@@ -569,7 +579,7 @@
     flex: 0 0 auto;
     margin: 0 0 0.35rem;
     font-weight: 700;
-    font-size: calc(0.84rem * var(--gp-font-scale));
+    font-size: var(--gp-arg-region-title-font);
     line-height: 1.2;
     letter-spacing: 0.01em;
     color: #3d6b4f;
@@ -617,7 +627,7 @@
     grid-column: 1;
     align-self: center;
     font-weight: 700;
-    font-size: calc(0.88rem * var(--gp-font-scale));
+    font-size: var(--gp-nav-cmd-label-font);
     color: var(--accent, #c4703a);
     letter-spacing: 0.02em;
     white-space: nowrap;
@@ -683,7 +693,7 @@
     flex: 0 0 auto;
     margin: 0 0 0.35rem;
     font-weight: 700;
-    font-size: calc(0.84rem * var(--gp-font-scale));
+    font-size: var(--gp-arg-region-title-font);
     line-height: 1.2;
     letter-spacing: 0.01em;
   }
@@ -780,12 +790,79 @@
     margin: 0;
     padding: 0;
   }
+  body.cmd-builder-github-pages .cmd-builder-primary-checks-grid--2 .cmd-builder-primary-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.22rem 0.45rem;
+    align-items: start;
+    width: 100%;
+    --gp-primary-checks-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-checks-fit .cmd-builder-primary-checkboxes .check-line {
+    display: flex;
+    align-items: center;
+    gap: 0.28rem;
+    margin: 0;
+    min-width: 0;
+    max-width: 100%;
+    font-size: calc(0.8rem * var(--gp-font-scale) * var(--gp-primary-checks-scale, 1));
+    line-height: 1.2;
+    overflow: hidden;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-checks-fit .cmd-builder-primary-checkboxes .check-line span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-checks-fit .cmd-builder-primary-checkboxes .check-line input {
+    flex-shrink: 0;
+    margin: 0;
+  }
   body.cmd-builder-github-pages .cmd-builder-primary-col--fields {
     min-width: 0;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.35rem 0.55rem;
     align-content: start;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-grid--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-grid--4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell {
+    grid-template-columns: minmax(2.5rem, 32%) minmax(0, 1fr);
+    min-width: 0;
+    overflow: hidden;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .cryo-select-line,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .choice-line,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell input[type="text"],
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell input[type="number"],
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell select,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .choice-options .check-line,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-checkboxes .check-line {
+    font-size: calc(0.76rem * var(--gp-font-scale) * var(--gp-primary-field-scale, 1));
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell input[type="text"],
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell input[type="number"],
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell select {
+    font-size: calc(0.82rem * var(--gp-font-scale) * var(--gp-primary-field-scale, 1));
+    padding: calc(0.2rem * var(--gp-primary-field-scale, 1))
+      calc(0.32rem * var(--gp-primary-field-scale, 1));
+    min-width: 0;
+    max-width: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .cryo-select-line code,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .choice-line code {
+    font-size: inherit;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell--wide .choice-options {
+    flex-wrap: wrap;
+    min-width: 0;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-col--fields .cmd-builder-primary-arg-cell--wide {
     grid-column: 1 / -1;
@@ -956,36 +1033,39 @@
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .cryo-select-line {
     margin: 0.2rem 0 0.06rem;
-    font-size: calc(0.7rem * var(--gp-font-scale));
+    font-size: calc(0.7rem * var(--gp-font-scale) * 0.8);
     line-height: 1.2;
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body input[type="text"],
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body input[type="number"],
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body select {
     margin-bottom: 0.15rem;
-    font-size: calc(0.74rem * var(--gp-font-scale));
+    font-size: calc(0.74rem * var(--gp-font-scale) * 0.8);
     padding: 0.2rem 0.32rem;
     line-height: 1.25;
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line {
     margin: 0.18rem 0;
-    font-size: calc(0.72rem * var(--gp-font-scale));
+    font-size: calc(0.72rem * var(--gp-font-scale) * 0.8);
     line-height: 1.25;
     gap: 0.3rem;
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line span {
-    font-size: calc(0.72rem * var(--gp-font-scale));
+    font-size: calc(0.72rem * var(--gp-font-scale) * 0.8);
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line code {
-    font-size: calc(0.68rem * var(--gp-font-scale));
+    font-size: calc(0.68rem * var(--gp-font-scale) * 0.8);
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-line {
     margin: 0.18rem 0 0.08rem;
-    font-size: calc(0.7rem * var(--gp-font-scale));
+    font-size: calc(0.7rem * var(--gp-font-scale) * 0.8);
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-options {
     margin: 0 0 0.12rem;
     gap: 0.18rem 0.45rem;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-options .check-line {
+    font-size: calc(0.72rem * var(--gp-font-scale) * 0.8);
   }
   body.cmd-builder-github-pages .cmd-outdir-step {
     font-size: calc(1.15rem * var(--gp-font-scale));
@@ -999,6 +1079,39 @@
   body.cmd-builder-github-pages .cmd-form .choice-options .check-line {
     font-size: calc(0.84rem * var(--gp-font-scale));
   }
+  body.cmd-builder-github-pages .cmd-builder-cmd-dock {
+    flex-shrink: 0;
+    max-height: 17vh;
+    max-height: 17dvh;
+    min-height: 8.5dvh;
+    margin-top: 0.5rem;
+    padding: 0.8rem 0.75rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(186, 212, 232, 0.75);
+    border-radius: 8px;
+    background: linear-gradient(
+      135deg,
+      rgba(255, 228, 232, 0.92) 0%,
+      rgba(232, 244, 255, 0.95) 38%,
+      rgba(228, 248, 236, 0.95) 72%,
+      rgba(255, 240, 224, 0.92) 100%
+    );
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+      0 1px 5px rgba(36, 59, 83, 0.07);
+  }
+  body.cmd-builder-github-pages .cmd-builder-cmd-dock .cmd-output.card {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-output-grid {
+    align-items: center;
+  }
+  body.cmd-builder-github-pages .cmd-output-main {
+    justify-content: center;
+  }
   body.cmd-builder-github-pages .cmd-output-actions {
     gap: calc(0.45rem * 3);
   }
@@ -1007,13 +1120,38 @@
     padding-left: calc(0.55rem * 1.3);
     padding-right: calc(0.55rem * 1.3);
   }
-  body.cmd-builder-github-pages .cmd-output-heading {
-    font-size: calc(0.78rem * 1.35 * 1.1 * var(--gp-font-scale));
-  }
   body.cmd-builder-github-pages .cmd-output pre {
-    font-size: calc(0.72rem * 1.35 * 1.1 * var(--gp-font-scale));
+    flex: 0 1 auto;
+    --cmd-out-font-base: calc(0.72rem * 1.35 * 1.1 * 1.3 * var(--gp-font-scale-root));
+    font-size: var(--cmd-out-font-base);
+    line-height: 1.12;
+    color: #3dd68c;
+    white-space: pre;
+    word-break: normal;
+    overflow-wrap: normal;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    max-height: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-output pre .cmd-seg--prefix {
+    color: #3dd68c;
+  }
+  body.cmd-builder-github-pages .cmd-output pre .cmd-line-cont {
+    color: #3dd68c;
+    opacity: 0.92;
+  }
+  body.cmd-builder-github-pages .cmd-output .btn-copy-label {
+    gap: 0;
+    height: auto;
+    max-height: none;
+    line-height: 1;
   }
   body.cmd-builder-github-pages .cmd-output .btn-copy-label-line {
+    flex: 0 0 auto;
+    line-height: 1;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
     font-size: calc(0.62rem * 1.35 * 1.1 * var(--gp-font-scale));
   }
   body.cmd-builder-github-pages .cmd-output .hint { display: none; }
@@ -1156,11 +1294,11 @@
           {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
           <div class="cmd-builder-primary-region-body cmd-builder-primary-region-body--dataset-split">
             {% if ds and ds.args and (ds.args | selectattr('w', 'in', check_ws) | list | length > 0) %}
-            <div class="cmd-builder-primary-col cmd-builder-primary-col--checks">
+            <div class="cmd-builder-primary-col cmd-builder-primary-col--checks cmd-builder-primary-checks-grid--2 cmd-builder-primary-checks-fit">
               {{ render_github_checkbox_band(ds.args) }}
             </div>
             {% endif %}
-            <div class="cmd-builder-primary-col cmd-builder-primary-col--fields">
+            <div class="cmd-builder-primary-col cmd-builder-primary-col--fields cmd-builder-primary-fields-grid--3 cmd-builder-primary-fields-fit">
               <div class="cmd-builder-primary-arg-cell">
                 <label class="cryo-select-line" for="{{ datadir_id }}"
                   {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
@@ -1185,7 +1323,7 @@
                  aria-labelledby="{{ cmd_key }}-train-region-title">
           <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-train-region-title">{{
             train.group.title if train.group else 'Run parameters' }}</h3>
-          <div class="cmd-builder-primary-region-body">
+          <div class="cmd-builder-primary-region-body cmd-builder-primary-fields-grid--4 cmd-builder-primary-fields-fit">
             {% if train.group and train.group.args %}
               {{ render_github_checkbox_band(train.group.args) }}
               {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
@@ -2123,7 +2261,9 @@
         <div class="cmd-output card">
           <div class="cmd-output-grid">
             <div class="cmd-output-main">
+              {% if not github_pages_mode %}
               <strong class="cmd-output-heading">Command</strong>
+              {% endif %}
               <pre id="cmd-out">cryodrgn abinit …</pre>
               <p class="hint">This page does not run commands — copy the line into your shell or job script.</p>
               <p id="cmd-copy-status" class="hint cmd-copy-status"></p>
@@ -2288,6 +2428,138 @@
     return out.join(" ");
   }
 
+  {% if github_pages_mode %}
+  var lastBashCommandText = "";
+  var CMD_WRAP_MIN_CHARS = 80;
+
+  function canBreakAfterCmdToken(token) {
+    if (!token) return false;
+    if (token.indexOf("=") >= 0) return true;
+    return token.charAt(0) !== "-";
+  }
+
+  function layoutSegmentLineGroups(segments, maxCols) {
+    var groups = [];
+    var idx = 0;
+    var headIdxs = [];
+    while (idx < segments.length && segments[idx].g === "_prefix") {
+      headIdxs.push(idx);
+      idx++;
+    }
+    if (headIdxs.length) groups.push(headIdxs);
+    var cur = [];
+    for (; idx < segments.length; idx++) {
+      var tok = segments[idx].t;
+      if (!cur.length) {
+        cur.push(idx);
+        continue;
+      }
+      var parts = cur.map(function(i) { return segments[i].t; });
+      parts.push(tok);
+      var joined = parts.join(" ");
+      var prevTok = segments[cur[cur.length - 1]].t;
+      if (joined.length <= maxCols) {
+        cur.push(idx);
+      } else if (canBreakAfterCmdToken(prevTok)) {
+        groups.push(cur);
+        cur = [idx];
+      } else {
+        cur.push(idx);
+      }
+    }
+    if (cur.length) groups.push(cur);
+    return groups;
+  }
+
+  function layoutCommandLineGroups(segments, maxCols) {
+    if (segmentsToText(segments).length <= CMD_WRAP_MIN_CHARS) {
+      var all = [];
+      for (var i = 0; i < segments.length; i++) all.push(i);
+      return all.length ? [all] : [];
+    }
+    return layoutSegmentLineGroups(segments, maxCols);
+  }
+
+  function formatBashLineGroups(segments, lineGroups) {
+    var lines = lineGroups.map(function(idxs) {
+      return idxs.map(function(i) { return segments[i].t; }).join(" ");
+    });
+    return lines.map(function(line, i) {
+      return i < lines.length - 1 ? line + " \\" : line;
+    }).join("\n");
+  }
+
+  function segmentsToBashText(segments, maxCols) {
+    if (!segments.length) return "";
+    return formatBashLineGroups(segments, layoutCommandLineGroups(segments, maxCols));
+  }
+
+  function measureCmdMaxCols(el) {
+    var w = Math.max(0, el.clientWidth - 6);
+    if (w < 24) return 48;
+    var probe = document.createElement("span");
+    probe.style.cssText =
+      "position:absolute;visibility:hidden;white-space:pre;font:" +
+      getComputedStyle(el).font +
+      ";";
+    probe.textContent = "0000000000";
+    document.body.appendChild(probe);
+    var tenW = probe.getBoundingClientRect().width || 60;
+    document.body.removeChild(probe);
+    return Math.max(32, Math.floor(w / (tenW / 10)));
+  }
+
+  function renderColoredCommandWrapped(segments, lineGroups) {
+    var shadeIdx = {};
+    var html = [];
+    for (var li = 0; li < lineGroups.length; li++) {
+      if (li > 0) html.push('<span class="cmd-line-cont"> \\</span>\n');
+      var idxs = lineGroups[li];
+      for (var ii = 0; ii < idxs.length; ii++) {
+        if (ii > 0) html.push(" ");
+        var seg = segments[idxs[ii]];
+        if (seg.g === "_prefix") {
+          html.push('<span class="cmd-seg cmd-seg--prefix">');
+          html.push(escCmdHtml(seg.t));
+          html.push("</span>");
+          continue;
+        }
+        var shade = shadeIdx[seg.g] || 0;
+        shadeIdx[seg.g] = shade + 1;
+        var hue = hueForCmdGroup(seg.g);
+        var light = 86 - (shade % 4) * 9;
+        var sat = 56 + (shade % 3) * 11;
+        html.push('<span class="cmd-seg" style="color:hsl(' + hue + "," + sat + "%," + light + '%)">');
+        html.push(escCmdHtml(seg.t));
+        html.push("</span>");
+      }
+    }
+    return html.join("");
+  }
+
+  function updateCommandDisplay() {
+    var segments = buildSegments();
+    out.style.fontSize = "";
+    var maxPx = parseFloat(getComputedStyle(out).fontSize) || 12;
+    var minPx = Math.max(7, maxPx * 0.52);
+    var bashText = "";
+    for (var px = maxPx; px >= minPx; px -= 0.5) {
+      out.style.fontSize = px + "px";
+      var maxCols = measureCmdMaxCols(out);
+      var lineGroups = layoutCommandLineGroups(segments, maxCols);
+      bashText = formatBashLineGroups(segments, lineGroups);
+      if (cmdColorize) {
+        out.innerHTML = renderColoredCommandWrapped(segments, lineGroups);
+      } else {
+        out.textContent = bashText;
+      }
+      var box = out.parentElement;
+      if (!box || out.scrollHeight <= box.clientHeight + 2) break;
+    }
+    lastBashCommandText = bashText;
+  }
+  {% endif %}
+
   function buildAbinitHetOldSegments() {
     var segments = [];
     pushPrefix(segments, "abinit_het_old");
@@ -2428,7 +2700,12 @@
   }
 
   function build() {
+    {% if github_pages_mode %}
+    if (lastBashCommandText) return lastBashCommandText;
+    return segmentsToBashText(buildSegments(), 10000);
+    {% else %}
     return segmentsToText(buildSegments());
+    {% endif %}
   }
 
   function parseOutdirValue(raw, fallbackSuffix) {
@@ -2560,15 +2837,11 @@
   {% endif %}
 
   function refresh() {
-    var segments = buildSegments();
     {% if github_pages_mode %}
-    if (cmdColorize) {
-      out.innerHTML = renderColoredCommand(segments);
-    } else {
-      out.textContent = segmentsToText(segments);
-    }
+    updateCommandDisplay();
+    scheduleFitPrimaryRegionFields();
     {% else %}
-    out.textContent = segmentsToText(segments);
+    out.textContent = segmentsToText(buildSegments());
     {% endif %}
   }
 
@@ -2608,6 +2881,119 @@
   syncPanels();
 
   {% if github_pages_mode %}
+  var fitPrimaryFieldsPending = false;
+
+  function primaryFieldsOverflow(container) {
+    if (!container || container.offsetParent === null) return false;
+    var cells = container.querySelectorAll(".cmd-builder-primary-arg-cell");
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i];
+      if (cell.scrollWidth > cell.clientWidth + 1) return true;
+      var label = cell.querySelector(".cryo-select-line, .choice-line");
+      if (label && label.scrollWidth > label.clientWidth + 1) return true;
+      var inp = cell.querySelector("input, select");
+      if (inp && inp.scrollWidth > inp.clientWidth + 1) return true;
+    }
+    return container.scrollWidth > container.clientWidth + 2;
+  }
+
+  function fitPrimaryFieldsContainer(container) {
+    if (!container) return;
+    container.style.setProperty("--gp-primary-field-scale", "1");
+    var scale = 1;
+    var minScale = 0.4;
+    while (scale > minScale && primaryFieldsOverflow(container)) {
+      scale = Math.max(minScale, scale - 0.025);
+      container.style.setProperty("--gp-primary-field-scale", String(scale));
+      void container.offsetWidth;
+    }
+  }
+
+  function primaryChecksOverflow(container) {
+    if (!container || container.offsetParent === null) return false;
+    var box = container.querySelector(".cmd-builder-primary-checkboxes");
+    if (!box) return false;
+    var lines = box.querySelectorAll(".check-line");
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].scrollWidth > lines[i].clientWidth + 1) return true;
+    }
+    return box.scrollWidth > box.clientWidth + 2;
+  }
+
+  function fitPrimaryChecksContainer(container) {
+    if (!container) return;
+    container.style.setProperty("--gp-primary-checks-scale", "1");
+    var scale = 1;
+    var minScale = 0.4;
+    while (scale > minScale && primaryChecksOverflow(container)) {
+      scale = Math.max(minScale, scale - 0.025);
+      container.style.setProperty("--gp-primary-checks-scale", String(scale));
+      void container.offsetWidth;
+    }
+  }
+
+  function fitActivePrimaryRegionFields() {
+    var panel = document.querySelector(".cmd-panel.cmd-panel--active");
+    if (!panel) return;
+    fitPrimaryChecksContainer(
+      panel.querySelector(".cmd-builder-primary-checks-grid--2.cmd-builder-primary-checks-fit")
+    );
+    fitPrimaryFieldsContainer(
+      panel.querySelector(".cmd-builder-primary-fields-grid--3.cmd-builder-primary-fields-fit")
+    );
+    fitPrimaryFieldsContainer(
+      panel.querySelector(".cmd-builder-primary-fields-grid--4.cmd-builder-primary-fields-fit")
+    );
+  }
+
+  function scheduleFitPrimaryRegionFields() {
+    if (fitPrimaryFieldsPending) return;
+    fitPrimaryFieldsPending = true;
+    window.requestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
+        fitPrimaryFieldsPending = false;
+        fitActivePrimaryRegionFields();
+      });
+    });
+  }
+
+  (function initCommandDisplayResize() {
+    if (!out || !out.parentElement) return;
+    var pending = false;
+    function schedule() {
+      if (pending) return;
+      pending = true;
+      window.requestAnimationFrame(function() {
+        pending = false;
+        updateCommandDisplay();
+      });
+    }
+    if (typeof ResizeObserver !== "undefined") {
+      var ro = new ResizeObserver(schedule);
+      ro.observe(out.parentElement);
+    }
+    window.addEventListener("resize", schedule);
+  })();
+
+  (function initPrimaryRegionFieldsResize() {
+    var page = document.querySelector(".cmd-builder-page--dock");
+    if (!page) return;
+    var pending = false;
+    function schedule() {
+      if (pending) return;
+      pending = true;
+      window.requestAnimationFrame(function() {
+        pending = false;
+        scheduleFitPrimaryRegionFields();
+      });
+    }
+    if (typeof ResizeObserver !== "undefined") {
+      var ro = new ResizeObserver(schedule);
+      ro.observe(page);
+    }
+    window.addEventListener("resize", schedule);
+  })();
+
   (function initGithubPagesGroupCards() {
     function cardsInActivePanel() {
       var panel = document.querySelector(".cmd-panel.cmd-panel--active");

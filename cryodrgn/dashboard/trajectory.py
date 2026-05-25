@@ -11,16 +11,21 @@ from __future__ import annotations
 import io
 import os
 import re
-from heapq import heappop, heappush
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from cryodrgn.dashboard.data import DashboardExperiment
 
-# (workdir, epoch, max_neighbors, avg_neighbors) -> (neighbor_ids, neighbor_dists)
+if TYPE_CHECKING:
+    from scipy.sparse import csr_matrix as _csr_matrix
+
+# (workdir, epoch, max_neighbors, avg_neighbors) -> (neighbor_ids, dists, csr_graph)
 _TRAJ_GRAPH_NEIGHBOR_CACHE: dict[
-    tuple[str, int, int, int], tuple[np.ndarray, np.ndarray]
+    tuple[str, int, int, int], tuple[np.ndarray, np.ndarray, "_csr_matrix"]
 ] = {}
+
+_CSGRAPH_MISSING_PREDECESSOR = -9999
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +268,20 @@ def _compute_direct_anchor_trajectory(
     return np.concatenate(z_parts, axis=0), None, np.concatenate(xy_parts, axis=0)
 
 
+def _graph_neighbor_max_dist(ndist: np.ndarray, n: int, avg_neighbors: int) -> float:
+    """Distance cutoff matching ``cryodrgn graph_traversal`` (top-k order statistic).
+
+    Uses ``np.partition`` instead of a full sort over all query distances.
+    """
+    total_neighbors = max(1, min(int(n * avg_neighbors), int(ndist.size)))
+    flat = ndist.reshape(-1)
+    k_idx = total_neighbors - 1
+    if k_idx <= 0:
+        return float(flat[0])
+    # Use the array returned by ``partition`` (in-place view can leave wrong value at k_idx).
+    return float(np.partition(flat.copy(), k_idx)[k_idx])
+
+
 def _graph_neighbor_arrays(
     e: DashboardExperiment,
     *,
@@ -275,17 +294,17 @@ def _graph_neighbor_arrays(
     key = (e.workdir, int(e.epoch), k, avg)
     cached = _TRAJ_GRAPH_NEIGHBOR_CACHE.get(key)
     if cached is not None:
-        return cached
+        return cached[0], cached[1]
 
-    from scipy import spatial
+    from scipy.spatial import cKDTree
 
     z = np.asarray(e.z, dtype=np.float64)
     n = int(z.shape[0])
     if n < 2:
         raise ValueError("Need at least two latent points for graph traversal.")
     k_eff = min(k + 1, n)
-    tree = spatial.KDTree(z)
-    q_dist, q_neighbors = tree.query(z, k=k_eff)
+    tree = cKDTree(z)
+    q_dist, q_neighbors = tree.query(z, k=k_eff, workers=-1)
     neighbors = np.atleast_2d(np.asarray(q_neighbors, dtype=np.int64))
     ndist = np.atleast_2d(np.asarray(q_dist, dtype=np.float64))
 
@@ -295,63 +314,74 @@ def _graph_neighbor_arrays(
     if neighbors.shape[1] == 0:
         raise ValueError("Could not build nearest-neighbor graph from latent points.")
 
-    # Match graph_traversal's average-neighbor thresholding behavior.
-    total_neighbors = max(1, min(int(n * avg), int(ndist.size)))
-    flat = np.sort(ndist.reshape(-1))
-    max_dist = float(flat[total_neighbors - 1])
+    max_dist = _graph_neighbor_max_dist(ndist, n, avg)
     keep = ndist <= max_dist
     neighbors = np.where(keep, neighbors, -1)
     ndist = np.where(keep, ndist, np.inf)
 
-    _TRAJ_GRAPH_NEIGHBOR_CACHE[key] = (neighbors, ndist)
+    csr = _neighbors_to_csr(neighbors, ndist)
+    _TRAJ_GRAPH_NEIGHBOR_CACHE[key] = (neighbors, ndist, csr)
+
     return neighbors, ndist
+
+
+def _neighbors_to_csr(neighbors: np.ndarray, dists: np.ndarray) -> "_csr_matrix":
+    """Directed CSR graph from per-row neighbour lists (``-1``/``inf`` = no edge)."""
+    from scipy.sparse import coo_matrix
+
+    n, k = neighbors.shape
+    row_rep = np.broadcast_to(np.arange(n, dtype=np.int64)[:, None], (n, k))
+    valid = (neighbors >= 0) & np.isfinite(dists)
+    rows = row_rep[valid]
+    cols = neighbors[valid].astype(np.int64, copy=False)
+    data = dists[valid].astype(np.float64, copy=False)
+    return coo_matrix((data, (rows, cols)), shape=(n, n)).tocsr()
+
+
+def _graph_csr_for_neighbors(neighbors: np.ndarray, dists: np.ndarray) -> "_csr_matrix":
+    """Return a cached CSR graph when possible, else build one."""
+    for _neighbors, _dists, csr in _TRAJ_GRAPH_NEIGHBOR_CACHE.values():
+        if _neighbors is neighbors and _dists is dists:
+            return csr
+    return _neighbors_to_csr(neighbors, dists)
+
+
+def _path_from_csgraph_predecessors(
+    predecessors: np.ndarray, src: int, dest: int, dist_row: np.ndarray
+) -> list[int] | None:
+    if src == dest:
+        return [int(src)]
+    if not np.isfinite(float(dist_row[dest])):
+        return None
+    path = [int(dest)]
+    cur = int(dest)
+    while cur != int(src):
+        cur = int(predecessors[cur])
+        if cur < 0 or cur == _CSGRAPH_MISSING_PREDECESSOR:
+            return None
+        path.append(cur)
+    path.reverse()
+    return path
 
 
 def _dijkstra_path_from_neighbors(
     neighbors: np.ndarray, dists: np.ndarray, src: int, dest: int
 ) -> list[int] | None:
     """Shortest path in a sparse directed neighbor graph (``-1``/``inf`` = no edge)."""
+    from scipy.sparse.csgraph import dijkstra
+
     if src == dest:
         return [int(src)]
-    n = int(neighbors.shape[0])
-    inf = float("inf")
-    dist = np.full(n, inf, dtype=np.float64)
-    pred = np.full(n, -1, dtype=np.int64)
-    visited = np.zeros(n, dtype=bool)
-    dist[src] = 0.0
-    q: list[tuple[float, int]] = [(0.0, int(src))]
-
-    while q:
-        cur_d, v = heappop(q)
-        if visited[v]:
-            continue
-        visited[v] = True
-        if v == dest:
-            break
-        n_ids = neighbors[v]
-        n_ds = dists[v]
-        for j in range(n_ids.shape[0]):
-            u = int(n_ids[j])
-            w = float(n_ds[j])
-            if u < 0 or not np.isfinite(w):
-                continue
-            nd = cur_d + w
-            if nd < dist[u]:
-                dist[u] = nd
-                pred[u] = v
-                heappush(q, (nd, u))
-
-    if not np.isfinite(dist[dest]):
-        return None
-    path = [int(dest)]
-    cur = int(dest)
-    while cur != int(src):
-        cur = int(pred[cur])
-        if cur < 0:
-            return None
-        path.append(cur)
-    path.reverse()
-    return path
+    csr = _graph_csr_for_neighbors(neighbors, dists)
+    dist_matrix, predecessors = dijkstra(
+        csr,
+        directed=True,
+        indices=int(src),
+        return_predecessors=True,
+    )
+    dist_row = np.asarray(dist_matrix, dtype=np.float64).reshape(-1)
+    pred_row = np.asarray(predecessors, dtype=np.int64).reshape(-1)
+    return _path_from_csgraph_predecessors(pred_row, int(src), int(dest), dist_row)
 
 
 def _compute_graph_anchor_trajectory(

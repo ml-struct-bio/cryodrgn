@@ -21,6 +21,7 @@ from cryodrgn.dashboard.trajectory import (
     _compute_direct_anchor_trajectory,
     _dijkstra_path_from_neighbors,
     _graph_neighbor_arrays,
+    _graph_neighbor_max_dist,
     _round_direct_mode_traj_xy,
     _trajectory_xy_ok_for_direct,
     _TRAJ_GRAPH_NEIGHBOR_CACHE,
@@ -379,6 +380,18 @@ class TestDijkstraFromNeighbors:
         neighbors = np.array([[1, 2], [0, 2], [0, 1]], dtype=np.int64)
         dists = np.array([[2.0, 1.0], [2.0, 2.0], [1.0, 2.0]], dtype=np.float64)
         assert _dijkstra_path_from_neighbors(neighbors, dists, 0, 2) == [0, 2]
+
+
+class TestGraphNeighborMaxDist:
+    def test_partition_matches_full_sort(self) -> None:
+        rng = np.random.default_rng(0)
+        ndist = rng.uniform(0.1, 5.0, size=(40, 7))
+        n, avg = 40, 5
+        got = _graph_neighbor_max_dist(ndist, n, avg)
+        flat = np.sort(ndist.reshape(-1))
+        total_neighbors = max(1, min(int(n * avg), int(ndist.size)))
+        want = float(flat[total_neighbors - 1])
+        assert got == want
 
 
 class TestGraphNeighborArrays:

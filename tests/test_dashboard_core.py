@@ -565,9 +565,12 @@ class TestClearExperimentCaches:
     ) -> None:
         EXP_CACHE[("x", 0, -1)] = dashboard_experiment
         PRELOAD_CACHE[(0, -1, "z0", "z1", None)] = ([1], ["img"], 0.1)
+        from scipy.sparse import csr_matrix
+
         _TRAJ_GRAPH_NEIGHBOR_CACHE[("wd", 0, 2, 2)] = (
             np.zeros((1, 1), dtype=np.int64),
             np.zeros((1, 1), dtype=np.float64),
+            csr_matrix((1, 1)),
         )
         clear_experiment_caches()
         assert not EXP_CACHE

@@ -66,7 +66,7 @@ def numeric_array_to_plotly_hex(
     vmax: float | None = None,
 ) -> list[str]:
     """Map finite floats through a Plotly colorscale name; NaN → neutral gray."""
-    vals = np.asarray(vals, dtype=float)
+    vals = np.asarray(vals, dtype=np.float64)
     n = int(vals.shape[0])
     finite = np.isfinite(vals)
     if not finite.any():
@@ -76,15 +76,16 @@ def numeric_array_to_plotly_hex(
     if vmax is None:
         vmax = float(np.nanmax(vals))
     span = float(vmax) - float(vmin)
-    out: list[str] = []
-    for i in range(n):
-        if not finite[i]:
-            out.append("#9ca3af")
-            continue
-        t = 0.5 if span <= 0 else (float(vals[i]) - vmin) / span
-        t = max(0.0, min(1.0, t))
-        out.append(sample_colorscale(plotly_cs, [t])[0])
-    return out
+    n_fin = int(finite.sum())
+    if span <= 0:
+        t_fin = np.full(n_fin, 0.5, dtype=np.float64)
+    else:
+        t_fin = np.clip((vals[finite] - vmin) / span, 0.0, 1.0)
+    # One batched colorscale sample (~40× faster than per-point calls at 120k).
+    hex_fin = sample_colorscale(plotly_cs, t_fin.tolist())
+    out = np.full(n, "#9ca3af", dtype=object)
+    out[finite] = hex_fin
+    return out.tolist()
 
 
 def _lower_legend_entry_label(lower_color_col: str, u: Any) -> str:

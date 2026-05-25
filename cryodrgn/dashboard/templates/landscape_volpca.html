@@ -20,14 +20,11 @@
         points.</p>
       <div class="card cryo-dash-controls" id="volsketch-controls">
         <fieldset>
-          <legend>Plot axes</legend>
-          <label class="cryo-select-line" for="volsketch-pcx">X axis</label>
+          <legend>Choose axes<br/>and point color scale</legend>
+          <label class="cryo-select-line" for="volsketch-pcx">Horizontal (X)</label>
           <select id="volsketch-pcx"></select>
-          <label class="cryo-select-line" for="volsketch-pcy">Y axis</label>
+          <label class="cryo-select-line" for="volsketch-pcy">Vertical (Y)</label>
           <select id="volsketch-pcy"></select>
-        </fieldset>
-        <fieldset>
-          <legend>Color</legend>
           <label class="cryo-select-line" for="volsketch-color">Color by</label>
           <select id="volsketch-color"></select>
         </fieldset>
@@ -37,8 +34,6 @@
       <div class="card cryo-dash-controls" id="volsketch-selection-panel" style="margin-top:0.75rem;">
         <fieldset style="margin:0;">
           <legend>Selection</legend>
-          <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Double-click a point to add or remove it. Lasso
-            or box selection replaces the current selection, as does <strong>Choose volumes at random</strong>.</p>
           <p id="volsketch-sel-summary" class="status" style="margin:0 0 0.35rem;" role="status" aria-live="polite">No
             sketched volumes selected</p>
           <div class="volsketch-sel-indices-wrap">
@@ -52,7 +47,10 @@
                 aria-label="Selected sketch volume indices"></ul>
             </details>
           </div>
-          <button type="button" class="btn" id="volsketch-clear-sel">Clear selection</button>
+          <div class="volsketch-selection-actions">
+            <button type="button" class="btn" id="volsketch-clear-sel">Clear selection</button>
+            <button type="button" class="btn" id="volsketch-random-sel" disabled>Choose volumes at random</button>
+          </div>
         </fieldset>
       </div>
     </aside>
@@ -117,9 +115,6 @@
         <button type="button" class="btn btn--primary" id="volsketch-save-gif" disabled>Save GIFs to k-means
           folder…</button>
       </div>
-      <button type="button" class="btn" id="volsketch-random-sel" style="margin-top:1rem;width:100%;" disabled>
-        Choose volumes at random
-      </button>
     </div>
   </div>
   {% endif %}

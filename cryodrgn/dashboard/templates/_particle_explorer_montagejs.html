@@ -1089,12 +1089,7 @@
   var highlightRestyleRaf = null;
   var pendingHighlightRestyle = null;
 
-  /* ---------- selection overlay (avoid expensive Plotly selectedpoints restyles) ---------- */
-  var selectionOverlayTraceName = "cdrgnSelectionOverlay";
-  var selectionOverlayTraceAdded = false;
-  var scatterBaseTraceOpacity = null;
-  var selectionOverlayDimTraceOpacity = 0.15;
-  var selectionOverlayMarkerOpacity = 1;
+  /* ---------- scattergl selection highlight (``selectedpoints`` dimming; trace map for O(1) row→index) ---------- */
   /**
    * Finished lasso/box regions: raw ``layout.selections``-style objects plus particle count.
    * Drawn as ``layout.shapes`` / ``layout.annotations`` so they survive while a new selection is in progress.
@@ -1928,7 +1923,7 @@
     var pre = meta && meta.cdrgn_preselected;
     if (!pre || !pre.length) return;
     try {
-      updateScatterSelectionOverlay(pre);
+      applyScatterSelectionHighlight(pre);
     } catch (err) {
       console.error(err);
     }
@@ -1940,7 +1935,7 @@
     var rows = saveSelectionRows && saveSelectionRows.length ? saveSelectionRows : [];
     if (!rows.length) {
       beginScatterSelectionRenderingOverlay();
-      try { updateScatterSelectionOverlay([]); } catch (err) {}
+      try { clearScatterSelectionHighlight(false); } catch (err) {}
       finally { endScatterSelectionRenderingOverlay(); }
       lassoSelectedRowSet = null;
       nudgeHighlightTraceAfterScatterglSelectRestyle();
@@ -1951,7 +1946,7 @@
     var selected = selectionRowsToTraceIndices(rows);
     beginScatterSelectionRenderingOverlay();
     try {
-      updateScatterSelectionOverlay(selected);
+      applyScatterSelectionHighlight(selected);
     } catch (err) {
       console.error(err);
     } finally {
@@ -2039,8 +2034,6 @@
     var hasActiveSelection = !!(saveSelectionRows && saveSelectionRows.length);
     suppressSelectionEvents = true;
     highlightTraceAdded = false;
-    selectionOverlayTraceAdded = false;
-    scatterBaseTraceOpacity = null;
     cancelLassoSelectionDebounce();
     cancelPendingHighlightRestyle();
     cancelPendingScatterAfterPlot();
@@ -2277,85 +2270,31 @@
     return selected;
   }
 
-  /* ---------- selection overlay updates (trace indices) ---------- */
-  function selectionOverlayTraceIndex() {
-    if (!gd || !gd.data) return null;
-    for (var i = 0; i < gd.data.length; i++) {
-      var t = gd.data[i];
-      if (t && t.name === selectionOverlayTraceName) return i;
-    }
-    return null;
-  }
-
-  function ensureSelectionOverlayTrace() {
-    var idx = selectionOverlayTraceIndex();
-    if (idx != null) return idx;
+  /** Scattergl dimming via ``selectedpoints`` (compact index list; preserves per-point colours). */
+  function applyScatterSelectionHighlight(traceIndices) {
     if (!gd || !gd.data || !gd.data[0]) return null;
-    var baseTrace = gd.data[0];
-    var baseMarker = baseTrace.marker || {};
-    var overlayMarker = Object.assign({}, baseMarker);
-    overlayMarker.opacity = selectionOverlayMarkerOpacity;
-    // Avoid copying per-point color arrays at trace creation; we set them on selection updates.
-    if (overlayMarker.color != null && typeof overlayMarker.color !== "string") {
-      overlayMarker.color = [];
-    }
-    var overlay = {
-      name: selectionOverlayTraceName,
-      type: baseTrace.type || "scatter",
-      x: [],
-      y: [],
-      mode: "markers",
-      customdata: [],
-      marker: overlayMarker,
-      hovertemplate: baseTrace.hovertemplate,
-      showlegend: false
-    };
-    try { Plotly.addTraces(gd, [overlay]); } catch (e) {}
-    idx = selectionOverlayTraceIndex();
-    selectionOverlayTraceAdded = idx != null;
-    return idx;
-  }
-
-  function updateScatterSelectionOverlay(traceIndices) {
     traceIndices = traceIndices || [];
+    try {
+      return Plotly.restyle(
+        gd,
+        { selectedpoints: [traceIndices.length ? traceIndices : null] },
+        [0]
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearScatterSelectionHighlight(flushScatterglPaint) {
     if (!gd || !gd.data || !gd.data[0]) return null;
-    var hasSel = !!(traceIndices && traceIndices.length);
-
-    var baseTrace = gd.data[0];
-    var overlayIdx = ensureSelectionOverlayTrace();
-    if (overlayIdx == null) return null;
-
-    var xAll = baseTrace.x;
-    var yAll = baseTrace.y;
-    var cdAll = baseTrace.customdata;
-    var markerColorAll = baseTrace.marker ? baseTrace.marker.color : null;
-    var wantMarkerColor = markerColorAll != null && typeof markerColorAll !== "string";
-
-    if (!hasSel) {
-      var clearUpdate = { x: [[]], y: [[]], customdata: [[]] };
-      if (wantMarkerColor) clearUpdate["marker.color"] = [[]];
-      try { return Plotly.restyle(gd, clearUpdate, [overlayIdx]); } catch (e2) { return null; }
+    var ret = null;
+    try {
+      ret = Plotly.restyle(gd, { selectedpoints: [null] }, [0]);
+    } catch (e) { /* ignore */ }
+    if (flushScatterglPaint && gd.data[0].type === "scattergl") {
+      scheduleScatterglSelectionPaintFlushAfterClear();
     }
-
-    var xSel = new Array(traceIndices.length);
-    var ySel = new Array(traceIndices.length);
-    var cdSel = new Array(traceIndices.length);
-    var colorSel = wantMarkerColor ? new Array(traceIndices.length) : null;
-
-    for (var k = 0; k < traceIndices.length; k++) {
-      var ti = traceIndices[k];
-      xSel[k] = xAll ? xAll[ti] : null;
-      ySel[k] = yAll ? yAll[ti] : null;
-      cdSel[k] = cdAll ? cdAll[ti] : null;
-      if (wantMarkerColor) colorSel[k] = markerColorAll[ti];
-    }
-
-    var update = { x: [xSel], y: [ySel], customdata: [cdSel] };
-    if (wantMarkerColor) update["marker.color"] = [colorSel];
-
-    var ret2 = null;
-    try { ret2 = Plotly.restyle(gd, update, [overlayIdx]); } catch (e3) {}
-    return ret2;
+    return ret;
   }
 
   function applyRowsSelection(rows, statusPrefix, holdSuppressMs) {
@@ -2377,7 +2316,11 @@
     beginScatterSelectionRenderingOverlay();
     var restyleRet = null;
     try {
-      restyleRet = updateScatterSelectionOverlay(selectedTi);
+      if (!saveSelectionRows.length) {
+        restyleRet = clearScatterSelectionHighlight(true);
+      } else {
+        restyleRet = applyScatterSelectionHighlight(selectedTi);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -2835,6 +2778,21 @@
          Snapshot synchronously on ``plotly_selected`` so the debounced merge still sees every
          lasso/box geometry when appending a new region to an existing multi-region selection. */
       var selectionsSnapshotForCommit = cloneScatterSelectionShapes(gd.layout && gd.layout.selections);
+      /* Lasso stroke in progress: geometry exists but no plot_df rows yet — do not debounce-clear. */
+      if (
+        !rowsSnap.length
+        && selectionsSnapshotForCommit.length
+        && !(saveSelectionRows && saveSelectionRows.length)
+      ) {
+        return;
+      }
+      if (
+        !rowsSnap.length
+        && !selectionsSnapshotForCommit.length
+        && !(saveSelectionRows && saveSelectionRows.length)
+      ) {
+        return;
+      }
       var prevMode = activeSelectionMode || "";
       var baseRows = prevMode === "lasso" && saveSelectionRows && saveSelectionRows.length
         ? saveSelectionRows.slice()
@@ -2922,7 +2880,15 @@
         suppressSelectionEvents = true;
         beginScatterSelectionRenderingOverlay();
         try {
-          updateScatterSelectionOverlay(selectedTi);
+          var geomAtCommit = gd.layout && gd.layout.selections && gd.layout.selections.length;
+          if (!saveSelectionRows.length) {
+            /* Empty enclosure with shape still on canvas — still drawing, not a user clear. */
+            if (!(geomAtCommit && !rowsSnap.length)) {
+              clearScatterSelectionHighlight(true);
+            }
+          } else {
+            applyScatterSelectionHighlight(selectedTi);
+          }
         } catch (err) {
           console.error(err);
         } finally {
@@ -2949,7 +2915,7 @@
         suppressSelectionEvents = true;
         beginScatterSelectionRenderingOverlay();
         try {
-          updateScatterSelectionOverlay(selectedTi);
+          applyScatterSelectionHighlight(selectedTi);
         } catch (err) {
           console.error(err);
         } finally {

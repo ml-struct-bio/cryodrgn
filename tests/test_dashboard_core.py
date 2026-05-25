@@ -1089,6 +1089,26 @@ class TestDashboardModules:
         assert float(sz_v) == pytest.approx(float(sz_b) * factor, rel=1e-6, abs=1e-9)
         assert float(sz_v) < float(sz_b)
 
+    def test_numeric_array_to_plotly_hex_batched_matches_per_point(
+        self,
+    ) -> None:
+        """Batched ``sample_colorscale`` must match legacy per-point mapping."""
+        from plotly.colors import sample_colorscale
+
+        from cryodrgn.dashboard.plots_color_covariate import numeric_array_to_plotly_hex
+
+        vals = np.array([0.0, 0.5, 1.0, np.nan, -0.2, 1.2], dtype=np.float64)
+        batched = numeric_array_to_plotly_hex(vals, "Viridis", vmin=0.0, vmax=1.0)
+        legacy: list[str] = []
+        for i in range(len(vals)):
+            v = vals[i]
+            if not np.isfinite(v):
+                legacy.append("#9ca3af")
+                continue
+            t = max(0.0, min(1.0, float(v)))
+            legacy.append(sample_colorscale("Viridis", [t])[0])
+        assert batched == legacy
+
     def test_scatter3d_continuous_covariate_uses_per_point_hex_marker_colors(
         self, dashboard_experiment: DashboardExperiment
     ) -> None:
@@ -1289,7 +1309,35 @@ class TestDashboardModules:
     def test_landscape_volpca_selection_sizes_respect_trace_marker(self) -> None:
         root = dashboard_repo_root()
         js = root / "cryodrgn" / "dashboard" / "static" / "js" / "landscape_volpca.js"
-        assert "referenceScatter3dBaseMarkerSize" in js.read_text(encoding="utf-8")
+        vol_text = js.read_text(encoding="utf-8")
+        assert "referenceScatter3dBaseMarkerSize" in vol_text
+        assert "cdrgnVolSelectionOverlay" in vol_text
+        assert "volIdToPointIndex" in vol_text
+        assert "updateVolSelectionOverlay" in vol_text
+        assert "volMontageLabel" in vol_text
+        assert "syncStableSelectionLabels" in vol_text
+        assert "suppressPlotlySelectedUntil" in vol_text
+        assert "beginClickToggleSelection" in vol_text
+        assert "plotlySelectedSuppressed" in vol_text
+        assert "plotlySelectedFromLassoOrBox" in vol_text
+        assert "volFromClickEvent" in vol_text
+        assert "volLassoBoxGestureActive" in vol_text
+        assert "plotly_selecting" in vol_text
+        assert "baseTracePointsFromSelectedEvent" in vol_text
+        assert "traceForPlotlyPoint" in vol_text
+        assert "applyBaseTraceOpacityDimming" in vol_text
+        assert "VOLSKETCH_LASSO_DEBOUNCE_MS" in vol_text
+        assert "beginVolsketchLassoDimmingGesture" in vol_text
+        start = vol_text.find('gd.on("plotly_selected", function(ev)')
+        assert start != -1
+        mid = vol_text.find("volsketchLassoSelectTimer = setTimeout(function()", start)
+        assert mid != -1
+        end = vol_text.find("}, VOLSKETCH_LASSO_DEBOUNCE_MS);", mid)
+        debounce_block = vol_text[mid:end]
+        assert "handleVolSketchPlotlySelected" in debounce_block
+        assert "selectedpoints: [indices.slice()]" in vol_text
+        assert "assignVolMontageLabelsSorted" in vol_text
+        assert "resetVolMontageLabels" in vol_text
 
     def test_latent_3d_loads_scatter3d_scene_module_before_vol_anim(self) -> None:
         root = dashboard_repo_root()

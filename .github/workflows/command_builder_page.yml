@@ -1,4 +1,4 @@
-name: GitHub Pages (command builder)
+name: Command builder page
 
 on:
   push:
@@ -40,7 +40,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           CRYODRGN_VERSION: ${{ github.ref_name }}
         run: |
-          python -m cryodrgn.dashboard.github_pages -o _site
+          python -m cryodrgn.dashboard.command_builder_page -o _site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

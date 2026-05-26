@@ -1512,13 +1512,13 @@
   <script src="{{ url_for('static', filename='js/cryo_dashboard_icons.js') }}"></script>
   {% block head %}{% endblock %}
 </head>
-<body{% if github_pages_mode %} class="cmd-builder-github-pages"{% endif %}>
+<body{% if command_builder_page_mode %} class="cmd-builder-github-pages"{% endif %}>
   <header class="nav">
     <div class="nav-left">
-      <a href="{% if github_pages_mode %}https://cryodrgn.cs.princeton.edu/{% else %}/{% endif %}"
+      <a href="{% if command_builder_page_mode %}https://cryodrgn.cs.princeton.edu/{% else %}/{% endif %}"
          class="nav-brand-link"
-         aria-label="{% if github_pages_mode %}cryoDRGN project home{% else %}cryoDRGN dashboard home{% endif %}">
-        {% if request.path != '/' and not github_pages_mode %}
+         aria-label="{% if command_builder_page_mode %}cryoDRGN project home{% else %}cryoDRGN dashboard home{% endif %}">
+        {% if request.path != '/' and not command_builder_page_mode %}
         <span class="nav-brand-home-arrow" aria-hidden="true">←</span>
         {% endif %}
         <span class="nav-logo-wrap">
@@ -1533,17 +1533,17 @@
         <span class="nav-brand-text">
           <span class="nav-brand-line1-row">
             <span class="nav-brand-line1">cryoDRGN</span>
-            {% if cryodrgn_version_short and github_pages_mode %}
+            {% if cryodrgn_version_short and command_builder_page_mode %}
             <span class="nav-brand-version nav-brand-version--inline"
               title="cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
-            {% elif cryodrgn_version_short and not github_pages_mode %}
+            {% elif cryodrgn_version_short and not command_builder_page_mode %}
             <span class="nav-brand-version nav-brand-version--inline"
               title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
             {% endif %}
           </span>
           <span class="nav-brand-line2">
             <span class="nav-brand-line2-inner">
-              <span class="nav-brand-line2-main">{% if github_pages_mode %}command builder{% else %}dashboard{% endif %}{% if not github_pages_mode -%}
+              <span class="nav-brand-line2-main">{% if command_builder_page_mode %}command builder{% else %}dashboard{% endif %}{% if not command_builder_page_mode -%}
                 <span class="nav-brand-interface-title">{% block nav_page_title %}{% endblock %}</span>
                 {%- endif %}</span>
             </span>
@@ -1551,7 +1551,7 @@
         </span>
       </a>
     </div>
-    {% if github_pages_mode and cryodrgn_version_short %}
+    {% if command_builder_page_mode and cryodrgn_version_short %}
     <div class="nav-header-icons" aria-label="Release links">
       {% if github_repo_release_url %}
       <div class="nav-header-icon-item nav-header-icon-item--code">
@@ -1642,7 +1642,7 @@
           {% endif %}
         </div>
         {% endif %}
-        {% if github_pages_mode %}
+        {% if command_builder_page_mode %}
         <div class="nav-config-field nav-reconstruction-cmd" aria-label="Command">
           {% block nav_reconstruction_command %}{% endblock %}
         </div>
@@ -1683,7 +1683,7 @@
         {% endif %}
       </div>
     </div>
-    {% if github_pages_mode %}
+    {% if command_builder_page_mode %}
     <div class="nav-right nav-cmd-doc">
       <div class="nav-cmd-doc-panel" role="region" aria-live="polite" aria-label="Command description">
         <p class="nav-cmd-doc-text" id="nav-cmd-doc-text">{{ command_builder_command_docs.get('abinit', '')|e }}</p>

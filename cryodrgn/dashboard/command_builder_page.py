@@ -120,7 +120,7 @@ def _command_builder_template_kwargs() -> dict[str, object]:
     }
 
 
-def _github_pages_base_path(repo: str | None = None) -> str:
+def _command_builder_page_base_path(repo: str | None = None) -> str:
     """Project-site base path ``/<repo>/`` (trailing slash)."""
     if repo is None:
         repo = os.environ.get("GITHUB_REPOSITORY", "ml-struct-bio/cryodrgn")
@@ -154,7 +154,9 @@ def _rewrite_root_paths(html: str, base_path: str) -> str:
     return _ROOT_PATH_RE.sub(repl, html)
 
 
-def _adapt_html_for_github_pages(html: str, base_path: str, repo_url: str) -> str:
+def _adapt_html_for_command_builder_page(
+    html: str, base_path: str, repo_url: str
+) -> str:
     html = _PLOTLY_SCRIPT_RE.sub("\n", html)
     html = _rewrite_root_paths(html, base_path)
     # Brand link targets https://cryodrgn.cs.princeton.edu/ (set in the template).
@@ -175,7 +177,7 @@ def render_command_builder_html(
 ) -> str:
     """Return a single self-contained command-builder HTML document."""
     if base_path is None:
-        base_path = _github_pages_base_path()
+        base_path = _command_builder_page_base_path()
     if repo_url is None:
         repo = os.environ.get("GITHUB_REPOSITORY", "ml-struct-bio/cryodrgn")
         repo_url = f"https://github.com/{repo}"
@@ -232,15 +234,15 @@ def render_command_builder_html(
         "exp_run_log_cryodrgn_version": None,
         "exp_run_log_cryodrgn_version_short": None,
         "exp_run_log_cryodrgn_version_title": None,
-        "github_pages_mode": True,
+        "command_builder_page_mode": True,
     }
 
     with app.test_request_context("/command-builder"):
         html = render_template("command_builder.html", **ctx)
-    return _adapt_html_for_github_pages(html, base_path, repo_url)
+    return _adapt_html_for_command_builder_page(html, base_path, repo_url)
 
 
-def build_github_pages_site(
+def build_command_builder_page_site(
     out_dir: os.PathLike[str] | str,
     *,
     base_path: str | None = None,
@@ -288,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
-    build_github_pages_site(
+    build_command_builder_page_site(
         args.output,
         base_path=args.base_path,
         repo_url=args.repo_url,

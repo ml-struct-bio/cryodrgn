@@ -416,7 +416,7 @@
     margin-top: 0.2rem;
     min-height: 1em;
   }
-  {% if github_pages_mode %}
+  {% if command_builder_page_mode %}
   /* GitHub Pages: full-width required row + landing-style option cards filling the viewport. */
   body.cmd-builder-github-pages {
     overflow: hidden;
@@ -860,10 +860,10 @@
     grid-column: 1;
     align-self: center;
     font-weight: 700;
-    font-size: var(--gp-nav-cmd-label-font);
-    font-variant: small-caps;
+    font-size: calc(var(--gp-nav-cmd-label-font) * 1.25);
+    font-variant: normal;
     color: var(--accent, #c4703a);
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     white-space: nowrap;
   }
   body.cmd-builder-github-pages .cmd-builder-required-fields {
@@ -1877,7 +1877,7 @@
     {% endmacro %}
     {% macro render_analyze_command_panel(cmd_key, prefix) %}
       <div id="panel-{{ cmd_key }}" class="cmd-panel" data-cmd="{{ cmd_key }}">
-        {% if github_pages_mode %}
+        {% if command_builder_page_mode %}
         <div class="cmd-builder-github-body cmd-builder-github-body--analyze">
           {% call render_github_required_bar(3) %}
             {{ render_analyze_required_cells(prefix) }}
@@ -1969,7 +1969,7 @@
       {% endif %}
     {% endmacro %}
     {% macro render_schema_group(group) %}
-      {% if github_pages_mode %}
+      {% if command_builder_page_mode %}
         <div class="cmd-group-card">
           <button type="button" class="cmd-group-card-trigger cmd-group-card-summary" aria-expanded="false">
             <span class="cmd-group-card-title">{{ group.title }}</span>
@@ -1991,7 +1991,7 @@
         | selectattr('title', 'equalto', 'Dataset loading')
         | list
         | first) %}
-      {% if github_pages_mode %}
+      {% if command_builder_page_mode %}
         {# Dataset loading is rendered in ``render_github_primary_pair`` on GitHub Pages. #}
       {% else %}
         <fieldset>
@@ -2025,13 +2025,13 @@
       </div>
       <div class="cmd-builder-scroll">
         <form class="cmd-form card" id="cmd-form" action="#" onsubmit="return false;">
-          {% if not github_pages_mode %}
+          {% if not command_builder_page_mode %}
           <div class="cmd-builder-program">
             {{ cmd_reconstruction_command_select() }}
           </div>
           {% endif %}
           <div id="panel-abinit" class="cmd-panel cmd-panel--active" data-cmd="abinit">
-            {% if github_pages_mode %}
+            {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(4) %}
                 <div class="cmd-builder-required-cell">
@@ -2125,7 +2125,7 @@
             {% endif %}
           </div>
           <div id="panel-train_vae" class="cmd-panel" data-cmd="train_vae">
-            {% if github_pages_mode %}
+            {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(5) %}
                 <div class="cmd-builder-required-cell">
@@ -2239,7 +2239,7 @@
             {% endif %}
           </div>
           <div id="panel-train_nn" class="cmd-panel" data-cmd="train_nn">
-            {% if github_pages_mode %}
+            {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(4) %}
                 <div class="cmd-builder-required-cell">
@@ -2331,7 +2331,7 @@
             {% endif %}
           </div>
           <div id="panel-train_dec" class="cmd-panel" data-cmd="train_dec">
-            {% if github_pages_mode %}
+            {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(5) %}
                 <div class="cmd-builder-required-cell">
@@ -2445,7 +2445,7 @@
             {% endif %}
           </div>
           <div id="panel-backproject_voxel" class="cmd-panel" data-cmd="backproject_voxel">
-            {% if github_pages_mode %}
+            {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body cmd-builder-github-body--backproject">
               {% call render_github_required_bar(4) %}
                 <div class="cmd-builder-required-cell">
@@ -2539,7 +2539,7 @@
             {% endif %}
           </div>
           <div id="panel-abinit_het_old" class="cmd-panel" data-cmd="abinit_het_old">
-            {% if github_pages_mode %}
+            {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(4) %}
                 <div class="cmd-builder-required-cell">
@@ -2633,7 +2633,7 @@
             {% endif %}
           </div>
           <div id="panel-abinit_homo_old" class="cmd-panel" data-cmd="abinit_homo_old">
-            {% if github_pages_mode %}
+            {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(3) %}
                 <div class="cmd-builder-required-cell">
@@ -2715,7 +2715,7 @@
         <div class="cmd-output card">
           <div class="cmd-output-grid">
             <div class="cmd-output-main">
-              {% if not github_pages_mode %}
+              {% if not command_builder_page_mode %}
               <strong class="cmd-output-heading">Command</strong>
               {% endif %}
               <pre id="cmd-out">cryodrgn abinit …</pre>
@@ -2723,7 +2723,7 @@
               <p id="cmd-copy-status" class="hint cmd-copy-status"></p>
             </div>
             <div class="cmd-output-actions">
-              {% if github_pages_mode %}
+              {% if command_builder_page_mode %}
               <button type="button"
                       class="btn-copy btn-copy--colorize"
                       id="cmd-colorize"
@@ -2775,7 +2775,7 @@
     <script>
 (function() {
   var CMD_SCHEMA = {{ command_builder_schema | tojson }};
-  {% if github_pages_mode %}
+  {% if command_builder_page_mode %}
   var CMD_COMMAND_DOCS = {{ command_builder_command_docs | tojson }};
   var CMD_MANUSCRIPT_URLS = {{ command_builder_manuscript_urls | tojson }};
   {% endif %}
@@ -2883,7 +2883,7 @@
     return out.join(" ");
   }
 
-  {% if github_pages_mode %}
+  {% if command_builder_page_mode %}
   var lastBashCommandText = "";
   var CMD_WRAP_MIN_CHARS = 80;
   var CMD_LINE_MAX_CHARS = 100;
@@ -3158,7 +3158,7 @@
   }
 
   function build() {
-    {% if github_pages_mode %}
+    {% if command_builder_page_mode %}
     if (lastBashCommandText) return lastBashCommandText;
     return segmentsToBashText(buildSegments());
     {% else %}
@@ -3270,11 +3270,11 @@
       panels[i].classList.toggle("cmd-panel--active", panels[i].getAttribute("data-cmd") === t);
     }
     syncCmdDocText();
-    {% if github_pages_mode %}syncManuscriptLink();{% endif %}
+    {% if command_builder_page_mode %}syncManuscriptLink();{% endif %}
     refresh();
   }
 
-  {% if github_pages_mode %}
+  {% if command_builder_page_mode %}
   var cmdColorize = false;
   var CMD_GROUP_HUES = {
     "Required": 28,
@@ -3338,7 +3338,7 @@
   {% endif %}
 
   function refresh() {
-    {% if github_pages_mode %}
+    {% if command_builder_page_mode %}
     updateCommandDisplay();
     scheduleFitPrimaryRegionFields();
     {% else %}
@@ -3350,7 +3350,7 @@
   form.addEventListener("input", refresh);
   form.addEventListener("change", refresh);
 
-  {% if github_pages_mode %}
+  {% if command_builder_page_mode %}
   var colorizeBtn = document.getElementById("cmd-colorize");
   if (colorizeBtn) {
     colorizeBtn.addEventListener("click", function() {
@@ -3381,7 +3381,7 @@
   initOutdirSteppers();
   syncPanels();
 
-  {% if github_pages_mode %}
+  {% if command_builder_page_mode %}
   var fitPrimaryFieldsPending = false;
 
   function primaryFieldsOverflow(container) {
@@ -3504,7 +3504,7 @@
     window.addEventListener("resize", schedule);
   })();
 
-  (function initGithubPagesGroupCards() {
+  (function initCommandBuilderPageGroupCards() {
     function cardsInActivePanel() {
       var panel = document.querySelector(".cmd-panel.cmd-panel--active");
       return panel ? panel.querySelectorAll(".cmd-group-card") : [];

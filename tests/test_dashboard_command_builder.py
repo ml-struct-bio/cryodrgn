@@ -10,24 +10,31 @@ import pytest
 
 from cryodrgn.commands import dashboard as dash_cli, train_vae
 from cryodrgn.dashboard.command_builder_cli_help import (
+    defaults_map_from_command_py,
+    display_name_from_arg_help,
     help_map_from_command_py,
+    jinja_arg_display_name,
     load_cli_help_maps,
     load_command_module_docstrings,
+    resolve_help_default_placeholders,
+    resolved_help_for_flag,
 )
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_COMMAND_KEYS,
+    COMMAND_BUILDER_MANUSCRIPT_URLS,
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
     arg_is_batch_size_denominated,
     arg_is_epoch_denominated,
     arg_is_num_epochs,
+    arg_show_display_name,
     default_outdir_for_command,
 )
 from cryodrgn.dashboard.context import command_builder_template_kwargs
 from cryodrgn.dashboard.data import DashboardExperiment
-from cryodrgn.dashboard.github_pages import (
+from cryodrgn.dashboard.command_builder_page import (
     _github_repo_release_url,
-    build_github_pages_site,
+    build_command_builder_page_site,
     render_command_builder_html,
 )
 
@@ -72,6 +79,7 @@ class TestArgIsEpochDenominated:
         )
         assert arg_is_epoch_denominated({"cli": ["--epochs-sgd"], "w": "number"})
         assert arg_is_epoch_denominated({"cli": ["--l-ramp-epochs"], "w": "number"})
+        assert arg_is_epoch_denominated({"cli": ["--pose-only-phase"], "w": "number"})
 
     def test_non_epoch_flags(self) -> None:
         assert not arg_is_epoch_denominated({"cli": ["--pretrain"], "w": "number"})
@@ -98,6 +106,30 @@ class TestArgIsBatchSizeDenominated:
             {"cli": ["-n", "--num-epochs"], "w": "number"}
         )
         assert not arg_is_batch_size_denominated({"cli": ["--pretrain"], "w": "number"})
+
+
+class TestArgShowDisplayName:
+    def test_hides_when_unit_suffix_present(self) -> None:
+        assert not arg_show_display_name(
+            {"cli": ["-n", "--num-epochs"], "w": "number", "help": "x"}
+        )
+        assert not arg_show_display_name(
+            {"cli": ["--epochs-sgd"], "w": "number", "help": "x"}
+        )
+        assert not arg_show_display_name(
+            {"cli": ["--pose-only-phase"], "w": "number", "help": "x"}
+        )
+        assert not arg_show_display_name(
+            {"cli": ["--batch-size-hps"], "w": "number", "help": "x"}
+        )
+
+    def test_keeps_short_batch_flag(self) -> None:
+        assert arg_show_display_name(
+            {"cli": ["-b", "--batch-size"], "w": "number", "help": "x"}
+        )
+
+    def test_shows_without_unit_suffix(self) -> None:
+        assert arg_show_display_name({"cli": ["--wd"], "w": "text", "help": "x"})
 
 
 class TestDefaultOutdirForCommand:
@@ -216,6 +248,80 @@ class TestHelpMapFromCommandPy:
         assert "-o" in m or "--outdir" in m
         assert "--zdim" in m
         assert "--poses" in m
+
+
+class TestResolveHelpDefaults:
+    def test_abinit_max_threads_default_in_tooltip(self) -> None:
+        from pathlib import Path
+
+        import cryodrgn.commands.abinit as abinit_mod
+
+        dm = defaults_map_from_command_py(Path(abinit_mod.__file__))
+        hm = help_map_from_command_py(Path(abinit_mod.__file__))
+        assert dm["--max-threads"] == 16
+        t = resolved_help_for_flag(hm, dm, "--max-threads")
+        assert t is not None
+        assert "%(default)s" not in t
+        assert "(default: 16)" in t
+
+    def test_resolve_placeholder_substitution(self) -> None:
+        assert (
+            resolve_help_default_placeholders("Batch (default: %(default)s)", 64)
+            == "Batch (default: 64)"
+        )
+
+
+class TestDisplayNameFromArgHelp:
+    def test_common_training_flags(self) -> None:
+        assert (
+            display_name_from_arg_help(
+                "Weight decay for the optimizer (default: %(default)s)"
+            )
+            == "weight decay"
+        )
+        assert (
+            display_name_from_arg_help(
+                "Number of total epochs to train for (default: %(default)s)"
+            )
+            == "total epochs"
+        )
+        assert display_name_from_arg_help("Flag for lazy data loading.") == (
+            "lazy data loading"
+        )
+        assert (
+            display_name_from_arg_help(
+                "Learning rate for the pose table optimizer (default: %(default)s)"
+            )
+            == "learning rate (pose table)"
+        )
+
+    def test_jinja_filter_accepts_arg_dict(self) -> None:
+        wd_arg = next(
+            a
+            for g in COMMAND_BUILDER_SCHEMA["abinit"]
+            for a in g["args"]
+            if a.get("cli") == ["--wd"]
+        )
+        assert jinja_arg_display_name(wd_arg) == "weight decay"
+
+    def test_ind_override(self) -> None:
+        ind_arg = next(
+            a
+            for g in COMMAND_BUILDER_SCHEMA["abinit"]
+            for a in g["args"]
+            if a.get("cli") == ["--ind"]
+        )
+        assert jinja_arg_display_name(ind_arg) == "filtering .pkl"
+
+    def test_max_threads_suppressed(self) -> None:
+        mt_arg = next(
+            a
+            for g in COMMAND_BUILDER_SCHEMA["abinit"]
+            for a in g["args"]
+            if a.get("cli") == ["--max-threads"]
+        )
+        assert not arg_show_display_name(mt_arg)
+        assert jinja_arg_display_name(mt_arg) == "threads"
 
 
 class TestDashboardCLI:
@@ -368,6 +474,27 @@ class TestDashboardCLI:
         )
 
 
+class TestCommandBuilderManuscriptUrls:
+    def test_reconstruction_commands_mapped(self) -> None:
+        assert (
+            COMMAND_BUILDER_MANUSCRIPT_URLS["abinit"]
+            == "https://www.nature.com/articles/s41592-025-02720-4"
+        )
+        assert COMMAND_BUILDER_MANUSCRIPT_URLS["train_dec"].endswith(
+            "s41592-025-02720-4"
+        )
+        assert COMMAND_BUILDER_MANUSCRIPT_URLS["train_vae"].endswith(
+            "s41592-020-01049-4"
+        )
+        assert (
+            "ICCV_2021_paper.pdf" in COMMAND_BUILDER_MANUSCRIPT_URLS["abinit_het_old"]
+        )
+
+    def test_analyze_commands_not_mapped(self) -> None:
+        for key in ("analyze", "analyze_landscape", "backproject_voxel"):
+            assert key not in COMMAND_BUILDER_MANUSCRIPT_URLS
+
+
 class TestGithubRepoReleaseUrl:
     def test_pep440_prerelease_gets_hyphen(self) -> None:
         url = _github_repo_release_url(
@@ -391,7 +518,7 @@ class TestGithubRepoReleaseUrl:
         assert url.endswith("/tree/4.3.0-rc1")
 
 
-class TestGithubPagesCommandBuilder:
+class TestCommandBuilderPage:
     def test_render_includes_schema_and_builder_ui(self) -> None:
         html = render_command_builder_html(
             base_path="/cryodrgn/",
@@ -401,6 +528,22 @@ class TestGithubPagesCommandBuilder:
         assert 'class="cmd-builder-github-pages"' in html
         assert "github-pages-note" not in html
         assert "nav-github-release-link" in html
+        assert 'id="nav-manuscript-link"' in html
+        assert "nav-manuscript-link" in html
+        assert "CMD_MANUSCRIPT_URLS" in html
+        assert "s41592-025-02720-4" in html
+        assert "s41592-020-01049-4" in html
+        assert "ICCV_2021_paper.pdf" in html
+        assert "syncManuscriptLink" in html
+        assert '<span class="nav-brand-home-arrow"' not in html
+        assert (
+            "color: #fff"
+            in html.split("body.cmd-builder-github-pages .cmd-output pre")[1][:500]
+        )
+        assert (
+            '"Cascadia Code"'
+            in html.split("body.cmd-builder-github-pages .cmd-output pre")[1][:500]
+        )
         assert "github.com/ml-struct-bio/cryodrgn/tree/" in html
         assert "var CMD_SCHEMA" in html
         assert "cryodrgn abinit" in html
@@ -409,10 +552,10 @@ class TestGithubPagesCommandBuilder:
         assert "cmd-group-card-desc" in html
         assert "cmd-builder-required-bar" in html
         assert "cmd-builder-primary-region-content" in html
-        assert (
-            "font-variant: small-caps"
-            in html.split(".cmd-builder-required-heading")[1][:200]
-        )
+        req_heading_css = html.split(".cmd-builder-required-heading")[1][:200]
+        assert "calc(var(--gp-nav-cmd-label-font) * 1.25)" in req_heading_css
+        assert "font-variant: normal" in req_heading_css
+        assert "font-weight: 700" in req_heading_css
         assert "Dataset<br>loading" in html
         assert "dataset-split > .cmd-builder-primary-col--checks" in html
         checks_rule = html.split("dataset-split > .cmd-builder-primary-col--checks", 1)[
@@ -446,14 +589,17 @@ class TestGithubPagesCommandBuilder:
         assert '<span class="cmd-arg-unit-line">total</span>' in train_panel
         assert 'cmd-arg-unit--scaled" aria-hidden="true">epochs</span>' in train_panel
         assert "cmd-builder-primary-region--training" in html
-        assert "initGithubPagesGroupCards" in html
+        assert "initCommandBuilderPageGroupCards" in html
         assert "nav-reconstruction-cmd" in html
         assert html.count('id="cmd-type"') == 1
         assert "No experiment loaded" not in html
         assert '<span class="nav-page-title">' not in html
         assert 'class="cmd-builder-program"' not in html
         assert "cmd-outdir-stepper" in html
+        assert "Output folder" in html
         assert 'value="001_abinit"' in html
+        assert 'value="001_abinit/"' not in html
+        assert "cmd-outdir-input-suffix" in html
         assert "nav-cmd-doc" in html
         assert "nav-cmd-doc-text" in html
         assert "CMD_COMMAND_DOCS" in html
@@ -485,6 +631,9 @@ class TestGithubPagesCommandBuilder:
         assert "CMD_WRAP_MIN_CHARS = 80" in html
         assert "CMD_LINE_MAX_CHARS = 100" in html
         assert "layoutCommandLineGroups" in html
+        assert "CMD_LINE_HANG_SPACES" in html
+        assert "cmd-line-hang" in html
+        assert "--cmd-line-hang-indent: 2ch" in html
         assert "updateCommandDisplay" in html
         assert "Advanced parameters" in html
         assert "cmd-builder-advanced-region" in html
@@ -499,9 +648,114 @@ class TestGithubPagesCommandBuilder:
         assert "cmd-arg-unit--num-epochs" in ab_n_chunk
         assert '<span class="cmd-arg-unit-line">total</span>' in ab_n_chunk
         assert "cmd-arg-unit--scaled" in html.split('id="ab_epochs_sgd"', 1)[1][:400]
+        pose_only_chunk = html.split('id="ab_pose_only_phase"', 1)[1][:450]
+        assert (
+            'cmd-arg-unit--scaled" aria-hidden="true">epochs</span>' in pose_only_chunk
+        )
+        ab_n_label = html.split('for="ab_n"', 1)[1][:280]
+        assert "cmd-arg-display-name" not in ab_n_label
+        assert "cmd-arg-display-name" in html
+        assert "font-style: italic" in html.split(".cmd-arg-display-name")[1][:120]
+        assert 'class="cmd-arg-display-name">weight decay</span>' in html
+        assert (
+            '<code>--wd</code><span class="cmd-arg-display-name">weight decay</span>'
+            in html
+        )
+        vae_b_chunk = html.split('for="vae_b"', 1)[1][:500]
+        assert 'cmd-arg-unit--scaled" aria-hidden="true">images</span>' in vae_b_chunk
+        assert "cmd-arg-display-name" in vae_b_chunk
+        assert "command-builder-manuscript.png" in html
+        assert "nav-manuscript-icon" in html
+        assert "nav-header-icons" in html
+        assert "nav-header-icon-label" in html
+        assert ">code</span>" in html
+        assert ">paper</span>" in html
+        assert "command builder" in html
+        gh_svg_css = html.split(
+            "body.cmd-builder-github-pages .nav-github-release-link svg {"
+        )[1][:120]
+        assert "var(--gp-nav-github-icon-scale)" in gh_svg_css
+        assert "--gp-nav-github-icon-scale: 0.576" in html
+        assert "nav-header-icon-item--code" in html
+        assert "nav-header-icon-item--paper" in html
+        assert "flex-direction: row" in html.split(".nav-header-icon-item {")[1][:120]
+        paper_item = html.split('id="nav-manuscript-icon-item"', 1)[1][:500]
+        assert "nav-manuscript-link" in paper_item.split("nav-header-icon-label", 1)[0]
+        assert 'href="https://cryodrgn.cs.princeton.edu/"' in html
+        assert 'class="nav-brand-link"' in html
+        assert (
+            "body.cmd-builder-github-pages a.nav-brand-link:hover .nav-logo" not in html
+        )
+        assert ".nav a.nav-brand-link:hover .nav-logo" in html
+        assert "brightness(1.14) drop-shadow" in html
+        assert (
+            "body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line2-main"
+            in html
+        )
+        assert (
+            "background: transparent"
+            in html.split(
+                "body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line2-main"
+            )[1][:400]
+        )
+        assert (
+            "gap: 0.02rem"
+            in html.split("body.cmd-builder-github-pages header.nav .nav-brand-text")[
+                1
+            ][:80]
+        )
+        assert "gap: 0.02rem" in html.split(".nav-header-icon-item--code")[1][:80]
+        nav_icons_css = html.split(".nav-header-icons {", 1)[1][:320]
+        assert "grid-column: 2 / 5" in nav_icons_css
+        assert "margin-inline-start: 35%" in nav_icons_css
+        assert "translateX(-50%)" in nav_icons_css
+        ms_link_css = html.split(
+            "body.cmd-builder-github-pages .nav-manuscript-link {", 1
+        )[1][:360]
+        assert "overflow: visible" in ms_link_css
+        assert "gp-nav-manuscript-icon-zoom" not in html
+        assert "gp-nav-manuscript-icon-width-scale" not in html
+        assert "--gp-nav-bar-logo-size: min(3.88rem, 12vw)" in html
+        assert "--gp-nav-header-icon-size: calc(2.142rem * 1.2)" in html
+        assert "* 0.8 * var(--gp-nav-font-scale)" in html
+        assert "var(--gp-nav-cmd-label-font) * 0.9" in html
+        assert "gap: 0.35rem" in html.split(".nav-header-icon-item--paper")[1][:80]
+        gh_hover = html.split(".nav-github-release-link:hover,", 1)[1][:220]
+        assert "background: rgba(255, 255, 255, 0.1)" in gh_hover
+        icon_hover_fx = html.split(".nav-github-release-link:hover svg,", 1)[1][:400]
+        assert "filter: brightness(1.14)" in icon_hover_fx
+        assert "transform: scale(1.07)" in icon_hover_fx
+        ms_img_css = html.rsplit(
+            "body.cmd-builder-github-pages .nav-manuscript-link img.nav-manuscript-icon {",
+            1,
+        )[1][:200]
+        assert "max-height: var(--gp-nav-bar-logo-size)" in ms_img_css
+        cmd_dock_css = html.split(
+            "body.cmd-builder-github-pages .cmd-builder-cmd-dock {"
+        )[1][:520]
+        assert "border-radius: 8px" in cmd_dock_css
+        assert "rgba(255, 228, 232, 0.92)" in cmd_dock_css
+        assert 'id="nav-manuscript-icon-item"' in html
+        assert "grid-template-columns: auto 1fr auto 1fr auto" in html
+        assert "filtering .pkl" in html
+        assert "%(default)s" not in html
+        assert "(default: 16)" in html.split('id="ab_max_threads"', 1)[1][:400]
+        zdim_chunk = html.split('for="ab_zdim"', 1)[1][:500]
+        assert "conformation latent space" in zdim_chunk
+
+    def test_local_base_path_does_not_break_static_assets(self) -> None:
+        html = render_command_builder_html(
+            base_path="/",
+            repo_url="https://github.com/ml-struct-bio/cryodrgn",
+        )
+        head = html.split("</head>", 1)[0]
+        assert '<base href="/"/>' in head or '<base href="/">' in head
+        assert "github.com" not in head.split("<base ", 1)[1].split(">", 1)[0]
+        assert 'src="static/img/command-builder-manuscript.png"' in html
+        assert 'href="https://cryodrgn.cs.princeton.edu/"' in html
 
     def test_build_writes_index_and_nojekyll(self, tmp_path) -> None:
-        out = build_github_pages_site(
+        out = build_command_builder_page_site(
             tmp_path / "site",
             base_path="/cryodrgn/",
             repo_url="https://github.com/ml-struct-bio/cryodrgn",

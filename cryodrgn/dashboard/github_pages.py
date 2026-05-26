@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 from pathlib import Path
+from urllib.parse import quote
 
 from flask import Flask, render_template
 
@@ -18,6 +19,9 @@ from cryodrgn.dashboard.command_builder_cli_help import load_command_module_docs
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
+    arg_is_batch_size_denominated,
+    arg_is_epoch_denominated,
+    arg_is_num_epochs,
     default_outdir_for_command,
 )
 
@@ -57,6 +61,34 @@ def _cryodrgn_version_context() -> dict[str, str]:
     ver = str(ver).strip() or "unknown"
     short = ver.split("+", 1)[0].strip() if "+" in ver else ver
     return {"cryodrgn_version": ver, "cryodrgn_version_short": short}
+
+
+# PEP 440 ``4.3.0a8`` → git tag ``4.3.0-a8`` (hyphen before pre-release letter).
+_PEP440_PRERELEASE_TAG_RE = re.compile(
+    r"^(\d+(?:\.\d+)*)(?<!-)([ab]\d+|rc\d+)(.*)$",
+    re.IGNORECASE,
+)
+
+
+def _version_to_github_tree_tag(version: str) -> str:
+    """Normalize a version string to the GitHub tag used for ``/tree/<tag>`` links."""
+    tag = (version or "").strip().split("+", 1)[0].strip()
+    if not tag:
+        return tag
+    m = _PEP440_PRERELEASE_TAG_RE.match(tag)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}{m.group(3)}"
+    return tag
+
+
+def _github_repo_release_url(repo_url: str, version: str) -> str:
+    """Link to the GitHub tree at the built cryoDRGN version tag (e.g. ``/tree/4.3.0-a8``)."""
+    base = repo_url.rstrip("/")
+    ver = (version or "").strip()
+    if not ver or ver == "unknown":
+        return base
+    tag = _version_to_github_tree_tag(ver) or ver
+    return f"{base}/tree/{quote(tag)}"
 
 
 def _command_builder_template_kwargs() -> dict[str, object]:
@@ -133,11 +165,6 @@ def _adapt_html_for_github_pages(html: str, base_path: str, repo_url: str) -> st
         html,
         count=1,
     )
-    note = (
-        f'<p class="github-pages-note">Hosted command builder · '
-        f'<a href="{repo_url}">{repo_url.removeprefix("https://")}</a></p>'
-    )
-    html = html.replace("<main>", f"{note}\n  <main>", 1)
     # ``base.html`` workdir/epoch handlers are dashboard-only;
     # disable on static hosting.
     html = html.replace('fetch("/api/set_workdir"', 'fetch("#"')
@@ -165,6 +192,11 @@ def render_command_builder_html(
     )
     app.jinja_env.filters["abbrev_middle"] = _abbrev_middle
     app.jinja_env.filters["nav_interface_title"] = _nav_interface_title
+    app.jinja_env.filters["arg_is_epoch_denominated"] = arg_is_epoch_denominated
+    app.jinja_env.filters[
+        "arg_is_batch_size_denominated"
+    ] = arg_is_batch_size_denominated
+    app.jinja_env.filters["arg_is_num_epochs"] = arg_is_num_epochs
     app.config["COMMAND_BUILDER_ONLY"] = True
 
     def _noop_api() -> tuple[str, int]:
@@ -176,9 +208,14 @@ def render_command_builder_html(
     ):
         app.add_url_rule(rule, endpoint=endpoint, view_func=_noop_api, methods=["POST"])
 
+    ver_ctx = _cryodrgn_version_context()
     ctx = {
         **_command_builder_template_kwargs(),
-        **_cryodrgn_version_context(),
+        **ver_ctx,
+        "github_repo_url": repo_url,
+        "github_repo_release_url": _github_repo_release_url(
+            repo_url, ver_ctx["cryodrgn_version"]
+        ),
         "exp_workdir": "",
         "exp_epoch": 0,
         "exp_kmeans": -1,

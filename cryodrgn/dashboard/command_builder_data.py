@@ -41,6 +41,43 @@ def default_outdir_for_command(cmd: str, workdir: str | None = None) -> str:
     return os.path.join(workdir, leaf) if workdir else leaf
 
 
+def arg_is_num_epochs(arg: object) -> bool:
+    """True for ``-n`` / ``--num-epochs`` (total training epoch count)."""
+    if not isinstance(arg, dict):
+        return False
+    cli = arg.get("cli")
+    if not isinstance(cli, (list, tuple)):
+        return False
+    flags = {str(flag).lower() for flag in cli}
+    return "-n" in flags or "--num-epochs" in flags
+
+
+def arg_is_epoch_denominated(arg: object) -> bool:
+    """True when any CLI flag name contains ``epoch`` (value is a count of epochs)."""
+    if arg_is_num_epochs(arg):
+        return False
+    if not isinstance(arg, dict):
+        return False
+    cli = arg.get("cli")
+    if not isinstance(cli, (list, tuple)):
+        return False
+    return any("epoch" in str(flag).lower() for flag in cli)
+
+
+def arg_is_batch_size_denominated(arg: object) -> bool:
+    """True when any CLI flag is a batch-size argument (value is a count of images)."""
+    if not isinstance(arg, dict):
+        return False
+    cli = arg.get("cli")
+    if not isinstance(cli, (list, tuple)):
+        return False
+    for flag in cli:
+        s = str(flag).lower()
+        if "batch-size" in s or s == "-b":
+            return True
+    return False
+
+
 def _g(title: str, args: list[Arg], description: str = "") -> Group:
     return {"title": title, "args": args, "description": description}
 

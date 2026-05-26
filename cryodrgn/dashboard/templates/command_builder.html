@@ -678,10 +678,10 @@
     gap: 0.35rem 0.75rem;
     align-items: stretch;
     padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    background: rgba(196, 112, 58, 0.1);
-    border: 1px solid rgba(196, 112, 58, 0.45);
-    box-shadow: inset 0 0 0 1px rgba(196, 112, 58, 0.06);
+    border-radius: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
     box-sizing: border-box;
   }
   body.cmd-builder-github-pages .cmd-builder-required-heading {
@@ -689,8 +689,9 @@
     align-self: center;
     font-weight: 700;
     font-size: var(--gp-nav-cmd-label-font);
+    font-variant: small-caps;
     color: var(--accent, #c4703a);
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
     white-space: nowrap;
   }
   body.cmd-builder-github-pages .cmd-builder-required-fields {
@@ -706,6 +707,12 @@
     align-items: stretch;
     gap: 0.12rem;
     min-width: 0;
+    padding: 0.35rem 0.45rem;
+    border-radius: 0;
+    background: rgba(196, 112, 58, 0.1);
+    border: 1px solid rgba(196, 112, 58, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(196, 112, 58, 0.06);
+    box-sizing: border-box;
   }
   body.cmd-builder-github-pages .cmd-builder-required-cell .cryo-select-line {
     margin: 0;
@@ -737,14 +744,20 @@
   }
   body.cmd-builder-github-pages .cmd-builder-primary-region {
     flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(4.25rem, auto) 1fr;
+    gap: 0.35rem 0.75rem;
+    align-items: start;
     width: 100%;
     min-width: 0;
     height: auto;
     padding: 0.5rem 0.65rem 0.55rem;
     border-radius: 6px;
     box-sizing: border-box;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-region-content {
+    grid-column: 2;
+    min-width: 0;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-region--dataset {
     background: rgba(44, 82, 130, 0.09);
@@ -757,12 +770,14 @@
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
   }
   body.cmd-builder-github-pages .cmd-builder-primary-region-title {
-    flex: 0 0 auto;
-    margin: 0 0 0.35rem;
+    grid-column: 1;
+    align-self: center;
+    margin: 0;
     font-weight: 700;
-    font-size: var(--gp-arg-region-title-font);
-    line-height: 1.2;
-    letter-spacing: 0.01em;
+    font-size: var(--gp-nav-cmd-label-font);
+    line-height: 1.15;
+    letter-spacing: 0.02em;
+    white-space: normal;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-region--dataset .cmd-builder-primary-region-title {
     color: var(--link, #2c5282);
@@ -844,8 +859,11 @@
   }
   body.cmd-builder-github-pages
     .cmd-builder-primary-region-body--dataset-split > .cmd-builder-primary-col--checks {
-    align-self: start;
+    align-self: stretch;
     justify-self: start;
+    display: flex;
+    align-items: center;
+    min-height: 0;
   }
   body.cmd-builder-github-pages .cmd-builder-dataset-split-main {
     display: contents;
@@ -1470,6 +1488,11 @@
         <div class="cmd-builder-required-fields">{{ caller() }}</div>
       </div>
     {% endmacro %}
+    {% macro render_github_region_side_title(title, title_id) %}
+      {% set title_parts = title.split(' ', 1) %}
+      <h3 class="cmd-builder-primary-region-title" id="{{ title_id }}">{{ title_parts[0] }}{% if title_parts|length > 1 %}<br>{{ title_parts[1] }}{% endif %}
+      </h3>
+    {% endmacro %}
     {% macro render_github_primary_pair(cmd_key, datadir_id) %}
       {% set ds = (command_builder_schema[cmd_key]
         | selectattr('title', 'equalto', 'Dataset loading')
@@ -1484,7 +1507,8 @@
       <div class="cmd-builder-primary-pair">
         <section class="cmd-builder-primary-region cmd-builder-primary-region--dataset"
                  aria-labelledby="{{ datadir_id }}-region-title">
-          <h3 class="cmd-builder-primary-region-title" id="{{ datadir_id }}-region-title">Dataset loading</h3>
+          {{ render_github_region_side_title('Dataset loading', datadir_id ~ '-region-title') }}
+          <div class="cmd-builder-primary-region-content">
           {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
           {% set ind_id = datadir_id|replace('_datadir', '_ind') %}
           <div class="cmd-builder-primary-region-body cmd-builder-primary-region-body--dataset-split">
@@ -1529,11 +1553,14 @@
               {% endif %}
             </div>
           </div>
+          </div>
         </section>
         <section class="cmd-builder-primary-region cmd-builder-primary-region--training"
                  aria-labelledby="{{ cmd_key }}-train-region-title">
-          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-train-region-title">{{
-            train.group.title if train.group else 'Run parameters' }}</h3>
+          {{ render_github_region_side_title(
+            train.group.title if train.group else 'Run parameters',
+            cmd_key ~ '-train-region-title') }}
+          <div class="cmd-builder-primary-region-content">
           <div class="cmd-builder-primary-region-body cmd-builder-primary-fields-grid--5 cmd-builder-primary-fields-fit">
             {% if train.group and train.group.args %}
               {{ render_github_checkbox_band(train.group.args) }}
@@ -1545,6 +1572,7 @@
               <p class="muted" style="margin:0;font-size:calc(0.8rem * var(--gp-font-scale));color:var(--muted,#5c6b7a);">
                 No run-parameter flags for this command.</p>
             {% endif %}
+          </div>
           </div>
         </section>
       </div>
@@ -1604,9 +1632,10 @@
       <div class="cmd-builder-primary-pair">
         <section class="cmd-builder-primary-region cmd-builder-primary-region--dataset"
                  aria-labelledby="{{ cmd_key }}-run-region-title">
-          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-run-region-title">
-            {{ run.title if run else 'Run options' }}
-          </h3>
+          {{ render_github_region_side_title(
+            run.title if run else 'Run options',
+            cmd_key ~ '-run-region-title') }}
+          <div class="cmd-builder-primary-region-content">
           <div class="cmd-builder-primary-region-body">
             {% if run and run.args %}
               {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
@@ -1616,11 +1645,14 @@
               {% endfor %}
             {% endif %}
           </div>
+          </div>
         </section>
         <section class="cmd-builder-primary-region cmd-builder-primary-region--training"
                  aria-labelledby="{{ cmd_key }}-vol-region-title">
-          <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-vol-region-title">{{
-            vol.group.title if vol.group else 'Volume options' }}</h3>
+          {{ render_github_region_side_title(
+            vol.group.title if vol.group else 'Volume options',
+            cmd_key ~ '-vol-region-title') }}
+          <div class="cmd-builder-primary-region-content">
           <div class="cmd-builder-primary-region-body">
             {% if vol.group and vol.group.args %}
               {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
@@ -1629,6 +1661,7 @@
                 {{ render_github_primary_arg(a) }}
               {% endfor %}
             {% endif %}
+          </div>
           </div>
         </section>
       </div>

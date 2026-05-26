@@ -18,11 +18,15 @@ from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_COMMAND_KEYS,
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
+    arg_is_batch_size_denominated,
+    arg_is_epoch_denominated,
+    arg_is_num_epochs,
     default_outdir_for_command,
 )
 from cryodrgn.dashboard.context import command_builder_template_kwargs
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.github_pages import (
+    _github_repo_release_url,
     build_github_pages_site,
     render_command_builder_html,
 )
@@ -51,6 +55,49 @@ class TestCommandModuleDocstrings:
         assert "latent space" in docs["analyze"].lower()
         assert "comparing volumes" in docs["analyze_landscape"].lower()
         assert "latent space" in docs["analyze_landscape_full"].lower()
+
+
+class TestArgIsNumEpochs:
+    def test_num_epochs_flags(self) -> None:
+        assert arg_is_num_epochs({"cli": ["-n", "--num-epochs"], "w": "number"})
+
+    def test_other_epoch_flags(self) -> None:
+        assert not arg_is_num_epochs({"cli": ["--epochs-sgd"], "w": "number"})
+
+
+class TestArgIsEpochDenominated:
+    def test_epoch_flags(self) -> None:
+        assert not arg_is_epoch_denominated(
+            {"cli": ["-n", "--num-epochs"], "w": "number"}
+        )
+        assert arg_is_epoch_denominated({"cli": ["--epochs-sgd"], "w": "number"})
+        assert arg_is_epoch_denominated({"cli": ["--l-ramp-epochs"], "w": "number"})
+
+    def test_non_epoch_flags(self) -> None:
+        assert not arg_is_epoch_denominated({"cli": ["--pretrain"], "w": "number"})
+        assert not arg_is_epoch_denominated(
+            {"cli": ["--n-imgs-pretrain"], "w": "number"}
+        )
+        assert not arg_is_epoch_denominated({"cli": ["--batch-size"], "w": "number"})
+
+
+class TestArgIsBatchSizeDenominated:
+    def test_batch_size_flags(self) -> None:
+        assert arg_is_batch_size_denominated(
+            {"cli": ["-b", "--batch-size"], "w": "number"}
+        )
+        assert arg_is_batch_size_denominated(
+            {"cli": ["--batch-size-hps"], "w": "number"}
+        )
+        assert arg_is_batch_size_denominated(
+            {"cli": ["--test-batch-size"], "w": "number"}
+        )
+
+    def test_non_batch_size_flags(self) -> None:
+        assert not arg_is_batch_size_denominated(
+            {"cli": ["-n", "--num-epochs"], "w": "number"}
+        )
+        assert not arg_is_batch_size_denominated({"cli": ["--pretrain"], "w": "number"})
 
 
 class TestDefaultOutdirForCommand:
@@ -321,6 +368,29 @@ class TestDashboardCLI:
         )
 
 
+class TestGithubRepoReleaseUrl:
+    def test_pep440_prerelease_gets_hyphen(self) -> None:
+        url = _github_repo_release_url(
+            "https://github.com/ml-struct-bio/cryodrgn",
+            "4.3.0a8",
+        )
+        assert url.endswith("/tree/4.3.0-a8")
+
+    def test_tag_with_hyphen_unchanged(self) -> None:
+        url = _github_repo_release_url(
+            "https://github.com/ml-struct-bio/cryodrgn",
+            "4.3.0-a8",
+        )
+        assert url.endswith("/tree/4.3.0-a8")
+
+    def test_rc_prerelease(self) -> None:
+        url = _github_repo_release_url(
+            "https://github.com/ml-struct-bio/cryodrgn",
+            "4.3.0rc1",
+        )
+        assert url.endswith("/tree/4.3.0-rc1")
+
+
 class TestGithubPagesCommandBuilder:
     def test_render_includes_schema_and_builder_ui(self) -> None:
         html = render_command_builder_html(
@@ -329,15 +399,52 @@ class TestGithubPagesCommandBuilder:
         )
         assert '<base href="/cryodrgn/"/>' in html
         assert 'class="cmd-builder-github-pages"' in html
-        assert "github-pages-note" in html
+        assert "github-pages-note" not in html
+        assert "nav-github-release-link" in html
+        assert "github.com/ml-struct-bio/cryodrgn/tree/" in html
         assert "var CMD_SCHEMA" in html
         assert "cryodrgn abinit" in html
         assert 'class="cmd-group-card"' in html
         assert "cmd-group-card-trigger" in html
         assert "cmd-group-card-desc" in html
         assert "cmd-builder-required-bar" in html
+        assert "cmd-builder-primary-region-content" in html
+        assert (
+            "font-variant: small-caps"
+            in html.split(".cmd-builder-required-heading")[1][:200]
+        )
+        assert "Dataset<br>loading" in html
+        assert "dataset-split > .cmd-builder-primary-col--checks" in html
+        checks_rule = html.split("dataset-split > .cmd-builder-primary-col--checks", 1)[
+            1
+        ]
+        assert "align-items: center" in checks_rule[:250]
+        assert "Training<br>parameters" in html
+        assert "border-radius: 0" in html.split(".cmd-builder-required-cell")[1][:400]
         assert "cmd-builder-primary-pair" in html
         assert "cmd-builder-primary-region--dataset" in html
+        assert "cmd-builder-dataset-core" in html
+        assert "cmd-builder-dataset-rest-fields" in html
+        ab_panel = html.split('id="panel-abinit"', 1)[1].split(
+            'id="panel-train_vae"', 1
+        )[0]
+        core_pos = ab_panel.index('<div class="cmd-builder-dataset-core">')
+        assert ab_panel.index('id="ab_ind"', core_pos) < ab_panel.index(
+            'id="ab_datadir"', core_pos
+        )
+        rest_pos = ab_panel.index(
+            '<div class="cmd-builder-dataset-rest-fields', core_pos
+        )
+        rest_chunk = ab_panel[rest_pos : rest_pos + 2000]
+        assert 'id="ab_ind"' not in rest_chunk
+        assert 'id="ab_datadir"' not in rest_chunk
+        assert "display: contents" in html
+        train_panel = html.split('id="panel-abinit"', 1)[1].split(
+            "cmd-builder-primary-region--training", 1
+        )[1]
+        assert "cmd-arg-unit--num-epochs" in train_panel
+        assert '<span class="cmd-arg-unit-line">total</span>' in train_panel
+        assert 'cmd-arg-unit--scaled" aria-hidden="true">epochs</span>' in train_panel
         assert "cmd-builder-primary-region--training" in html
         assert "initGithubPagesGroupCards" in html
         assert "nav-reconstruction-cmd" in html
@@ -376,13 +483,22 @@ class TestGithubPagesCommandBuilder:
         assert "--gp-nav-cmd-label-font:" in html
         assert "--gp-arg-region-title-font:" in html
         assert "CMD_WRAP_MIN_CHARS = 80" in html
+        assert "CMD_LINE_MAX_CHARS = 100" in html
         assert "layoutCommandLineGroups" in html
         assert "updateCommandDisplay" in html
         assert "Advanced parameters" in html
         assert "cmd-builder-advanced-region" in html
-        assert "gap: calc(0.45rem * 3)" in html
+        assert "gap: calc(0.45rem * 3 * 1.13)" in html
         assert "min-width: calc(4.75rem * 1.3)" in html
+        assert "max-height: 17dvh" in html
         assert "cmd-builder-cmd-dock" in html
+        assert "cmd-arg-unit--scaled" in html
+        assert "cmd-arg-unit--num-epochs" in html
+        assert 'id="ab_n"' in html
+        ab_n_chunk = html[html.index('id="ab_n"') : html.index('id="ab_n"') + 500]
+        assert "cmd-arg-unit--num-epochs" in ab_n_chunk
+        assert '<span class="cmd-arg-unit-line">total</span>' in ab_n_chunk
+        assert "cmd-arg-unit--scaled" in html.split('id="ab_epochs_sgd"', 1)[1][:400]
 
     def test_build_writes_index_and_nojekyll(self, tmp_path) -> None:
         out = build_github_pages_site(

@@ -13,6 +13,11 @@ import uuid
 
 from flask import Flask
 
+from cryodrgn.dashboard.command_builder_data import (
+    arg_is_batch_size_denominated,
+    arg_is_epoch_denominated,
+    arg_is_num_epochs,
+)
 from cryodrgn.dashboard.context import (
     abbrev_middle,
     nav_interface_title,
@@ -143,6 +148,11 @@ def create_app(
     )
     app.jinja_env.filters["abbrev_middle"] = abbrev_middle
     app.jinja_env.filters["nav_interface_title"] = nav_interface_title
+    app.jinja_env.filters["arg_is_epoch_denominated"] = arg_is_epoch_denominated
+    app.jinja_env.filters[
+        "arg_is_batch_size_denominated"
+    ] = arg_is_batch_size_denominated
+    app.jinja_env.filters["arg_is_num_epochs"] = arg_is_num_epochs
     app.config["PRELOAD_CPUS"] = max(1, cpus)
     app.secret_key = os.environ.get(
         "CRYODRGN_DASHBOARD_SECRET", "cryodrgn-dashboard-dev-key"

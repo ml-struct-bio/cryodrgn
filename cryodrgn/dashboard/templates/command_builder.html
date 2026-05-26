@@ -115,6 +115,38 @@
     font-weight: 600;
     color: var(--muted, #5c6b7a);
   }
+  .cmd-arg-value-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: 100%;
+    vertical-align: middle;
+  }
+  .cmd-arg-value-row input[type="number"] {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .cmd-arg-unit {
+    flex-shrink: 0;
+    font-size: 0.82rem;
+    font-weight: 300;
+    color: var(--muted, #5c6b7a);
+    white-space: nowrap;
+  }
+  .cmd-arg-unit--scaled {
+    font-size: calc(1em * 1.31);
+  }
+  .cmd-arg-unit--num-epochs {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.05;
+    text-align: center;
+    white-space: normal;
+  }
+  .cmd-arg-unit-line {
+    display: block;
+  }
   .cmd-form input[type="text"],
   .cmd-form input[type="number"],
   .cmd-form select {
@@ -368,13 +400,42 @@
   body.cmd-builder-github-pages .cmd-builder-required-bar {
     --gp-font-scale: var(--gp-font-scale-root);
   }
-  body.cmd-builder-github-pages .github-pages-note {
-    margin: 0.2rem 1.15rem 0;
-    font-size: calc(0.82rem * var(--gp-font-scale));
-    color: var(--muted, #5c6b7a);
-    line-height: 1.25;
+  body.cmd-builder-github-pages .nav-brand-version-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+    align-self: center;
   }
-  body.cmd-builder-github-pages .github-pages-note a { color: var(--link, #2c5282); }
+  body.cmd-builder-github-pages .nav-brand-version-cluster .nav-brand-version--inline {
+    font-size: calc(0.95rem * 1.25 * 1.2 * 0.72 * 0.64 * var(--gp-nav-font-scale));
+  }
+  body.cmd-builder-github-pages .nav-github-release-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #e8eef4;
+    opacity: 0.9;
+    text-decoration: none;
+    line-height: 0;
+    padding: 0.12rem;
+    border-radius: 4px;
+    transition: opacity 0.2s ease, color 0.2s ease;
+  }
+  body.cmd-builder-github-pages .nav-github-release-link:hover,
+  body.cmd-builder-github-pages .nav-github-release-link:focus-visible {
+    color: #fff;
+    opacity: 1;
+    text-decoration: none;
+    outline: 1px solid rgba(232, 238, 244, 0.45);
+    outline-offset: 2px;
+  }
+  body.cmd-builder-github-pages .nav-github-release-link svg {
+    width: 1.05rem;
+    height: 1.05rem;
+    display: block;
+  }
   /* Centre reconstruction command in the full header; brand stays left. */
   body.cmd-builder-github-pages header.nav {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -636,8 +697,18 @@
     grid-column: 2;
     display: grid;
     gap: 0.25rem 0.55rem;
-    align-items: end;
+    align-items: start;
     min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.12rem;
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-required-cell .cryo-select-line {
+    margin: 0;
   }
   body.cmd-builder-github-pages .cmd-builder-required-bar--3 .cmd-builder-required-fields {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -648,11 +719,7 @@
   body.cmd-builder-github-pages .cmd-builder-required-bar--5 .cmd-builder-required-fields {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
-  body.cmd-builder-github-pages .cmd-builder-required-cell {
-    min-width: 0;
-  }
   body.cmd-builder-github-pages .cmd-builder-required-cell .cryo-select-line {
-    margin: 0 0 0.12rem;
     font-size: calc(0.78rem * var(--gp-font-scale));
   }
   body.cmd-builder-github-pages .cmd-builder-required-cell input {
@@ -713,11 +780,10 @@
   }
   body.cmd-builder-github-pages .cmd-builder-primary-arg-cell {
     min-width: 0;
-    display: grid;
-    grid-template-columns: minmax(5.25rem, 36%) minmax(0, 1fr);
-    column-gap: 0.4rem;
-    row-gap: 0.1rem;
-    align-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.1rem;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-arg-cell--wide {
     grid-column: 1 / -1;
@@ -727,8 +793,17 @@
     margin: 0;
     font-size: calc(0.76rem * var(--gp-font-scale));
     line-height: 1.2;
-    text-align: right;
-    align-self: center;
+    text-align: left;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell .cmd-arg-value-row,
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell .cmd-arg-norm2-inputs {
+    width: 100%;
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell .cmd-arg-norm2-inputs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-arg-cell input[type="text"],
   body.cmd-builder-github-pages .cmd-builder-primary-arg-cell input[type="number"],
@@ -739,28 +814,10 @@
     padding: 0.24rem 0.38rem;
     box-sizing: border-box;
   }
-  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell:has(input[id$="_a"]) {
-    grid-template-columns: minmax(5.25rem, 30%) minmax(0, 1fr) minmax(0, 1fr);
-  }
-  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell:has(input[id$="_a"]) .cryo-select-line {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell:has(input[id$="_a"]) input[id$="_a"] {
-    grid-column: 2;
-    grid-row: 1;
-  }
-  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell:has(input[id$="_a"]) input[id$="_b"] {
-    grid-column: 3;
-    grid-row: 1;
-  }
-  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell--wide:has(.choice-line) {
-    grid-template-columns: minmax(5.25rem, 24%) minmax(0, 1fr);
-    align-items: center;
-  }
   body.cmd-builder-github-pages .cmd-builder-primary-arg-cell--wide .choice-line {
+    display: block;
     margin: 0;
-    text-align: right;
+    text-align: left;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-arg-cell--wide .choice-options {
     margin: 0;
@@ -770,13 +827,83 @@
     gap: 0.2rem 0.55rem;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-region-body--dataset-split {
-    grid-template-columns: minmax(9rem, 0.95fr) minmax(0, 1.65fr);
-    gap: 0.5rem 0.75rem;
+    display: grid;
     align-items: start;
+    align-content: start;
+    gap: 0.5rem 0.75rem;
+    width: 100%;
+    min-width: 0;
   }
   body.cmd-builder-github-pages
-    .cmd-builder-primary-region-body--dataset-split:has(.cmd-builder-primary-col--fields:only-child) {
-    grid-template-columns: 1fr;
+    .cmd-builder-primary-region-body--dataset-split:has(.cmd-builder-primary-col--checks) {
+    grid-template-columns: auto minmax(7.5rem, max-content) minmax(0, 2fr);
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-primary-region-body--dataset-split:not(:has(.cmd-builder-primary-col--checks)) {
+    grid-template-columns: minmax(7.5rem, max-content) minmax(0, 2fr);
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-primary-region-body--dataset-split > .cmd-builder-primary-col--checks {
+    align-self: start;
+    justify-self: start;
+  }
+  body.cmd-builder-github-pages .cmd-builder-dataset-split-main {
+    display: contents;
+  }
+  body.cmd-builder-github-pages .cmd-builder-dataset-core {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    align-self: start;
+    justify-self: center;
+    gap: 0.3rem;
+    min-width: 7.5rem;
+    padding: 0;
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-primary-region-body--dataset-split:has(.cmd-builder-primary-col--checks)
+    .cmd-builder-dataset-core {
+    grid-column: 2;
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-primary-region-body--dataset-split:not(:has(.cmd-builder-primary-col--checks))
+    .cmd-builder-dataset-core {
+    grid-column: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-dataset-core .cmd-builder-primary-arg-cell {
+    width: 100%;
+    max-width: 14rem;
+    align-items: center;
+  }
+  body.cmd-builder-github-pages .cmd-builder-dataset-core .cmd-builder-primary-arg-cell .cryo-select-line {
+    text-align: center;
+    width: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-builder-dataset-rest-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem 0.55rem;
+    align-content: start;
+    align-items: start;
+    justify-items: stretch;
+    align-self: start;
+    justify-self: end;
+    min-width: 0;
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-primary-region-body--dataset-split:has(.cmd-builder-primary-col--checks)
+    .cmd-builder-dataset-rest-fields {
+    grid-column: 3;
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-primary-region-body--dataset-split:not(:has(.cmd-builder-primary-col--checks))
+    .cmd-builder-dataset-rest-fields {
+    grid-column: 2;
+  }
+  body.cmd-builder-github-pages .cmd-builder-dataset-rest-fields .cmd-builder-primary-arg-cell--wide {
+    grid-column: 1 / -1;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-col--checks {
     min-width: 0;
@@ -825,21 +952,22 @@
     gap: 0.35rem 0.55rem;
     align-content: start;
   }
-  body.cmd-builder-github-pages .cmd-builder-primary-fields-grid--3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    --gp-primary-field-scale: 1;
-  }
-  body.cmd-builder-github-pages .cmd-builder-primary-fields-grid--4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-grid--5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.3rem 0.4rem;
     --gp-primary-field-scale: 1;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell {
-    grid-template-columns: minmax(2.5rem, 32%) minmax(0, 1fr);
     min-width: 0;
     overflow: hidden;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .cryo-select-line,
-  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .choice-line,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .choice-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
   body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell input[type="text"],
   body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell input[type="number"],
   body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell select,
@@ -864,7 +992,31 @@
     flex-wrap: wrap;
     min-width: 0;
   }
-  body.cmd-builder-github-pages .cmd-builder-primary-col--fields .cmd-builder-primary-arg-cell--wide {
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell--numeric {
+    max-width: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell--numeric .cmd-arg-value-row {
+    justify-content: flex-start;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell--numeric .cmd-arg-value-row {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    min-width: 0;
+    max-width: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell--numeric .cmd-arg-value-row input[type="number"] {
+    width: 100%;
+    max-width: 4.75rem;
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell--numeric .cmd-arg-unit--scaled {
+    font-size: calc(0.76rem * var(--gp-font-scale) * var(--gp-primary-field-scale, 1) * 1.31);
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell--numeric .cmd-arg-unit--num-epochs {
+    font-size: calc(0.76rem * var(--gp-font-scale) * var(--gp-primary-field-scale, 1));
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-grid--5 > .cmd-builder-primary-arg-cell--wide {
     grid-column: 1 / -1;
   }
   body.cmd-builder-github-pages .cmd-builder-primary-checkboxes {
@@ -1032,9 +1184,19 @@
     background-clip: padding-box;
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .cryo-select-line {
+    display: block;
     margin: 0.2rem 0 0.06rem;
     font-size: calc(0.7rem * var(--gp-font-scale) * 0.8);
     line-height: 1.2;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .cmd-arg-norm2-inputs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem;
+    margin-bottom: 0.15rem;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-line {
+    display: block;
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body input[type="text"],
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body input[type="number"],
@@ -1110,18 +1272,30 @@
     align-items: center;
   }
   body.cmd-builder-github-pages .cmd-output-main {
-    justify-content: center;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
   }
   body.cmd-builder-github-pages .cmd-output-actions {
-    gap: calc(0.45rem * 3);
+    gap: calc(0.45rem * 3 * 1.13);
+    flex-shrink: 0;
   }
   body.cmd-builder-github-pages .cmd-output .btn-copy {
     min-width: calc(4.75rem * 1.3);
-    padding-left: calc(0.55rem * 1.3);
-    padding-right: calc(0.55rem * 1.3);
+    height: calc(89% * 0.8);
+    max-height: calc(89% * 0.8);
+    padding: calc(0.15rem * 0.8) calc(0.55rem * 1.3);
   }
   body.cmd-builder-github-pages .cmd-output pre {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
     --cmd-out-font-base: calc(0.72rem * 1.35 * 1.1 * 1.3 * var(--gp-font-scale-root));
     font-size: var(--cmd-out-font-base);
     line-height: 1.12;
@@ -1129,9 +1303,20 @@
     white-space: pre;
     word-break: normal;
     overflow-wrap: normal;
-    overflow-x: hidden;
-    overflow-y: hidden;
-    max-height: 100%;
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(232, 238, 244, 0.45) rgba(26, 35, 50, 0.5);
+  }
+  body.cmd-builder-github-pages .cmd-output pre::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  body.cmd-builder-github-pages .cmd-output pre::-webkit-scrollbar-thumb {
+    background: rgba(232, 238, 244, 0.4);
+    border-radius: 4px;
   }
   body.cmd-builder-github-pages .cmd-output pre .cmd-seg--prefix {
     color: #3dd68c;
@@ -1208,8 +1393,10 @@
         <label class="cryo-select-line" for="{{ a.id }}_a"{{ title_attr(st) }}
           ><code>{{ a.cli[0] }}</code> (shift, scale)
         </label>
-        <input type="text" id="{{ a.id }}_a" placeholder="shift" autocomplete="off"{{ title_attr(st) }} />
-        <input type="text" id="{{ a.id }}_b" placeholder="scale" autocomplete="off"{{ title_attr(st) }} />
+        <span class="cmd-arg-norm2-inputs">
+          <input type="text" id="{{ a.id }}_a" placeholder="shift" autocomplete="off"{{ title_attr(st) }} />
+          <input type="text" id="{{ a.id }}_b" placeholder="scale" autocomplete="off"{{ title_attr(st) }} />
+        </span>
       {% elif a.w == 'select' %}
         {% set default_choice = a.default if a.default is defined else (a.choices[0] if a.choices else '') %}
         <span class="choice-line"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></span>
@@ -1238,11 +1425,16 @@
       {% elif a.w == 'number' %}
         <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code>
         </label>
-        <input type="number"
-               id="{{ a.id }}"
-               {% if a.placeholder %}placeholder="{{ a.placeholder|e }}"{% endif %}
-               autocomplete="off"
-               {{ title_attr(st) }} />
+        <span class="cmd-arg-value-row">
+          <input type="number"
+                 id="{{ a.id }}"
+                 {% if a.placeholder %}placeholder="{{ a.placeholder|e }}"{% endif %}
+                 autocomplete="off"
+                 {{ title_attr(st) }} />
+          {% if a|arg_is_num_epochs %}<span class="cmd-arg-unit cmd-arg-unit--num-epochs" aria-hidden="true"><span class="cmd-arg-unit-line">total</span><span class="cmd-arg-unit-line">epochs</span></span>{%
+          elif a|arg_is_epoch_denominated %}<span class="cmd-arg-unit cmd-arg-unit--scaled" aria-hidden="true">epochs</span>{%
+          elif a|arg_is_batch_size_denominated %}<span class="cmd-arg-unit cmd-arg-unit--scaled" aria-hidden="true">images</span>{% endif %}
+        </span>
       {% else %}
         <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code>
         </label>
@@ -1254,7 +1446,9 @@
       {% endif %}
     {% endmacro %}
     {% macro render_github_primary_arg(a) %}
-      <div class="cmd-builder-primary-arg-cell{% if a.w == 'select' %} cmd-builder-primary-arg-cell--wide{% endif %}">
+      <div class="cmd-builder-primary-arg-cell{%
+        if a.w == 'number' %} cmd-builder-primary-arg-cell--numeric{%
+        elif a.w == 'select' %} cmd-builder-primary-arg-cell--wide{% endif %}">
         {{ render_cmd_arg(a) }}
       </div>
     {% endmacro %}
@@ -1292,29 +1486,46 @@
                  aria-labelledby="{{ datadir_id }}-region-title">
           <h3 class="cmd-builder-primary-region-title" id="{{ datadir_id }}-region-title">Dataset loading</h3>
           {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
+          {% set ind_id = datadir_id|replace('_datadir', '_ind') %}
           <div class="cmd-builder-primary-region-body cmd-builder-primary-region-body--dataset-split">
             {% if ds and ds.args and (ds.args | selectattr('w', 'in', check_ws) | list | length > 0) %}
             <div class="cmd-builder-primary-col cmd-builder-primary-col--checks cmd-builder-primary-checks-grid--2 cmd-builder-primary-checks-fit">
               {{ render_github_checkbox_band(ds.args) }}
             </div>
             {% endif %}
-            <div class="cmd-builder-primary-col cmd-builder-primary-col--fields cmd-builder-primary-fields-grid--3 cmd-builder-primary-fields-fit">
-              <div class="cmd-builder-primary-arg-cell">
-                <label class="cryo-select-line" for="{{ datadir_id }}"
-                  {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
-                  ><code>--datadir</code>
-                </label>
-                <input type="text"
-                       id="{{ datadir_id }}"
-                       value=""
-                       placeholder="(omit if blank)"
-                       autocomplete="off"
-                       {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }} />
+            <div class="cmd-builder-dataset-split-main">
+              <div class="cmd-builder-dataset-core">
+                <div class="cmd-builder-primary-arg-cell">
+                  <label class="cryo-select-line" for="{{ ind_id }}"
+                    {{ title_attr(command_builder_required_field_titles.get(ind_id) ) }}
+                    ><code>--ind</code>
+                  </label>
+                  <input type="text"
+                         id="{{ ind_id }}"
+                         value=""
+                         placeholder="(omit if blank)"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get(ind_id) ) }} />
+                </div>
+                <div class="cmd-builder-primary-arg-cell">
+                  <label class="cryo-select-line" for="{{ datadir_id }}"
+                    {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
+                    ><code>--datadir</code>
+                  </label>
+                  <input type="text"
+                         id="{{ datadir_id }}"
+                         value=""
+                         placeholder="(omit if blank)"
+                         autocomplete="off"
+                         {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }} />
+                </div>
               </div>
               {% if ds and ds.args %}
-                {% for a in ds.args if a.w not in check_ws %}
+              <div class="cmd-builder-dataset-rest-fields cmd-builder-primary-fields-fit">
+                {% for a in ds.args if a.w not in check_ws and a.id != ind_id %}
                   {{ render_github_primary_arg(a) }}
                 {% endfor %}
+              </div>
               {% endif %}
             </div>
           </div>
@@ -1323,7 +1534,7 @@
                  aria-labelledby="{{ cmd_key }}-train-region-title">
           <h3 class="cmd-builder-primary-region-title" id="{{ cmd_key }}-train-region-title">{{
             train.group.title if train.group else 'Run parameters' }}</h3>
-          <div class="cmd-builder-primary-region-body cmd-builder-primary-fields-grid--4 cmd-builder-primary-fields-fit">
+          <div class="cmd-builder-primary-region-body cmd-builder-primary-fields-grid--5 cmd-builder-primary-fields-fit">
             {% if train.group and train.group.args %}
               {{ render_github_checkbox_band(train.group.args) }}
               {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
@@ -1354,13 +1565,16 @@
         <label class="cryo-select-line" for="{{ prefix }}_epoch"
           {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }}>Epoch
         </label>
-        <input type="number"
-               id="{{ prefix }}_epoch"
-               min="0"
-               step="1"
-               value="{{ default_epoch|e }}"
-               autocomplete="off"
-               {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }} />
+        <span class="cmd-arg-value-row">
+          <input type="number"
+                 id="{{ prefix }}_epoch"
+                 min="0"
+                 step="1"
+                 value="{{ default_epoch|e }}"
+                 autocomplete="off"
+                 {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }} />
+          <span class="cmd-arg-unit" aria-hidden="true">epochs</span>
+        </span>
       </div>
       <div class="cmd-builder-required-cell">
         <label class="cryo-select-line" for="{{ prefix }}_out"
@@ -1445,13 +1659,16 @@
             <label class="cryo-select-line" for="{{ prefix }}_epoch"
               {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }}>Epoch
             </label>
-            <input type="number"
-                   id="{{ prefix }}_epoch"
-                   min="0"
-                   step="1"
-                   value="{{ default_epoch|e }}"
-                   autocomplete="off"
-                   {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }} />
+            <span class="cmd-arg-value-row">
+              <input type="number"
+                     id="{{ prefix }}_epoch"
+                     min="0"
+                     step="1"
+                     value="{{ default_epoch|e }}"
+                     autocomplete="off"
+                     {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_epoch') ) }} />
+              <span class="cmd-arg-unit" aria-hidden="true">epochs</span>
+            </span>
             <label class="cryo-select-line" for="{{ prefix }}_out"
               {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }}>
               Output directory (<code>-o</code>)
@@ -2431,6 +2648,7 @@
   {% if github_pages_mode %}
   var lastBashCommandText = "";
   var CMD_WRAP_MIN_CHARS = 80;
+  var CMD_LINE_MAX_CHARS = 100;
 
   function canBreakAfterCmdToken(token) {
     if (!token) return false;
@@ -2471,13 +2689,13 @@
     return groups;
   }
 
-  function layoutCommandLineGroups(segments, maxCols) {
+  function layoutCommandLineGroups(segments) {
     if (segmentsToText(segments).length <= CMD_WRAP_MIN_CHARS) {
       var all = [];
       for (var i = 0; i < segments.length; i++) all.push(i);
       return all.length ? [all] : [];
     }
-    return layoutSegmentLineGroups(segments, maxCols);
+    return layoutSegmentLineGroups(segments, CMD_LINE_MAX_CHARS);
   }
 
   function formatBashLineGroups(segments, lineGroups) {
@@ -2489,24 +2707,29 @@
     }).join("\n");
   }
 
-  function segmentsToBashText(segments, maxCols) {
+  function segmentsToBashText(segments) {
     if (!segments.length) return "";
-    return formatBashLineGroups(segments, layoutCommandLineGroups(segments, maxCols));
+    return formatBashLineGroups(segments, layoutCommandLineGroups(segments));
   }
 
-  function measureCmdMaxCols(el) {
-    var w = Math.max(0, el.clientWidth - 6);
-    if (w < 24) return 48;
-    var probe = document.createElement("span");
-    probe.style.cssText =
-      "position:absolute;visibility:hidden;white-space:pre;font:" +
-      getComputedStyle(el).font +
-      ";";
-    probe.textContent = "0000000000";
-    document.body.appendChild(probe);
-    var tenW = probe.getBoundingClientRect().width || 60;
-    document.body.removeChild(probe);
-    return Math.max(32, Math.floor(w / (tenW / 10)));
+  function cmdDisplayFits() {
+    return (
+      out.clientHeight > 0 &&
+      out.scrollHeight <= out.clientHeight + 2 &&
+      out.scrollWidth <= out.clientWidth + 2
+    );
+  }
+
+  function renderCommandDisplay(segments, px) {
+    out.style.fontSize = px + "px";
+    var lineGroups = layoutCommandLineGroups(segments);
+    var bashText = formatBashLineGroups(segments, lineGroups);
+    if (cmdColorize) {
+      out.innerHTML = renderColoredCommandWrapped(segments, lineGroups);
+    } else {
+      out.textContent = bashText;
+    }
+    return bashText;
   }
 
   function renderColoredCommandWrapped(segments, lineGroups) {
@@ -2544,17 +2767,9 @@
     var minPx = Math.max(7, maxPx * 0.52);
     var bashText = "";
     for (var px = maxPx; px >= minPx; px -= 0.5) {
-      out.style.fontSize = px + "px";
-      var maxCols = measureCmdMaxCols(out);
-      var lineGroups = layoutCommandLineGroups(segments, maxCols);
-      bashText = formatBashLineGroups(segments, lineGroups);
-      if (cmdColorize) {
-        out.innerHTML = renderColoredCommandWrapped(segments, lineGroups);
-      } else {
-        out.textContent = bashText;
-      }
-      var box = out.parentElement;
-      if (!box || out.scrollHeight <= box.clientHeight + 2) break;
+      bashText = renderCommandDisplay(segments, px);
+      void out.offsetHeight;
+      if (cmdDisplayFits()) break;
     }
     lastBashCommandText = bashText;
   }
@@ -2702,7 +2917,7 @@
   function build() {
     {% if github_pages_mode %}
     if (lastBashCommandText) return lastBashCommandText;
-    return segmentsToBashText(buildSegments(), 10000);
+    return segmentsToBashText(buildSegments());
     {% else %}
     return segmentsToText(buildSegments());
     {% endif %}
@@ -2939,10 +3154,19 @@
       panel.querySelector(".cmd-builder-primary-checks-grid--2.cmd-builder-primary-checks-fit")
     );
     fitPrimaryFieldsContainer(
-      panel.querySelector(".cmd-builder-primary-fields-grid--3.cmd-builder-primary-fields-fit")
+      panel.querySelector(
+        ".cmd-builder-primary-region--dataset .cmd-builder-dataset-rest-fields.cmd-builder-primary-fields-fit"
+      )
     );
     fitPrimaryFieldsContainer(
-      panel.querySelector(".cmd-builder-primary-fields-grid--4.cmd-builder-primary-fields-fit")
+      panel.querySelector(
+        ".cmd-builder-primary-region--dataset .cmd-builder-dataset-core"
+      )
+    );
+    fitPrimaryFieldsContainer(
+      panel.querySelector(
+        ".cmd-builder-primary-region--training .cmd-builder-primary-fields-grid--5.cmd-builder-primary-fields-fit"
+      )
     );
   }
 

@@ -1515,8 +1515,10 @@
 <body{% if github_pages_mode %} class="cmd-builder-github-pages"{% endif %}>
   <header class="nav">
     <div class="nav-left">
-      <a href="/" class="nav-brand-link" aria-label="cryoDRGN dashboard home">
-        {% if request.path != '/' %}
+      <a href="{% if github_pages_mode %}https://cryodrgn.cs.princeton.edu/{% else %}/{% endif %}"
+         class="nav-brand-link"
+         aria-label="{% if github_pages_mode %}cryoDRGN project home{% else %}cryoDRGN dashboard home{% endif %}">
+        {% if request.path != '/' and not github_pages_mode %}
         <span class="nav-brand-home-arrow" aria-hidden="true">←</span>
         {% endif %}
         <span class="nav-logo-wrap">
@@ -1531,25 +1533,29 @@
         <span class="nav-brand-text">
           <span class="nav-brand-line1-row">
             <span class="nav-brand-line1">cryoDRGN</span>
-            {% if cryodrgn_version_short and not github_pages_mode %}
+            {% if cryodrgn_version_short and github_pages_mode %}
+            <span class="nav-brand-version nav-brand-version--inline"
+              title="cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
+            {% elif cryodrgn_version_short and not github_pages_mode %}
             <span class="nav-brand-version nav-brand-version--inline"
               title="Dashboard: cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
             {% endif %}
           </span>
           <span class="nav-brand-line2">
             <span class="nav-brand-line2-inner">
-              <span class="nav-brand-line2-main">dashboard{% if not github_pages_mode -%}
+              <span class="nav-brand-line2-main">{% if github_pages_mode %}command builder{% else %}dashboard{% endif %}{% if not github_pages_mode -%}
                 <span class="nav-brand-interface-title">{% block nav_page_title %}{% endblock %}</span>
                 {%- endif %}</span>
             </span>
           </span>
         </span>
       </a>
-      {% if github_pages_mode and cryodrgn_version_short %}
-      <span class="nav-brand-version-cluster">
-        <span class="nav-brand-version nav-brand-version--inline"
-              title="cryoDRGN {{ cryodrgn_version|e }}">v{{ cryodrgn_version_short|e }}</span>
-        {% if github_repo_release_url %}
+    </div>
+    {% if github_pages_mode and cryodrgn_version_short %}
+    <div class="nav-header-icons" aria-label="Release links">
+      {% if github_repo_release_url %}
+      <div class="nav-header-icon-item nav-header-icon-item--code">
+        <span class="nav-header-icon-label">code</span>
         <a href="{{ github_repo_release_url|e }}"
            class="nav-github-release-link"
            target="_blank"
@@ -1566,10 +1572,26 @@
               8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
           </svg>
         </a>
-        {% endif %}
-      </span>
+      </div>
       {% endif %}
+      <div class="nav-header-icon-item nav-header-icon-item--paper" id="nav-manuscript-icon-item">
+        <a href="{{ command_builder_manuscript_urls.get('abinit', '')|e }}"
+           id="nav-manuscript-link"
+           class="nav-manuscript-link"
+           target="_blank"
+           rel="noopener noreferrer"
+           aria-label="Read manuscript for this command"
+           title="Read manuscript for this command">
+          <img src="{{ url_for('static', filename='img/command-builder-manuscript.png') }}"
+               alt=""
+               class="nav-manuscript-icon"
+               decoding="async"
+               aria-hidden="true" />
+        </a>
+        <span class="nav-header-icon-label">paper</span>
+      </div>
     </div>
+    {% endif %}
     <div class="nav-center">
       {% set ns_nav = namespace(cls='nav-center-row') %}
       {% if not discovered_workdirs or discovered_workdirs|length == 0 %}

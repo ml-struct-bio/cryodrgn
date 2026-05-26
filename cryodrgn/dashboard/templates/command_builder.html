@@ -115,6 +115,17 @@
     font-weight: 600;
     color: var(--muted, #5c6b7a);
   }
+  .cmd-arg-display-name {
+    font-weight: 300;
+    font-style: italic;
+    color: var(--muted, #5c6b7a);
+    margin-left: 0.4em;
+    white-space: nowrap;
+  }
+  .cmd-form .choice-line .cmd-arg-display-name,
+  .cmd-form .check-line .cmd-arg-display-name {
+    margin-left: 0.35em;
+  }
   .cmd-arg-value-row {
     display: inline-flex;
     align-items: center;
@@ -162,9 +173,32 @@
     align-items: stretch;
     width: 100%;
   }
-  .cmd-outdir-stepper .cmd-outdir-input {
+  .cmd-outdir-input-wrap {
+    position: relative;
+    min-width: 0;
+  }
+  .cmd-outdir-stepper .cmd-outdir-input-wrap {
+    margin-bottom: 0;
+  }
+  .cmd-outdir-input-wrap .cmd-outdir-input {
     margin-bottom: 0;
     min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding-right: 0.85em;
+  }
+  .cmd-outdir-input-suffix {
+    position: absolute;
+    right: 0.42rem;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--muted, #5c6b7a);
+    font-weight: 400;
+    line-height: 1;
+  }
+  .cmd-outdir-input-wrap--empty .cmd-outdir-input-suffix {
+    visibility: hidden;
   }
   .cmd-outdir-step {
     margin: 0;
@@ -393,6 +427,8 @@
     /* Nav "Command" label; Required title is 30% larger than arg region titles. */
     --gp-nav-cmd-label-font: calc(0.72rem * 1.3 * 1.3 * 1.21 * 0.7 * var(--gp-font-scale-root));
     --gp-arg-region-title-font: calc(var(--gp-nav-cmd-label-font) / 1.3);
+    --gp-nav-header-icon-size: calc(2.142rem * 1.2);
+    --gp-nav-github-icon-scale: 0.576;
   }
   body.cmd-builder-github-pages .cmd-builder-github-body {
     --gp-font-scale: calc(var(--gp-font-scale-root) * 0.9 * 0.88);
@@ -400,58 +436,158 @@
   body.cmd-builder-github-pages .cmd-builder-required-bar {
     --gp-font-scale: var(--gp-font-scale-root);
   }
-  body.cmd-builder-github-pages .nav-brand-version-cluster {
+  body.cmd-builder-github-pages .nav-header-icon-item {
     display: inline-flex;
+    flex-direction: row;
     align-items: center;
-    gap: 0.35rem;
+    justify-content: center;
+    gap: 0.28rem;
     flex-shrink: 0;
-    align-self: center;
   }
-  body.cmd-builder-github-pages .nav-brand-version-cluster .nav-brand-version--inline {
-    font-size: calc(0.95rem * 1.25 * 1.2 * 0.72 * 0.64 * var(--gp-nav-font-scale));
+  body.cmd-builder-github-pages .nav-header-icon-item--code {
+    gap: 0.02rem;
   }
-  body.cmd-builder-github-pages .nav-github-release-link {
+  body.cmd-builder-github-pages .nav-header-icon-item[hidden] {
+    display: none !important;
+  }
+  body.cmd-builder-github-pages .nav-header-icon-label {
+    font-size: var(--gp-nav-header-icon-label-font);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.05em;
+    color: rgba(232, 238, 244, 0.72);
+    text-transform: lowercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  body.cmd-builder-github-pages .nav-github-release-link,
+  body.cmd-builder-github-pages .nav-manuscript-link {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    box-sizing: border-box;
     color: #e8eef4;
     opacity: 0.9;
     text-decoration: none;
     line-height: 0;
-    padding: 0.12rem;
-    border-radius: 4px;
-    transition: opacity 0.2s ease, color 0.2s ease;
+    padding: 0.16rem 0.28rem;
+    margin: 0;
+    border-radius: 10px;
+    outline: none;
+    overflow: visible;
+    transition:
+      background 0.22s ease,
+      box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      color 0.22s ease,
+      opacity 0.22s ease;
+  }
+  body.cmd-builder-github-pages .nav-github-release-link {
+    width: var(--gp-nav-header-icon-size);
+    height: var(--gp-nav-header-icon-size);
   }
   body.cmd-builder-github-pages .nav-github-release-link:hover,
-  body.cmd-builder-github-pages .nav-github-release-link:focus-visible {
+  body.cmd-builder-github-pages .nav-manuscript-link:hover {
     color: #fff;
     opacity: 1;
     text-decoration: none;
-    outline: 1px solid rgba(232, 238, 244, 0.45);
-    outline-offset: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.22),
+      0 6px 24px rgba(0, 0, 0, 0.22);
+  }
+  body.cmd-builder-github-pages .nav-github-release-link:focus-visible,
+  body.cmd-builder-github-pages .nav-manuscript-link:focus-visible {
+    color: #fff;
+    opacity: 1;
+    text-decoration: none;
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.9),
+      0 0 0 6px rgba(196, 112, 58, 0.35),
+      0 8px 28px rgba(0, 0, 0, 0.25);
+  }
+  body.cmd-builder-github-pages .nav-github-release-link svg,
+  body.cmd-builder-github-pages .nav-manuscript-link img.nav-manuscript-icon {
+    display: block;
+    transition:
+      transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      filter 0.28s ease;
   }
   body.cmd-builder-github-pages .nav-github-release-link svg {
-    width: 1.05rem;
-    height: 1.05rem;
-    display: block;
+    width: calc(var(--gp-nav-header-icon-size) * var(--gp-nav-github-icon-scale));
+    height: calc(var(--gp-nav-header-icon-size) * var(--gp-nav-github-icon-scale));
   }
-  /* Centre reconstruction command in the full header; brand stays left. */
+  body.cmd-builder-github-pages .nav-github-release-link:hover svg,
+  body.cmd-builder-github-pages .nav-github-release-link:focus-visible svg,
+  body.cmd-builder-github-pages .nav-manuscript-link:hover img.nav-manuscript-icon,
+  body.cmd-builder-github-pages .nav-manuscript-link:focus-visible img.nav-manuscript-icon {
+    transform: scale(1.07);
+    filter: brightness(1.14) drop-shadow(0 0 12px rgba(255, 230, 200, 0.45));
+  }
+  body.cmd-builder-github-pages .nav-manuscript-link {
+    width: auto;
+    height: auto;
+  }
+  body.cmd-builder-github-pages .nav-manuscript-link img.nav-manuscript-icon {
+    width: auto;
+    height: auto;
+    max-height: var(--gp-nav-bar-logo-size);
+    max-width: none;
+  }
+  /* 65% of the span from Command toward cryoDRGN (35% from brand edge). */
+  body.cmd-builder-github-pages .nav-header-icons {
+    grid-column: 2 / 5;
+    justify-self: start;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.85rem;
+    flex-shrink: 0;
+    width: max-content;
+    margin-inline-start: 35%;
+    transform: translateX(-50%);
+  }
+  body.cmd-builder-github-pages .nav-manuscript-link[hidden] {
+    display: none !important;
+  }
+  /* Brand left, icons ~65% toward brand from Command, Command menu, doc right. */
   body.cmd-builder-github-pages header.nav {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    column-gap: 1rem;
+    grid-template-columns: auto 1fr auto 1fr auto minmax(0, max-content);
+    column-gap: 0.65rem;
+    align-items: stretch;
     --gp-nav-font-scale: calc(1.21 * var(--gp-font-scale));
+    --gp-nav-header-icon-label-font: calc(0.62rem * 0.8 * var(--gp-nav-font-scale));
+    --gp-nav-bar-logo-size: min(3.88rem, 12vw);
   }
   body.cmd-builder-github-pages header.nav .nav-left {
     grid-column: 1;
     justify-self: start;
+    align-self: center;
+  }
+  body.cmd-builder-github-pages header.nav .nav-left,
+  body.cmd-builder-github-pages header.nav .nav-center,
+  body.cmd-builder-github-pages header.nav .nav-cmd-doc {
+    align-self: center;
+  }
+  body.cmd-builder-github-pages header.nav .nav-brand-text {
+    align-items: center;
+    text-align: center;
+    gap: 0.02rem;
+  }
+  body.cmd-builder-github-pages .nav-header-icon-item--paper {
+    gap: 0.35rem;
+    align-self: center;
+    height: auto;
+    max-height: var(--gp-nav-bar-logo-size);
   }
   body.cmd-builder-github-pages header.nav .nav-center {
-    grid-column: 2;
+    grid-column: 5;
     justify-self: center;
     align-items: center;
     width: max-content;
-    max-width: min(48rem, calc(100vw - 12rem));
+    max-width: min(44rem, calc(100vw - 14rem));
   }
   body.cmd-builder-github-pages header.nav .nav-center-row--solo {
     grid-template-columns: auto;
@@ -463,11 +599,23 @@
     grid-column: auto;
     margin-left: 0;
   }
+  body.cmd-builder-github-pages header.nav .nav-brand-line1-row {
+    justify-content: center;
+    white-space: nowrap;
+    gap: 0.35rem;
+    text-align: center;
+  }
   body.cmd-builder-github-pages header.nav .nav-brand-line1 {
     font-size: calc(1.12rem * 1.2 * 0.8 * var(--gp-nav-font-scale));
   }
   body.cmd-builder-github-pages header.nav .nav-brand-line2 {
     font-size: calc(0.98rem * 1.15 * 0.8 * var(--gp-nav-font-scale));
+    width: 100%;
+    justify-content: center;
+  }
+  body.cmd-builder-github-pages header.nav .nav-brand-line2-inner {
+    justify-content: center;
+    width: 100%;
   }
   /* Plain subtitle text — no glass/pane styling from the dashboard nav. */
   body.cmd-builder-github-pages .nav-brand-line2-main {
@@ -483,17 +631,41 @@
     text-shadow: none;
     color: rgba(232, 238, 244, 0.92);
     opacity: 0.92;
+    white-space: nowrap;
+    text-align: center;
+    display: block;
+    width: 100%;
   }
   body.cmd-builder-github-pages .nav-brand-line2::after {
     display: none;
   }
+  body.cmd-builder-github-pages .nav-brand-home-arrow {
+    display: none !important;
+  }
+  /* Logo + cryoDRGN line use dashboard hover rules from base.html; subtitle stays plain. */
+  body.cmd-builder-github-pages a.nav-brand-link {
+    text-decoration: none;
+    color: inherit;
+  }
+  body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line2,
+  body.cmd-builder-github-pages a.nav-brand-link:focus-visible .nav-brand-line2 {
+    color: inherit;
+    opacity: 0.92;
+    text-shadow: none;
+  }
   body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line2-main,
   body.cmd-builder-github-pages a.nav-brand-link:focus-visible .nav-brand-line2-main {
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 0;
     background: transparent;
     box-shadow: none;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    color: #fff;
+    -webkit-text-stroke: 0;
+    color: rgba(232, 238, 244, 0.92);
+    opacity: 0.92;
     text-shadow: none;
   }
   body.cmd-builder-github-pages header.nav .nav-brand-version--inline {
@@ -506,14 +678,14 @@
     width: auto;
     max-width: min(44rem, 90vw);
     margin-left: 0;
-    font-size: calc(0.72rem * 1.3 * 1.3 * var(--gp-nav-font-scale));
+    font-size: calc(0.72rem * 1.3 * 1.3 * var(--gp-nav-font-scale) * 0.9);
     opacity: 1;
   }
   body.cmd-builder-github-pages .nav-reconstruction-cmd .cryo-select-line {
     margin: 0;
     flex-shrink: 0;
     white-space: nowrap;
-    font-size: var(--gp-nav-cmd-label-font);
+    font-size: calc(var(--gp-nav-cmd-label-font) * 0.9);
     font-weight: 700;
     color: #e8eef4;
     letter-spacing: 0.02em;
@@ -523,7 +695,7 @@
     min-width: 11rem;
     max-width: 100%;
     margin: 0;
-    font-size: calc(0.82rem * 1.3 * 1.3 * var(--gp-nav-font-scale));
+    font-size: calc(0.82rem * 1.3 * 1.3 * var(--gp-nav-font-scale) * 0.9);
     font-weight: 700;
     line-height: 1.3;
     color: #e8eef4;
@@ -538,7 +710,7 @@
     background: #fff;
   }
   body.cmd-builder-github-pages header.nav .nav-cmd-doc {
-    grid-column: 3;
+    grid-column: 6;
     justify-self: end;
     align-self: center;
     margin-left: 0;
@@ -1002,6 +1174,14 @@
     min-width: 0;
     max-width: 100%;
   }
+  body.cmd-builder-github-pages .cryo-select-line:has(.cmd-arg-display-name),
+  body.cmd-builder-github-pages .choice-line:has(.cmd-arg-display-name),
+  body.cmd-builder-github-pages .check-line span:has(.cmd-arg-display-name) {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 0.35rem;
+  }
   body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .cryo-select-line code,
   body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-builder-primary-arg-cell .choice-line code {
     font-size: inherit;
@@ -1268,6 +1448,7 @@
     padding: 0.8rem 0.75rem 0.55rem;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
     border: 1px solid rgba(186, 212, 232, 0.75);
     border-radius: 8px;
     background: linear-gradient(
@@ -1314,10 +1495,12 @@
     min-height: 0;
     width: 100%;
     box-sizing: border-box;
+    --cmd-line-hang-indent: 2ch;
     --cmd-out-font-base: calc(0.72rem * 1.35 * 1.1 * 1.3 * var(--gp-font-scale-root));
+    font-family: "Cascadia Code", "Cascadia Mono", ui-monospace, monospace;
     font-size: var(--cmd-out-font-base);
     line-height: 1.12;
-    color: #3dd68c;
+    color: #fff;
     white-space: pre;
     word-break: normal;
     overflow-wrap: normal;
@@ -1337,11 +1520,14 @@
     border-radius: 4px;
   }
   body.cmd-builder-github-pages .cmd-output pre .cmd-seg--prefix {
-    color: #3dd68c;
+    color: #fff;
   }
   body.cmd-builder-github-pages .cmd-output pre .cmd-line-cont {
-    color: #3dd68c;
+    color: #fff;
     opacity: 0.92;
+  }
+  body.cmd-builder-github-pages .cmd-output pre .cmd-line-hang {
+    padding-left: var(--cmd-line-hang-indent, 2ch);
   }
   body.cmd-builder-github-pages .cmd-output .btn-copy-label {
     gap: 0;
@@ -1366,23 +1552,47 @@
     {%- if text %} title="{{ text|e }}"
     {% endif -%}
   {%- endmacro %}
+  {% macro cmd_outdir_field_label() -%}
+    Output folder (<code>-o</code>)
+  {%- endmacro %}
+  {% macro cmd_outdir_input_wrap(field_id, value, cmd_name=none, extra_class='') -%}
+  <div class="cmd-outdir-input-wrap{% if not value|trim %} cmd-outdir-input-wrap--empty{% endif %}{{ extra_class }}">
+    <input type="text"
+           id="{{ field_id }}"
+           class="cmd-outdir-input"
+           {% if cmd_name %}data-cmd-name="{{ cmd_name|e }}" {% endif %}
+           value="{{ value|e }}"
+           autocomplete="off"
+           {{ title_attr(command_builder_required_field_titles.get(field_id)) }} />
+    <span class="cmd-outdir-input-suffix" aria-hidden="true">/</span>
+  </div>
+  {%- endmacro %}
   {% macro cmd_outdir_stepper(field_id, cmd_name, value) -%}
   <div class="cmd-outdir-stepper" data-cmd-name="{{ cmd_name|e }}">
     <button type="button" class="cmd-outdir-step" data-dir="-1"
             aria-label="Previous run number" title="Previous run number">−</button>
-    <input type="text"
-           id="{{ field_id }}"
-           class="cmd-outdir-input"
-           data-cmd-name="{{ cmd_name|e }}"
-           value="{{ value|e }}"
-           autocomplete="off"
-           {{ title_attr(command_builder_required_field_titles.get(field_id)) }} />
+    {{ cmd_outdir_input_wrap(field_id, value, cmd_name) }}
     <button type="button" class="cmd-outdir-step" data-dir="1"
             aria-label="Next run number" title="Next run number">+</button>
   </div>
   {%- endmacro %}
   {% macro schema_arg_title(a) -%}
     {%- if a.help -%}{{ a.help }}{%- endif -%}
+    {%- endmacro %}
+    {% macro arg_display_name_span(help_text, label_text=none, arg=none) -%}
+      {%- if help_text and (arg is none or arg|arg_show_display_name) -%}
+        {%- set dn = help_text|arg_display_name -%}
+        {%- if dn and (not label_text or dn|lower != label_text|lower) -%}
+          <span class="cmd-arg-display-name">{{ dn }}</span>
+        {%- endif -%}
+      {%- endif -%}
+    {%- endmacro %}
+    {% macro arg_display_name_for_field(field_id, label_text=none) -%}
+      {%- if field_id.endswith('_ind') -%}
+        <span class="cmd-arg-display-name">filtering .pkl</span>
+      {%- else -%}
+        {{ arg_display_name_span(command_builder_required_field_titles.get(field_id), label_text) }}
+      {%- endif -%}
     {%- endmacro %}
     {% macro ctf_row_title(field_id) -%}
       {%- set h = command_builder_required_field_titles.get(field_id) -%}
@@ -1395,7 +1605,8 @@
       {% set st = schema_arg_title(a)|trim %}
       {% if a.w == 'flag_true' %}
         <label class="check-line"{{ title_attr(st) }}
-          ><input type="checkbox" id="{{ a.id }}"{{ title_attr(st) }} /> <span><code>{{ a.cli[0] }}</code></span>
+          ><input type="checkbox" id="{{ a.id }}"{{ title_attr(st) }} />
+          <span><code>{{ a.cli[0] }}</code>{{ arg_display_name_span(a.help, arg=a) }}</span>
         </label>
       {% elif a.w == 'flag_false' %}
         <label class="check-line"{{ title_attr(st) }}
@@ -1409,7 +1620,7 @@
         </label>
       {% elif a.w == 'norm2' %}
         <label class="cryo-select-line" for="{{ a.id }}_a"{{ title_attr(st) }}
-          ><code>{{ a.cli[0] }}</code> (shift, scale)
+          ><code>{{ a.cli[0] }}</code>{{ arg_display_name_span(a.help, arg=a) }} (shift, scale)
         </label>
         <span class="cmd-arg-norm2-inputs">
           <input type="text" id="{{ a.id }}_a" placeholder="shift" autocomplete="off"{{ title_attr(st) }} />
@@ -1417,7 +1628,8 @@
         </span>
       {% elif a.w == 'select' %}
         {% set default_choice = a.default if a.default is defined else (a.choices[0] if a.choices else '') %}
-        <span class="choice-line"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code></span>
+        <span class="choice-line"{{ title_attr(st) }}
+          ><code>{{ a.cli[0] }}</code>{{ arg_display_name_span(a.help, arg=a) }}</span>
         <div class="choice-options">
           {% for c in a.choices %}
             {% set rid = a.id ~ '_' ~ loop.index0 %}
@@ -1441,7 +1653,8 @@
           {% endfor %}
         </div>
       {% elif a.w == 'number' %}
-        <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code>
+        <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}
+          ><code>{{ a.cli[0] }}</code>{{ arg_display_name_span(a.help, arg=a) }}
         </label>
         <span class="cmd-arg-value-row">
           <input type="number"
@@ -1454,7 +1667,8 @@
           elif a|arg_is_batch_size_denominated %}<span class="cmd-arg-unit cmd-arg-unit--scaled" aria-hidden="true">images</span>{% endif %}
         </span>
       {% else %}
-        <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}><code>{{ a.cli[0] }}</code>
+        <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}
+          ><code>{{ a.cli[0] }}</code>{{ arg_display_name_span(a.help, arg=a) }}
         </label>
         <input type="text"
                id="{{ a.id }}"
@@ -1522,7 +1736,7 @@
                 <div class="cmd-builder-primary-arg-cell">
                   <label class="cryo-select-line" for="{{ ind_id }}"
                     {{ title_attr(command_builder_required_field_titles.get(ind_id) ) }}
-                    ><code>--ind</code>
+                    ><code>--ind</code>{{ arg_display_name_for_field(ind_id) }}
                   </label>
                   <input type="text"
                          id="{{ ind_id }}"
@@ -1534,7 +1748,7 @@
                 <div class="cmd-builder-primary-arg-cell">
                   <label class="cryo-select-line" for="{{ datadir_id }}"
                     {{ title_attr(command_builder_required_field_titles.get(datadir_id) ) }}
-                    ><code>--datadir</code>
+                    ><code>--datadir</code>{{ arg_display_name_for_field(datadir_id) }}
                   </label>
                   <input type="text"
                          id="{{ datadir_id }}"
@@ -1607,14 +1821,9 @@
       <div class="cmd-builder-required-cell">
         <label class="cryo-select-line" for="{{ prefix }}_out"
           {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }}>
-          Output (<code>-o</code>)
+          {{ cmd_outdir_field_label() }}
         </label>
-        <input type="text"
-               id="{{ prefix }}_out"
-               value=""
-               placeholder="(default if blank)"
-               autocomplete="off"
-               {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }} />
+        {{ cmd_outdir_input_wrap(prefix ~ '_out', '') }}
       </div>
     {% endmacro %}
     {% macro render_github_analyze_primary_pair(cmd_key) %}
@@ -1704,14 +1913,9 @@
             </span>
             <label class="cryo-select-line" for="{{ prefix }}_out"
               {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }}>
-              Output directory (<code>-o</code>)
+              {{ cmd_outdir_field_label() }}
             </label>
-            <input type="text"
-                   id="{{ prefix }}_out"
-                   value=""
-                   placeholder="(default if blank)"
-                   autocomplete="off"
-                   {{ title_attr(command_builder_required_field_titles.get(prefix ~ '_out') ) }} />
+            {{ cmd_outdir_input_wrap(prefix ~ '_out', '') }}
           </fieldset>
         </div>
         <div class="cmd-builder-rest-grid">
@@ -1844,7 +2048,7 @@
                   <label class="cryo-select-line"
                          for="ab_out"
                          {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }}>
-                    Output (<code>-o</code>)
+                    {{ cmd_outdir_field_label() }}
                   </label>
                   {{ cmd_outdir_stepper('ab_out', 'abinit', default_outdir_abinit) }}
                 </div>
@@ -1888,7 +2092,7 @@
                 <label class="cryo-select-line"
                        for="ab_out"
                        {{ title_attr(command_builder_required_field_titles.get('ab_out') ) }}>
-                  Output directory (<code>-o</code>)
+                  {{ cmd_outdir_field_label() }}
                 </label>
                 {{ cmd_outdir_stepper('ab_out', 'abinit', default_outdir_abinit) }}
                 <label class="cryo-select-line" for="ab_zdim"
@@ -1939,7 +2143,7 @@
                   <label class="cryo-select-line"
                          for="vae_out"
                          {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }}>
-                    Output (<code>-o</code>)
+                    {{ cmd_outdir_field_label() }}
                   </label>
                   {{ cmd_outdir_stepper('vae_out', 'train_vae', default_outdir_train_vae) }}
                 </div>
@@ -1994,7 +2198,7 @@
                 <label class="cryo-select-line"
                        for="vae_out"
                        {{ title_attr(command_builder_required_field_titles.get('vae_out') ) }}>
-                  Output directory (<code>-o</code>)
+                  {{ cmd_outdir_field_label() }}
                 </label>
                 {{ cmd_outdir_stepper('vae_out', 'train_vae', default_outdir_train_vae) }}
                 <label class="cryo-select-line" for="vae_poses"
@@ -2052,7 +2256,7 @@
                   <label class="cryo-select-line"
                          for="nn_out"
                          {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }}>
-                    Output (<code>-o</code>)
+                    {{ cmd_outdir_field_label() }}
                   </label>
                   {{ cmd_outdir_stepper('nn_out', 'train_nn', default_outdir_train_nn) }}
                 </div>
@@ -2095,7 +2299,7 @@
                 <label class="cryo-select-line"
                        for="nn_out"
                        {{ title_attr(command_builder_required_field_titles.get('nn_out') ) }}>
-                  Output directory (<code>-o</code>)
+                  {{ cmd_outdir_field_label() }}
                 </label>
                 {{ cmd_outdir_stepper('nn_out', 'train_nn', default_outdir_train_nn) }}
                 <label class="cryo-select-line" for="nn_poses"
@@ -2145,7 +2349,7 @@
                   <label class="cryo-select-line"
                          for="dec_out"
                          {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }}>
-                    Output (<code>-o</code>)
+                    {{ cmd_outdir_field_label() }}
                   </label>
                   {{ cmd_outdir_stepper('dec_out', 'train_dec', default_outdir_train_dec) }}
                 </div>
@@ -2200,7 +2404,7 @@
                 <label class="cryo-select-line"
                        for="dec_out"
                        {{ title_attr(command_builder_required_field_titles.get('dec_out') ) }}>
-                  Output directory (<code>-o</code>)
+                  {{ cmd_outdir_field_label() }}
                 </label>
                 {{ cmd_outdir_stepper('dec_out', 'train_dec', default_outdir_train_dec) }}
                 <label class="cryo-select-line" for="dec_poses"
@@ -2259,7 +2463,7 @@
                   <label class="cryo-select-line"
                          for="bpv_out"
                          {{ title_attr(command_builder_required_field_titles.get('bpv_out') ) }}>
-                    Output (<code>-o</code>)
+                    {{ cmd_outdir_field_label() }}
                   </label>
                   {{ cmd_outdir_stepper('bpv_out', 'backproject_voxel', default_outdir_backproject_voxel) }}
                 </div>
@@ -2303,7 +2507,7 @@
                 <label class="cryo-select-line"
                        for="bpv_out"
                        {{ title_attr(command_builder_required_field_titles.get('bpv_out') ) }}>
-                  Output directory (<code>-o</code>)
+                  {{ cmd_outdir_field_label() }}
                 </label>
                 {{ cmd_outdir_stepper('bpv_out', 'backproject_voxel', default_outdir_backproject_voxel) }}
                 <label class="cryo-select-line" for="bpv_poses"
@@ -2352,7 +2556,7 @@
                   <label class="cryo-select-line"
                          for="ahet_out"
                          {{ title_attr(command_builder_required_field_titles.get('ahet_out') ) }}>
-                    Output (<code>-o</code>)
+                    {{ cmd_outdir_field_label() }}
                   </label>
                   {{ cmd_outdir_stepper('ahet_out', 'abinit_het_old', default_outdir_abinit_het_old) }}
                 </div>
@@ -2396,7 +2600,7 @@
                 <label class="cryo-select-line"
                        for="ahet_out"
                        {{ title_attr(command_builder_required_field_titles.get('ahet_out') ) }}>
-                  Output directory (<code>-o</code>)
+                  {{ cmd_outdir_field_label() }}
                 </label>
                 {{ cmd_outdir_stepper('ahet_out', 'abinit_het_old', default_outdir_abinit_het_old) }}
                 <label class="cryo-select-line" for="ahet_zdim"
@@ -2446,7 +2650,7 @@
                   <label class="cryo-select-line"
                          for="ahom_out"
                          {{ title_attr(command_builder_required_field_titles.get('ahom_out') ) }}>
-                    Output (<code>-o</code>)
+                    {{ cmd_outdir_field_label() }}
                   </label>
                   {{ cmd_outdir_stepper('ahom_out', 'abinit_homo_old', default_outdir_abinit_homo_old) }}
                 </div>
@@ -2479,7 +2683,7 @@
                 <label class="cryo-select-line"
                        for="ahom_out"
                        {{ title_attr(command_builder_required_field_titles.get('ahom_out') ) }}>
-                  Output directory (<code>-o</code>)
+                  {{ cmd_outdir_field_label() }}
                 </label>
                 {{ cmd_outdir_stepper('ahom_out', 'abinit_homo_old', default_outdir_abinit_homo_old) }}
                 <label class="cryo-select-line" for="ahom_ctf"{{ ctf_row_title("ahom_ctf") }}><code>--ctf</code>
@@ -2573,6 +2777,7 @@
   var CMD_SCHEMA = {{ command_builder_schema | tojson }};
   {% if github_pages_mode %}
   var CMD_COMMAND_DOCS = {{ command_builder_command_docs | tojson }};
+  var CMD_MANUSCRIPT_URLS = {{ command_builder_manuscript_urls | tojson }};
   {% endif %}
 
   function shquote(s) {
@@ -2682,6 +2887,7 @@
   var lastBashCommandText = "";
   var CMD_WRAP_MIN_CHARS = 80;
   var CMD_LINE_MAX_CHARS = 100;
+  var CMD_LINE_HANG_SPACES = "  ";
 
   function canBreakAfterCmdToken(token) {
     if (!token) return false;
@@ -2736,7 +2942,8 @@
       return idxs.map(function(i) { return segments[i].t; }).join(" ");
     });
     return lines.map(function(line, i) {
-      return i < lines.length - 1 ? line + " \\" : line;
+      var body = (i > 0 ? CMD_LINE_HANG_SPACES : "") + line;
+      return i < lines.length - 1 ? body + " \\" : body;
     }).join("\n");
   }
 
@@ -2769,7 +2976,9 @@
     var shadeIdx = {};
     var html = [];
     for (var li = 0; li < lineGroups.length; li++) {
-      if (li > 0) html.push('<span class="cmd-line-cont"> \\</span>\n');
+      if (li > 0) {
+        html.push('<span class="cmd-line-cont"> \\</span>\n<span class="cmd-line-hang">');
+      }
       var idxs = lineGroups[li];
       for (var ii = 0; ii < idxs.length; ii++) {
         if (ii > 0) html.push(" ");
@@ -2789,6 +2998,7 @@
         html.push(escCmdHtml(seg.t));
         html.push("</span>");
       }
+      if (li > 0) html.push("</span>");
     }
     return html.join("");
   }
@@ -2976,8 +3186,31 @@
     return parsed.prefix + num + "_" + parsed.suffix;
   }
 
+  function syncOutdirInputSuffix(input) {
+    if (!input) return;
+    var fieldWrap = input.closest(".cmd-outdir-input-wrap");
+    if (!fieldWrap) return;
+    fieldWrap.classList.toggle(
+      "cmd-outdir-input-wrap--empty",
+      !String(input.value || "").trim()
+    );
+  }
+
+  function bindOutdirInputSuffix(input) {
+    if (!input || input.dataset.outdirSuffixBound === "1") return;
+    input.dataset.outdirSuffixBound = "1";
+    syncOutdirInputSuffix(input);
+    input.addEventListener("input", function() {
+      syncOutdirInputSuffix(input);
+    });
+  }
+
   function initOutdirSteppers() {
     if (!form) return;
+    var outdirInputs = form.querySelectorAll(".cmd-outdir-input-wrap .cmd-outdir-input");
+    for (var k = 0; k < outdirInputs.length; k++) {
+      bindOutdirInputSuffix(outdirInputs[k]);
+    }
     var steppers = form.querySelectorAll(".cmd-outdir-stepper");
     for (var i = 0; i < steppers.length; i++) {
       (function(wrap) {
@@ -2994,6 +3227,7 @@
             var parsed = parseOutdirValue(input.value, cmdName);
             parsed.n = Math.max(1, Math.min(999, parsed.n + dir));
             input.value = formatOutdir(parsed);
+            syncOutdirInputSuffix(input);
             input.dispatchEvent(new Event("input", { bubbles: true }));
           });
         }
@@ -3011,6 +3245,24 @@
     el.textContent = CMD_COMMAND_DOCS[cmdType.value] || "";
   }
 
+  function syncManuscriptLink() {
+    var link = document.getElementById("nav-manuscript-link");
+    var item = document.getElementById("nav-manuscript-icon-item");
+    if (!link || !cmdType || typeof CMD_MANUSCRIPT_URLS === "undefined") return;
+    var url = CMD_MANUSCRIPT_URLS[cmdType.value] || "";
+    if (url) {
+      link.href = url;
+      link.hidden = false;
+      if (item) item.hidden = false;
+      link.title = "Read manuscript for cryodrgn " + cmdType.value;
+      link.setAttribute("aria-label", link.title);
+    } else {
+      link.hidden = true;
+      if (item) item.hidden = true;
+      link.removeAttribute("href");
+    }
+  }
+
   function syncPanels() {
     var t = cmdType.value;
     var panels = document.querySelectorAll(".cmd-panel");
@@ -3018,6 +3270,7 @@
       panels[i].classList.toggle("cmd-panel--active", panels[i].getAttribute("data-cmd") === t);
     }
     syncCmdDocText();
+    {% if github_pages_mode %}syncManuscriptLink();{% endif %}
     refresh();
   }
 

@@ -18,7 +18,9 @@ from typing import Any
 
 from cryodrgn.dashboard.command_builder_cli_help import (
     attach_help_to_groups,
+    load_cli_defaults_maps,
     load_cli_help_maps,
+    resolved_help_for_flag,
 )
 
 # Widget kinds:
@@ -52,6 +54,9 @@ def arg_is_num_epochs(arg: object) -> bool:
     return "-n" in flags or "--num-epochs" in flags
 
 
+_EPOCH_COUNT_FLAGS = frozenset({"--pose-only-phase"})
+
+
 def arg_is_epoch_denominated(arg: object) -> bool:
     """True when any CLI flag name contains ``epoch`` (value is a count of epochs)."""
     if arg_is_num_epochs(arg):
@@ -61,7 +66,37 @@ def arg_is_epoch_denominated(arg: object) -> bool:
     cli = arg.get("cli")
     if not isinstance(cli, (list, tuple)):
         return False
-    return any("epoch" in str(flag).lower() for flag in cli)
+    for flag in cli:
+        s = str(flag).lower()
+        if s in _EPOCH_COUNT_FLAGS or "epoch" in s:
+            return True
+    return False
+
+
+def arg_has_unit_suffix(arg: object) -> bool:
+    """True when the form shows an ``epochs`` / ``images`` unit beside the value."""
+    return (
+        arg_is_num_epochs(arg)
+        or arg_is_epoch_denominated(arg)
+        or arg_is_batch_size_denominated(arg)
+    )
+
+
+_SUPPRESS_DISPLAY_NAME_FLAGS = frozenset({"--max-threads"})
+
+
+def arg_show_display_name(arg: object) -> bool:
+    """Whether to show the short human label beside the CLI flag."""
+    if not isinstance(arg, dict):
+        return False
+    cli = arg.get("cli")
+    if isinstance(cli, (list, tuple)):
+        flags = {str(flag).lower() for flag in cli}
+        if flags & _SUPPRESS_DISPLAY_NAME_FLAGS:
+            return False
+        if "-b" in flags:
+            return True
+    return not arg_has_unit_suffix(arg)
 
 
 def arg_is_batch_size_denominated(arg: object) -> bool:
@@ -1602,6 +1637,24 @@ ANALYZE_LANDSCAPE_FULL_GROUPS: list[Group] = [
     ),
 ]
 
+# Primary manuscript per reconstruction command (GitHub Pages nav link).
+COMMAND_BUILDER_MANUSCRIPT_URLS: dict[str, str] = {
+    "abinit": "https://www.nature.com/articles/s41592-025-02720-4",
+    "train_dec": "https://www.nature.com/articles/s41592-025-02720-4",
+    "train_vae": "https://www.nature.com/articles/s41592-020-01049-4",
+    "train_nn": "https://www.nature.com/articles/s41592-020-01049-4",
+    "abinit_het_old": (
+        "https://openaccess.thecvf.com/content/ICCV2021/papers/"
+        "Zhong_CryoDRGN2_Ab_Initio_Neural_Reconstruction_of_3D_Protein_Structures_From_"
+        "ICCV_2021_paper.pdf"
+    ),
+    "abinit_homo_old": (
+        "https://openaccess.thecvf.com/content/ICCV2021/papers/"
+        "Zhong_CryoDRGN2_Ab_Initio_Neural_Reconstruction_of_3D_Protein_Structures_From_"
+        "ICCV_2021_paper.pdf"
+    ),
+}
+
 COMMAND_BUILDER_COMMAND_KEYS: tuple[str, ...] = (
     "abinit",
     "abinit_het_old",
@@ -1629,31 +1682,40 @@ COMMAND_BUILDER_SCHEMA: Schema = {
 }
 
 _cli_help = load_cli_help_maps()
-attach_help_to_groups(_cli_help.get("abinit", {}), ABINIT_GROUPS)
-attach_help_to_groups(_cli_help.get("abinit_het_old", {}), ABINIT_HET_OLD_GROUPS)
-attach_help_to_groups(_cli_help.get("abinit_homo_old", {}), ABINIT_HOMO_OLD_GROUPS)
-attach_help_to_groups(_cli_help.get("train_vae", {}), TRAIN_VAE_GROUPS)
-attach_help_to_groups(_cli_help.get("train_nn", {}), TRAIN_NN_GROUPS)
-attach_help_to_groups(_cli_help.get("train_dec", {}), TRAIN_DEC_GROUPS)
-attach_help_to_groups(_cli_help.get("backproject_voxel", {}), BACKPROJECT_VOXEL_GROUPS)
-attach_help_to_groups(_cli_help.get("analyze", {}), ANALYZE_GROUPS)
-attach_help_to_groups(_cli_help.get("analyze_landscape", {}), ANALYZE_LANDSCAPE_GROUPS)
-attach_help_to_groups(
-    _cli_help.get("analyze_landscape_full", {}),
-    ANALYZE_LANDSCAPE_FULL_GROUPS,
-)
+_cli_defaults = load_cli_defaults_maps()
+
+
+def _attach_help(cmd: str, groups: list[Group]) -> None:
+    attach_help_to_groups(
+        _cli_help.get(cmd, {}),
+        groups,
+        defaults_map=_cli_defaults.get(cmd, {}),
+    )
+
+
+_attach_help("abinit", ABINIT_GROUPS)
+_attach_help("abinit_het_old", ABINIT_HET_OLD_GROUPS)
+_attach_help("abinit_homo_old", ABINIT_HOMO_OLD_GROUPS)
+_attach_help("train_vae", TRAIN_VAE_GROUPS)
+_attach_help("train_nn", TRAIN_NN_GROUPS)
+_attach_help("train_dec", TRAIN_DEC_GROUPS)
+_attach_help("backproject_voxel", BACKPROJECT_VOXEL_GROUPS)
+_attach_help("analyze", ANALYZE_GROUPS)
+_attach_help("analyze_landscape", ANALYZE_LANDSCAPE_GROUPS)
+_attach_help("analyze_landscape_full", ANALYZE_LANDSCAPE_FULL_GROUPS)
 attach_group_descriptions(COMMAND_BUILDER_SCHEMA)
 
 
 def _required_field_titles(
     hm: dict[str, str],
+    dm: dict[str, Any],
     pairs: dict[str, str | tuple[str, ...]],
 ) -> dict[str, str]:
     out: dict[str, str] = {}
     for elid, keys in pairs.items():
         seq: tuple[str, ...] = (keys,) if isinstance(keys, str) else keys
         for k in seq:
-            t = hm.get(k)
+            t = resolved_help_for_flag(hm, dm, k)
             if t:
                 out[elid] = t
                 break
@@ -1665,6 +1727,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("abinit", {}),
+            _cli_defaults.get("abinit", {}),
             {
                 "ab_particles": "particles",
                 "ab_out": ("-o", "--outdir"),
@@ -1675,6 +1738,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("abinit_het_old", {}),
+            _cli_defaults.get("abinit_het_old", {}),
             {
                 "ahet_particles": "particles",
                 "ahet_out": ("-o", "--outdir"),
@@ -1685,6 +1749,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("abinit_homo_old", {}),
+            _cli_defaults.get("abinit_homo_old", {}),
             {
                 "ahom_particles": "particles",
                 "ahom_out": ("-o", "--outdir"),
@@ -1694,6 +1759,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("train_vae", {}),
+            _cli_defaults.get("train_vae", {}),
             {
                 "vae_particles": "particles",
                 "vae_out": ("-o", "--outdir"),
@@ -1705,6 +1771,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("train_nn", {}),
+            _cli_defaults.get("train_nn", {}),
             {
                 "nn_particles": "particles",
                 "nn_out": ("-o", "--outdir"),
@@ -1715,6 +1782,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("train_dec", {}),
+            _cli_defaults.get("train_dec", {}),
             {
                 "dec_particles": "particles",
                 "dec_out": ("-o", "--outdir"),
@@ -1726,6 +1794,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("backproject_voxel", {}),
+            _cli_defaults.get("backproject_voxel", {}),
             {
                 "bpv_particles": "particles",
                 "bpv_out": ("-o", "--outdir"),
@@ -1736,6 +1805,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("analyze", {}),
+            _cli_defaults.get("analyze", {}),
             {
                 "ana_workdir": "workdir",
                 "ana_epoch": "epoch",
@@ -1746,6 +1816,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("analyze_landscape", {}),
+            _cli_defaults.get("analyze_landscape", {}),
             {
                 "alsc_workdir": "workdir",
                 "alsc_epoch": "epoch",
@@ -1756,6 +1827,7 @@ def _build_required_field_titles() -> dict[str, str]:
     r.update(
         _required_field_titles(
             _cli_help.get("analyze_landscape_full", {}),
+            _cli_defaults.get("analyze_landscape_full", {}),
             {
                 "alfull_workdir": "workdir",
                 "alfull_epoch": "epoch",
@@ -1774,10 +1846,19 @@ def _build_required_field_titles() -> dict[str, str]:
         ("bpv", "backproject_voxel"),
     ):
         hm = _cli_help.get(cmd, {})
+        dm = _cli_defaults.get(cmd, {})
         if "--ctf" in hm:
-            r[f"{prefix}_ctf"] = hm["--ctf"]
+            t = resolved_help_for_flag(hm, dm, "--ctf")
+            if t:
+                r[f"{prefix}_ctf"] = t
         if "--datadir" in hm:
-            r[f"{prefix}_datadir"] = hm["--datadir"]
+            t = resolved_help_for_flag(hm, dm, "--datadir")
+            if t:
+                r[f"{prefix}_datadir"] = t
+        if "--ind" in hm:
+            t = resolved_help_for_flag(hm, dm, "--ind")
+            if t:
+                r[f"{prefix}_ind"] = t
     return r
 
 

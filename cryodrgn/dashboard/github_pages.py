@@ -15,13 +15,18 @@ from urllib.parse import quote
 
 from flask import Flask, render_template
 
-from cryodrgn.dashboard.command_builder_cli_help import load_command_module_docstrings
+from cryodrgn.dashboard.command_builder_cli_help import (
+    jinja_arg_display_name,
+    load_command_module_docstrings,
+)
 from cryodrgn.dashboard.command_builder_data import (
+    COMMAND_BUILDER_MANUSCRIPT_URLS,
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
     arg_is_batch_size_denominated,
     arg_is_epoch_denominated,
     arg_is_num_epochs,
+    arg_show_display_name,
     default_outdir_for_command,
 )
 
@@ -111,6 +116,7 @@ def _command_builder_template_kwargs() -> dict[str, object]:
         "command_builder_schema": COMMAND_BUILDER_SCHEMA,
         "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
         "command_builder_command_docs": load_command_module_docstrings(),
+        "command_builder_manuscript_urls": COMMAND_BUILDER_MANUSCRIPT_URLS,
     }
 
 
@@ -151,20 +157,10 @@ def _rewrite_root_paths(html: str, base_path: str) -> str:
 def _adapt_html_for_github_pages(html: str, base_path: str, repo_url: str) -> str:
     html = _PLOTLY_SCRIPT_RE.sub("\n", html)
     html = _rewrite_root_paths(html, base_path)
+    # Brand link targets https://cryodrgn.cs.princeton.edu/ (set in the template).
     base = base_path if base_path.endswith("/") else f"{base_path}/"
     if "<base " not in html:
         html = html.replace("<head>", f'<head>\n  <base href="{base}"/>', 1)
-    html = html.replace(
-        'aria-label="cryoDRGN dashboard home"',
-        'aria-label="cryoDRGN on GitHub"',
-    )
-    html = html.replace('href="/"', f'href="{repo_url}"', 1)
-    html = re.sub(
-        r'<span class="nav-brand-line2-main">dashboard',
-        '<span class="nav-brand-line2-main">command builder',
-        html,
-        count=1,
-    )
     # ``base.html`` workdir/epoch handlers are dashboard-only;
     # disable on static hosting.
     html = html.replace('fetch("/api/set_workdir"', 'fetch("#"')
@@ -197,6 +193,8 @@ def render_command_builder_html(
         "arg_is_batch_size_denominated"
     ] = arg_is_batch_size_denominated
     app.jinja_env.filters["arg_is_num_epochs"] = arg_is_num_epochs
+    app.jinja_env.filters["arg_display_name"] = jinja_arg_display_name
+    app.jinja_env.filters["arg_show_display_name"] = arg_show_display_name
     app.config["COMMAND_BUILDER_ONLY"] = True
 
     def _noop_api() -> tuple[str, int]:

@@ -169,6 +169,41 @@ class TestDashboardTrajectoryCoords:
             return
         assert r.get_json()["mode"] == "nearest"
 
+    def test_nearest_mode_returns_marker_colors_for_color_scale(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        color_col = next(
+            (
+                c
+                for c in dashboard_experiment.numeric_columns
+                if c in dashboard_experiment.plot_df.columns
+            ),
+            None,
+        )
+        if color_col is None:
+            pytest.skip("experiment has no numeric color column")
+        r = flask_client.post(
+            "/api/trajectory_coords",
+            json={
+                "mode": "nearest",
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "start": [0.0, 0.0],
+                "end": [1.0, 1.0],
+                "n_points": 3,
+                "color": color_col,
+                "palette": "Viridis",
+            },
+        )
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
+        js = r.get_json()
+        assert js["mode"] == "nearest"
+        colors = js.get("traj_marker_colors")
+        assert isinstance(colors, list)
+        assert len(colors) == len(js["traj_rows"])
+        assert all(isinstance(c, str) and c.startswith("#") for c in colors)
+
     def test_anchor_driven_trajectory(
         self, flask_client, dashboard_experiment: DashboardExperiment
     ) -> None:

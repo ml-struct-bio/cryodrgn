@@ -444,7 +444,8 @@ def api_trajectory_coords():
         return err
 
     try:
-        p = parse_trajectory_request_body(e, _request_json_dict())
+        data = _request_json_dict()
+        p = parse_trajectory_request_body(e, data)
     except ValueError as err:
         return jsonify(error=str(err)), 400
     try:
@@ -458,6 +459,8 @@ def api_trajectory_coords():
             n_points=p["n_points"],
             xcol=p["xcol"],
             ycol=p["ycol"],
+            color_col=str(data.get("color") or "none"),
+            continuous_palette=data.get("palette"),
         )
         _add_direct_anchor_pidx(payload, p, z_traj)
         return jsonify(payload)
@@ -494,6 +497,8 @@ def api_trajectory_volumes():
             n_points=p["n_points"],
             xcol=p["xcol"],
             ycol=p["ycol"],
+            color_col=str(data.get("color") or "none"),
+            continuous_palette=data.get("palette"),
         )
         _add_direct_anchor_pidx(payload, p, z_traj)
         payload["images"] = [

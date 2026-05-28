@@ -14,8 +14,16 @@ import re
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 
 from cryodrgn.dashboard.data import DashboardExperiment
+from cryodrgn.dashboard.palette_config import normalize_continuous_palette
+from cryodrgn.dashboard.plots_color_covariate import (
+    _continuous_series_stats,
+    _lower_color_series_is_discrete,
+    _scatter_discrete_marker_arrays,
+    numeric_array_to_plotly_hex,
+)
 
 if TYPE_CHECKING:
     from scipy.sparse import csr_matrix as _csr_matrix
@@ -577,6 +585,30 @@ def compute_trajectory_latent_path(
 # ---------------------------------------------------------------------------
 
 
+def trajectory_marker_colors_for_rows(
+    e: DashboardExperiment,
+    traj_rows: list[int],
+    color_col: str | None,
+    *,
+    continuous_palette: str | None = None,
+) -> list[str] | None:
+    """Per-trajectory-point hex colours matching the scatter covariate scale."""
+    if not traj_rows or not color_col or color_col == "none":
+        return None
+    if color_col not in e.plot_df.columns:
+        return None
+    df = e.plot_df
+    row_idx = [int(r) for r in traj_rows]
+    sub = df.iloc[row_idx]
+    if _lower_color_series_is_discrete(df[color_col]):
+        hex_colors, _fk = _scatter_discrete_marker_arrays(df, sub, color_col, None)
+        return hex_colors
+    _cvals, cmin, cmax = _continuous_series_stats(df[color_col])
+    plotly_cs = normalize_continuous_palette(continuous_palette)
+    vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(dtype=np.float64)
+    return numeric_array_to_plotly_hex(vals, plotly_cs, vmin=cmin, vmax=cmax)
+
+
 def trajectory_shared_json_payload(
     e: DashboardExperiment,
     z_traj: np.ndarray,
@@ -587,6 +619,8 @@ def trajectory_shared_json_payload(
     n_points: int,
     xcol: str,
     ycol: str,
+    color_col: str | None = None,
+    continuous_palette: str | None = None,
 ) -> dict:
     payload: dict = {
         "ok": True,
@@ -603,6 +637,15 @@ def trajectory_shared_json_payload(
         payload["traj_particle_indices"] = [
             _plot_row_particle_index(e, r) for r in traj_rows
         ]
+    if mode == "nearest" and traj_rows:
+        marker_colors = trajectory_marker_colors_for_rows(
+            e,
+            traj_rows,
+            color_col,
+            continuous_palette=continuous_palette,
+        )
+        if marker_colors:
+            payload["traj_marker_colors"] = marker_colors
     return payload
 
 

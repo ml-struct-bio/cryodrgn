@@ -105,42 +105,102 @@
     display: block;
     object-fit: contain;
   }
-  .cryo-traj-mode-btns {
-    display: flex;
-    gap: 0.4rem;
-    margin-bottom: 0.5rem;
+  /* HTML glyphs above Plotly (Scattergl base cannot stroke SVG markers/text). */
+  .cryo-traj-glyph-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 4;
+  }
+  .cryo-traj-glyph-marker {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1.25px solid #ffffff;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(36, 59, 83, 0.12);
+  }
+  .cryo-traj-glyph-marker--square {
+    border-radius: 2px;
+  }
+  .cryo-traj-glyph-marker--diamond {
+    border-radius: 2px;
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+  .cryo-traj-glyph-label {
+    position: absolute;
+    transform: translate(-50%, calc(-100% - 7px));
+    font-weight: 700;
+    font-family: "Barlow", sans-serif;
+    font-size: 20px;
+    line-height: 1.05;
+    pointer-events: none;
+    white-space: nowrap;
+    -webkit-text-stroke: 2.5px #ffffff;
+    paint-order: stroke fill;
+    text-shadow:
+      0 0 3px #ffffff,
+      1px 0 0 #ffffff,
+      -1px 0 0 #ffffff,
+      0 1px 0 #ffffff,
+      0 -1px 0 #ffffff;
+  }
+  .cryo-traj-glyph-label--anchor {
+    font-size: 23px;
+  }
+  .cryo-traj-mode-fieldset {
+    margin: 0 0 0.5rem;
+    padding: 0;
+    border: 0;
     flex: 0 0 auto;
   }
-  .cryo-traj-mode-btns .btn {
+  .cryo-traj-mode-seg.volsketch-seg {
+    display: flex;
+    width: 100%;
+    margin: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(36, 59, 83, 0.28);
+    background: #e8ecf1;
+    box-sizing: border-box;
+  }
+  .cryo-traj-mode-seg input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+  .cryo-traj-mode-seg label {
     flex: 1 1 0;
     text-align: center;
-    padding: 0.48rem 0.45rem;
-    font-size: 0.82rem;
-    line-height: 1.2;
-    border-width: 2px;
-    border-style: solid;
-    border-radius: 4px;
-    transition: transform 0.12s ease, box-shadow 0.18s ease, background 0.18s ease,
-      color 0.18s ease, border-color 0.18s ease;
+    padding: 0.38rem 0.22rem;
+    font-size: 0.65rem;
+    line-height: 1.04;
+    white-space: normal;
+    cursor: pointer;
+    margin: 0;
+    color: var(--muted, #5c6b7a);
+    user-select: none;
+    transition: background 0.15s ease, color 0.15s ease;
   }
-  .cryo-traj-mode-btns .btn.btn-secondary {
-    background: linear-gradient(168deg, #f0b188 0%, #dd8e59 48%, #c16d37 100%);
-    color: #fff;
-    border-color: #9a4f24;
-    box-shadow: none;
-    font-weight: 700;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.22);
+  .cryo-traj-mode-seg label:not(:last-of-type) {
+    border-right: 1px solid rgba(36, 59, 83, 0.18);
   }
-  .cryo-traj-mode-btns .btn.active {
-    background: linear-gradient(168deg, #d9844f 0%, #b85a28 42%, #8f4119 100%);
+  .cryo-traj-mode-seg input:focus-visible + label {
+    outline: 2px solid var(--nav-bg, #243b53);
+    outline-offset: -2px;
+    z-index: 1;
+  }
+  .cryo-traj-mode-seg input:checked + label {
+    background: var(--nav-bg, #243b53);
     color: #fff;
-    border-color: #5c2a0f;
-    font-weight: 700;
-    box-shadow:
-      0 4px 14px rgba(180, 90, 40, 0.45),
-      0 0 0 1px rgba(255, 255, 255, 0.2) inset;
-    transform: translateY(-1px);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-weight: 600;
+  }
+  .cryo-traj-mode-seg input:disabled + label {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   .cryo-traj-npoints-label {
     display: flex;
@@ -452,12 +512,6 @@
     padding: 0.2rem 0.45rem;
     white-space: nowrap;
   }
-  .cryo-traj-mode-btns .btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-  }
   .cryo-traj-z-wrap {
     display: flex;
     max-height: 9rem;
@@ -550,6 +604,7 @@
       style="margin:0 0 0.35rem;color:var(--accent,#c4703a);min-height:1.2em;"></p>
     <div class="cryo-plotly-stack" id="scatter-plot-stack">
       <div id="scatter" class="cryo-plotly-graph-host"></div>
+      <div id="traj-glyph-overlay" class="cryo-traj-glyph-overlay" aria-hidden="true"></div>
       <div id="scatter-rendering-overlay" class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
         aria-hidden="false">
         <div class="cryo-plot-rendering-overlay__inner">
@@ -570,10 +625,14 @@
   </div>
 
   <aside class="cryo-dash-montage cryo-dash-montage--trajectory-volumes" aria-label="Trajectory volumes">
-    <div class="cryo-traj-mode-btns">
-      <button type="button" class="btn active" id="btn-mode-direct">Direct traversal</button>
-      <button type="button" class="btn btn-secondary" id="btn-mode-nearest">Graph traversal</button>
-    </div>
+    <fieldset class="cryo-traj-mode-fieldset">
+      <div class="volsketch-seg cryo-traj-mode-seg" role="radiogroup" aria-label="Traversal mode">
+        <input type="radio" name="traj-mode" id="traj-mode-direct" value="direct" checked />
+        <label for="traj-mode-direct" id="traj-mode-direct-label">Direct traversal through<br />space</label>
+        <input type="radio" name="traj-mode" id="traj-mode-alt" value="nearest" />
+        <label for="traj-mode-alt" id="traj-mode-alt-label">Nearest particle neighbor in<br />space</label>
+      </div>
+    </fieldset>
     <div class="cryo-traj-anchor-row" id="traj-anchor-wrap">
       <div class="cryo-traj-anchor-import-grid" id="traj-anchor-pick">
         <button type="button" class="btn btn-secondary" id="btn-anchor-import-pkl">Import anchor .txt</button>
@@ -648,6 +707,7 @@
 </section>
 </div>
 
+<script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
 <script>
 (function() {
   var trajAxisCols = {{ traj_axis_cols | tojson }};
@@ -663,6 +723,8 @@
   var anchorIndicesActive = null;
   var anchorTrajXY = null;
   var editableTrajXY = null;
+  var trajPlotRows = null;
+  var trajMarkerColors = null;
   var startXY = null;
   var endXY = null;
   var scatterLoadGeneration = 0;
@@ -670,8 +732,10 @@
   var dragEndpoint = null;
   var dragPointIndex = -1;
   var dragListenersWired = false;
+  var trajOutlineHookWired = false;
 
   var gd = document.getElementById("scatter");
+  var trajGlyphOverlayEl = document.getElementById("traj-glyph-overlay");
   var overlay = document.getElementById("scatter-rendering-overlay");
   var trajScatterRenderingEverCompleted = false;
   var paletteFieldset = document.getElementById("traj-palette-radios");
@@ -679,8 +743,10 @@
   var trajStatus = document.getElementById("traj-status");
   var trajProgress = document.getElementById("traj-progress");
   var trajVolColumn = document.getElementById("traj-vol-column");
-  var btnModeDirectEl = document.getElementById("btn-mode-direct");
-  var btnModeNearestEl = document.getElementById("btn-mode-nearest");
+  var trajModeDirectRadio = document.getElementById("traj-mode-direct");
+  var trajModeAltRadio = document.getElementById("traj-mode-alt");
+  var trajModeDirectLabel = document.getElementById("traj-mode-direct-label");
+  var trajModeAltLabel = document.getElementById("traj-mode-alt-label");
   var btnGenerateVolumesEl = document.getElementById("btn-generate-volumes");
   var btnResetEl = document.getElementById("btn-reset");
   var nPointsEl = document.getElementById("n-points");
@@ -863,11 +929,29 @@
     return trajectoryMode === "graph" ? "graph" : "direct";
   }
 
+  function trajectoryModeAxisPairLabel() {
+    return axisDisplayName(sx.value) + " vs. " + axisDisplayName(sy.value);
+  }
+
+  function syncTraversalModeLabels() {
+    var axes = trajectoryModeAxisPairLabel();
+    if (trajModeDirectLabel) {
+      trajModeDirectLabel.innerHTML = "Direct traversal through<br />" + axes + " space";
+    }
+    if (trajModeAltLabel) {
+      var hasAnchors = hasAnchorIndices();
+      trajModeAltLabel.innerHTML = hasAnchors
+        ? "Graph traversal through<br />" + axes + " space"
+        : "Nearest particle neighbor in<br />" + axes + " space";
+    }
+    if (trajModeAltRadio) {
+      trajModeAltRadio.value = hasAnchorIndices() ? "graph" : "nearest";
+    }
+  }
+
   function syncTraversalSettingsText() {
     var hasAnchors = hasAnchorIndices();
-    if (btnModeNearestEl) {
-      btnModeNearestEl.textContent = hasAnchors ? "Graph traversal" : "Nearest neighbor";
-    }
+    syncTraversalModeLabels();
     if (!trajPointsLabelEl || !trajSettingsHintEl) return;
     var graphMode = hasAnchors && currentAnchorTraversalMode() === "graph";
     syncPointsSelectorRange();
@@ -985,12 +1069,21 @@
 
   /** Update line + endpoint traces (indices 1 and 2) without touching sample markers. */
   function restyleTrajectoryLineOnly() {
-    if (!gd || !gd.data || gd.data.length < 3) return;
+    if (!gd || !gd.data || gd.data.length < 2) return;
     try {
-      var xup = [[startXY[0], endXY[0]]];
-      var yup = [[startXY[1], endXY[1]]];
-      Plotly.restyle(gd, { x: xup, y: yup }, [1]);
-      Plotly.restyle(gd, { x: xup, y: yup }, [2]);
+      var xs;
+      var ys;
+      if (editableTrajXY && editableTrajXY.length >= 2) {
+        xs = [editableTrajXY.map(function(p) { return p[0]; })];
+        ys = [editableTrajXY.map(function(p) { return p[1]; })];
+      } else if (startXY && endXY) {
+        xs = [[startXY[0], endXY[0]]];
+        ys = [[startXY[1], endXY[1]]];
+      } else {
+        return;
+      }
+      Plotly.restyle(gd, { x: xs, y: ys }, [1]);
+      syncTrajGlyphOverlay();
     } catch (e) {
       console.error(e);
     }
@@ -1013,15 +1106,6 @@
 
   function restyleEditableTrajectoryFromState() {
     if (!gd || !gd.data || !editableTrajXY || editableTrajXY.length < 2) return;
-    var xs = editableTrajXY.map(function(p) { return p[0]; });
-    var ys = editableTrajXY.map(function(p) { return p[1]; });
-    if (gd.data.length > 1 && gd.data[1] && typeof gd.data[1].mode === "string" &&
-        gd.data[1].mode.indexOf("lines+markers+text") >= 0) {
-      try {
-        Plotly.restyle(gd, { x: [xs], y: [ys] }, [1]);
-        return;
-      } catch (e) {}
-    }
     redrawTrajectoryOverlay();
   }
 
@@ -1029,7 +1113,7 @@
     if (editableDragRaf) return;
     editableDragRaf = requestAnimationFrame(function() {
       editableDragRaf = 0;
-      restyleEditableTrajectoryFromState();
+      restyleTrajectoryLineOnly();
     });
   }
 
@@ -1180,17 +1264,29 @@
   }
 
   function dataToPixelXY(dataX, dataY) {
+    var pt = dataToPlotStackXY(dataX, dataY);
+    if (!pt || !trajGlyphOverlayEl) return null;
+    var stackRect = trajGlyphOverlayEl.parentElement.getBoundingClientRect();
+    return [stackRect.left + pt[0], stackRect.top + pt[1]];
+  }
+
+  function dataToPlotStackXY(dataX, dataY) {
     var fl = gd._fullLayout;
-    if (!fl || !fl.xaxis || !fl.yaxis) return null;
-    var dragLayer = gd.querySelector(".nsewdrag");
-    if (!dragLayer) return null;
-    var rect = dragLayer.getBoundingClientRect();
+    if (!fl || !fl.xaxis || !fl.yaxis || !trajGlyphOverlayEl) return null;
+    var plotArea = gd.querySelector(".nsewdrag");
+    if (!plotArea) return null;
+    var plotRect = plotArea.getBoundingClientRect();
+    var stackRect = trajGlyphOverlayEl.parentElement.getBoundingClientRect();
     var xr = fl.xaxis.range;
     var yr = fl.yaxis.range;
+    if (!xr || xr.length < 2 || !yr || yr.length < 2) return null;
     if (xr[1] === xr[0] || yr[1] === yr[0]) return null;
     var fracX = (dataX - xr[0]) / (xr[1] - xr[0]);
     var fracY = (yr[1] - dataY) / (yr[1] - yr[0]);
-    return [rect.left + fracX * rect.width, rect.top + fracY * rect.height];
+    return [
+      plotRect.left - stackRect.left + fracX * plotRect.width,
+      plotRect.top - stackRect.top + fracY * plotRect.height
+    ];
   }
 
   function pixelDist(ax, ay, bx, by) {
@@ -1222,51 +1318,39 @@
   function syncTraversalModeButtonStates() {
     var hasAnchors = hasAnchorIndices();
     syncTraversalSettingsText();
+    var altMode = hasAnchors ? "graph" : "nearest";
     if (hasAnchors) {
-      if (btnModeDirectEl) btnModeDirectEl.disabled = false;
-      if (btnModeNearestEl) btnModeNearestEl.disabled = false;
       if (trajectoryMode !== "direct" && trajectoryMode !== "graph") {
         trajectoryMode = "direct";
       }
-      if (btnModeDirectEl) {
-        btnModeDirectEl.classList.toggle("active", trajectoryMode === "direct");
-        btnModeDirectEl.classList.toggle("btn-secondary", trajectoryMode !== "direct");
+      if (trajModeDirectRadio) {
+        trajModeDirectRadio.disabled = false;
+        trajModeDirectRadio.checked = trajectoryMode === "direct";
       }
-      if (btnModeNearestEl) {
-        btnModeNearestEl.classList.toggle("active", trajectoryMode === "graph");
-        btnModeNearestEl.classList.toggle("btn-secondary", trajectoryMode !== "graph");
+      if (trajModeAltRadio) {
+        trajModeAltRadio.disabled = false;
+        trajModeAltRadio.checked = trajectoryMode === altMode;
       }
       return;
     }
     var allowDirect = directTraversalAllowedForAxes(sx.value, sy.value);
-    if (btnModeDirectEl) {
-      btnModeDirectEl.disabled = !allowDirect;
+    if (trajModeDirectRadio) {
+      trajModeDirectRadio.disabled = !allowDirect;
     }
-    if (btnModeNearestEl) {
-      btnModeNearestEl.disabled = false;
+    if (trajModeAltRadio) {
+      trajModeAltRadio.disabled = false;
     }
     if (!allowDirect && trajectoryMode === "direct") {
       trajectoryMode = "nearest";
-      if (btnModeDirectEl) {
-        btnModeDirectEl.classList.remove("active");
-        btnModeDirectEl.classList.add("btn-secondary");
-      }
-      if (btnModeNearestEl) {
-        btnModeNearestEl.classList.add("active");
-        btnModeNearestEl.classList.remove("btn-secondary");
-      }
       if (startXY && endXY) {
         fetchTrajectoryCoords();
       }
-    } else {
-      if (btnModeDirectEl) {
-        btnModeDirectEl.classList.toggle("active", trajectoryMode === "direct");
-        btnModeDirectEl.classList.toggle("btn-secondary", trajectoryMode !== "direct");
-      }
-      if (btnModeNearestEl) {
-        btnModeNearestEl.classList.toggle("active", trajectoryMode === "nearest");
-        btnModeNearestEl.classList.toggle("btn-secondary", trajectoryMode !== "nearest");
-      }
+    }
+    if (trajModeDirectRadio) {
+      trajModeDirectRadio.checked = trajectoryMode === "direct";
+    }
+    if (trajModeAltRadio) {
+      trajModeAltRadio.checked = trajectoryMode === altMode;
     }
   }
 
@@ -1340,7 +1424,9 @@
     } else if (mode !== "direct" && mode !== "nearest") {
       return;
     }
-    if (!hasAnchors && mode === "direct" && btnModeDirectEl && btnModeDirectEl.disabled) return;
+    if (!hasAnchors && mode === "direct" && trajModeDirectRadio && trajModeDirectRadio.disabled) {
+      return;
+    }
     trajectoryMode = mode;
     if (!hasAnchors && prevMode === "nearest" && mode === "direct") {
       var nLinear = (editableTrajXY && editableTrajXY.length >= 2)
@@ -1370,9 +1456,11 @@
       fetchTrajectoryCoords();
     }
   }
-  btnModeDirectEl.addEventListener("click", function() { setMode("direct"); });
-  btnModeNearestEl.addEventListener("click", function() {
-    setMode(hasAnchorIndices() ? "graph" : "nearest");
+  document.querySelectorAll('input[name="traj-mode"]').forEach(function(radio) {
+    radio.addEventListener("change", function() {
+      if (!radio.checked) return;
+      setMode(radio.value);
+    });
   });
   if (btnGenerateVolumesEl) {
     btnGenerateVolumesEl.addEventListener("click", function() {
@@ -1705,6 +1793,9 @@
     coordsRequestId++;
     dragEndpoint = null;
     dragPointIndex = -1;
+    clearTrajGlyphOverlay();
+    trajPlotRows = null;
+    trajMarkerColors = null;
     startXY = null;
     endXY = null;
     anchorTrajXY = null;
@@ -1723,7 +1814,318 @@
   btnResetEl.addEventListener("click", resetTrajectory);
 
   /* ── Overlay traces (markers + line) on the scatter ── */
+  var TRAJ_MARKER_ENDPOINT = "square";
+  var TRAJ_MARKER_WAYPOINT = "diamond";
+  var TRAJ_MARKER_SIZE_ENDPOINT = 14;
+  var TRAJ_MARKER_SIZE_WAYPOINT = 12;
+  var TRAJ_TEXTFONT_SIZE = 20;
+  var TRAJ_ANCHOR_MARKER_SIZE = 13;
+  var TRAJ_ANCHOR_TEXTFONT_SIZE = 23;
+
+  function trajectoryLabelCount(pointCount) {
+    if (typeof pointCount === "number" && pointCount >= 2) return pointCount;
+    if (editableTrajXY && editableTrajXY.length >= 2) return editableTrajXY.length;
+    return Math.max(2, currentNPoints());
+  }
+
+  function buildTrajectoryPointLabels(pointCount) {
+    var n = trajectoryLabelCount(pointCount);
+    var labels = [];
+    for (var i = 0; i < n; i++) {
+      if (i === 0) labels.push("<b>Start (1)</b>");
+      else if (i === n - 1) labels.push("<b>End (" + n + ")</b>");
+      else labels.push("<b>" + (i + 1) + "</b>");
+    }
+    return labels;
+  }
+
+  function trajColorPayloadFields() {
+    var colorCol = sc.value || "none";
+    var fields = { color: colorCol };
+    if (colorCol !== "none" && !trajColorByIsDiscrete()) {
+      fields.palette = selectedTrajPalette();
+    }
+    return fields;
+  }
+
+  function trajNeighborColoringActive() {
+    if (trajectoryMode !== "nearest" || !sc.value || sc.value === "none") return false;
+    if (trajMarkerColors && trajMarkerColors.length >= 2) return true;
+    return !!(trajPlotRows && trajPlotRows.length >= 2);
+  }
+
+  function plotlyColorToCss(c) {
+    if (c == null) return null;
+    if (typeof c === "string") {
+      if (/^#/.test(c) || c.indexOf("rgb") === 0) return c;
+      return null;
+    }
+    if (typeof c === "object" && c.r != null) {
+      return "rgb(" + Math.round(c.r) + "," + Math.round(c.g) + "," + Math.round(c.b) + ")";
+    }
+    return null;
+  }
+
+  function scatterColorMode() {
+    var meta = gd && gd.layout && gd.layout.meta;
+    if (meta && meta.cdrgn_color_mode) return String(meta.cdrgn_color_mode);
+    var mc = gd && gd.data && gd.data[0] && gd.data[0].marker && gd.data[0].marker.color;
+    if (Array.isArray(mc) && mc.length && typeof mc[0] === "string" && /^#/.test(String(mc[0]))) {
+      return "discrete";
+    }
+    return "continuous";
+  }
+
+  function discreteScatterColorMap() {
+    var out = Object.create(null);
+    var leg = gd && gd.layout && gd.layout.meta && gd.layout.meta.cdrgn_color_legend;
+    if (!leg || leg.type !== "discrete" || !leg.items) return out;
+    for (var li = 0; li < leg.items.length; li++) {
+      var it = leg.items[li];
+      if (!it || it.label == null || !it.color) continue;
+      out[String(it.label)] = String(it.color);
+    }
+    return out;
+  }
+
+  function continuousHexFromCovariateValue(val) {
+    if (typeof val !== "number" || !isFinite(val)) return null;
+    var trace = gd && gd.data && gd.data[0];
+    var mk = (trace && trace.marker) || {};
+    var cmin = mk.cmin;
+    var cmax = mk.cmax;
+    var leg = gd && gd.layout && gd.layout.meta && gd.layout.meta.cdrgn_color_legend;
+    if (leg && leg.type === "continuous") {
+      if (cmin == null || !isFinite(cmin)) cmin = leg.min;
+      if (cmax == null || !isFinite(cmax)) cmax = leg.max;
+    }
+    cmin = typeof cmin === "number" && isFinite(cmin) ? cmin : 0;
+    cmax = typeof cmax === "number" && isFinite(cmax) ? cmax : 1;
+    var span = cmax - cmin;
+    var t = span > 0 ? (val - cmin) / span : 0.5;
+    t = Math.max(0, Math.min(1, t));
+    var pal = selectedTrajPalette();
+    if (typeof CryoColorCovariateLegend !== "undefined"
+        && CryoColorCovariateLegend.hasPalette
+        && CryoColorCovariateLegend.hasPalette(pal)
+        && typeof CryoColorCovariateLegend.paletteScaleCSS === "function") {
+      return CryoColorCovariateLegend.paletteScaleCSS(pal, t);
+    }
+    return null;
+  }
+
+  function scatterRowToTraceIndex(plotRow) {
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return -1;
+    var want = Number(plotRow);
+    if (!Number.isFinite(want)) return -1;
+    var cd = gd.data[0].customdata;
+    for (var i = 0; i < cd.length; i++) {
+      if (cd[i] && Number(cd[i][1]) === want) return i;
+    }
+    return -1;
+  }
+
+  function scatterMarkerFillHexAtTraceIndex(ti) {
+    if (ti < 0 || !gd || !gd.data || !gd.data[0]) return null;
+    var full = gd._fullData && gd._fullData[0];
+    if (full && full.marker && Array.isArray(full.marker.color) && full.marker.color[ti] != null) {
+      var fromFull = plotlyColorToCss(full.marker.color[ti]);
+      if (fromFull) return fromFull;
+    }
+    var trace = gd.data[0];
+    var mc = trace.marker && trace.marker.color;
+    if (Array.isArray(mc) && mc[ti] != null) {
+      var direct = plotlyColorToCss(mc[ti]);
+      if (direct) return direct;
+      if (typeof mc[ti] === "string" && /^#/.test(mc[ti])) return mc[ti];
+    }
+    var cd = trace.customdata;
+    var row = cd && cd[ti] ? cd[ti] : null;
+    var covKey = row && row.length >= 3 && row[2] != null ? String(row[2]) : "";
+    if (scatterColorMode() === "discrete") {
+      if (covKey && discreteScatterColorMap()[covKey]) return discreteScatterColorMap()[covKey];
+      if (Array.isArray(mc) && mc[ti] != null && typeof mc[ti] === "string") return mc[ti];
+    } else if (covKey !== "") {
+      var cVal = parseFloat(covKey);
+      if (isFinite(cVal)) {
+        var fromVal = continuousHexFromCovariateValue(cVal);
+        if (fromVal) return fromVal;
+      }
+      if (Array.isArray(mc) && mc[ti] != null && typeof mc[ti] === "number" && isFinite(mc[ti])) {
+        return continuousHexFromCovariateValue(mc[ti]);
+      }
+    }
+    return null;
+  }
+
+  function scatterColorForPlotRow(plotRow, fallbackHex) {
+    var ti = scatterRowToTraceIndex(plotRow);
+    if (ti < 0) return fallbackHex;
+    return scatterMarkerFillHexAtTraceIndex(ti) || fallbackHex;
+  }
+
+  function defaultTrajectoryPointColor(i, n) {
+    if (i === 0) return "#c4703a";
+    if (i === n - 1) return "#243b53";
+    return "#243b53";
+  }
+
+  function buildTrajectoryMarkerArrays(pointCount, trajIndexMap) {
+    var n = (typeof pointCount === "number" && pointCount >= 2) ? pointCount : trajectoryLabelCount();
+    var labelN = trajectoryLabelCount(n);
+    var symbols = [];
+    var colors = [];
+    var sizes = [];
+    var useNeighborColors = trajNeighborColoringActive();
+    for (var ii = 0; ii < n; ii++) {
+      var ti = (trajIndexMap && trajIndexMap[ii] != null) ? trajIndexMap[ii] : ii;
+      if (ti === 0) {
+        symbols.push(TRAJ_MARKER_ENDPOINT);
+        sizes.push(TRAJ_MARKER_SIZE_ENDPOINT);
+      } else if (ti === labelN - 1) {
+        symbols.push(TRAJ_MARKER_ENDPOINT);
+        sizes.push(TRAJ_MARKER_SIZE_ENDPOINT);
+      } else {
+        symbols.push(TRAJ_MARKER_WAYPOINT);
+        sizes.push(TRAJ_MARKER_SIZE_WAYPOINT);
+      }
+      var fallback = defaultTrajectoryPointColor(ti, labelN);
+      if (useNeighborColors && trajMarkerColors && ti < trajMarkerColors.length) {
+        colors.push(trajMarkerColors[ti] || fallback);
+      } else if (useNeighborColors && trajPlotRows && ti < trajPlotRows.length) {
+        colors.push(scatterColorForPlotRow(trajPlotRows[ti], fallback));
+      } else {
+        colors.push(fallback);
+      }
+    }
+    return { symbol: symbols, color: colors, size: sizes };
+  }
+
+  function clearTrajGlyphOverlay() {
+    if (trajGlyphOverlayEl) trajGlyphOverlayEl.innerHTML = "";
+  }
+
+  function glyphMarkerClass(symbol) {
+    return symbol === TRAJ_MARKER_ENDPOINT
+      ? "cryo-traj-glyph-marker--square"
+      : "cryo-traj-glyph-marker--diamond";
+  }
+
+  function collectTrajGlyphSpecs() {
+    var specs = [];
+    if (anchorIndicesActive && anchorTrajXY && anchorTrajXY.length >= 2) {
+      if (anchorTrajXY.length > 40) return specs;
+      var anchorMk = buildTrajectoryMarkerArrays(anchorTrajXY.length);
+      for (var ai = 0; ai < anchorTrajXY.length; ai++) {
+        specs.push({
+          x: anchorTrajXY[ai][0],
+          y: anchorTrajXY[ai][1],
+          labelHtml: "<b>" + (ai + 1) + "</b>",
+          color: anchorMk.color[ai],
+          symbol: anchorMk.symbol[ai],
+          size: TRAJ_ANCHOR_MARKER_SIZE,
+          labelSize: TRAJ_ANCHOR_TEXTFONT_SIZE,
+          labelClass: "cryo-traj-glyph-label--anchor"
+        });
+      }
+      return specs;
+    }
+    if (!hasAnchorIndices() && editableTrajXY && editableTrajXY.length >= 2) {
+      var n = editableTrajXY.length;
+      var labels = buildTrajectoryPointLabels(n);
+      var mk = buildTrajectoryMarkerArrays(n);
+      for (var ei = 0; ei < n; ei++) {
+        specs.push({
+          x: editableTrajXY[ei][0],
+          y: editableTrajXY[ei][1],
+          labelHtml: labels[ei],
+          color: mk.color[ei],
+          symbol: mk.symbol[ei],
+          size: mk.size[ei],
+          labelSize: TRAJ_TEXTFONT_SIZE
+        });
+      }
+      return specs;
+    }
+    if (startXY && endXY) {
+      var nLbl = trajectoryLabelCount();
+      var lastTrajIdx = (trajPlotRows && trajPlotRows.length >= 2)
+        ? trajPlotRows.length - 1
+        : 1;
+      var mkEp = buildTrajectoryMarkerArrays(2, [0, lastTrajIdx]);
+      var epLabels = ["<b>Start (1)</b>", "<b>End (" + nLbl + ")</b>"];
+      specs.push({
+        x: startXY[0],
+        y: startXY[1],
+        labelHtml: epLabels[0],
+        color: mkEp.color[0],
+        symbol: mkEp.symbol[0],
+        size: mkEp.size[0],
+        labelSize: TRAJ_TEXTFONT_SIZE
+      });
+      specs.push({
+        x: endXY[0],
+        y: endXY[1],
+        labelHtml: epLabels[1],
+        color: mkEp.color[1],
+        symbol: mkEp.symbol[1],
+        size: mkEp.size[1],
+        labelSize: TRAJ_TEXTFONT_SIZE
+      });
+    }
+    return specs;
+  }
+
+  function syncTrajGlyphOverlay() {
+    clearTrajGlyphOverlay();
+    if (!trajGlyphOverlayEl || !gd || !gd._fullLayout) return;
+    var specs = collectTrajGlyphSpecs();
+    for (var i = 0; i < specs.length; i++) {
+      var spec = specs[i];
+      var pt = dataToPlotStackXY(spec.x, spec.y);
+      if (!pt) continue;
+      var sizePx = Number(spec.size) || TRAJ_MARKER_SIZE_WAYPOINT;
+      var markerEl = document.createElement("div");
+      markerEl.className = "cryo-traj-glyph-marker " + glyphMarkerClass(spec.symbol);
+      markerEl.style.left = pt[0] + "px";
+      markerEl.style.top = pt[1] + "px";
+      markerEl.style.width = sizePx + "px";
+      markerEl.style.height = sizePx + "px";
+      markerEl.style.backgroundColor = spec.color || "#243b53";
+      var labelEl = document.createElement("div");
+      labelEl.className = "cryo-traj-glyph-label"
+        + (spec.labelClass ? " " + spec.labelClass : "");
+      labelEl.style.left = pt[0] + "px";
+      labelEl.style.top = pt[1] + "px";
+      labelEl.style.fontSize = (spec.labelSize || TRAJ_TEXTFONT_SIZE) + "px";
+      labelEl.style.color = spec.color || "#243b53";
+      labelEl.innerHTML = spec.labelHtml || "";
+      trajGlyphOverlayEl.appendChild(markerEl);
+      trajGlyphOverlayEl.appendChild(labelEl);
+    }
+  }
+
+  function wireTrajectoryGlyphOverlayHook() {
+    if (trajOutlineHookWired || !gd) return;
+    trajOutlineHookWired = true;
+    gd.on("plotly_afterplot", syncTrajGlyphOverlay);
+    gd.on("plotly_relayout", syncTrajGlyphOverlay);
+  }
+
+  function finishTrajectoryOverlayDraw(plotPromise) {
+    wireTrajectoryGlyphOverlayHook();
+    function run() {
+      requestAnimationFrame(syncTrajGlyphOverlay);
+    }
+    if (plotPromise && typeof plotPromise.then === "function") {
+      plotPromise.then(run);
+    } else {
+      run();
+    }
+  }
+
   function removeOverlayTraces() {
+    clearTrajGlyphOverlay();
     if (!gd || !gd.data) return;
     var toRemove = [];
     for (var i = gd.data.length - 1; i >= 1; i--) toRemove.push(i);
@@ -1732,65 +2134,31 @@
     }
   }
 
+  function drawTrajLineTrace(xs, ys, lineWidth) {
+    return {
+      x: xs,
+      y: ys,
+      mode: "lines",
+      type: "scatter",
+      line: { color: "#c4703a", width: lineWidth || 2.2, dash: "dot" },
+      hoverinfo: "skip",
+      showlegend: false
+    };
+  }
+
   function drawAnchorPolyline(traj_xy) {
     if (!gd || !gd.data || !traj_xy || traj_xy.length < 2) return;
     removeOverlayTraces();
     var xs = traj_xy.map(function(p) { return p[0]; });
     var ys = traj_xy.map(function(p) { return p[1]; });
-    var showLabels = traj_xy.length <= 40;
-    var labels = showLabels ? traj_xy.map(function(_, i) { return "<b>" + (i + 1) + "</b>"; }) : [];
-    Plotly.addTraces(gd, [{
-      x: xs,
-      y: ys,
-      mode: showLabels ? "lines+markers+text" : "lines+markers",
-      line: { color: "#c4703a", width: 2.5, dash: "dot" },
-      marker: { size: 11, color: "#243b53", line: { width: 2, color: "#fff" } },
-      text: labels,
-      textposition: "top center",
-      textfont: { size: 19, color: "#243b53", family: "Barlow, sans-serif" },
-      hoverinfo: "skip",
-      showlegend: false
-    }]);
+    finishTrajectoryOverlayDraw(Plotly.addTraces(gd, [drawTrajLineTrace(xs, ys, 2.5)]));
   }
 
   function drawLineAndEndpoints(sx, sy, ex, ey) {
     removeOverlayTraces();
-    Plotly.addTraces(gd, [
-      {
-        x: [sx, ex], y: [sy, ey],
-        mode: "lines",
-        line: { color: "#c4703a", width: 2.5, dash: "dot" },
-        hoverinfo: "skip",
-        showlegend: false
-      },
-      {
-        x: [sx, ex], y: [sy, ey],
-        mode: "markers",
-        marker: { size: 12, color: ["#c4703a", "#243b53"],
-                  line: { width: 2, color: "#fff" } },
-        hoverinfo: "skip",
-        showlegend: false
-      }
-    ]);
-  }
-
-  function drawTrajectoryPoints(points) {
-    if (!gd || !gd.data) return;
-    var xs = points.map(function(p) { return p[0]; });
-    var ys = points.map(function(p) { return p[1]; });
-    var labels = [];
-    for (var i = 0; i < points.length; i++) labels.push("<b>" + (i + 1) + "</b>");
-    Plotly.addTraces(gd, [{
-      x: xs, y: ys,
-      mode: "markers+text",
-      text: labels,
-      textposition: "top center",
-      textfont: { size: 19, color: "#243b53", family: "Barlow, sans-serif" },
-      marker: { size: 10, color: "#243b53", symbol: "diamond",
-                line: { width: 1, color: "#fff" } },
-      hoverinfo: "skip",
-      showlegend: false
-    }]);
+    finishTrajectoryOverlayDraw(Plotly.addTraces(gd, [
+      drawTrajLineTrace([sx, ex], [sy, ey], 2.5)
+    ]));
   }
 
   function drawEditableTrajectory(points) {
@@ -1798,25 +2166,22 @@
     removeOverlayTraces();
     var xs = points.map(function(p) { return p[0]; });
     var ys = points.map(function(p) { return p[1]; });
-    var labels = [];
-    for (var i = 0; i < points.length; i++) labels.push("<b>" + (i + 1) + "</b>");
-    Plotly.addTraces(gd, [{
-      x: xs,
-      y: ys,
-      mode: "lines+markers+text",
-      line: { color: "#c4703a", width: 2.2, dash: "dot" },
-      text: labels,
-      textposition: "top center",
-      textfont: { size: 17, color: "#243b53", family: "Barlow, sans-serif" },
-      marker: { size: 10, color: "#243b53", symbol: "diamond", line: { width: 1, color: "#fff" } },
-      hoverinfo: "skip",
-      showlegend: false
-    }]);
+    finishTrajectoryOverlayDraw(Plotly.addTraces(gd, [drawTrajLineTrace(xs, ys, 2.2)]));
   }
 
   function applyTrajectoryCoordsPayload(j) {
     if (!j || !j.ok) return;
     removeTrajectorySampleMarkersOnly();
+    if (j.traj_rows && j.traj_rows.length) {
+      trajPlotRows = j.traj_rows.map(function(r) { return Number(r); });
+    } else if (trajectoryMode !== "nearest") {
+      trajPlotRows = null;
+    }
+    if (j.traj_marker_colors && j.traj_marker_colors.length) {
+      trajMarkerColors = j.traj_marker_colors.map(function(c) { return String(c); });
+    } else if (trajectoryMode !== "nearest" || !sc.value || sc.value === "none") {
+      trajMarkerColors = null;
+    }
     if (hasAnchorIndices() && j.traj_xy) {
       anchorTrajXY = j.traj_xy;
       editableTrajXY = null;
@@ -1859,7 +2224,7 @@
       fetch("{{ url_for('api_trajectory_coords') }}", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(Object.assign({
           anchor_indices: anchorIndicesActive,
           mode: currentAnchorTraversalMode(),
           n_points: currentNPoints(),
@@ -1867,7 +2232,7 @@
           avg_neighbors: currentAvgNeighbors(),
           x: sx.value,
           y: sy.value
-        })
+        }, trajColorPayloadFields()))
       })
         .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
         .then(function(res) {
@@ -1890,14 +2255,14 @@
     if (!startXY || !endXY) return;
     var myId = ++coordsRequestId;
     setTrajStatus("Computing latent z…", false);
-    var payload = {
+    var payload = Object.assign({
       mode: trajectoryMode,
       start: startXY,
       end: endXY,
       x: sx.value,
       y: sy.value,
       n_points: currentNPoints()
-    };
+    }, trajColorPayloadFields());
     if (editableTrajXY && editableTrajXY.length >= 2) {
       payload.traj_xy = editableTrajXY;
     }
@@ -1973,7 +2338,7 @@
     redrawTrajectoryOverlay();
 
     var payload = useAnchors
-      ? {
+      ? Object.assign({
           anchor_indices: anchorIndicesActive,
           mode: currentAnchorTraversalMode(),
           n_points: currentNPoints(),
@@ -1981,15 +2346,15 @@
           avg_neighbors: currentAvgNeighbors(),
           x: sx.value,
           y: sy.value
-        }
-      : {
+        }, trajColorPayloadFields())
+      : Object.assign({
           mode: trajectoryMode,
           start: startXY,
           end: endXY,
           x: sx.value,
           y: sy.value,
           n_points: currentNPoints()
-        };
+        }, trajColorPayloadFields());
     if (!useAnchors && editableTrajXY && editableTrajXY.length >= 2) {
       payload.traj_xy = editableTrajXY;
     }
@@ -2017,9 +2382,7 @@
         applyVolumeCellAnnotations(volumeEntries, res.j);
         applyTrajectoryCoordsPayload(res.j);
         setGeneratedVolumesState(String(res.j.volume_cache_id || ""), imgs.length);
-        if (useAnchors && res.j.traj_xy) {
-          redrawTrajectoryOverlay();
-        }
+        redrawTrajectoryOverlay();
         setTrajStatus(imgs.length + " volumes generated.", false);
         if (plotStatus) {
           if (useAnchors) {
@@ -2159,6 +2522,8 @@
           trajScatterRenderingEverCompleted = true;
           setRendering(false);
           wireUpPlotDrag();
+          wireTrajectoryGlyphOverlayHook();
+          syncTrajGlyphOverlay();
           syncScatterControlsAlignment();
           var canReuseTrajectory = false;
           if (preserveTrajectoryState) {
@@ -2172,7 +2537,11 @@
             }
           }
           if (canReuseTrajectory) {
-            redrawTrajectoryOverlay();
+            if (trajectoryMode === "nearest" && sc.value && sc.value !== "none") {
+              fetchTrajectoryCoords();
+            } else {
+              redrawTrajectoryOverlay();
+            }
             requestAnimationFrame(function() {
               try { Plotly.Plots.resize(gd); } catch (e) {}
             });
@@ -2251,19 +2620,7 @@
         if (!ptd || !editableTrajXY || !editableTrajXY.length) return;
         if (lastTrajectoryVolumeCacheId) setGeneratedVolumesState("", 0);
         var lastIdx = editableTrajXY.length - 1;
-        if (trajectoryMode === "direct" && (dragPointIndex === 0 || dragPointIndex === lastIdx)) {
-          var fixedFirst = editableTrajXY[0];
-          var fixedLast = editableTrajXY[lastIdx];
-          if (dragPointIndex === 0) {
-            editableTrajXY = makeLinearEditablePath([ptd[0], ptd[1]], fixedLast, editableTrajXY.length) ||
-              editableTrajXY;
-          } else {
-            editableTrajXY = makeLinearEditablePath(fixedFirst, [ptd[0], ptd[1]], editableTrajXY.length) ||
-              editableTrajXY;
-          }
-        } else {
-          editableTrajXY[dragPointIndex] = [ptd[0], ptd[1]];
-        }
+        editableTrajXY[dragPointIndex] = [ptd[0], ptd[1]];
         startXY = editableTrajXY[0].slice();
         endXY = editableTrajXY[lastIdx].slice();
         scheduleEditableTrajectoryRestyle();
@@ -2275,10 +2632,20 @@
       if (lastTrajectoryVolumeCacheId) setGeneratedVolumesState("", 0);
       if (dragEndpoint === "start") {
         startXY = [pt[0], pt[1]];
+        if (editableTrajXY && editableTrajXY.length) {
+          editableTrajXY[0] = startXY.slice();
+        }
       } else {
         endXY = [pt[0], pt[1]];
+        if (editableTrajXY && editableTrajXY.length) {
+          editableTrajXY[editableTrajXY.length - 1] = endXY.slice();
+        }
       }
-      scheduleTrajectoryRestyle();
+      if (editableTrajXY && editableTrajXY.length >= 2) {
+        scheduleEditableTrajectoryRestyle();
+      } else {
+        scheduleTrajectoryRestyle();
+      }
     });
     window.addEventListener("mouseup", function() {
       if (dragPointIndex >= 0) {
@@ -2292,7 +2659,11 @@
       var hadDrag = dragEndpoint;
       dragEndpoint = null;
       cancelDragRestyleRaf();
-      restyleTrajectoryLineOnly();
+      if (editableTrajXY && editableTrajXY.length >= 2) {
+        restyleEditableTrajectoryFromState();
+      } else {
+        restyleTrajectoryLineOnly();
+      }
       if (!anchorIndicesActive && (hadDrag === "start" || hadDrag === "end") && startXY && endXY) {
         scheduleCoordsAfterDrag();
       }

@@ -202,6 +202,8 @@
   /** Match ``scatter_json`` marker opacity for the main explorer scatter trace. */
   var EXPLORER_SCATTER_MARKER_OPACITY = 0.35;
   var GRID_HIGHLIGHT_MARKER_OPACITY = 0.53;
+  /** Grid letters on the scatter plot (HTML overlay + Plotly trace) are always white. */
+  var GRID_HIGHLIGHT_TEXT_COLOR = "#ffffff";
   var gridLetterGlyphsOverlayEl = document.getElementById("scatter-grid-letter-glyphs-overlay");
   var gridLetterGlyphHookWired = false;
 
@@ -248,14 +250,6 @@
     ];
   }
 
-  function gridLetterTextColorAt(trace, idx) {
-    if (!trace || !trace.textfont) return "#ffffff";
-    var tc = trace.textfont.color;
-    if (Array.isArray(tc)) return tc[idx] != null ? String(tc[idx]) : "#ffffff";
-    if (typeof tc === "string" && tc) return tc;
-    return "#ffffff";
-  }
-
   function clearGridLetterGlyphOverlay() {
     if (gridLetterGlyphsOverlayEl) gridLetterGlyphsOverlayEl.innerHTML = "";
   }
@@ -297,7 +291,7 @@
       glyph.style.top = pt[1].toFixed(2) + "px";
       glyph.style.fontSize = fontSize + "px";
       glyph.style.fontFamily = fontFamily;
-      glyph.style.color = gridLetterTextColorAt(tr, gi);
+      glyph.style.color = GRID_HIGHLIGHT_TEXT_COLOR;
       glyph.textContent = lab;
       gridLetterGlyphsOverlayEl.appendChild(glyph);
     }
@@ -381,24 +375,22 @@
         if (multiGeom && rIdxgeom >= 0) {
           var stRg = selectionRegionMontageStyles(rIdxgeom);
           fillColors.push(inSel ? stRg.bg : GRID_HIGHLIGHT_CLEAR_FILL);
-          textFontColors.push(
-            inSel ? (stRg.covarColor || "#334155") : (stRg.covarColor || "#94a3b8")
-          );
+          textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
         } else if (multiGeom && rIdxgeom < 0) {
           fillColors.push(GRID_HIGHLIGHT_CLEAR_FILL);
-          textFontColors.push(inSel ? "#94a3b8" : "#cbd5e1");
+          textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
         } else {
           fillColors.push(inSel ? ACCENT : GRID_HIGHLIGHT_CLEAR_FILL);
-          textFontColors.push(inSel ? "#fff" : "#cbd5e1");
+          textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
         }
       } else if (colorMode === "discrete") {
         fillColors.push(inSel ? String(markerColors[tiH]) : GRID_HIGHLIGHT_CLEAR_FILL);
-        textFontColors.push(inSel ? "#fff" : "#94a3b8");
+        textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
       } else {
         fillColors.push(
           inSel ? montageCovariateBorderCss(tiH, colorMode, markerColors, cmin, cmax) : GRID_HIGHLIGHT_CLEAR_FILL
         );
-        textFontColors.push(inSel ? "#fff" : "#94a3b8");
+        textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
       }
     }
     restyleData["marker.color"] = [fillColors];
@@ -2121,7 +2113,7 @@
       textposition: "middle center",
       textfont: {
         size: gridHighlightTextSizePx(gridSize),
-        color: "#fff",
+        color: GRID_HIGHLIGHT_TEXT_COLOR,
         family: "Georgia, 'Times New Roman', serif"
       },
       selectedpoints: null,
@@ -3364,7 +3356,7 @@
     covariateDisplayMap: covariateDisplayMap,
     regionHeadingEl: document.getElementById("color-legend-region-heading"),
     regionHeadingContinuousText: "Range selection",
-    regionHeadingDiscreteText: "Toggle selection",
+    discreteCollapseHeading: false,
     getColorColumn: function() { return sc.value; },
     getPaletteName: selectedScatterPalette,
     panel: colorHistPanel,
@@ -3375,7 +3367,6 @@
     thresholdModeCaption: colorHistModeCheckCaption,
     thresholdStatus: colorThresholdStatus,
     discreteSwitches: colorDiscreteSwitches,
-    invertHeadingRowEl: document.getElementById("color-discrete-heading-row"),
     invertHeadingSlotEl: document.getElementById("color-legend-region-invert-slot"),
     invertBtn: btnDiscreteInvertSelection,
     vertical: false,
@@ -3459,13 +3450,15 @@
     colorSelectionPanelToggle,
     colorSelectionPanelBody,
     colorSelectionPanelActivated,
-    false,
+    colorSelectionPanelActivated(),
     function(open) {
       if (open) syncParticleExplorerRowExpandForColorHist();
     }
   );
   if (volumesPanelToggle && volumesPanelBody) {
-    wireExplorerPanelToggle(volumesPanelToggle, volumesPanelBody, volumesPanelActivated, false);
+    wireExplorerPanelToggle(volumesPanelToggle, volumesPanelBody, volumesPanelActivated, false, function(open) {
+      if (open) ensureLoadImagesPanelOpen();
+    });
   }
   if (imageGridMenuToggle) {
     imageGridMenuToggle.addEventListener("click", function() {

@@ -571,7 +571,8 @@
   .cryo-explorer-plot-annotation-label input[type="checkbox"] {
     margin: 0;
   }
-  .cryo-image-grid-menu-toggle {
+  .cryo-image-grid-menu-toggle,
+  .cryo-explorer-panel-toggle {
     display: inline-flex;
     align-items: center;
     gap: 0.38rem;
@@ -584,6 +585,60 @@
     line-height: 1.15;
     padding: 0.22rem 0.45rem;
     cursor: pointer;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+  }
+  .cryo-explorer-panel-section {
+    margin-bottom: 0.45rem;
+  }
+  .cryo-explorer-panel-section:last-child {
+    margin-bottom: 0;
+  }
+  .cryo-explorer-montage-actions .cryo-explorer-panel-section:not(:last-child) {
+    margin-bottom: 0.1rem;
+  }
+  .cryo-explorer-panel-shell {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-explorer-panel-shell--inactive {
+    opacity: 0.48;
+  }
+  .cryo-explorer-panel-header {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-explorer-panel-inactive-note {
+    margin: 0.08rem 0 0;
+  }
+  .cryo-explorer-panel-toolbar {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-explorer-panel-body[hidden] {
+    display: none !important;
+  }
+  .cryo-explorer-panel-inactive-note[hidden] {
+    display: none !important;
+  }
+  .cryo-explorer-montage-group--panel-body {
+    border: 0;
+    margin: 0.35rem 0 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .cryo-explorer-montage-group__legend--visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   .cryo-image-grid-menu-toggle__chev {
     display: inline-block;
@@ -594,30 +649,24 @@
   .cryo-image-grid-menu-toggle[aria-expanded="true"] .cryo-image-grid-menu-toggle__chev {
     transform: rotate(90deg);
   }
+  .cryo-explorer-panel-shell--inactive .cryo-image-grid-menu-toggle[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
   .cryo-image-grid-menu-body[hidden] {
     display: none !important;
   }
   .cryo-image-grid-toolbar__controls[hidden] {
     display: none !important;
   }
-  .cryo-image-grid-toolbar {
-    display: flex;
-    align-items: center;
-    align-content: center;
-    gap: 0.6rem;
-    flex-wrap: nowrap;
-    margin-top: 0.2rem;
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-  }
   .cryo-image-grid-toolbar__controls {
-    flex: 1 1 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+    width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+    margin-top: 0.35rem;
   }
   .cryo-image-grid-size-inline {
     display: inline-flex;
@@ -636,24 +685,28 @@
     box-sizing: border-box;
     line-height: 1.2;
   }
+  .cryo-dash-page--particle-explorer #image-grid-panel-shell {
+    container-type: inline-size;
+    container-name: cryo-image-grid-menu;
+  }
   /* Primary ``.btn`` (same accent as ``#btn-view-images``); compact to sit beside grid size. */
   .cryo-image-grid-toolbar .cryo-image-grid-resample-btn.btn {
-    flex: 0 0 auto;
-    width: max-content;
-    max-width: min(22rem, 94vw);
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: 23cqw; /* 23% of #image-grid-panel-shell (nearest container) */
     height: 1.65rem;
     min-height: 1.65rem;
+    max-height: 1.65rem;
     box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    padding: 0.08rem 0.42rem;
+    padding: 0.048rem 0.21rem;
     border: none;
     border-radius: 3px;
-    font-size: 0.72rem;
-    line-height: 1.06;
-    white-space: normal;
+    line-height: 1;
     text-align: center;
     cursor: pointer;
   }
@@ -664,14 +717,30 @@
     box-shadow: none;
   }
   .cryo-image-grid-resample-btn__label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .cryo-image-grid-resample-btn__line {
     display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
     text-align: center;
     line-height: 1.06;
     font-weight: 600;
-    white-space: normal;
-    margin: 0;
-    padding: 0;
-    pointer-events: none;
   }
   #save-status {
     display: block;
@@ -941,6 +1010,32 @@
     z-index: 5;
     pointer-events: none;
     overflow: visible;
+  }
+  /* Grid montage letters (A, B, …): HTML glyphs so labels get a black stroke (Plotly text cannot). */
+  .cryo-explorer-grid-letter-glyphs-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .cryo-explorer-grid-letter-glyph {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    color: #ffffff;
+    font-weight: 500;
+    font-family: Georgia, "Times New Roman", serif;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    paint-order: stroke fill;
+    -webkit-text-stroke: 0.9px #000000;
+    text-shadow:
+      0 0 1px #000000,
+      -1px 0 0 #000000,
+      1px 0 0 #000000,
+      0 -1px 0 #000000,
+      0 1px 0 #000000;
   }
   .cryo-explorer-scatter-region-chip {
     pointer-events: auto;
@@ -1320,79 +1415,47 @@
     color: #3f0808;
   }
   /*
-   * Right column: controls scroll in the upper band; image grid is pinned to the shared row
-   * bottom (same vertical extent as the plot + left menu columns).
+   * Right column: keep a real column width (base image-viewer sizing); scroll the whole aside when
+   * content is tall. Image grid cells size from width only, not viewport height.
    */
   .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-montage {
-    display: flex;
-    flex-direction: column;
-    align-self: stretch;
-    height: 100%;
-    min-height: 0;
-    max-height: 100%;
-    overflow: hidden;
-  }
-  /* Image grid expanded: 23% scrollable controls, 77% image grid (of montage content height). */
-  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer
-    .cryo-dash-montage.cryo-dash-montage--image-grid-expanded {
-    display: grid;
-    grid-template-rows: minmax(0, 23fr) minmax(0, 77fr);
-  }
-  .cryo-dash-page--particle-explorer .cryo-dash-montage-scroll {
-    flex: 0 1 auto;
-    min-height: 0;
+    container-type: inline-size;
+    container-name: cryo-explorer-montage;
+    flex: 0 0 auto;
+    width: min(28rem, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 0.5rem));
+    min-width: min(12.75rem, 100%);
+    max-width: min(28rem, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 0.5rem));
+    align-self: flex-start;
+    height: auto;
+    max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
-  .cryo-dash-page--particle-explorer
-    .cryo-dash-montage.cryo-dash-montage--image-grid-expanded
-    .cryo-dash-montage-scroll {
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-scroll {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: visible;
   }
   .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region {
-    flex: 0 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    margin-top: 0.45rem;
-    padding-top: 0.45rem;
-    border-top: 1px solid rgba(36, 59, 83, 0.12);
+    display: block;
     box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    margin: 0.35rem 0 0;
+    overflow: visible;
   }
-  .cryo-dash-page--particle-explorer
-    .cryo-dash-montage.cryo-dash-montage--image-grid-expanded
-    .cryo-dash-montage-grid-region {
-    flex: unset;
-    min-height: 0;
-    margin-top: 0;
-    overflow: hidden;
-  }
-  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-dash-montage-inner {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-image-grid-menu-body:not([hidden]) {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-explorer-panel-section {
+    margin-bottom: 0;
   }
   .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-grid-wrap {
-    flex: 1 1 auto;
-    min-height: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    overflow: hidden;
+    overflow: visible;
     box-sizing: border-box;
   }
   .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region #montage-grid {
@@ -1405,12 +1468,30 @@
     container-type: inline-size;
     container-name: cryo-montage-cell;
   }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-cell.cryo-montage-cell--light {
+    gap: 1px;
+  }
   .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-meta {
     height: 19cqw;
     min-height: 19cqw;
     max-height: 19cqw;
+    flex-shrink: 0;
     box-sizing: border-box;
     overflow: hidden;
+    align-items: center;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-meta-right {
+    max-height: 100%;
+    overflow: hidden;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-label {
+    height: 78.85%;
+    max-height: 78.85%;
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    overflow: hidden;
+    flex-shrink: 0;
   }
   .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-img-wrap {
     flex: 0 0 auto;
@@ -1418,12 +1499,10 @@
     aspect-ratio: 1;
     height: auto;
   }
-  .cryo-dash-page--particle-explorer .cryo-dash-montage-scroll > .cryo-color-hist-panel {
-    width: 95%;
-    max-width: 95%;
-    margin-left: auto;
-    margin-right: auto;
-    margin-bottom: 0.65rem;
+  .cryo-dash-page--particle-explorer .cryo-explorer-panel-body .cryo-color-hist-panel {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
     flex-shrink: 0;
     box-sizing: border-box;
   }
@@ -1439,10 +1518,17 @@
     box-sizing: border-box;
   }
   .cryo-dash-page--particle-explorer
-    .cryo-dash-montage:not(:has(.cryo-dash-montage-scroll > .cryo-color-hist-panel:not([hidden])))
+    .cryo-dash-montage:not(:has(.cryo-color-hist-panel:not([hidden])))
     .cryo-dash-montage-scroll
     > #montage-actions.cryo-explorer-montage-actions {
     margin-top: 0.45rem;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-volumes-region {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    margin: 0.35rem 0 0;
   }
   .cryo-color-hist-panel[hidden] {
     display: none !important;
@@ -1616,12 +1702,12 @@
   .cryo-color-discrete-actions {
     display: none !important;
   }
-  /* Selection row: Add | cached status | Clear (single band — no status line below). */
+  /* Selection row: Add | centered cached status | narrow Clear (two-line label). */
   .cryo-explorer-cache-selection-row {
     display: grid;
-    grid-template-columns: minmax(0, 5.8fr) minmax(0, 3.2fr) minmax(0, 2.4fr);
+    grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.35rem 0.5rem;
     width: 100%;
     box-sizing: border-box;
     min-width: 0;
@@ -1629,11 +1715,14 @@
   }
   .cryo-explorer-cache-selection-row .cryo-explorer-preload-status {
     margin: 0;
-    padding: 0 0.15rem;
+    padding: 0 0.2rem;
     font-size: 0.7rem;
     line-height: 1.25;
     text-align: center;
+    justify-self: center;
     align-self: center;
+    width: 100%;
+    min-width: 0;
     min-height: 2.5em;
     display: flex;
     align-items: center;
@@ -1642,12 +1731,30 @@
     hyphens: auto;
   }
   .cryo-explorer-cache-selection-row .btn {
-    width: 100%;
     box-sizing: border-box;
     margin: 0;
     line-height: 1.2;
     padding: 0.4rem 0.55rem;
     font-size: 0.72rem;
+  }
+  .cryo-explorer-cache-selection-row #btn-cache-selection-uncached.cryo-explorer-cache-selection-add-btn {
+    width: max-content;
+    max-width: 100%;
+    justify-self: start;
+  }
+  .cryo-explorer-cache-selection-row .cryo-explorer-cache-clear-btn.btn {
+    width: max-content;
+    max-width: 100%;
+    justify-self: end;
+    padding: 0.32rem 0.38rem;
+    font-size: 0.648rem;
+    line-height: 1.06;
+    white-space: normal;
+    text-align: center;
+  }
+  .cryo-explorer-cache-clear-btn__label {
+    display: block;
+    line-height: 1.06;
   }
   /* Add = accent `.btn`; Clear = softer outline vs navy secondary used elsewhere */
   .cryo-explorer-cache-selection-row .cryo-explorer-cache-clear-btn:not(:disabled) {
@@ -1669,7 +1776,8 @@
   .cryo-explorer-cache-selection-row #btn-cache-selection-uncached.cryo-explorer-cache-selection-btn--busy:disabled {
     display: inline-flex;
     align-items: center;
-    width: 100%;
+    width: max-content;
+    max-width: 100%;
     opacity: 1;
     filter: none;
     cursor: progress;

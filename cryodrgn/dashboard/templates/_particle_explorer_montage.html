@@ -1,4 +1,4 @@
-{# Particle explorer montage region: scrollable controls + fixed-height image grid. #}
+{# Particle explorer montage region: scrollable panels; image grid nested in load-images panel. #}
 <aside class="cryo-dash-montage" aria-label="Particle preview">
 <div class="cryo-dash-montage-scroll">
 <div id="montage-actions" class="cryo-explorer-montage-actions">
@@ -50,13 +50,6 @@
         </div>
       </div>
       <div id="color-discrete-wrap" class="cryo-cc-discrete-wrap">
-        <div id="color-discrete-heading-row" class="cryo-cc-discrete-toggle-heading-row" hidden>
-          <button type="button" class="cryo-cc-discrete-toggle-title" data-cryo-discrete-collapse-toggle
-            aria-expanded="true" aria-controls="color-discrete-switches" title="Hide toggle selection">
-            <span class="cryo-cc-discrete-collapse-chevron" aria-hidden="true">▼</span>
-            <span class="cryo-cc-discrete-toggle-heading-text">Toggle selection</span>
-          </button>
-        </div>
         <div id="color-discrete-switches" class="cryo-cc-discrete-switches cryo-color-discrete-switches" role="group"
           aria-label="Discrete color filter"></div>
         <div class="cryo-color-discrete-actions">
@@ -149,115 +142,117 @@
           </div>
         </div>
       </fieldset>
+        <div class="cryo-dash-montage-grid-region" aria-label="Image grid">
+          <section class="cryo-explorer-panel-section" aria-labelledby="image-grid-menu-toggle">
+            <div id="image-grid-panel-shell" class="cryo-explorer-panel-shell cryo-explorer-panel-shell--inactive">
+              <div class="cryo-explorer-panel-header">
+                <div class="cryo-explorer-panel-toolbar">
+                  <button type="button" id="image-grid-menu-toggle"
+                    class="cryo-image-grid-menu-toggle cryo-explorer-panel-toggle" aria-expanded="false"
+                    aria-controls="image-grid-menu-body">
+                    <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
+                    <span class="cryo-explorer-panel-toggle__label">Image grid</span>
+                  </button>
+                </div>
+                <div id="image-grid-toolbar-controls" class="cryo-image-grid-toolbar__controls" hidden>
+                  <label id="image-grid-size-inline" class="cryo-image-grid-size-inline">
+                    Grid size
+                    <select id="grid-size" disabled>
+                      <option value="1">1 × 1</option>
+                      <option value="2">2 × 2</option>
+                      <option value="3" selected>3 × 3</option>
+                      <option value="4">4 × 4</option>
+                      <option value="5">5 × 5</option>
+                      <option value="6">6 × 6</option>
+                      <option value="7">7 × 7</option>
+                      <option value="8">8 × 8</option>
+                    </select>
+                  </label>
+                  <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
+                    aria-label="Resample images from cache" disabled>
+                    <span class="cryo-image-grid-resample-btn__label">
+                      <span class="cryo-image-grid-resample-btn__line">Resample images</span>
+                      <span class="cryo-image-grid-resample-btn__line">from cache</span>
+                    </span>
+                  </button>
+                </div>
+                <p id="image-grid-inactive-note"
+                  class="cryo-explorer-panel-inactive-note cryo-dash-legend-note">Build image cache to populate grid</p>
+              </div>
+              <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
+                <div class="cryo-montage-grid-wrap">
+                  <div id="montage-grid" class="cryo-montage-grid"></div>
+                  <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
+                    <div class="cryo-plot-rendering-overlay__inner">
+                      <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image
+                        cache...</span>
+                      <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
+                        <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+{% if show_volume_explorer %}
+        <div class="cryo-dash-montage-volumes-region" aria-label="Reconstructed volumes">
+          <section class="cryo-explorer-panel-section" aria-labelledby="volumes-panel-toggle">
+            <div id="volumes-panel-shell" class="cryo-explorer-panel-shell cryo-explorer-panel-shell--inactive">
+              <div class="cryo-explorer-panel-header">
+                <div class="cryo-explorer-panel-toolbar">
+                  <button type="button" id="volumes-panel-toggle"
+                    class="cryo-image-grid-menu-toggle cryo-explorer-panel-toggle"
+                    aria-expanded="false" aria-controls="volumes-panel-body">
+                    <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
+                    <span class="cryo-explorer-panel-toggle__label">Display reconstructed volumes</span>
+                  </button>
+                </div>
+                <p id="volumes-inactive-note"
+                  class="cryo-explorer-panel-inactive-note cryo-dash-legend-note">Build image cache and choose images first</p>
+              </div>
+              <div id="volumes-panel-body" class="cryo-explorer-panel-body" hidden>
+                <fieldset class="cryo-explorer-montage-group cryo-explorer-montage-group--panel-body">
+                  <legend class="cryo-explorer-montage-group__legend--visually-hidden">Display reconstructed volumes</legend>
+                  <div class="cryo-explorer-action-row">
+                    <div class="cryo-explorer-action-row__btn">
+                      <button type="button" class="btn btn-secondary" id="btn-volume-generate" disabled>Generate volumes</button>
+                    </div>
+                    <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+                      Use decoder to produce and display volumes for particles currently shown in grid.
+                    </p>
+                  </div>
+                  <div class="cryo-explorer-action-row">
+                    <div class="cryo-explorer-action-row__btn">
+                      <button type="button" class="btn btn-secondary" id="btn-volume-animate" disabled>Animate volumes</button>
+                    </div>
+                    <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+                      Rotate currently displayed volumes.
+                    </p>
+                  </div>
+                  <div class="cryo-volume-status-row" aria-live="polite">
+                    <span id="volume-status" class="status" style="margin:0;"></span>
+                    <div
+                      id="volume-status-progress"
+                      class="cryo-plot-rendering-overlay__track"
+                      role="progressbar"
+                      aria-valuetext="Generating volumes"
+                      hidden
+                    >
+                      <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+                    </div>
+                  </div>
+                </fieldset>
+              </div>
+            </div>
+          </section>
+        </div>
+{% endif %}
         </div>
         </div>
       </section>
     </div>
 </div>
-
-<div class="cryo-dash-montage-grid-region" aria-label="Image grid">
-  <section class="cryo-explorer-panel-section" aria-labelledby="image-grid-menu-toggle">
-    <div id="image-grid-panel-shell" class="cryo-explorer-panel-shell cryo-explorer-panel-shell--inactive">
-      <div class="cryo-explorer-panel-header">
-        <div class="cryo-explorer-panel-toolbar">
-          <button type="button" id="image-grid-menu-toggle"
-            class="cryo-image-grid-menu-toggle cryo-explorer-panel-toggle" aria-expanded="false"
-            aria-controls="image-grid-menu-body">
-            <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
-            <span class="cryo-explorer-panel-toggle__label">Image grid</span>
-          </button>
-        </div>
-        <div id="image-grid-toolbar-controls" class="cryo-image-grid-toolbar__controls" hidden>
-          <label id="image-grid-size-inline" class="cryo-image-grid-size-inline">
-            Grid size
-            <select id="grid-size" disabled>
-              <option value="1">1 × 1</option>
-              <option value="2">2 × 2</option>
-              <option value="3" selected>3 × 3</option>
-              <option value="4">4 × 4</option>
-              <option value="5">5 × 5</option>
-              <option value="6">6 × 6</option>
-              <option value="7">7 × 7</option>
-              <option value="8">8 × 8</option>
-            </select>
-          </label>
-          <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
-            aria-label="Resample images from cache" disabled>
-            <span class="cryo-image-grid-resample-btn__label">Resample images<br>from cache</span>
-          </button>
-        </div>
-        <p id="image-grid-inactive-note"
-          class="cryo-explorer-panel-inactive-note cryo-dash-legend-note">Build image cache to populate grid</p>
-      </div>
-      <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
-        <div class="cryo-montage-grid-wrap">
-          <div id="montage-grid" class="cryo-montage-grid"></div>
-          <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
-            <div class="cryo-plot-rendering-overlay__inner">
-              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image
-                cache...</span>
-              <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
-                <div class="cryo-plot-rendering-overlay__indeterminate"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-</div>
-
-{% if show_volume_explorer %}
-<div class="cryo-dash-montage-volumes-region" aria-label="Reconstructed volumes">
-  <section class="cryo-explorer-panel-section" aria-labelledby="volumes-panel-toggle">
-    <div id="volumes-panel-shell" class="cryo-explorer-panel-shell cryo-explorer-panel-shell--inactive">
-    <div class="cryo-explorer-panel-header">
-    <div class="cryo-explorer-panel-toolbar">
-      <button type="button" id="volumes-panel-toggle" class="cryo-image-grid-menu-toggle cryo-explorer-panel-toggle"
-        aria-expanded="false" aria-controls="volumes-panel-body">
-        <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
-        <span class="cryo-explorer-panel-toggle__label">Display reconstructed volumes</span>
-      </button>
-    </div>
-    <p id="volumes-inactive-note"
-      class="cryo-explorer-panel-inactive-note cryo-dash-legend-note">Build image cache and choose images first</p>
-    </div>
-    <div id="volumes-panel-body" class="cryo-explorer-panel-body" hidden>
-      <fieldset class="cryo-explorer-montage-group cryo-explorer-montage-group--panel-body">
-        <legend class="cryo-explorer-montage-group__legend--visually-hidden">Display reconstructed volumes</legend>
-      <div class="cryo-explorer-action-row">
-        <div class="cryo-explorer-action-row__btn">
-          <button type="button" class="btn btn-secondary" id="btn-volume-generate" disabled>Generate volumes</button>
-        </div>
-        <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
-          Use decoder to produce and display volumes for particles currently shown in grid.
-        </p>
-      </div>
-      <div class="cryo-explorer-action-row">
-        <div class="cryo-explorer-action-row__btn">
-          <button type="button" class="btn btn-secondary" id="btn-volume-animate" disabled>Animate volumes</button>
-        </div>
-        <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
-          Rotate currently displayed volumes.
-        </p>
-      </div>
-      <div class="cryo-volume-status-row" aria-live="polite">
-        <span id="volume-status" class="status" style="margin:0;"></span>
-        <div
-          id="volume-status-progress"
-          class="cryo-plot-rendering-overlay__track"
-          role="progressbar"
-          aria-valuetext="Generating volumes"
-          hidden
-        >
-          <div class="cryo-plot-rendering-overlay__indeterminate"></div>
-        </div>
-      </div>
-      </fieldset>
-    </div>
-    </div>
-  </section>
-</div>
-{% endif %}
 
 </aside>

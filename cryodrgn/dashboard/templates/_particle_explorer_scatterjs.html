@@ -88,6 +88,7 @@
   var lastMontageRows = [];
   var volumeCacheId = null;
   var volumeAnimateGeneration = 0;
+  var colorSelectionPanelWasActivated = false;
 
   function explorerPanelIsOpen(toggleEl) {
     return !!(toggleEl && toggleEl.getAttribute("aria-expanded") === "true");
@@ -131,7 +132,18 @@
     syncExplorerPanelInactiveNote(colorSelectionInactiveNote, colorAct);
     if (!colorAct && explorerPanelIsOpen(colorSelectionPanelToggle)) {
       setExplorerPanelOpen(colorSelectionPanelToggle, colorSelectionPanelBody, false);
+    } else if (
+      colorAct
+      && !colorSelectionPanelWasActivated
+      && colorSelectionPanelToggle
+      && colorSelectionPanelBody
+    ) {
+      setExplorerPanelOpen(colorSelectionPanelToggle, colorSelectionPanelBody, true);
+      if (typeof syncParticleExplorerRowExpandForColorHist === "function") {
+        syncParticleExplorerRowExpandForColorHist();
+      }
     }
+    colorSelectionPanelWasActivated = colorAct;
 
     var gridAct = imageGridPanelActivated();
     syncExplorerPanelToggleInactive(imageGridMenuToggle, imageGridPanelShell, gridAct);
@@ -155,6 +167,12 @@
     var isOpen = !!open;
     toggleEl.setAttribute("aria-expanded", isOpen ? "true" : "false");
     bodyEl.hidden = !isOpen;
+  }
+
+  function ensureLoadImagesPanelOpen() {
+    if (cachePanelToggle && cachePanelBody && !explorerPanelIsOpen(cachePanelToggle)) {
+      setExplorerPanelOpen(cachePanelToggle, cachePanelBody, true);
+    }
   }
 
   function wireExplorerPanelToggle(toggleEl, bodyEl, isReadyFn, defaultOpen, onChange) {
@@ -182,6 +200,7 @@
 
   function setImageGridMenuOpen(open) {
     var isOpen = !!open;
+    if (isOpen) ensureLoadImagesPanelOpen();
     if (imageGridMenuToggle) imageGridMenuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
     if (imageGridToolbarControls) imageGridToolbarControls.hidden = !isOpen;
     if (imageGridMenuBody) imageGridMenuBody.hidden = !isOpen;
@@ -194,8 +213,11 @@
     syncHighlightTraceAnnotations();
     if (isOpen) {
       requestAnimationFrame(function() {
-        requestAnimationFrame(syncMontageResampleFromCacheButton);
-        scheduleSyncMontageGridRegionLayout();
+        requestAnimationFrame(function() {
+          syncMontageResampleFromCacheButton();
+          scheduleFitMontageResampleCacheButton();
+          scheduleSyncMontageGridRegionLayout();
+        });
       });
     } else {
       scheduleSyncMontageGridRegionLayout();
@@ -211,30 +233,148 @@
     return preloaded.traceMap;
   }
 
+  function imageGridMenuWidthForResampleCap() {
+    if (imageGridPanelShell && imageGridPanelShell.clientWidth >= 8) {
+      return imageGridPanelShell.clientWidth;
+    }
+    if (imageGridToolbarControls && imageGridToolbarControls.clientWidth >= 8) {
+      return imageGridToolbarControls.clientWidth;
+    }
+    return 0;
+  }
+
+  var RESAMPLE_CACHE_BTN_LINE_HEIGHT = 1.06;
+  var RESAMPLE_CACHE_BTN_MAX_LINES = 2;
+  var resampleCacheMeasureCanvas = null;
+
+  function resampleCacheLabelLineEls(labelEl) {
+    if (!labelEl) return [];
+    var lines = labelEl.querySelectorAll(".cryo-image-grid-resample-btn__line");
+    if (lines.length) return Array.prototype.slice.call(lines);
+    return [labelEl];
+  }
+
+  function resampleCacheBtnFontSpec(btnEl) {
+    var btnStyle = window.getComputedStyle(btnEl);
+    var fontSize = parseFloat(btnStyle.fontSize) || 12;
+    var fontWeight = btnStyle.fontWeight || "600";
+    var fontFamily = btnStyle.fontFamily || "sans-serif";
+    return { fontSize: fontSize, fontWeight: fontWeight, fontFamily: fontFamily };
+  }
+
+  function measureResampleCacheTextWidth(text, fontPx, fontWeight, fontFamily) {
+    if (!text) return 0;
+    if (!resampleCacheMeasureCanvas) {
+      resampleCacheMeasureCanvas = document.createElement("canvas");
+    }
+    var ctx = resampleCacheMeasureCanvas.getContext("2d");
+    if (!ctx) return text.length * fontPx * 0.55;
+    ctx.font = fontWeight + " " + fontPx + "px " + fontFamily;
+    return ctx.measureText(text).width;
+  }
+
+  function applyResampleCacheLabelFontPx(labelEl, lineEls, fontPx) {
+    var px = Math.max(4, Math.round(fontPx)) + "px";
+    var lh = String(RESAMPLE_CACHE_BTN_LINE_HEIGHT);
+    labelEl.style.fontSize = px;
+    labelEl.style.lineHeight = lh;
+    labelEl.style.maxHeight = (fontPx * RESAMPLE_CACHE_BTN_LINE_HEIGHT * RESAMPLE_CACHE_BTN_MAX_LINES) + "px";
+    for (var i = 0; i < lineEls.length; i++) {
+      lineEls[i].style.fontSize = px;
+      lineEls[i].style.lineHeight = lh;
+    }
+  }
+
+  function resampleCacheLabelFits(btnEl, labelEl, lineEls, fontPx, maxW, maxH, fontWeight, fontFamily) {
+    applyResampleCacheLabelFontPx(labelEl, lineEls, fontPx);
+    void btnEl.offsetWidth;
+    var textW = 0;
+    var textH = fontPx * RESAMPLE_CACHE_BTN_LINE_HEIGHT * Math.max(1, lineEls.length);
+    for (var i = 0; i < lineEls.length; i++) {
+      var lineText = (lineEls[i].textContent || "").trim();
+      textW = Math.max(textW, measureResampleCacheTextWidth(lineText, fontPx, fontWeight, fontFamily));
+      textW = Math.max(textW, lineEls[i].scrollWidth);
+    }
+    textW = Math.max(textW, labelEl.scrollWidth);
+    textH = Math.max(textH, labelEl.scrollHeight);
+    if (textW > maxW + 0.5) return false;
+    if (textH > maxH + 0.5) return false;
+    if (btnEl.scrollWidth > btnEl.clientWidth + 0.5) return false;
+    if (btnEl.scrollHeight > btnEl.clientHeight + 0.5) return false;
+    return true;
+  }
+
   function fitMontageResampleCacheButtonFont() {
     if (!btnMontageResampleCache || !imageGridToolbarControls || imageGridToolbarControls.hidden) return;
     var label = btnMontageResampleCache.querySelector(".cryo-image-grid-resample-btn__label");
     if (!label) return;
+    var lineEls = resampleCacheLabelLineEls(label);
+    var menuW = imageGridMenuWidthForResampleCap();
+    var capPx = menuW >= 8 ? Math.max(1, Math.floor(menuW * 0.23)) : 0;
+    if (capPx >= 8) {
+      btnMontageResampleCache.style.maxWidth = capPx + "px";
+      btnMontageResampleCache.style.width = capPx + "px";
+    } else {
+      btnMontageResampleCache.style.maxWidth = "";
+      btnMontageResampleCache.style.width = "";
+    }
+    label.style.fontSize = "";
+    label.style.maxHeight = "";
+    label.style.lineHeight = "";
+    for (var li = 0; li < lineEls.length; li++) {
+      lineEls[li].style.fontSize = "";
+      lineEls[li].style.lineHeight = "";
+    }
+    void btnMontageResampleCache.offsetWidth;
     var bw = btnMontageResampleCache.clientWidth;
     var bh = btnMontageResampleCache.clientHeight;
     if (bw < 10 || bh < 10) return;
-    var inset = 0.04;
-    var maxW = bw * (1 - 2 * inset);
-    var maxH = bh * (1 - 2 * inset);
+    var btnStyle = window.getComputedStyle(btnMontageResampleCache);
+    var padX = (parseFloat(btnStyle.paddingLeft) || 0) + (parseFloat(btnStyle.paddingRight) || 0);
+    var padY = (parseFloat(btnStyle.paddingTop) || 0) + (parseFloat(btnStyle.paddingBottom) || 0);
+    var borderX = (parseFloat(btnStyle.borderLeftWidth) || 0) + (parseFloat(btnStyle.borderRightWidth) || 0);
+    var borderY = (parseFloat(btnStyle.borderTopWidth) || 0) + (parseFloat(btnStyle.borderBottomWidth) || 0);
+    var maxW = Math.max(1, bw - padX - borderX);
+    var maxH = Math.max(1, bh - padY - borderY);
+    var fontSpec = resampleCacheBtnFontSpec(btnMontageResampleCache);
+    var hi = Math.min(
+      72,
+      Math.max(4, Math.floor(maxH / (RESAMPLE_CACHE_BTN_LINE_HEIGHT * RESAMPLE_CACHE_BTN_MAX_LINES)))
+    );
     var lo = 4;
-    var hi = 80;
     var best = lo;
     while (lo <= hi) {
       var mid = Math.floor((lo + hi) / 2);
-      label.style.fontSize = mid + "px";
-      if (label.scrollWidth <= maxW && label.scrollHeight <= maxH) {
+      if (resampleCacheLabelFits(
+        btnMontageResampleCache,
+        label,
+        lineEls,
+        mid,
+        maxW,
+        maxH,
+        fontSpec.fontWeight,
+        fontSpec.fontFamily
+      )) {
         best = mid;
         lo = mid + 1;
       } else {
         hi = mid - 1;
       }
     }
-    label.style.fontSize = Math.max(3, Math.round(best * 0.5)) + "px";
+    while (best > 4 && !resampleCacheLabelFits(
+      btnMontageResampleCache,
+      label,
+      lineEls,
+      best,
+      maxW,
+      maxH,
+      fontSpec.fontWeight,
+      fontSpec.fontFamily
+    )) {
+      best -= 1;
+    }
+    applyResampleCacheLabelFontPx(label, lineEls, best);
+    void btnMontageResampleCache.offsetWidth;
   }
 
   function syncMontageResampleFromCacheButton() {
@@ -242,18 +382,17 @@
     var pool = montageResampleFromCachePool();
     var poolOk = !!(pool && pool.length);
     btnMontageResampleCache.disabled = !!(gridSizeSelect && gridSizeSelect.disabled) || !poolOk;
-    if (!imageGridMenuIsOpen() || (imageGridToolbarControls && imageGridToolbarControls.hidden)) return;
-    requestAnimationFrame(function() {
-      requestAnimationFrame(fitMontageResampleCacheButtonFont);
-    });
+    scheduleFitMontageResampleCacheButton();
   }
 
   function scheduleFitMontageResampleCacheButton() {
     if (montageResampleFitTimer) clearTimeout(montageResampleFitTimer);
     montageResampleFitTimer = setTimeout(function() {
       montageResampleFitTimer = null;
-      fitMontageResampleCacheButtonFont();
-    }, 120);
+      requestAnimationFrame(function() {
+        requestAnimationFrame(fitMontageResampleCacheButtonFont);
+      });
+    }, 50);
   }
 
   function montageRowsOrderKey() {
@@ -655,22 +794,16 @@
   function montageRowExtraPx() {
     return MONTAGE_CELL_PAD_Y + MONTAGE_META_IMG_GAP;
   }
-  function montageGridLayoutAvailSize() {
-    if (!imageGridMenuBody) return { w: 0, h: 0 };
+  function montageGridLayoutAvailWidth() {
+    if (!imageGridMenuBody) return 0;
     var availW = imageGridMenuBody.clientWidth;
-    var availH = imageGridMenuBody.clientHeight;
-    if (availH < 48 && montageGridRegionEl && imageGridPanelShell) {
-      var headerEl = imageGridPanelShell.querySelector(".cryo-explorer-panel-header");
-      var headerH = headerEl ? headerEl.offsetHeight : 0;
-      var regionH = montageGridRegionEl.clientHeight;
-      if (regionH > headerH + 16) {
-        availH = regionH - headerH;
-      }
-    }
     if (availW < 8 && montageGridRegionEl) {
       availW = montageGridRegionEl.clientWidth;
     }
-    return { w: availW, h: availH };
+    if (availW < 8 && montageAsideEl) {
+      availW = Math.floor(montageAsideEl.clientWidth * 0.95);
+    }
+    return availW;
   }
   function syncMontageGridRegionLayout() {
     if (!montageAsideEl || !gridEl) return;
@@ -682,27 +815,15 @@
     }
     resetMontageGridRegionLayout();
     var n = gridSize;
-    var layoutAvail = montageGridLayoutAvailSize();
-    var availW = layoutAvail.w;
-    var availH = layoutAvail.h;
-    if (availW < 8 || availH < 8 || !montageCells.length) return;
+    var availW = montageGridLayoutAvailWidth();
+    if (availW < 8 || !montageCells.length) return;
     var gridStyle = window.getComputedStyle(gridEl);
     var gap = parseFloat(gridStyle.columnGap || gridStyle.gap) || 4;
-    var gridMarginTop = parseFloat(gridStyle.marginTop) || 0;
-    availH = Math.max(0, availH - gridMarginTop);
     var rowExtra = montageRowExtraPx();
-    var rowScale = 1 + MONTAGE_META_TOP_FRAC;
     var cellW = Math.floor((availW - gap * (n - 1)) / n);
     if (cellW < 1) cellW = 1;
     var metaH = Math.round(cellW * MONTAGE_META_TOP_FRAC);
     var rowH = cellW + metaH + rowExtra;
-    var totalH = n * rowH + gap * (n - 1);
-    if (totalH > availH) {
-      cellW = Math.floor((availH - gap * (n - 1) - n * rowExtra) / (n * rowScale));
-      if (cellW < 1) cellW = 1;
-      metaH = Math.round(cellW * MONTAGE_META_TOP_FRAC);
-      rowH = cellW + metaH + rowExtra;
-    }
     var gridW = cellW * n + gap * (n - 1);
     gridEl.style.width = gridW + "px";
     gridEl.style.maxWidth = "100%";
@@ -862,8 +983,12 @@
   if (montageAsideEl && typeof ResizeObserver !== "undefined") {
     var montageLayoutResizeObserver = new ResizeObserver(function() {
       scheduleSyncMontageGridRegionLayout();
+      scheduleFitMontageResampleCacheButton();
     });
     montageLayoutResizeObserver.observe(montageAsideEl);
+    if (imageGridPanelShell) montageLayoutResizeObserver.observe(imageGridPanelShell);
+    if (imageGridToolbarControls) montageLayoutResizeObserver.observe(imageGridToolbarControls);
+    if (btnMontageResampleCache) montageLayoutResizeObserver.observe(btnMontageResampleCache);
     if (imageGridMenuBody) montageLayoutResizeObserver.observe(imageGridMenuBody);
     if (montageGridRegionEl) montageLayoutResizeObserver.observe(montageGridRegionEl);
   }

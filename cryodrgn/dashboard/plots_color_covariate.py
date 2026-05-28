@@ -16,6 +16,21 @@ from cryodrgn.dashboard.plots_figure_utils import (
     _mpl_pair_grid_marker_s_alpha,
 )
 
+_PLOTLY_RGB_COLOR_RE = re.compile(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)")
+
+
+def plotly_color_to_hex(color: str) -> str:
+    """Normalize Plotly ``sample_colorscale`` output to ``#rrggbb`` (newer Plotly uses ``rgb()``)."""
+    s = str(color).strip()
+    if s.startswith("#"):
+        return s
+    m = _PLOTLY_RGB_COLOR_RE.match(s)
+    if m:
+        return "#{:02x}{:02x}{:02x}".format(
+            int(m.group(1)), int(m.group(2)), int(m.group(3))
+        )
+    return s
+
 
 def _lower_color_series_is_discrete(s: pd.Series) -> bool:
     """Treat integer / categorical / few whole-valued floats as discrete coloring."""
@@ -82,7 +97,9 @@ def numeric_array_to_plotly_hex(
     else:
         t_fin = np.clip((vals[finite] - vmin) / span, 0.0, 1.0)
     # One batched colorscale sample (~40× faster than per-point calls at 120k).
-    hex_fin = sample_colorscale(plotly_cs, t_fin.tolist())
+    hex_fin = [
+        plotly_color_to_hex(c) for c in sample_colorscale(plotly_cs, t_fin.tolist())
+    ]
     out = np.full(n, "#9ca3af", dtype=object)
     out[finite] = hex_fin
     return out.tolist()

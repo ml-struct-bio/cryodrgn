@@ -926,7 +926,7 @@ class TestDiscreteCovariateLegendContracts:
             "#scatter-palette-radios.cryo-palette-select--options-pane {\n"
             "    display: none !important;"
         ) in pe_html
-        assert "cryo-cc-discrete-toggle-title" in montage
+        assert "discreteCollapseHeading: false" in montagejs
         assert "Toggle selection" in montage
         assert "K-means legend" not in montagejs
 
@@ -1098,7 +1098,10 @@ class TestDashboardModules:
         """Batched ``sample_colorscale`` must match legacy per-point mapping."""
         from plotly.colors import sample_colorscale
 
-        from cryodrgn.dashboard.plots_color_covariate import numeric_array_to_plotly_hex
+        from cryodrgn.dashboard.plots_color_covariate import (
+            numeric_array_to_plotly_hex,
+            plotly_color_to_hex,
+        )
 
         vals = np.array([0.0, 0.5, 1.0, np.nan, -0.2, 1.2], dtype=np.float64)
         batched = numeric_array_to_plotly_hex(vals, "Viridis", vmin=0.0, vmax=1.0)
@@ -1109,8 +1112,9 @@ class TestDashboardModules:
                 legacy.append("#9ca3af")
                 continue
             t = max(0.0, min(1.0, float(v)))
-            legacy.append(sample_colorscale("Viridis", [t])[0])
+            legacy.append(plotly_color_to_hex(sample_colorscale("Viridis", [t])[0]))
         assert batched == legacy
+        assert all(str(c).startswith("#") for c in batched)
 
     def test_scatter3d_continuous_covariate_uses_per_point_hex_marker_colors(
         self, dashboard_experiment: DashboardExperiment

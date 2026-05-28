@@ -21,6 +21,7 @@ from cryodrgn.dashboard.command_builder_cli_help import (
 )
 from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_COMMAND_KEYS,
+    COMMAND_BUILDER_MANUSCRIPT_LABELS,
     COMMAND_BUILDER_MANUSCRIPT_URLS,
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
@@ -474,6 +475,24 @@ class TestDashboardCLI:
         )
 
 
+class TestCommandBuilderManuscriptLabels:
+    def test_reconstruction_commands_mapped(self) -> None:
+        assert COMMAND_BUILDER_MANUSCRIPT_LABELS["train_nn"] == "cryoDRGN1\nmanuscript"
+        assert COMMAND_BUILDER_MANUSCRIPT_LABELS["train_vae"] == "cryoDRGN1\nmanuscript"
+        assert (
+            COMMAND_BUILDER_MANUSCRIPT_LABELS["abinit_het_old"]
+            == "cryoDRGN2\nmanuscript"
+        )
+        assert COMMAND_BUILDER_MANUSCRIPT_LABELS["abinit"] == "cryoDRGN-AI\nmanuscript"
+        assert (
+            COMMAND_BUILDER_MANUSCRIPT_LABELS["train_dec"] == "cryoDRGN-AI\nmanuscript"
+        )
+
+    def test_analyze_commands_not_mapped(self) -> None:
+        for key in ("analyze", "analyze_landscape", "backproject_voxel"):
+            assert key not in COMMAND_BUILDER_MANUSCRIPT_LABELS
+
+
 class TestCommandBuilderManuscriptUrls:
     def test_reconstruction_commands_mapped(self) -> None:
         assert (
@@ -531,6 +550,9 @@ class TestCommandBuilderPage:
         assert 'id="nav-manuscript-link"' in html
         assert "nav-manuscript-link" in html
         assert "CMD_MANUSCRIPT_URLS" in html
+        assert "CMD_MANUSCRIPT_LABELS" in html
+        assert 'id="nav-manuscript-label"' in html
+        assert "cryoDRGN-AI" in html
         assert "s41592-025-02720-4" in html
         assert "s41592-020-01049-4" in html
         assert "ICCV_2021_paper.pdf" in html
@@ -669,7 +691,10 @@ class TestCommandBuilderPage:
         assert "nav-header-icons" in html
         assert "nav-header-icon-label" in html
         assert ">code</span>" in html
-        assert ">paper</span>" in html
+        assert (
+            COMMAND_BUILDER_MANUSCRIPT_LABELS["abinit"]
+            in html.split('id="nav-manuscript-label"', 1)[1][:120]
+        )
         assert "command builder" in html
         gh_svg_css = html.split(
             "body.cmd-builder-github-pages .nav-github-release-link svg {"
@@ -683,9 +708,11 @@ class TestCommandBuilderPage:
         assert "nav-manuscript-link" in paper_item.split("nav-header-icon-label", 1)[0]
         assert 'href="https://cryodrgn.cs.princeton.edu/"' in html
         assert 'class="nav-brand-link"' in html
-        assert (
-            "body.cmd-builder-github-pages a.nav-brand-link:hover .nav-logo" not in html
-        )
+        gp_logo_hover = html.split(
+            "body.cmd-builder-github-pages a.nav-brand-link:hover .nav-logo", 1
+        )[1][:200]
+        assert "filter: none" in gp_logo_hover
+        assert "transform: none" in gp_logo_hover
         assert ".nav a.nav-brand-link:hover .nav-logo" in html
         assert "brightness(1.14) drop-shadow" in html
         assert (
@@ -719,10 +746,18 @@ class TestCommandBuilderPage:
         assert "--gp-nav-header-icon-size: calc(2.142rem * 1.2)" in html
         assert "* 0.8 * var(--gp-nav-font-scale)" in html
         assert "var(--gp-nav-cmd-label-font) * 0.9" in html
-        assert "gap: 0.35rem" in html.split(".nav-header-icon-item--paper")[1][:80]
-        gh_hover = html.split(".nav-github-release-link:hover,", 1)[1][:220]
-        assert "background: rgba(255, 255, 255, 0.1)" in gh_hover
-        icon_hover_fx = html.split(".nav-github-release-link:hover svg,", 1)[1][:400]
+        paper_item_css = html.split(
+            "body.cmd-builder-github-pages .nav-header-icon-item--paper {", 1
+        )[1][:80]
+        assert "gap: 0.35rem" in paper_item_css
+        gh_hover = html.split(
+            "body.cmd-builder-github-pages .nav-github-release-link:hover,", 1
+        )[1][:420]
+        assert "background: transparent" in gh_hover
+        icon_hover_fx = html.split(
+            "body.cmd-builder-github-pages .nav-header-icon-item--code:hover .nav-github-release-link svg,",
+            1,
+        )[1][:700]
         assert "filter: brightness(1.14)" in icon_hover_fx
         assert "transform: scale(1.07)" in icon_hover_fx
         ms_img_css = html.rsplit(

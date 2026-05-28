@@ -20,6 +20,7 @@ from cryodrgn.dashboard.command_builder_cli_help import (
     load_command_module_docstrings,
 )
 from cryodrgn.dashboard.command_builder_data import (
+    COMMAND_BUILDER_MANUSCRIPT_LABELS,
     COMMAND_BUILDER_MANUSCRIPT_URLS,
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
@@ -117,6 +118,7 @@ def _command_builder_template_kwargs() -> dict[str, object]:
         "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
         "command_builder_command_docs": load_command_module_docstrings(),
         "command_builder_manuscript_urls": COMMAND_BUILDER_MANUSCRIPT_URLS,
+        "command_builder_manuscript_labels": COMMAND_BUILDER_MANUSCRIPT_LABELS,
     }
 
 

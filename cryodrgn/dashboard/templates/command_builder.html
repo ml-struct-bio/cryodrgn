@@ -459,6 +459,17 @@
     text-transform: lowercase;
     white-space: nowrap;
     flex-shrink: 0;
+    transition:
+      color 0.22s ease,
+      opacity 0.22s ease,
+      text-shadow 0.28s ease;
+  }
+  body.cmd-builder-github-pages .nav-header-icon-label--manuscript {
+    text-transform: none;
+    white-space: pre-line;
+    text-align: center;
+    line-height: 1.12;
+    letter-spacing: 0.02em;
   }
   body.cmd-builder-github-pages .nav-github-release-link,
   body.cmd-builder-github-pages .nav-manuscript-link {
@@ -476,36 +487,27 @@
     border-radius: 10px;
     outline: none;
     overflow: visible;
-    transition:
-      background 0.22s ease,
-      box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-      color 0.22s ease,
-      opacity 0.22s ease;
+    background: transparent;
+    box-shadow: none;
   }
   body.cmd-builder-github-pages .nav-github-release-link {
     width: var(--gp-nav-header-icon-size);
     height: var(--gp-nav-header-icon-size);
   }
   body.cmd-builder-github-pages .nav-github-release-link:hover,
-  body.cmd-builder-github-pages .nav-manuscript-link:hover {
-    color: #fff;
-    opacity: 1;
+  body.cmd-builder-github-pages .nav-manuscript-link:hover,
+  body.cmd-builder-github-pages .nav-github-release-link:focus-visible,
+  body.cmd-builder-github-pages .nav-manuscript-link:focus-visible {
+    color: #e8eef4;
+    opacity: 0.9;
     text-decoration: none;
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.22),
-      0 6px 24px rgba(0, 0, 0, 0.22);
+    background: transparent;
+    box-shadow: none;
   }
   body.cmd-builder-github-pages .nav-github-release-link:focus-visible,
   body.cmd-builder-github-pages .nav-manuscript-link:focus-visible {
-    color: #fff;
-    opacity: 1;
-    text-decoration: none;
-    background: rgba(255, 255, 255, 0.12);
-    box-shadow:
-      0 0 0 2px rgba(255, 255, 255, 0.9),
-      0 0 0 6px rgba(196, 112, 58, 0.35),
-      0 8px 28px rgba(0, 0, 0, 0.25);
+    outline: 2px solid rgba(255, 255, 255, 0.9);
+    outline-offset: 3px;
   }
   body.cmd-builder-github-pages .nav-github-release-link svg,
   body.cmd-builder-github-pages .nav-manuscript-link img.nav-manuscript-icon {
@@ -518,12 +520,30 @@
     width: calc(var(--gp-nav-header-icon-size) * var(--gp-nav-github-icon-scale));
     height: calc(var(--gp-nav-header-icon-size) * var(--gp-nav-github-icon-scale));
   }
-  body.cmd-builder-github-pages .nav-github-release-link:hover svg,
-  body.cmd-builder-github-pages .nav-github-release-link:focus-visible svg,
-  body.cmd-builder-github-pages .nav-manuscript-link:hover img.nav-manuscript-icon,
-  body.cmd-builder-github-pages .nav-manuscript-link:focus-visible img.nav-manuscript-icon {
+  body.cmd-builder-github-pages .nav-header-icon-item--code:hover .nav-github-release-link svg,
+  body.cmd-builder-github-pages
+    .nav-header-icon-item--code:has(.nav-github-release-link:focus-visible)
+    .nav-github-release-link svg,
+  body.cmd-builder-github-pages .nav-header-icon-item--paper:hover .nav-manuscript-link img.nav-manuscript-icon,
+  body.cmd-builder-github-pages
+    .nav-header-icon-item--paper:has(.nav-manuscript-link:focus-visible)
+    .nav-manuscript-link img.nav-manuscript-icon {
     transform: scale(1.07);
     filter: brightness(1.14) drop-shadow(0 0 12px rgba(255, 230, 200, 0.45));
+  }
+  body.cmd-builder-github-pages .nav-header-icon-item--code:hover .nav-header-icon-label,
+  body.cmd-builder-github-pages
+    .nav-header-icon-item--code:has(.nav-github-release-link:focus-visible)
+    .nav-header-icon-label,
+  body.cmd-builder-github-pages .nav-header-icon-item--paper:hover .nav-header-icon-label,
+  body.cmd-builder-github-pages
+    .nav-header-icon-item--paper:has(.nav-manuscript-link:focus-visible)
+    .nav-header-icon-label {
+    color: #fff;
+    opacity: 1;
+    text-shadow:
+      0 0 10px rgba(255, 255, 255, 0.85),
+      0 0 18px rgba(255, 230, 200, 0.45);
   }
   body.cmd-builder-github-pages .nav-manuscript-link {
     width: auto;
@@ -642,10 +662,33 @@
   body.cmd-builder-github-pages .nav-brand-home-arrow {
     display: none !important;
   }
-  /* Logo + cryoDRGN line use dashboard hover rules from base.html; subtitle stays plain. */
+  /* GitHub Pages header: no brand hover glow — only code/paper icon links light up. */
   body.cmd-builder-github-pages a.nav-brand-link {
     text-decoration: none;
     color: inherit;
+    transition: none;
+  }
+  body.cmd-builder-github-pages a.nav-brand-link:hover,
+  body.cmd-builder-github-pages a.nav-brand-link:focus-visible {
+    color: inherit;
+    text-decoration: none;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+  }
+  body.cmd-builder-github-pages a.nav-brand-link:hover .nav-logo,
+  body.cmd-builder-github-pages a.nav-brand-link:focus-visible .nav-logo {
+    transform: none;
+    filter: none;
+  }
+  body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-text,
+  body.cmd-builder-github-pages a.nav-brand-link:focus-visible .nav-brand-text {
+    filter: none;
+  }
+  body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line1,
+  body.cmd-builder-github-pages a.nav-brand-link:focus-visible .nav-brand-line1 {
+    color: inherit;
+    text-shadow: none;
   }
   body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line2,
   body.cmd-builder-github-pages a.nav-brand-link:focus-visible .nav-brand-line2 {
@@ -2778,6 +2821,7 @@
   {% if command_builder_page_mode %}
   var CMD_COMMAND_DOCS = {{ command_builder_command_docs | tojson }};
   var CMD_MANUSCRIPT_URLS = {{ command_builder_manuscript_urls | tojson }};
+  var CMD_MANUSCRIPT_LABELS = {{ command_builder_manuscript_labels | tojson }};
   {% endif %}
 
   function shquote(s) {
@@ -3248,6 +3292,7 @@
   function syncManuscriptLink() {
     var link = document.getElementById("nav-manuscript-link");
     var item = document.getElementById("nav-manuscript-icon-item");
+    var label = document.getElementById("nav-manuscript-label");
     if (!link || !cmdType || typeof CMD_MANUSCRIPT_URLS === "undefined") return;
     var url = CMD_MANUSCRIPT_URLS[cmdType.value] || "";
     if (url) {
@@ -3256,6 +3301,9 @@
       if (item) item.hidden = false;
       link.title = "Read manuscript for cryodrgn " + cmdType.value;
       link.setAttribute("aria-label", link.title);
+      if (label && typeof CMD_MANUSCRIPT_LABELS !== "undefined") {
+        label.textContent = CMD_MANUSCRIPT_LABELS[cmdType.value] || "paper";
+      }
     } else {
       link.hidden = true;
       if (item) item.hidden = true;

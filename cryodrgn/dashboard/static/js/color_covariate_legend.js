@@ -82,6 +82,8 @@
     this.discreteSwitches = opts.discreteSwitches;
     this.invertHeadingSlotEl = opts.invertHeadingSlotEl || null;
     this.invertHeadingRowEl = opts.invertHeadingRowEl || null;
+    /** When false, omit the inner “Toggle selection” collapse row (e.g. particle explorer panel toggle). */
+    this.discreteCollapseHeading = opts.discreteCollapseHeading !== false;
     this._discretePanelCollapsed = false;
     this._discreteCollapseToggleBtn = null;
     /**
@@ -407,6 +409,7 @@
   };
 
   CryoColorCovariateLegend.prototype._discreteToggleHeadingRow = function () {
+    if (this.discreteCollapseHeading === false) return null;
     if (this.invertHeadingRowEl) return this.invertHeadingRowEl;
     if (!this.discreteWrap) return null;
     return this.discreteWrap.querySelector(".cryo-cc-discrete-toggle-heading-row");
@@ -456,6 +459,7 @@
 
   CryoColorCovariateLegend.prototype._ensureDiscreteCollapseToggle = function () {
     var self = this;
+    if (this.discreteCollapseHeading === false) return;
     if (!this.discreteWrap || !this.discreteSwitches) return;
     var row = this._discreteToggleHeadingRow();
     if (!row) {
@@ -517,7 +521,7 @@
       if (this._mode === "continuous") {
         this.regionHeadingEl.hidden = false;
         this.regionHeadingEl.textContent = this.regionHeadingContinuousText;
-      } else if (this._mode === "discrete" && !innerDiscreteHeading) {
+      } else if (this._mode === "discrete" && !innerDiscreteHeading && this.discreteCollapseHeading !== false) {
         this.regionHeadingEl.hidden = false;
         this.regionHeadingEl.textContent = this.regionHeadingDiscreteText;
       } else {

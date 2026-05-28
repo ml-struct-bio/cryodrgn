@@ -172,9 +172,6 @@
   .landing-card--inactive > .muted {
     color: #8c1d40;
   }
-  .landing-card--inactive .landing-card-title {
-    margin-top: 1.35rem;
-  }
   .landing-card--inactive {
     border-color: rgba(140, 29, 64, 0.45);
     background: linear-gradient(170deg, #fff8f9 0%, #fff 52%, #fff4f6 100%);
@@ -198,14 +195,11 @@
     outline: none;
   }
   .landing-inactive-badge {
-    position: absolute;
-    top: 1.05rem;
-    left: 1.35rem;
-    z-index: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin: 0;
+    align-self: flex-start;
+    margin: 0 0 0.4rem;
     padding: 0.14rem 0.5rem;
     border-radius: 999px;
     font-size: 0.82rem;

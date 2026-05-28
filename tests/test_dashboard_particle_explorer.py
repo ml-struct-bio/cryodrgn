@@ -768,11 +768,28 @@ class TestParticleExplorerTemplateRegressions:
         assert 'id="image-cache-progress"' in body
         assert 'role="progressbar"' in body
         assert 'id="image-grid-menu-toggle"' in body
+        assert 'id="cache-panel-toggle"' in body
+        assert 'id="color-selection-panel-toggle"' in body
+        assert 'id="volumes-panel-toggle"' in body
+        assert "wireExplorerPanelToggle" in body
         assert "Image grid" in body
         assert re.search(
             r"Load\s+particle\s+images\s+into\s+cache\s+to\s+display\s+in\s+grid",
             body,
         )
+        assert "Choose a color scale to select by color levels" in body
+        assert "Build image cache and choose images first" in body
+        assert 'id="cryo-explorer-cache-panel-body"' in body
+        assert 'id="color-selection-panel-body"' in body
+        assert 'id="color-selection-inactive-note"' in body
+        assert 'id="volumes-panel-body"' in body
+        assert 'id="volumes-inactive-note"' in body
+        assert "syncExplorerMontagePanelReadiness" in body
+        assert "colorSelectionPanelActivated" in body
+        assert "cryo-explorer-panel-shell--inactive" in body
+        assert 'id="image-grid-panel-shell"' in body
+        assert "syncExplorerPanelInactiveNote" in body
+        assert "cryo-explorer-panel-inactive-note" in body
         assert 'id="cryo-explorer-image-cache-fieldset"' in body
         assert 'id="cryo-explorer-cache-load-body"' in body
         assert 'id="cryo-explorer-cache-load-progress-wrap"' in body
@@ -933,15 +950,22 @@ class TestParticleExplorerTemplateRegressions:
         assert "highlightRestyleRaf != null && pendingHighlightRestyle" in body
         assert "pendingHighlightRestyle[k] = restyleData[k];" in body
 
-    def test_grid_letter_highlights_constant_opacity_and_covariate_outline(
+    def test_grid_letter_highlights_constant_opacity_and_white_marker_ring(
         self, flask_client
     ) -> None:
-        """Grid-letter overlay uses fixed marker opacity; selection is fill vs hollow only."""
+        """Grid-letter overlay: fixed opacity, white marker ring, HTML labels with black stroke."""
         r = flask_client.get("/explorer")
         assert r.status_code == 200
         body = r.get_data(as_text=True)
         assert "cryo-grid-highlight-marker-policy" in body
-        assert "GRID_HIGHLIGHT_MARKER_OPACITY" in body
+        assert "GRID_HIGHLIGHT_MARKER_OPACITY = 0.53" in body
+        assert "gridHighlightMarkerSizePx" in body
+        assert "gridHighlightTextSizePx" in body
+        assert "return 25 - gridHighlightRowsForSizing" in body
+        assert "return 17 - gridHighlightRowsForSizing" in body
+        assert 'restyleData["textfont.size"]' in body
+        assert "EXPLORER_SCATTER_MARKER_OPACITY = 0.35" in body
+        assert 'GRID_HIGHLIGHT_MARKER_LINE_COLOR = "#ffffff"' in body
         assert "appendGridHighlightMarkerRestyle" in body
         assert "GRID_HIGHLIGHT_CLEAR_FILL" in body
         assert "refreshGridHighlightMarkerStylesFromLastRows" in body
@@ -950,6 +974,11 @@ class TestParticleExplorerTemplateRegressions:
         assert 'type: "scatter"' in body
         assert "multiGeom" in body
         assert 'restyleData["textfont.color"]' in body
+        assert "scatter-grid-letter-glyphs-overlay" in body
+        assert "cryo-explorer-grid-letter-glyph" in body
+        assert "syncGridLetterGlyphOverlay" in body
+        assert 'GRID_HIGHLIGHT_TEXT_COLOR = "#ffffff"' in body
+        assert "-webkit-text-stroke: 0.9px #000000" in body
 
     def test_committed_scatter_shapes_use_between_layer_for_grid_letters(
         self, flask_client
@@ -1119,7 +1148,7 @@ class TestParticleExplorerTemplateRegressions:
     def test_multi_region_montage_and_grid_use_scatter_region_line_colour(
         self, flask_client
     ) -> None:
-        """Montage + grid-letter styling for no-covariate multi-region tracks ``scatterRegionPlotStyle``."""
+        """Montage borders track region line colour; grid-letter rings stay white."""
         r = flask_client.get("/explorer")
         assert r.status_code == 200
         body = r.get_data(as_text=True)
@@ -1127,8 +1156,10 @@ class TestParticleExplorerTemplateRegressions:
         assert "scatterRegionPlotStyle(regionIdx).line" in body
         assert "discreteLabelMontageStyles(lineHex)" in body
         assert "borderNoCov = scatterRegionPlotStyle(ridxM).line;" in body
-        assert "scatterRegionPlotStyle(rIdxgeom).line" in body
-        assert '(multiGeom ? "#94a3b8" : ACCENT)' in body
+        assert 'GRID_HIGHLIGHT_MARKER_LINE_COLOR = "#ffffff"' in body
+        assert "lineColors.push(GRID_HIGHLIGHT_MARKER_LINE_COLOR)" in body
+        assert "selectionRegionMontageStyles(rIdxgeom)" in body
+        assert "fillColors.push(inSel ? ACCENT : GRID_HIGHLIGHT_CLEAR_FILL)" in body
 
     def test_scatter_region_overlay_chips_compact_vertical_css(
         self, flask_client
@@ -1199,12 +1230,19 @@ class TestParticleExplorerTemplateRegressions:
         ) in body
         assert "#clear-explorer-selection:disabled" in body
         assert 'lbl.style.display = "inline-flex"' in body
-        assert 'lbl.style.alignSelf = "flex-start"' in body
-        assert "scaleRem(metaSize, 1.1)" in body
+        assert 'lbl.style.alignSelf = "center"' in body
+        assert "montageRowExtraPx" in body
+        assert "MONTAGE_META_IMG_GAP" in body
+        assert "MONTAGE_META_TOP_FRAC = 0.19" in body
+        assert "MONTAGE_LABEL_META_HEIGHT_FRAC = 0.7885" in body
+        assert "applyMontageMetaTypography" in body
+        assert "height: 19cqw" in body
+        assert "height: 78.85%" in body
+        assert "scatter-grid-letter-glyphs-overlay" in body
         assert "continuousMontageStylesFromT" in body
-        assert "letterFontRem * 0.11" in body
+        assert "letterFontPx * 0.11" in body
         assert "1.22 / labStr.length" in body
-        assert 'meta.style.alignItems = "flex-start"' in body
+        assert 'meta.style.alignItems = "center"' in body
         assert 'meta.style.gap = "0"' in body
         assert "lbl: lbl" in body
 

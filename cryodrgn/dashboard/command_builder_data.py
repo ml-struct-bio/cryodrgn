@@ -1655,6 +1655,16 @@ COMMAND_BUILDER_MANUSCRIPT_URLS: dict[str, str] = {
     ),
 }
 
+# Two-line nav label under the manuscript icon (GitHub Pages command builder).
+COMMAND_BUILDER_MANUSCRIPT_LABELS: dict[str, str] = {
+    "train_nn": "cryoDRGN1\nmanuscript",
+    "train_vae": "cryoDRGN1\nmanuscript",
+    "abinit_het_old": "cryoDRGN2\nmanuscript",
+    "abinit_homo_old": "cryoDRGN2\nmanuscript",
+    "abinit": "cryoDRGN-AI\nmanuscript",
+    "train_dec": "cryoDRGN-AI\nmanuscript",
+}
+
 COMMAND_BUILDER_COMMAND_KEYS: tuple[str, ...] = (
     "abinit",
     "abinit_het_old",

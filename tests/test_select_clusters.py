@@ -21,7 +21,9 @@ def test_select_clusters(tmpdir, cluster_count, chosen_count):
     # accounts for 1-indexing for user inputs and plot outputs but 0-indexing internally
     selected_clusters_list = [str(c + 1) for c in selected_clusters]
     selected_file = os.path.join(tmpdir, f"selected_clusters_{test_lbl}.pik")
-    args = select_clusters.add_args(argparse.ArgumentParser()).parse_args(
+    parser = argparse.ArgumentParser()
+    select_clusters.add_args(parser)
+    args = parser.parse_args(
         [lbl_file, "--sel"] + selected_clusters_list + ["-o", selected_file]
     )
     select_clusters.main(args)
@@ -51,19 +53,22 @@ def test_select_clusters_parent_ind(tmpdir, cluster_count, chosen_count):
     # accounts for 1-indexing for user inputs and plot outputs but 0-indexing internally
     selected_clusters_list = [str(c + 1) for c in selected_clusters]
     selected_file = os.path.join(tmpdir, f"selected_labels_{test_lbl}.pik")
-    args = select_clusters.add_args(argparse.ArgumentParser()).parse_args(
-        [label_file, "--sel"]
-        + selected_clusters_list
-        + [
-            "-o",
-            selected_file,
-            "--parent-ind",
-            parent_file,
-            "--N-orig",
-            str(cluster_count),
-        ]
+    parser = argparse.ArgumentParser()
+    select_clusters.add_args(parser)
+    select_clusters.main(
+        parser.parse_args(
+            [label_file, "--sel"]
+            + selected_clusters_list
+            + [
+                "-o",
+                selected_file,
+                "--parent-ind",
+                parent_file,
+                "--N-orig",
+                str(cluster_count),
+            ]
+        )
     )
-    select_clusters.main(args)
 
     # What are the indices in the parent array corresponding to the
     # 0-indexed positions in the labels array where the selected cluster indices are found?

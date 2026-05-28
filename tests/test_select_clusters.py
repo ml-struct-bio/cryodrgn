@@ -16,9 +16,10 @@ def test_select_clusters(tmpdir, cluster_count, chosen_count):
     test_lbl = "-".join([str(cluster_count), str(chosen_count)])
     lbl_file = os.path.join(tmpdir, f"labels_{test_lbl}.pik")
     save_pkl(labels, lbl_file)
-
     selected_clusters = np.random.randint(cluster_count, size=chosen_count).tolist()
-    selected_clusters_list = [str(c) for c in selected_clusters]
+
+    # accounts for 1-indexing for user inputs and plot outputs but 0-indexing internally
+    selected_clusters_list = [str(c + 1) for c in selected_clusters]
     selected_file = os.path.join(tmpdir, f"selected_clusters_{test_lbl}.pik")
     args = select_clusters.add_args(argparse.ArgumentParser()).parse_args(
         [lbl_file, "--sel"] + selected_clusters_list + ["-o", selected_file]
@@ -45,9 +46,10 @@ def test_select_clusters_parent_ind(tmpdir, cluster_count, chosen_count):
     labels = np.random.randint(cluster_count, size=500)
     label_file = os.path.join(tmpdir, f"labels_{test_lbl}.pik")
     save_pkl(labels, label_file)
-
     selected_clusters = np.random.randint(cluster_count, size=chosen_count).tolist()
-    selected_clusters_list = [str(c) for c in selected_clusters]
+
+    # accounts for 1-indexing for user inputs and plot outputs but 0-indexing internally
+    selected_clusters_list = [str(c + 1) for c in selected_clusters]
     selected_file = os.path.join(tmpdir, f"selected_labels_{test_lbl}.pik")
     args = select_clusters.add_args(argparse.ArgumentParser()).parse_args(
         [label_file, "--sel"]

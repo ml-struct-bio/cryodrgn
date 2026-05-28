@@ -29,7 +29,7 @@ def main(args):
     labels = utils.load_pkl(args.labels)
     logger.info(f"{len(labels)} particles")
     logger.info(f"Selecting clusters {args.sel}")
-    ind = analysis.get_ind_for_cluster(labels, args.sel)
+    ind = analysis.get_ind_for_cluster(labels, [i - 1 for i in args.sel])
     logger.info(f"Selected {len(ind)} particles")
     logger.info(ind)
     if args.parent_ind is not None:

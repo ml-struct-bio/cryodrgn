@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import base64
 import os
 import pickle
 import re
 import tempfile
-from io import BytesIO
-
 import numpy as np
 import pytest
 import yaml
-from PIL import Image
 
 from cryodrgn.dashboard import app as dash_app
 from cryodrgn.dashboard import column_names
@@ -37,9 +33,12 @@ from cryodrgn.dashboard.context import (
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
 from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
-from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
-from tests.conftest import dashboard_repo_root, png_b64_rgb, read_dashboard_template
+from tests.conftest import (
+    read_dashboard_static_css,
+    read_dashboard_static_js,
+    read_dashboard_template,
+)
 
 ANALYZE_EPOCH = 2
 
@@ -99,7 +98,7 @@ class TestDashboardPages:
 
 
 class TestDashboardScatterApis:
-    """Scatter / 3-D scatter / preview endpoints return JSON or PNG payloads."""
+    """2-D scatter and shared preview endpoints (3-D scatter: ``test_dashboard_scatter3d``)."""
 
     def test_api_scatter_json(self, flask_client) -> None:
         r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=labels&filter_ui=1")
@@ -118,42 +117,6 @@ class TestDashboardScatterApis:
         js = r.get_json()
         assert len(js["data"][0]["customdata"]) == 2
 
-    def test_api_scatter3d_z(self, flask_client) -> None:
-        r = flask_client.get("/api/scatter3d_z?x=z0&y=z1&z=z2&color=znorm")
-        assert r.status_code == 200
-        assert r.get_json()["data"]
-
-    def test_api_scatter3d_z_landscape_full_without_outputs_is_400(
-        self, flask_client
-    ) -> None:
-        r = flask_client.get(
-            "/api/scatter3d_z_landscape_full?x=z0&y=z1&z=z2&color=none"
-        )
-        assert r.status_code == 400
-        err = r.get_json().get("error", "")
-        assert (
-            "vol_pca" in err.lower()
-            or "landscape" in err.lower()
-            or "three" in err.lower()
-        )
-
-    def test_api_latent3d_landscape_full_discrete_gif_without_outputs_is_400(
-        self, flask_client
-    ) -> None:
-        r = flask_client.post(
-            "/api/latent3d_landscape_full_discrete_gif",
-            json={
-                "x": "z0",
-                "y": "z1",
-                "z": "z2",
-                "color": "labels",
-                "discrete_keys": ["0", "1"],
-            },
-        )
-        assert r.status_code == 400
-        err = (r.get_json() or {}).get("error", "")
-        assert "landscape" in err.lower() or "vol_pca" in err.lower()
-
     def test_api_covariate_legend_context_landscape_scope_without_outputs_is_400(
         self, flask_client
     ) -> None:
@@ -162,36 +125,6 @@ class TestDashboardScatterApis:
             json={"column": "z0", "scope": "landscape_full_sampled"},
         )
         assert r.status_code == 400
-
-    def test_api_latent3d_preview_png(self, flask_client) -> None:
-        r = flask_client.get("/api/latent3d_preview.png?x=z0&y=z1&z=z2&color=znorm")
-        assert r.status_code == 200
-        # PNG magic bytes.
-        assert r.data[:8] == b"\x89PNG\r\n\x1a\n"
-
-    def test_api_latent3d_plot_gif_from_png_frames(self, flask_client) -> None:
-        a = png_b64_rgb(rgb=(10, 20, 30))
-        b = png_b64_rgb(rgb=(200, 180, 40))
-        r = flask_client.post(
-            "/api/latent3d_plot_gif_from_png_frames",
-            json={"frames": [a, b], "durations_ms": [40, 80]},
-        )
-        assert r.status_code == 200, r.get_data(as_text=True)
-        js = r.get_json()
-        assert "gif_b64" in js
-        raw = base64.standard_b64decode(js["gif_b64"])
-        assert raw[:6] in (b"GIF87a", b"GIF89a")
-
-    def test_api_latent3d_discrete_gif_requires_discrete_keys(
-        self, flask_client
-    ) -> None:
-        r = flask_client.post(
-            "/api/latent3d_discrete_gif",
-            json={"x": "z0", "y": "z1", "z": "z2", "color": "labels"},
-        )
-        assert r.status_code == 400
-        err = (r.get_json() or {}).get("error", "")
-        assert "discrete_keys" in err.lower()
 
     def test_api_preview_montage(self, flask_client) -> None:
         r = flask_client.get("/api/preview_montage?rows=0,1,2,3")
@@ -253,30 +186,6 @@ class TestDashboardScatterApis:
         assert r.status_code == 200
         js = r.get_json()
         assert len(js["data"][0]["customdata"]) == 100
-
-
-class TestPlotGifUtils:
-    """``plot_gif_utils.png_base64_frames_to_gif_bytes`` (PNG-frame GIF assembly)."""
-
-    def test_png_base64_frames_to_gif_bytes_round_trip(self) -> None:
-        a = png_b64_rgb(rgb=(200, 30, 40))
-        b = png_b64_rgb(rgb=(30, 180, 60))
-        gif = png_base64_frames_to_gif_bytes([a, b], durations_ms=[50, 120])
-        assert gif[:6] in (b"GIF87a", b"GIF89a")
-        im = Image.open(BytesIO(gif))
-        assert im.n_frames >= 2
-        im.seek(1)
-
-    def test_png_base64_frames_requires_two_frames(self) -> None:
-        one = png_b64_rgb()
-        with pytest.raises(ValueError, match="At least two"):
-            png_base64_frames_to_gif_bytes([one])
-
-    def test_png_base64_accepts_data_url_prefix(self) -> None:
-        raw = png_b64_rgb()
-        framed = "data:image/png;base64," + raw
-        gif = png_base64_frames_to_gif_bytes([framed, raw], durations_ms=40)
-        assert len(gif) > 32
 
 
 class TestDashboardScatterCapHelpers:
@@ -620,14 +529,6 @@ class TestFlaskErrorPaths:
         r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=bogus")
         assert r.status_code == 400
 
-    def test_scatter3d_bad_color(self, flask_client) -> None:
-        r = flask_client.get("/api/scatter3d_z?x=z0&y=z1&z=z2&color=does_not_exist")
-        assert r.status_code == 400
-
-    def test_latent3d_non_numeric_elev(self, flask_client) -> None:
-        r = flask_client.get("/api/latent3d_preview.png?x=z0&y=z1&z=z2&elev=nope")
-        assert r.status_code == 400
-
     def test_preview_montage_non_integer_rows(self, flask_client) -> None:
         r = flask_client.get("/api/preview_montage?rows=0,foo,2")
         assert r.status_code == 400
@@ -812,7 +713,6 @@ class TestDiscreteCovariateLegendContracts:
     described the old bitmap), so the first discrete toggle looked like a no-op.
     """
 
-    _DASH_TEMPLATES = dashboard_repo_root() / "cryodrgn" / "dashboard" / "templates"
     _HOST_TEMPLATES = (
         "pair_grid.html",
         "latent_3d.html",
@@ -858,28 +758,14 @@ class TestDiscreteCovariateLegendContracts:
         )
 
     def test_color_covariate_legend_fits_discrete_switch_column_widths(self) -> None:
-        js = (
-            dashboard_repo_root()
-            / "cryodrgn"
-            / "dashboard"
-            / "static"
-            / "js"
-            / "color_covariate_legend.js"
-        ).read_text(encoding="utf-8")
+        js = read_dashboard_static_js("color_covariate_legend.js")
         assert "fitDiscreteSwitchColumnWidths" in js
         assert "0.79" in js
         assert "--cryo-discrete-col-w" in js
         assert "--cryo-discrete-cell-max-w" in js
         assert 'removeProperty("--cryo-discrete-cell-min-h")' in js
         assert "auto-fill" in js or "scrollWidth" in js
-        css = (
-            dashboard_repo_root()
-            / "cryodrgn"
-            / "dashboard"
-            / "static"
-            / "css"
-            / "cryo_cc_legend_palette_menu.css"
-        ).read_text(encoding="utf-8")
+        css = read_dashboard_static_css("cryo_cc_legend_palette_menu.css")
         assert "80svh" in css
         assert "overflow-y: auto" in css
         assert "justify-content: center" in css
@@ -900,27 +786,9 @@ class TestDiscreteCovariateLegendContracts:
         assert "_discretePanelCollapsed" in js
         # Particle explorer styles live inline in particle_explorer.html (no
         # standalone .css file).
-        pe_html = (
-            dashboard_repo_root()
-            / "cryodrgn"
-            / "dashboard"
-            / "templates"
-            / "particle_explorer.html"
-        ).read_text(encoding="utf-8")
-        montage = (
-            dashboard_repo_root()
-            / "cryodrgn"
-            / "dashboard"
-            / "templates"
-            / "_particle_explorer_montage.html"
-        ).read_text(encoding="utf-8")
-        montagejs = (
-            dashboard_repo_root()
-            / "cryodrgn"
-            / "dashboard"
-            / "templates"
-            / "_particle_explorer_montagejs.html"
-        ).read_text(encoding="utf-8")
+        pe_html = read_dashboard_template("particle_explorer.html")
+        montage = read_dashboard_template("_particle_explorer_montage.html")
+        montagejs = read_dashboard_template("_particle_explorer_montagejs.html")
         assert "cryo-explorer-discrete-hides-scatter-palette-radios" in pe_html
         assert (
             "#scatter-palette-radios.cryo-palette-select--options-pane {\n"
@@ -931,14 +799,7 @@ class TestDiscreteCovariateLegendContracts:
         assert "K-means legend" not in montagejs
 
     def test_color_covariate_legend_refresh_respects_notify_on_refresh(self) -> None:
-        js = (
-            dashboard_repo_root()
-            / "cryodrgn"
-            / "dashboard"
-            / "static"
-            / "js"
-            / "color_covariate_legend.js"
-        ).read_text(encoding="utf-8")
+        js = read_dashboard_static_js("color_covariate_legend.js")
         assert re.search(
             r"if\s*\(\s*self\.notifyOnRefresh\s*&&\s*!\s*suppressNotify\s*\)\s*self\._notify\s*\(",
             js,
@@ -1055,455 +916,3 @@ class TestDashboardModules:
         assert VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in cols
         assert VOL_LANDSCAPE_IS_SKETCH_CENTROID not in cols
         assert VOL_LANDSCAPE_3D_PLOT_DF_ROW not in cols
-
-    def test_scatter3d_volume_landscape_style_scales_marker_size(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        """Regression: 3D volume-landscape UI keeps glyphs smaller than the default n-curve (relative factor unchanged after dashboard glyph scale)."""
-        import json
-
-        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
-
-        base = json.loads(
-            scatter3d_z_json(
-                dashboard_experiment,
-                "z0",
-                "z1",
-                "z2",
-                None,
-                volume_landscape_3d_style=False,
-            )
-        )
-        vol = json.loads(
-            scatter3d_z_json(
-                dashboard_experiment,
-                "z0",
-                "z1",
-                "z2",
-                None,
-                volume_landscape_3d_style=True,
-            )
-        )
-        sz_b = base["data"][0]["marker"]["size"]
-        sz_v = vol["data"][0]["marker"]["size"]
-        assert isinstance(sz_b, (int, float))
-        assert isinstance(sz_v, (int, float))
-        factor = (1.0 - 0.31) * (1.0 - 0.13) ** 2 * 0.8 * 1.13 * 1.728 * 1.11
-        assert float(sz_v) == pytest.approx(float(sz_b) * factor, rel=1e-6, abs=1e-9)
-        assert float(sz_v) < float(sz_b)
-
-    def test_numeric_array_to_plotly_hex_batched_matches_per_point(
-        self,
-    ) -> None:
-        """Batched ``sample_colorscale`` must match legacy per-point mapping."""
-        from plotly.colors import sample_colorscale
-
-        from cryodrgn.dashboard.plots_color_covariate import (
-            numeric_array_to_plotly_hex,
-            plotly_color_to_hex,
-        )
-
-        vals = np.array([0.0, 0.5, 1.0, np.nan, -0.2, 1.2], dtype=np.float64)
-        batched = numeric_array_to_plotly_hex(vals, "Viridis", vmin=0.0, vmax=1.0)
-        legacy: list[str] = []
-        for i in range(len(vals)):
-            v = vals[i]
-            if not np.isfinite(v):
-                legacy.append("#9ca3af")
-                continue
-            t = max(0.0, min(1.0, float(v)))
-            legacy.append(plotly_color_to_hex(sample_colorscale("Viridis", [t])[0]))
-        assert batched == legacy
-        assert all(str(c).startswith("#") for c in batched)
-
-    def test_scatter3d_continuous_covariate_uses_per_point_hex_marker_colors(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        """Continuous scatter3d markers must be per-point hex so letter overlays match WebGL."""
-        import json
-
-        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
-
-        e = dashboard_experiment
-        allow = frozenset({"z0", "z1", "z2"})
-        fig = json.loads(
-            scatter3d_z_json(
-                e,
-                "z0",
-                "z1",
-                "z2",
-                "z0",
-                plot_df=e.plot_df.iloc[:80],
-                xyz_axes_allowed=allow,
-                volume_landscape_3d_style=True,
-                continuous_palette="Viridis",
-            )
-        )
-        mk = fig["data"][0]["marker"]
-        colors = mk["color"]
-        assert isinstance(colors, list)
-        assert len(colors) == 80
-        assert all(
-            isinstance(c, str) and (c.startswith("#") or c.startswith("rgb"))
-            for c in colors
-        )
-        assert "colorscale" not in mk
-        meta = (fig.get("layout") or {}).get("meta") or {}
-        assert meta.get("cdrgn_color_mode") == "continuous"
-        assert meta.get("cdrgn_continuous_palette") == "Viridis"
-
-    def test_scatter3d_vol_landscape_overlay_trace_uses_markers_plus_text(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        """3D volume-landscape GIF UI: trace starts as markers+text so selection restyle skips mode flip."""
-        import json
-
-        import numpy as np
-
-        from cryodrgn.dashboard.column_names import VOL_LANDSCAPE_NEAREST_SKETCH_VOL
-        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
-
-        e = dashboard_experiment
-        sub = e.plot_df.iloc[:40].copy()
-        sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL] = (
-            np.arange(len(sub), dtype=np.int64) % 3 + 1
-        )
-        allow = frozenset({"z0", "z1", "z2"})
-        js = scatter3d_z_json(
-            e,
-            "z0",
-            "z1",
-            "z2",
-            "none",
-            plot_df=sub,
-            xyz_axes_allowed=allow,
-            volume_landscape_3d_style=True,
-        )
-        fig = json.loads(js)
-        tr = fig["data"][0]
-        assert tr["mode"] == "markers+text"
-        assert tr["text"] == [""] * len(sub)
-        assert tr.get("textposition") == "middle center"
-        tf = tr.get("textfont") or {}
-        assert tf.get("size") == pytest.approx(
-            36 * 0.8 * 0.75 * 1.5 * 0.8 * 0.8 * 0.8 * 0.8
-        )
-        assert tf.get("color") == "#1a1a1a"
-        meta = (fig.get("layout") or {}).get("meta") or {}
-        assert meta.get("cdrgn_landscape_vol_animation") is True
-        assert meta.get("cdrgn_landscape_sketch_centroid_cd") is not True
-
-    def test_scatter3d_vol_landscape_sketch_centroid_customdata(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        import json
-
-        import numpy as np
-
-        from cryodrgn.dashboard.column_names import (
-            VOL_LANDSCAPE_3D_PLOT_DF_ROW,
-            VOL_LANDSCAPE_IS_SKETCH_CENTROID,
-            VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
-        )
-        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
-
-        e = dashboard_experiment
-        sub = e.plot_df.iloc[:40].copy()
-        sub[VOL_LANDSCAPE_3D_PLOT_DF_ROW] = np.arange(40, dtype=np.int64)
-        sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL] = (
-            np.arange(len(sub), dtype=np.int64) % 3 + 1
-        )
-        sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID] = (
-            (np.arange(len(sub), dtype=np.int64) % 5 == 0)
-        ).astype(np.int64)
-        allow = frozenset({"z0", "z1", "z2"})
-        js = scatter3d_z_json(
-            e,
-            "z0",
-            "z1",
-            "z2",
-            "none",
-            plot_df=sub,
-            xyz_axes_allowed=allow,
-            volume_landscape_3d_style=True,
-        )
-        fig = json.loads(js)
-        meta = (fig.get("layout") or {}).get("meta") or {}
-        assert meta.get("cdrgn_landscape_sketch_centroid_cd") is True
-        row0 = fig["data"][0]["customdata"][0]
-        assert int(row0[-1]) in (1, 2, 3)
-        assert int(row0[-2]) in (0, 1)
-
-    def test_subsample_preserving_sketch_centroids_keeps_centroid_rows(self) -> None:
-        import numpy as np
-        import pandas as pd
-
-        from cryodrgn.dashboard.column_names import VOL_LANDSCAPE_IS_SKETCH_CENTROID
-        from cryodrgn.dashboard.plots_figure_utils import (
-            _subsample_preserving_sketch_centroids,
-        )
-
-        n = 200
-        cent = np.zeros(n, dtype=np.int64)
-        cent[[5, 42]] = 1
-        df = pd.DataFrame({VOL_LANDSCAPE_IS_SKETCH_CENTROID: cent})
-        sub, idx = _subsample_preserving_sketch_centroids(df, 20, seed=1)
-        assert len(sub) == 20
-        assert int(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID].sum()) == 2
-        assert 5 in idx and 42 in idx
-
-    def test_scatter3d_without_vol_overlay_trace_stays_markers_only(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        import json
-
-        from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
-
-        e = dashboard_experiment
-        sub = e.plot_df.iloc[:40].copy()
-        allow = frozenset({"z0", "z1", "z2"})
-        js = scatter3d_z_json(
-            e,
-            "z0",
-            "z1",
-            "z2",
-            "none",
-            plot_df=sub,
-            xyz_axes_allowed=allow,
-            volume_landscape_3d_style=True,
-        )
-        fig = json.loads(js)
-        tr = fig["data"][0]
-        assert tr["mode"] == "markers"
-        assert "text" not in tr
-        meta = (fig.get("layout") or {}).get("meta") or {}
-        assert meta.get("cdrgn_landscape_vol_animation") is not True
-
-    def test_latent_3d_vol_anim_wires_preview_loading_callback(self) -> None:
-        """ChimeraX runs use ``setPreviewAnimLoading`` on the preview stack; main ``setRendering`` is scatter reload only."""
-        root = dashboard_repo_root()
-        p = root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
-        text = p.read_text(encoding="utf-8")
-        assert "setPreviewAnimLoading:" in text
-        assert "latent3dVolAnimApi.afterPlotRedraw" in text
-        assert "l3dva-preview-anim-overlay" in text
-        assert "function setRendering(on" in text
-        assert "setRendering(true" in text
-        assert "setLatent3dPreviewAnimLoading" in text
-        assert "CryoLatent3dVolLandscapeAnim.boot" in text
-        vol_js = (
-            root
-            / "cryodrgn"
-            / "dashboard"
-            / "static"
-            / "js"
-            / "latent3d_landscape_vol_animations.js"
-        )
-        vol_text = vol_js.read_text(encoding="utf-8")
-        assert "reapplySelectionHighlightIfNeeded" in vol_text
-        assert "estimatedChimeraxViewMatrixText" in vol_text
-        assert "viewRotationsAreActive" in vol_text
-        assert "syncViewMatrixField" in vol_text
-        assert "applyViewMatrixFromField" in vol_text
-        assert "view-matrix-input" in text
-        assert 'name="l3dva-gif-mode"' in text
-        assert 'value="disabled"' in text
-        assert "animationsEnabled" in vol_text
-        assert "volSelectionBlockedForAdd" in vol_text
-        assert "ChimeraX view matrix: rendering" not in vol_text
-        assert "referenceScatter3dBaseMarkerSize" in vol_text
-
-    def test_landscape_volpca_selection_sizes_respect_trace_marker(self) -> None:
-        root = dashboard_repo_root()
-        js = root / "cryodrgn" / "dashboard" / "static" / "js" / "landscape_volpca.js"
-        vol_text = js.read_text(encoding="utf-8")
-        assert "referenceScatter3dBaseMarkerSize" in vol_text
-        assert "cdrgnVolSelectionOverlay" in vol_text
-        assert "volIdToPointIndex" in vol_text
-        assert "updateVolSelectionOverlay" in vol_text
-        assert "volMontageLabel" in vol_text
-        assert "syncStableSelectionLabels" in vol_text
-        assert "suppressPlotlySelectedUntil" in vol_text
-        assert "beginClickToggleSelection" in vol_text
-        assert "plotlySelectedSuppressed" in vol_text
-        assert "plotlySelectedFromLassoOrBox" in vol_text
-        assert "volFromClickEvent" in vol_text
-        assert "volLassoBoxGestureActive" in vol_text
-        assert "plotly_selecting" in vol_text
-        assert "baseTracePointsFromSelectedEvent" in vol_text
-        assert "traceForPlotlyPoint" in vol_text
-        assert "applyBaseTraceOpacityDimming" in vol_text
-        assert "VOLSKETCH_LASSO_DEBOUNCE_MS" in vol_text
-        assert "beginVolsketchLassoDimmingGesture" in vol_text
-        start = vol_text.find('gd.on("plotly_selected", function(ev)')
-        assert start != -1
-        mid = vol_text.find("volsketchLassoSelectTimer = setTimeout(function()", start)
-        assert mid != -1
-        end = vol_text.find("}, VOLSKETCH_LASSO_DEBOUNCE_MS);", mid)
-        debounce_block = vol_text[mid:end]
-        assert "handleVolSketchPlotlySelected" in debounce_block
-        assert "selectedpoints: [indices.slice()]" in vol_text
-        assert "assignVolMontageLabelsSorted" in vol_text
-        assert "resetVolMontageLabels" in vol_text
-
-    def test_latent_3d_loads_scatter3d_scene_module_before_vol_anim(self) -> None:
-        root = dashboard_repo_root()
-        text = (
-            root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
-        ).read_text(encoding="utf-8")
-        assert "plotly_scatter3d_scene.js" in text
-        assert "lastLatent3dPersistedSceneSnap" in text
-        assert "latent3dSceneSnapHasCamera" in text
-        assert "inset: 0" in text
-        assert "background: transparent" in text
-        p3 = text.index("plotly_scatter3d_scene.js")
-        assert p3 < text.index("(function() {")
-        js = (
-            root
-            / "cryodrgn"
-            / "dashboard"
-            / "static"
-            / "js"
-            / "plotly_scatter3d_scene.js"
-        )
-        assert js.is_file()
-        js_text = js.read_text(encoding="utf-8")
-        assert "CryoPlotlyScatter3dScene" in js_text
-        assert "applySnapshotToFigureLayout" in js_text
-        assert "sceneRelayoutPatchCameraOnly" in js_text
-        # Colour-covariate changes await legend ``refresh`` before vol-anim tail + scene restore.
-        assert "pRefresh" in text and "cRefresh.then" in text
-
-
-class TestPlotlyScatter3dSceneCameraPreserve:
-    """Static contracts for ``plotly_scatter3d_scene.js`` orbit preservation."""
-
-    @staticmethod
-    def _scene_js() -> str:
-        root = dashboard_repo_root()
-        return (
-            root
-            / "cryodrgn"
-            / "dashboard"
-            / "static"
-            / "js"
-            / "plotly_scatter3d_scene.js"
-        ).read_text(encoding="utf-8")
-
-    def test_scene_relayout_patch_camera_only_is_camera_only(self) -> None:
-        text = self._scene_js()
-        fn = text.split("function sceneRelayoutPatchCameraOnly", 1)[1]
-        body = fn.split("function restore(", 1)[0]
-        assert '"scene.camera"' in body
-        assert "scene.xaxis.range" not in body
-        assert "scene.yaxis.range" not in body
-
-    def test_marker_restyle_preserving_camera_uses_plotly_update(self) -> None:
-        text = self._scene_js()
-        fn = text.split("function traceMarkerRestylePreservingCamera", 1)[1]
-        body = fn.split("function traceCoordsRestyleFromFigure", 1)[0]
-        assert "Plotly.update(gd, upd, layoutPatch, [0])" in body
-        assert "sceneRelayoutPatchCameraOnly(pinSnap)" in body
-
-    def test_resolve_camera_prefers_webgl_get_camera(self) -> None:
-        text = self._scene_js()
-        fn = text.split("function resolveCameraFromGd", 1)[1]
-        body = fn.split("function snapshot(", 1)[0]
-        assert "scene._scene.getCamera" in body
-
-    def test_apply_snapshot_camera_only_skips_axis_ranges(self) -> None:
-        text = self._scene_js()
-        fn = text.split("function applySnapshotCameraOnlyToFigureLayout", 1)[1]
-        body = fn.split("function layoutPatchWithoutScene", 1)[0]
-        assert "fig.layout.scene.camera" in body
-        assert "xaxis" not in body or "applyRange" not in body
-
-
-class TestLatent3dScatter3dCameraSnapBack:
-    """Regression guards for latent-3D viewing-angle snap-back fixes."""
-
-    @staticmethod
-    def _latent_html() -> str:
-        root = dashboard_repo_root()
-        return (
-            root / "cryodrgn" / "dashboard" / "templates" / "latent_3d.html"
-        ).read_text(encoding="utf-8")
-
-    def test_set_rendering_does_not_restore_camera_before_overlay(self) -> None:
-        text = self._latent_html()
-        fn = text.split("function setRendering(on, opts)", 1)[1]
-        body = fn.split("function selectedLatentPalette", 1)[0]
-        assert "Do not relayout the camera before showing the badge" in body
-        assert "restoreCameraOnly" not in body
-
-    def test_same_axes_reload_uses_nonblocking_rendering_overlay(self) -> None:
-        text = self._latent_html()
-        fn = text.split("function loadPlot()", 1)[1]
-        body = fn.split("function buildLatent3dPostPayload", 1)[0]
-        assert "useNonblockingOverlay" in body
-        assert "latent3dSameAxesAsLast" in body
-        assert "setRendering(true, { nonblocking: useNonblockingOverlay })" in body
-
-    def test_load_plot_captures_live_scene_pin_before_fetch(self) -> None:
-        text = self._latent_html()
-        fn = text.split("function loadPlot()", 1)[1]
-        body = fn.split("fetch(scatter3dUrl", 1)[0]
-        assert "latent3dCaptureScenePinPreferLive()" in body
-        assert (
-            "P3S.snapshot(gd)"
-            in text.split("function latent3dCaptureScenePinPreferLive", 1)[1].split(
-                "function latent3dCameraWatchdog", 1
-            )[0]
-        )
-
-    def test_colour_covariate_tail_awaits_legend_refresh_before_overlay_off(
-        self,
-    ) -> None:
-        text = self._latent_html()
-        assert "knocks the scatter3d camera back" in text
-        tail = text.split("function runLatent3dPostResizeTail", 1)[1]
-        assert "cRefresh.then(function()" in tail
-        idx_refresh = tail.index("cRefresh.then")
-        idx_overlay_off = tail.index("setRendering(false)")
-        assert idx_refresh < idx_overlay_off
-
-    def test_same_axes_marker_restyle_preserves_camera(self) -> None:
-        text = self._latent_html()
-        fn = text.split("function latent3dApplyFigurePreservingScene", 1)[1]
-        body = fn.split("function latent3dStabilizeSceneAfterOverlay", 1)[0]
-        assert "traceMarkerRestylePreservingCamera(fig, gd, pin)" in body
-        assert "applySnapshotCameraOnlyToFigureLayout(fig, pin)" in body
-
-    def test_rendering_overlay_is_not_stacked_over_webgl_plot(self) -> None:
-        text = self._latent_html()
-        assert "latent3d-rendering-overlay" in text
-        assert "cryo-plot-rendering-overlay--nonblocking" in text
-        # Full-bleed veil must not use backdrop-filter over the WebGL canvas.
-        head = text.split("{% block content %}", 1)[0]
-        assert "backdrop-filter" not in head or "No backdrop-filter" in head
-        assert "#latent3d-rendering-overlay" in head
-        assert "inset: 0" in head
-
-    def test_afterplot_does_not_restore_stale_load_pin_after_user_orbit(self) -> None:
-        text = self._latent_html()
-        fn = text.split("function latent3dOnPlotlyAfterplot", 1)[1]
-        body = fn.split("function latent3dPersistSceneAfterUserOrbit", 1)[0]
-        assert "User orbited during scene hold" in body
-        assert "cameraEyeDiffers(loadPin, liveAfter)" in body
-        persist = text.split("function latent3dPersistSceneAfterUserOrbit", 1)[1]
-        persist = persist.split("function latent3dOnPlotlyAfterplot", 1)[0]
-        assert "gd._cryoLatent3dLoadScenePin = holdPin" in persist
-
-    def test_volanim_discrete_legend_does_not_expand_from_plot_width(self) -> None:
-        """Discrete mode must not set ``--cryo-discrete-legend-w`` from plot stack (squeezes the 3D view)."""
-        text = self._latent_html()
-        fn = text.split("function syncLatent3dDiscreteLegendTargetWidth", 1)[1]
-        body = fn.split("function syncLatent3dLegendMiddleWidth", 1)[0]
-        assert "latent3dIsVolanimLayout()" in body
-        assert 'removeProperty("--cryo-discrete-legend-w")' in body
-        volanim = text.split(
-            ".cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band", 1
-        )[1]
-        volanim = volanim.split("{% endif %}", 1)[0]
-        assert "grid-template-columns: minmax(0, 1fr) minmax(0, 9.25rem)" in volanim
-        assert "cryo-cc-discrete-switches--pair-2col" in volanim

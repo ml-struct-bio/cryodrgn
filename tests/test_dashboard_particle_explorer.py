@@ -24,6 +24,7 @@ from cryodrgn.dashboard.particle_explorer import (
     explorer_volumes_eligible,
     montage_cell_label,
 )
+from tests.conftest import read_dashboard_static_js
 from cryodrgn.dashboard.preload import (
     DEFAULT_PRELOAD_IMAGE_LIMIT,
     _hybrid_random_knn_spaced_local_indices,
@@ -760,8 +761,15 @@ class TestApiPreloadImages:
 
 class TestParticleExplorerTemplateRegressions:
     def test_particle_page_exposes_cache_progress_and_image_grid_shell(
-        self, flask_client
+        self, flask_client, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Volumes markup is wrapped in ``{% if show_volume_explorer %}``, which follows
+        # ``explorer_volumes_eligible`` (CUDA + weights). GitHub Actions has no GPU,
+        # so pin eligibility here to lock template structure on every runner.
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
+            lambda _e: True,
+        )
         r = flask_client.get("/explorer")
         assert r.status_code == 200
         body = r.get_data(as_text=True)
@@ -808,6 +816,19 @@ class TestParticleExplorerTemplateRegressions:
         assert p_idx != -1 and c_idx != -1 and p_idx < c_idx
         assert "new CryoColorCovariateLegend" in body
         assert "function showGridHighlightsEnabled()" in body
+
+    def test_particle_page_omits_volumes_panel_when_ineligible(
+        self, flask_client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
+            lambda _e: False,
+        )
+        r = flask_client.get("/explorer")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert 'id="volumes-panel-toggle"' not in body
+        assert "var showVolumeExplorer = false" in body
 
     def test_explorer_legend_static_assets_served_by_flask(self, flask_client) -> None:
         """Wheel/sdist must ship nested ``static/js/*`` (``static/*`` alone omits them)."""
@@ -1029,11 +1050,7 @@ class TestParticleExplorerTemplateRegressions:
         assert "CryoDashboardIcons" in body
 
     def test_save_floppy_icon_is_outline_reference_style(self) -> None:
-        from pathlib import Path
-
-        js = Path("cryodrgn/dashboard/static/js/cryo_dashboard_icons.js").read_text(
-            encoding="utf-8"
-        )
+        js = read_dashboard_static_js("cryo_dashboard_icons.js")
         assert 'fill=\\"none\\"' in js
         assert 'stroke=\\"currentColor\\"' in js
         assert "M3.75 6.25" in js

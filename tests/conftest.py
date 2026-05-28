@@ -4,6 +4,7 @@ import pytest
 import os
 import argparse
 import shutil
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Union, Generator, Any
 from dataclasses import dataclass
@@ -586,7 +587,35 @@ def png_b64_rgb(
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
 
 
+@lru_cache(maxsize=None)
 def read_dashboard_template(rel: str) -> str:
-    """Read a Jinja template under ``cryodrgn/dashboard/templates/``."""
+    """Cached read of a Jinja template under ``cryodrgn/dashboard/templates/``."""
     path = dashboard_repo_root() / "cryodrgn" / "dashboard" / "templates" / rel
     return path.read_text(encoding="utf-8")
+
+
+def _read_dashboard_static(rel: str, subdir: str) -> str:
+    path = dashboard_repo_root() / "cryodrgn" / "dashboard" / "static" / subdir / rel
+    return path.read_text(encoding="utf-8")
+
+
+@lru_cache(maxsize=None)
+def read_dashboard_static_js(rel: str) -> str:
+    """Cached read of ``cryodrgn/dashboard/static/js/<rel>``."""
+    return _read_dashboard_static(rel, "js")
+
+
+@lru_cache(maxsize=None)
+def read_dashboard_static_css(rel: str) -> str:
+    """Cached read of ``cryodrgn/dashboard/static/css/<rel>``."""
+    return _read_dashboard_static(rel, "css")
+
+
+def read_latent_3d_html() -> str:
+    """Cached read of ``latent_3d.html``."""
+    return read_dashboard_template("latent_3d.html")
+
+
+def js_function_body(source: str, fn_marker: str, until_marker: str) -> str:
+    """Slice a JS source string from ``fn_marker`` up to (but not including) ``until_marker``."""
+    return source.split(fn_marker, 1)[1].split(until_marker, 1)[0]

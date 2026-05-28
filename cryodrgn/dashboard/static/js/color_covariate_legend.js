@@ -147,6 +147,7 @@
     this._thresholdLevel = null;
     this._thresholdRange = null;
     this._thresholdCol = null;
+    this._discreteCol = null;
     this._histWired = false;
     this._suppressDiscrete = false;
     this._hoverRaf = null;
@@ -231,6 +232,7 @@
     this._thresholdLevel = null;
     this._thresholdRange = null;
     this._thresholdCol = null;
+    this._discreteCol = null;
     this._histValueRange = null;
     this._histDragPreview = null;
     this._histPointerDown = false;
@@ -254,6 +256,7 @@
     this._thresholdLevel = null;
     this._thresholdRange = null;
     this._thresholdCol = null;
+    this._discreteCol = null;
     this._histValueRange = null;
     this._histDragPreview = null;
     this._histPointerDown = false;
@@ -330,6 +333,7 @@
       };
     }
     if (this._mode === "discrete") {
+      if (this._discreteCol !== col) return null;
       var keys = [];
       var inputs = discreteCategoryInputsFrom(this.discreteSwitches, true);
       for (var i = 0; i < inputs.length; i++) {
@@ -355,6 +359,7 @@
     this._thresholdLevel = null;
     this._thresholdRange = null;
     this._thresholdCol = null;
+    this._discreteCol = null;
     this._histDragPreview = null;
     this._histPointerDown = false;
     if (this.thresholdUseMax) {
@@ -640,6 +645,7 @@
             self._closeDiscreteColorPopover(true);
           }
           self._mode = "continuous";
+          self._discreteCol = null;
           self._continuousValues = data.values || [];
           self._discreteChipBlendAlpha = null;
           self._discreteChipBlendBg = null;
@@ -683,6 +689,7 @@
           self._discreteChipBlendBg =
             typeof data.chip_blend_bg === "string" ? data.chip_blend_bg : null;
           self._mode = "discrete";
+          self._discreteCol = col;
           self.show();
           if (self.continuousWrap) self.continuousWrap.hidden = true;
           if (self.discreteWrap) {
@@ -1726,6 +1733,7 @@
     this._syncDiscretePopoverAnchorAfterDiscreteRender();
     var afterDiscreteLay = function () {
       self.fitDiscreteSwitchColumnWidths();
+      self.fitDiscreteLegendScrollRegion();
       self.measureDiscreteInvertAsideColumn();
       self.scheduleInvertTypographyFit();
       if (typeof self.onDiscreteLayout === "function") {
@@ -1803,6 +1811,65 @@
     if (maxColW > 0) colW = Math.min(colW, maxColW);
     if (regionW > 1 && colW > regionW) colW = Math.max(1, Math.floor(regionW));
     this.discreteSwitches.style.setProperty("--cryo-discrete-col-w", colW + "px");
+
+    var maxCellH = 0;
+    for (var hi = 0; hi < cells.length; hi++) {
+      var cellH = cells[hi].offsetHeight;
+      if (cellH > maxCellH) maxCellH = cellH;
+    }
+    if (maxCellH > 0) {
+      this.discreteSwitches.style.setProperty("--cryo-discrete-cell-min-h", maxCellH + "px");
+    } else {
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-min-h");
+    }
+  };
+
+  /**
+   * When the legend panel or discrete wrap has a bounded height, cap the toggle grid scroll host
+   * so overflow scrolls inside the legend instead of stretching the page layout.
+   */
+  CryoColorCovariateLegend.prototype.fitDiscreteLegendScrollRegion = function () {
+    if (!this.discreteSwitches || this._mode !== "discrete") return;
+    var scrollHost =
+      this.discreteSwitches.querySelector(".cryo-cc-discrete-cells-wrap") ||
+      this.discreteSwitches;
+    var regionRoot = this.discreteWrap;
+    if (!regionRoot || regionRoot.hidden) {
+      scrollHost.style.removeProperty("max-height");
+      return;
+    }
+    var boundary = regionRoot;
+    var panel = this.panel;
+    if (panel && !panel.hidden && panel.clientHeight > 0) {
+      var panelRect = panel.getBoundingClientRect();
+      var regionRect = regionRoot.getBoundingClientRect();
+      if (panelRect.height > 8 && panelRect.height <= regionRect.height + 2) {
+        boundary = panel;
+      }
+    }
+    if (boundary.clientHeight < 16) {
+      scrollHost.style.removeProperty("max-height");
+      return;
+    }
+    var usedTop = scrollHost.offsetTop - boundary.offsetTop;
+    var usedBottom = 0;
+    var sib = scrollHost.nextElementSibling;
+    while (sib && boundary.contains(sib)) {
+      if (sib.offsetParent !== null) {
+        usedBottom += sib.offsetHeight;
+        var sibStyle = window.getComputedStyle(sib);
+        usedBottom +=
+          (parseFloat(sibStyle.marginTop) || 0) +
+          (parseFloat(sibStyle.marginBottom) || 0);
+      }
+      sib = sib.nextElementSibling;
+    }
+    var available = boundary.clientHeight - usedTop - usedBottom - 4;
+    if (available < 40 || scrollHost.scrollHeight <= available + 1) {
+      scrollHost.style.removeProperty("max-height");
+      return;
+    }
+    scrollHost.style.maxHeight = Math.floor(available) + "px";
   };
 
   CryoColorCovariateLegend.prototype.measureDiscreteInvertAsideColumn = function () {

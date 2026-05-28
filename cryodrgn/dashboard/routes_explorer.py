@@ -124,11 +124,6 @@ _LEAD_LATENT_3D = (
     "to filter particles.</p>"
 )
 
-_LATENT_3D_AXES_NOTE = (
-    '<p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">'
-    "Pick three <strong>different</strong> coordinates (z0, z1, …).</p>"
-)
-
 # ---------------------------------------------------------------------------
 # Top-level pages
 # ---------------------------------------------------------------------------
@@ -548,8 +543,6 @@ def latent_3d_page():
         nav_bar_title="3D visualizer",
         lead_html=_LEAD_LATENT_3D,
         axis_cols=axis_cols,
-        axes_fieldset_legend="Latent axes",
-        axes_fieldset_note_html=_LATENT_3D_AXES_NOTE,
         numeric_cols=cols,
         covariate_display_map=_covariate_display_map(cols),
         default_x="z0",
@@ -604,8 +597,6 @@ def landscape_full_3d_page():
         nav_bar_title="3D volume landscapes",
         lead_html=LANDSCAPE_FULL_3D_LEAD_HTML,
         axis_cols=vol_axes,
-        axes_fieldset_legend="Volume PCA axes",
-        axes_fieldset_note_html="",
         numeric_cols=cols,
         covariate_display_map=_covariate_display_map(
             cols,

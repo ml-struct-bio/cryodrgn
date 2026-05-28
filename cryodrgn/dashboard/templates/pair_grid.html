@@ -351,10 +351,16 @@
     background: rgba(250, 248, 244, 0.85);
     width: max-content;
     max-width: 100%;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     min-height: 0;
+    max-height: min(80vh, 80svh);
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+  }
+  .pairplot-color-legend-aside #pair-color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
   }
   .cryo-cc-legend--vertical {
@@ -916,12 +922,16 @@
     } else {
       panel.style.removeProperty("--pair-legend-middle-w");
     }
-    if (
-      typeof pairColorLegend !== "undefined" &&
-      pairColorLegend &&
-      typeof pairColorLegend.scheduleInvertTypographyFit === "function"
-    ) {
-      pairColorLegend.scheduleInvertTypographyFit();
+    if (typeof pairColorLegend !== "undefined" && pairColorLegend) {
+      if (typeof pairColorLegend.fitDiscreteSwitchColumnWidths === "function") {
+        pairColorLegend.fitDiscreteSwitchColumnWidths();
+      }
+      if (typeof pairColorLegend.fitDiscreteLegendScrollRegion === "function") {
+        pairColorLegend.fitDiscreteLegendScrollRegion();
+      }
+      if (typeof pairColorLegend.scheduleInvertTypographyFit === "function") {
+        pairColorLegend.scheduleInvertTypographyFit();
+      }
     }
   }
 

@@ -183,11 +183,14 @@
 }
 
 #color-hist-panel:not([hidden]):has(#color-discrete-wrap.cryo-cc-discrete-wrap--show),
-#color-hist-panel:not([hidden]):has(#color-discrete-wrap.cryo-color-discrete-wrap--show) {
+#color-hist-panel:not([hidden]):has(#color-discrete-wrap.cryo-color-discrete-wrap--show),
+#latent3d-color-legend-panel:not([hidden]):has(#latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show),
+#pair-color-legend-panel:not([hidden]):has(#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show) {
   display: flex;
   flex-direction: column;
   max-height: 80vh;
   max-height: 80svh;
+  min-height: 0;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -347,8 +350,26 @@ button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:focus-visi
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(36, 59, 83, 0.42) rgba(36, 59, 83, 0.09);
   box-sizing: border-box;
   padding: 0.2rem 0.34rem 0.22rem 0.16rem;
+}
+
+.cryo-cc-discrete-switches::-webkit-scrollbar,
+.cryo-color-discrete-switches::-webkit-scrollbar,
+#color-discrete-switches::-webkit-scrollbar,
+.cryo-cc-discrete-cells-wrap::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.cryo-cc-discrete-switches::-webkit-scrollbar-thumb,
+.cryo-color-discrete-switches::-webkit-scrollbar-thumb,
+#color-discrete-switches::-webkit-scrollbar-thumb,
+.cryo-cc-discrete-cells-wrap::-webkit-scrollbar-thumb {
+  background: rgba(36, 59, 83, 0.38);
+  border-radius: 999px;
 }
 
 .cryo-cc-discrete-switches.cryo-color-discrete-switches--invert-aside {
@@ -367,6 +388,8 @@ button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:focus-visi
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(36, 59, 83, 0.42) rgba(36, 59, 83, 0.09);
   box-sizing: border-box;
   padding: 0.1rem 0.16rem 0.12rem 0.1rem;
 }
@@ -404,10 +427,18 @@ button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:focus-visi
 #color-discrete-switches .cryo-cc-discrete-cell {
   width: max-content;
   max-width: min(100%, var(--cryo-discrete-cell-max-w, 100%), var(--cryo-discrete-col-w, 100%));
-  min-height: 0;
+  min-height: var(--cryo-discrete-cell-min-h, auto);
   height: auto;
   box-sizing: border-box;
   justify-self: center;
+  align-self: start;
+}
+
+.cryo-cc-discrete-cells-wrap
+  .cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert):not(.cryo-cc-discrete-cell--invert-heading),
+.cryo-cc-discrete-switches:not(.cryo-color-discrete-switches--invert-aside)
+  > .cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert):not(.cryo-cc-discrete-cell--invert-heading) {
+  min-height: var(--cryo-discrete-cell-min-h, auto);
 }
 
 .cryo-cc-discrete-cell {

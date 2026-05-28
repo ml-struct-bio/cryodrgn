@@ -1331,6 +1331,20 @@
   #color-hist-panel.cryo-color-hist-panel {
     overflow: visible;
   }
+  #color-hist-panel.cryo-color-hist-panel:not([hidden]):has(.cryo-cc-discrete-wrap--show) {
+    display: flex;
+    flex-direction: column;
+    max-height: min(80vh, 80svh);
+    min-height: 0;
+    overflow: hidden;
+    flex-shrink: 1;
+  }
+  #color-hist-panel.cryo-color-hist-panel:not([hidden]):has(.cryo-cc-discrete-wrap--show)
+    #color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
   #color-hist-panel
   #scatter-palette-radios.cryo-explorer-scatter-palette-kit.cryo-palette-select.cryo-palette-select--options-pane {
     display: flex;

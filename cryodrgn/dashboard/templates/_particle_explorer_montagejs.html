@@ -322,6 +322,7 @@
    * state in sync with ``saveSelectionRows``.
    */
   function refreshGridHighlightMarkerStylesFromLastRows() {
+    if (!showGridHighlightsOnPlot()) return;
     if (!highlightTraceAdded || !gd || !gd.data || !gd.data[0] || !gd.data[1]) return;
     var items = montageItemsFromLastRows();
     if (!items.length) return;
@@ -778,6 +779,7 @@
     } else {
       syncVolumeExploreButtons();
     }
+    scheduleSyncMontageGridRegionLayout();
   }
 
   /** Replace one montage letter slot; other cells are left unchanged (double-click → A). */
@@ -1963,11 +1965,8 @@
 
   /* ---------- highlight trace + montage grid coupling ---------- */
   function showGridHighlightsEnabled() {
-    /* Image grid menu folded: still drive montage + A/B/… scatter markers when thumbnails are cached. */
-    return !!(
-      (imagesViewEnabled && preloaded && preloaded.traceMap && preloaded.traceMap.length)
-      || imageGridMenuIsOpen()
-    );
+    if (!imageGridMenuIsOpen()) return false;
+    return !!(imagesViewEnabled && preloaded && preloaded.traceMap && preloaded.traceMap.length);
   }
 
   function showGridHighlightsOnPlot() {
@@ -3350,8 +3349,11 @@
   syncScatterControlsAlignment();
   equalizeMontageActionButtonWidths();
   syncMontageResampleFromCacheButton();
+  syncMontagePanelGridSplit();
+  scheduleSyncMontageGridRegionLayout();
   window.addEventListener("resize", equalizeMontageActionButtonWidths);
   window.addEventListener("resize", scheduleFitMontageResampleCacheButton);
+  window.addEventListener("resize", scheduleSyncMontageGridRegionLayout);
   window.addEventListener("resize", scheduleScatterRegionLabelChipsSync);
   syncScatterPaletteFieldset();
   initializeExplorerView();

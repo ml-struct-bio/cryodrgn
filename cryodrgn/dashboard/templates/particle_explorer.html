@@ -415,7 +415,7 @@
     font-variant-numeric: tabular-nums;
   }
   .cryo-explorer-preload-status {
-    margin: 0.38rem 0 0;
+    margin: 0;
     font-size: 0.78rem;
     line-height: 1.35;
     color: var(--muted, #5c6b7a);
@@ -461,37 +461,35 @@
     width: min(100%, 18rem);
     margin-top: 0.35rem;
   }
-  /* While cache batches load: replace full "Load particle images…" fieldset body with progress */
   .cryo-explorer-cache-load-body {
     margin: 0;
     padding: 0;
     border: none;
     min-width: 0;
   }
+  #cryo-explorer-image-cache-fieldset {
+    position: relative;
+  }
   .cryo-explorer-cache-load-progress-wrap {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    box-sizing: border-box;
     margin: 0;
-    padding: 0;
+    padding: 0.48rem 0.62rem;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.94);
+    border-radius: 4px;
   }
   .cryo-explorer-cache-load-progress-wrap[hidden] {
     display: none !important;
   }
-  .cryo-explorer-montage-group--image-cache-loading > legend {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-  .cryo-explorer-montage-group.cryo-explorer-montage-group--image-cache-loading {
-    position: relative;
-  }
   .cryo-explorer-montage-group--image-cache-loading .cryo-explorer-cache-load-body {
-    display: none;
+    pointer-events: none;
+    opacity: 0.38;
   }
   .cryo-explorer-cache-load-progress-heading {
     margin: 0 0 0.25rem;
@@ -528,7 +526,7 @@
     font-variant-numeric: tabular-nums;
   }
   .cryo-dash-page--image-viewer .cryo-explorer-preload-status.cryo-dash-legend-note {
-    margin: 0.38rem 0 0;
+    margin: 0;
   }
   .cryo-explorer-action-row .cryo-explorer-action-row__hint {
     margin: 0;
@@ -1322,10 +1320,105 @@
     color: #3f0808;
   }
   /*
-   * Right column: same horizontal band as #montage-actions
-   * (“Load particle images…”); histogram height unchanged (#color-hist 5rem).
+   * Right column: controls scroll in the upper band; image grid is pinned to the shared row
+   * bottom (same vertical extent as the plot + left menu columns).
    */
-  .cryo-dash-page--particle-explorer .cryo-dash-montage > .cryo-color-hist-panel {
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-montage {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+  }
+  /* Image grid expanded: 23% scrollable controls, 77% image grid (of montage content height). */
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer
+    .cryo-dash-montage.cryo-dash-montage--image-grid-expanded {
+    display: grid;
+    grid-template-rows: minmax(0, 23fr) minmax(0, 77fr);
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cryo-dash-page--particle-explorer
+    .cryo-dash-montage.cryo-dash-montage--image-grid-expanded
+    .cryo-dash-montage-scroll {
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region {
+    flex: 0 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-top: 0.45rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.12);
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--particle-explorer
+    .cryo-dash-montage.cryo-dash-montage--image-grid-expanded
+    .cryo-dash-montage-grid-region {
+    flex: unset;
+    min-height: 0;
+    margin-top: 0;
+    overflow: hidden;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-dash-montage-inner {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-image-grid-menu-body:not([hidden]) {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-grid-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region #montage-grid {
+    box-sizing: border-box;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  /* Meta band height = 19% of square thumbnail width (container query on cell). */
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-cell {
+    container-type: inline-size;
+    container-name: cryo-montage-cell;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-meta {
+    height: 19cqw;
+    min-height: 19cqw;
+    max-height: 19cqw;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-img-wrap {
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 1;
+    height: auto;
+  }
+  .cryo-dash-page--particle-explorer .cryo-dash-montage-scroll > .cryo-color-hist-panel {
     width: 95%;
     max-width: 95%;
     margin-left: auto;
@@ -1335,7 +1428,9 @@
     box-sizing: border-box;
   }
   /* Match legend width to the load-images / volumes menu stack below. */
-  .cryo-dash-page--particle-explorer .cryo-dash-montage > #montage-actions.cryo-explorer-montage-actions {
+  .cryo-dash-page--particle-explorer
+    .cryo-dash-montage-scroll
+    > #montage-actions.cryo-explorer-montage-actions {
     width: 95%;
     max-width: 95%;
     margin-left: auto;
@@ -1344,7 +1439,8 @@
     box-sizing: border-box;
   }
   .cryo-dash-page--particle-explorer
-    .cryo-dash-montage:not(:has(> .cryo-color-hist-panel:not([hidden])))
+    .cryo-dash-montage:not(:has(.cryo-dash-montage-scroll > .cryo-color-hist-panel:not([hidden])))
+    .cryo-dash-montage-scroll
     > #montage-actions.cryo-explorer-montage-actions {
     margin-top: 0.45rem;
   }
@@ -1520,19 +1616,30 @@
   .cryo-color-discrete-actions {
     display: none !important;
   }
-  /* Selection row: Add left, Clear right; Add 10% wider & Clear 20% narrower vs old 6:3;
-     gap = (2/3)×Clear ⇒ 6.6fr | 1.6fr | 2.4fr. */
+  /* Selection row: Add | cached status | Clear (single band — no status line below). */
   .cryo-explorer-cache-selection-row {
     display: grid;
-    grid-template-columns: minmax(0, 6.6fr) minmax(0, 1.6fr) minmax(0, 2.4fr);
-    align-items: stretch;
+    grid-template-columns: minmax(0, 5.8fr) minmax(0, 3.2fr) minmax(0, 2.4fr);
+    align-items: center;
+    gap: 0.35rem;
     width: 100%;
     box-sizing: border-box;
     min-width: 0;
     margin-top: 0.45rem;
   }
-  .cryo-explorer-cache-selection-row__gap {
-    min-width: 0;
+  .cryo-explorer-cache-selection-row .cryo-explorer-preload-status {
+    margin: 0;
+    padding: 0 0.15rem;
+    font-size: 0.7rem;
+    line-height: 1.25;
+    text-align: center;
+    align-self: center;
+    min-height: 2.5em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
   .cryo-explorer-cache-selection-row .btn {
     width: 100%;
@@ -1589,13 +1696,27 @@
     font-weight: 700;
   }
   /*
-   * Unfix row height (vs default image-viewer) so plot + color chrome share one flex column
-   * without the scatter snapping when histogram threshold copy or row expand class toggled.
+   * Lock row height to the viewport band so left menu, scatter, and montage share one bottom edge.
+   * (Plot column still sizes its square via container queries inside this height.)
    */
   .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-row {
-    height: auto;
+    height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
     min-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
-    max-height: none;
+    max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
+  }
+  /*
+   * Left menu column: same viewport band + scroll behaviour as .cryo-dash-montage so tall
+   * controls do not stretch the row above the plot / montage columns.
+   */
+  .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-side {
+    align-self: flex-start;
+    min-height: 0;
+    max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    position: sticky;
+    top: 1rem;
   }
 </style>
 {% endblock %}

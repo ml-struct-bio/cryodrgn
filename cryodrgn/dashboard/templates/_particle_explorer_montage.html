@@ -1,5 +1,6 @@
-{# Particle explorer montage region: colour legend + montage actions + image grid. #}
+{# Particle explorer montage region: scrollable controls + fixed-height image grid. #}
 <aside class="cryo-dash-montage" aria-label="Particle preview">
+<div class="cryo-dash-montage-scroll">
 <div id="color-hist-panel" class="cryo-color-hist-panel" hidden aria-hidden="true">
       <div class="cryo-cc-legend-region-heading-row">
         <h3 id="color-legend-region-heading" class="cryo-color-legend-region-heading" hidden></h3>
@@ -85,7 +86,8 @@
             title="Select particles first.">
             Add 0 selection images to cache
           </button>
-          <span class="cryo-explorer-cache-selection-row__gap" aria-hidden="true"></span>
+          <p id="preload-status" class="cryo-explorer-preload-status cryo-dash-legend-note"
+            aria-live="polite"></p>
           <button type="button"
             class="btn btn-secondary cryo-explorer-cache-clear-btn"
             id="btn-clear-image-cache"
@@ -94,7 +96,6 @@
             Clear cache
           </button>
         </div>
-        <p id="preload-status" class="cryo-explorer-preload-status cryo-dash-legend-note"></p>
         </div>
         <div
           id="cryo-explorer-cache-load-progress-wrap"
@@ -152,7 +153,9 @@
       </div>
       </fieldset>
       {% endif %}    </div>
+</div>
 
+<div class="cryo-dash-montage-grid-region" aria-label="Image grid">
 <div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
       <div class="cryo-image-grid-toolbar">
         <button type="button" id="image-grid-menu-toggle" class="cryo-image-grid-menu-toggle" aria-expanded="false"
@@ -199,5 +202,6 @@
         </div>
       </div>
     </div>
+</div>
 
 </aside>

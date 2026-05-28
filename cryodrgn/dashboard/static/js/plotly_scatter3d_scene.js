@@ -11,6 +11,17 @@
     return !!(eye && typeof eye === "object");
   }
 
+  function snapHasAxisRanges(snap) {
+    return !!(
+      snap
+      && (
+        (snap.xrange && snap.xrange.length >= 2)
+        || (snap.yrange && snap.yrange.length >= 2)
+        || (snap.zrange && snap.zrange.length >= 2)
+      )
+    );
+  }
+
   function getPinnedSnap(gd) {
     if (!gd) return null;
     var pin = gd._cryoLatent3dScenePin;
@@ -121,20 +132,31 @@
       if (cam) {
         snap.camera = cam;
       }
-      function copyRange(axis) {
-        if (!axis) return null;
-        if (axis.range && axis.range.length >= 2) {
-          return [axis.range[0], axis.range[1]];
+      var layoutScene = null;
+      try {
+        layoutScene = gd.layout && gd.layout.scene;
+      } catch (eLay) { /* ignore */ }
+      function copyRange(axis, axisName) {
+        if (axis) {
+          if (axis.range && axis.range.length >= 2) {
+            return [axis.range[0], axis.range[1]];
+          }
+          try {
+            var rl = axis._rl;
+            if (rl && rl.length >= 2) return [rl[0], rl[1]];
+          } catch (e) { /* ignore */ }
         }
         try {
-          var rl = axis._rl;
-          if (rl && rl.length >= 2) return [rl[0], rl[1]];
-        } catch (e) { /* ignore */ }
+          var layAx = layoutScene && layoutScene[axisName];
+          if (layAx && layAx.range && layAx.range.length >= 2) {
+            return [layAx.range[0], layAx.range[1]];
+          }
+        } catch (e2) { /* ignore */ }
         return null;
       }
-      snap.xrange = copyRange(scene.xaxis);
-      snap.yrange = copyRange(scene.yaxis);
-      snap.zrange = copyRange(scene.zaxis);
+      snap.xrange = copyRange(scene.xaxis, "xaxis");
+      snap.yrange = copyRange(scene.yaxis, "yaxis");
+      snap.zrange = copyRange(scene.zaxis, "zaxis");
       return snap;
     } catch (e) {
       return null;
@@ -272,18 +294,18 @@
     function chainRestore(ms) {
       return new Promise(function(res) {
         setTimeout(function() {
-          var p = restoreCameraOnly(gd, pin);
+          var p = restorePinnedView(gd, pin);
           var c = p && typeof p.then === "function" ? p.catch(function() {}) : Promise.resolve();
           c.then(res);
         }, ms);
       });
     }
     requestAnimationFrame(function() {
-      var p0 = restoreCameraOnly(gd, pin);
+      var p0 = restorePinnedView(gd, pin);
       var c0 = p0 && typeof p0.then === "function" ? p0.catch(function() {}) : Promise.resolve();
       c0.then(function() {
         requestAnimationFrame(function() {
-          var p1 = restoreCameraOnly(gd, pin);
+          var p1 = restorePinnedView(gd, pin);
           var c1 = p1 && typeof p1.then === "function" ? p1.catch(function() {}) : Promise.resolve();
           c1.then(function() {
             chainRestore(0)
@@ -345,10 +367,10 @@
     var upd = markerRestyleUpdateFromFigure(fig);
     var pinSnap = snapHasCamera(pin) ? cloneSnap(pin) : null;
     if (pinSnap && typeof Plotly.update === "function") {
-      var layoutPatch = Object.assign(
-        sceneRelayoutPatchCameraOnly(pinSnap),
-        disableSceneSelectionRelayoutPatch()
-      );
+      var viewPatch = snapHasAxisRanges(pinSnap)
+        ? sceneRelayoutPatchFromSnap(pinSnap)
+        : sceneRelayoutPatchCameraOnly(pinSnap);
+      var layoutPatch = Object.assign(viewPatch, disableSceneSelectionRelayoutPatch());
       beginRestore(gd);
       var pUpd = Plotly.update(gd, upd, layoutPatch, [0]);
       var chain = pUpd && typeof pUpd.then === "function" ? pUpd.catch(function() {}) : Promise.resolve();
@@ -377,9 +399,23 @@
 
   function relayoutCameraAndAxisPatch(pin, layout, includeAxisRanges) {
     var patch = sceneRelayoutPatchCameraOnly(pin);
-    if (includeAxisRanges && layout) {
-      Object.assign(patch, sceneAxisRangeRelayoutPatchFromLayout(layout));
+    if (includeAxisRanges) {
+      if (snapHasAxisRanges(pin)) {
+        var pinAxis = sceneRelayoutPatchFromSnap(pin);
+        Object.keys(pinAxis).forEach(function(k) {
+          if (k !== "scene.camera") patch[k] = pinAxis[k];
+        });
+      } else if (layout) {
+        Object.assign(patch, sceneAxisRangeRelayoutPatchFromLayout(layout));
+      }
     }
+    Object.assign(patch, disableSceneSelectionRelayoutPatch());
+    return patch;
+  }
+
+  /** Camera plus pinned axis limits — never server layout ranges on legend filter redraws. */
+  function relayoutPreserveViewPatch(pin) {
+    var patch = sceneRelayoutPatchFromSnap(pin);
     Object.assign(patch, disableSceneSelectionRelayoutPatch());
     return patch;
   }
@@ -458,6 +494,57 @@
     };
   }
 
+  function stripSceneAxisRangesFromFigureLayout(fig) {
+    if (!fig || !fig.layout || !fig.layout.scene) return;
+    var scn = fig.layout.scene;
+    ["xaxis", "yaxis", "zaxis"].forEach(function(axName) {
+      var ax = scn[axName];
+      if (!ax || typeof ax !== "object") return;
+      delete ax.range;
+      delete ax.autorange;
+    });
+  }
+
+  /**
+   * Merge ``pin`` with live axis limits from ``gd`` when the pin only has a camera
+   * (common before discrete legend toggles that replace the trace via ``Plotly.react``).
+   */
+  function effectiveViewSnapForRedraw(gd, pin) {
+    var out = cloneSnap(pin);
+    var live = null;
+    try {
+      live = snapshot(gd);
+    } catch (e) { /* ignore */ }
+    if (!live) return out;
+    if (!out) return cloneSnap(live);
+    if (!out.camera && live.camera) {
+      out.camera = JSON.parse(JSON.stringify(live.camera));
+    }
+    if (!snapHasAxisRanges(out)) {
+      if (live.xrange) out.xrange = live.xrange.slice();
+      if (live.yrange) out.yrange = live.yrange.slice();
+      if (live.zrange) out.zrange = live.zrange.slice();
+    }
+    return out;
+  }
+
+  /**
+   * Before ``Plotly.react`` on same-axes legend filters: drop server ``scene.*.range`` and
+   * apply the user's current view (orbit + zoom box).
+   */
+  function prepareFigureSceneForPinnedViewRedraw(fig, gd, pin) {
+    if (!fig || !fig.layout || !pin || !gd) return null;
+    var view = effectiveViewSnapForRedraw(gd, pin);
+    if (!view || !snapHasCamera(view)) return null;
+    stripSceneAxisRangesFromFigureLayout(fig);
+    applySnapshotToFigureLayout(fig, view);
+    return view;
+  }
+
+  function restorePinnedView(gd, snap) {
+    return snapHasAxisRanges(snap) ? restore(gd, snap) : restoreCameraOnly(gd, snap);
+  }
+
   /** Orbit only for colour-covariate / marker restyle redraws (server axis limits stay authoritative). */
   function applySnapshotCameraOnlyToFigureLayout(fig, snap) {
     if (!fig || !fig.layout || !snap || !snap.camera || typeof snap.camera !== "object") return;
@@ -470,12 +557,17 @@
   global.CryoPlotlyScatter3dScene = {
     snapshot: snapshot,
     snapHasCamera: snapHasCamera,
+    snapHasAxisRanges: snapHasAxisRanges,
     getPinnedSnap: getPinnedSnap,
     setPinnedSnap: setPinnedSnap,
     isRestoring: isRestoring,
     cameraEyeDiffers: cameraEyeDiffers,
     applySnapshotToFigureLayout: applySnapshotToFigureLayout,
     applySnapshotCameraOnlyToFigureLayout: applySnapshotCameraOnlyToFigureLayout,
+    stripSceneAxisRangesFromFigureLayout: stripSceneAxisRangesFromFigureLayout,
+    effectiveViewSnapForRedraw: effectiveViewSnapForRedraw,
+    prepareFigureSceneForPinnedViewRedraw: prepareFigureSceneForPinnedViewRedraw,
+    restorePinnedView: restorePinnedView,
     sceneRelayoutPatchFromSnap: sceneRelayoutPatchFromSnap,
     sceneRelayoutPatchCameraOnly: sceneRelayoutPatchCameraOnly,
     restore: restore,
@@ -494,6 +586,7 @@
     plotlyDefaultSceneCamera: plotlyDefaultSceneCamera,
     resolveCameraFromGd: resolveCameraFromGd,
     relayoutCameraAndAxisPatch: relayoutCameraAndAxisPatch,
+    relayoutPreserveViewPatch: relayoutPreserveViewPatch,
     disableSceneSelectionRelayoutPatch: disableSceneSelectionRelayoutPatch,
   };
 })(typeof window !== "undefined" ? window : globalThis);

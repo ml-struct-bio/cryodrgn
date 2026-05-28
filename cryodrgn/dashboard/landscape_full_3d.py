@@ -364,7 +364,6 @@ def landscape_full_3d_latent_3d_template_kwargs(
         "nav_bar_title": "3D volume landscapes",
         "lead_html": LANDSCAPE_FULL_3D_LEAD_HTML,
         "axis_cols": vol_axes,
-        "axes_fieldset_legend": "Volume PCA axes",
         "numeric_cols": cols,
         "covariate_display_map": covariate_display_map(cols),
         "default_x": dx,

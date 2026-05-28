@@ -80,20 +80,29 @@
     align-items: stretch;
     width: 100%;
     max-width: none;
-    height: calc((100svh - var(--cryo-dash-below-nav-tall)) * 1.1);
-    min-height: calc((100svh - var(--cryo-dash-below-nav-tall)) * 1.1);
+    height: calc(100svh - var(--cryo-dash-below-nav-tall));
+    min-height: calc(100svh - var(--cryo-dash-below-nav-tall));
+    max-height: calc(100svh - var(--cryo-dash-below-nav-tall));
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-side,
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-main,
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .latent3d-volanim-aside {
     align-self: stretch;
     min-height: 0;
+    max-height: 100%;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-side {
     width: auto;
     min-width: 0;
     max-width: 12.825rem;
     justify-self: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(36, 59, 83, 0.42) rgba(36, 59, 83, 0.09);
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-main {
     width: 100%;
@@ -123,7 +132,7 @@
     grid-column: 1;
     grid-row: 1;
     justify-self: center;
-    --latent3d-volanim-plot-side: calc((100svh - var(--cryo-dash-below-nav-tall)) * 1.1);
+    --latent3d-volanim-plot-side: calc(100svh - var(--cryo-dash-below-nav-tall));
     flex: 0 0 auto;
     width: min(100%, var(--latent3d-volanim-plot-side));
     height: min(100%, var(--latent3d-volanim-plot-side));
@@ -147,10 +156,6 @@
     height: 100%;
     justify-content: flex-start;
     z-index: 2;
-  }
-  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-legend-panel:not([hidden]) {
-    width: 100%;
-    max-width: 100%;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-legend-panel {
     --pair-legend-middle-w: min(4.05rem, 11vw);
@@ -191,6 +196,21 @@
   }
   /* Discrete toggles stay in the narrow legend rail — do not size from plot stack width. */
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-legend-panel:not([hidden]) {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+    width: 100%;
+    max-width: 100%;
+    align-self: stretch;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-color-legend-aside {
+    min-height: 0;
     overflow: hidden;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-discrete-switches--pair-2col {
@@ -214,9 +234,16 @@
     max-width: 22rem;
     width: auto;
     box-sizing: border-box;
-    position: sticky;
-    top: 0.35rem;
+    position: relative;
+    top: auto;
     z-index: 2;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(36, 59, 83, 0.42) rgba(36, 59, 83, 0.09);
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card {
     width: 100%;
@@ -965,12 +992,17 @@
     background: rgba(250, 248, 244, 0.85);
     width: max-content;
     max-width: 100%;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     margin-top: 0;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
   }
   .cryo-dash-page--latent3d .cryo-cc-legend--vertical {
     gap: 0.175rem;
@@ -1266,37 +1298,17 @@
   <div class="cryo-dash-side">
     {{ lead_html | safe }}
     <div class="card cryo-dash-controls" id="latent3d-controls-card">
-{% if legend_context_body_extra %}
       <fieldset>
         <legend>Choose axes<br/>and point color scale</legend>
-        <label class="cryo-select-line" for="sx">First axis</label>
+        <label class="cryo-select-line" for="sx">X axis</label>
         <select id="sx"></select>
-        <label class="cryo-select-line" for="sy">Second axis</label>
+        <label class="cryo-select-line" for="sy">Y axis</label>
         <select id="sy"></select>
-        <label class="cryo-select-line" for="sz">Third axis</label>
+        <label class="cryo-select-line" for="sz">Z axis</label>
         <select id="sz"></select>
         <label class="cryo-select-line" for="sc">Color by</label>
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
-{% else %}
-      <fieldset>
-        <legend>{{ axes_fieldset_legend }}</legend>
-        {{ axes_fieldset_note_html | safe }}
-        <label class="cryo-select-line" for="sx">First axis</label>
-        <select id="sx"></select>
-        <label class="cryo-select-line" for="sy">Second axis</label>
-        <select id="sy"></select>
-        <label class="cryo-select-line" for="sz">Third axis</label>
-        <select id="sz"></select>
-      </fieldset>
-      <fieldset>
-        <legend>Color scale</legend>
-        <p class="cryo-dash-legend-note" style="margin:0 0 0.35rem;">Optional point color from the analysis table (same
-          idea as the 2D scatter view).</p>
-        <label class="cryo-select-line" for="sc">Color by</label>
-        <select id="sc"><option value="none">None</option></select>
-      </fieldset>
-{% endif %}
 {% if show_vol_landscape_quick_actions | default(false) %}
       <fieldset class="l3dva-quick-actions">
         <legend>Quick actions</legend>
@@ -1690,7 +1702,13 @@
 
   function latent3dRestoreLoadScenePin() {
     var pin = gd._cryoLatent3dLoadScenePin || latent3dLoadScenePin;
-    if (!pin || !P3S || typeof P3S.restoreCameraOnly !== "function") {
+    if (!pin || !P3S) {
+      return Promise.resolve();
+    }
+    if (typeof P3S.restorePinnedView === "function") {
+      return P3S.restorePinnedView(gd, pin).catch(function() {});
+    }
+    if (typeof P3S.restoreCameraOnly !== "function") {
       return Promise.resolve();
     }
     return P3S.restoreCameraOnly(gd, pin).catch(function() {});
@@ -1777,7 +1795,11 @@
       return;
     }
     if (latent3dSceneHoldActive()) {
-      P3S.restoreCameraOnly(gd, pin);
+      if (typeof P3S.restorePinnedView === "function") {
+        P3S.restorePinnedView(gd, pin);
+      } else {
+        P3S.restoreCameraOnly(gd, pin);
+      }
       return;
     }
     if (latent3dCameraWatchdogTimer) clearTimeout(latent3dCameraWatchdogTimer);
@@ -1788,7 +1810,11 @@
       if (!pin2) return;
       var live2 = P3S.snapshot(gd);
       if (!live2 || !P3S.cameraEyeDiffers(pin2, live2)) return;
-      P3S.restoreCameraOnly(gd, pin2);
+      if (typeof P3S.restorePinnedView === "function") {
+        P3S.restorePinnedView(gd, pin2);
+      } else {
+        P3S.restoreCameraOnly(gd, pin2);
+      }
     }, 0);
   }
 
@@ -1835,20 +1861,29 @@
     return Plotly.relayout(gd, patch).catch(function() {});
   }
 
-  function latent3dApplyFigurePreservingScene(fig, sceneSnap, sameAxes, hasColorFilter) {
+  function latent3dApplyFigurePreservingScene(fig, sceneSnap, sameAxes) {
     var pin = latent3dCloneScenePin(sceneSnap) || sceneSnap;
     var hasLivePlot = gd && gd.data && gd.data[0] && gd._fullLayout && gd._fullLayout.scene;
+    var viewPin = pin;
+    if (
+      sameAxes
+      && hasLivePlot
+      && P3S
+      && typeof P3S.prepareFigureSceneForPinnedViewRedraw === "function"
+    ) {
+      viewPin = P3S.prepareFigureSceneForPinnedViewRedraw(fig, gd, pin) || pin;
+    }
 
     function finishRedraw() {
-      if (pin) return latent3dEnforceScenePin(pin);
+      if (viewPin) return latent3dEnforceScenePin(viewPin);
       return latent3dDisableSceneLasso();
     }
 
     if (sameAxes && hasLivePlot && P3S) {
-      var markerRestyle = pin
+      var markerRestyle = viewPin
         && typeof P3S.traceMarkerRestylePreservingCamera === "function"
         ? function() {
-            return P3S.traceMarkerRestylePreservingCamera(fig, gd, pin);
+            return P3S.traceMarkerRestylePreservingCamera(fig, gd, viewPin);
           }
         : typeof P3S.traceRestyleFromFigure === "function"
           ? function() {
@@ -1858,7 +1893,7 @@
       if (markerRestyle) {
         return markerRestyle().then(function(didMarkerOnly) {
         if (didMarkerOnly) {
-          return finishRedraw();
+          return latent3dDisableSceneLasso();
         }
         if (typeof Plotly === "undefined" || !Plotly.restyle || !P3S.traceCoordsRestyleFromFigure) {
           return finishRedraw();
@@ -1868,12 +1903,14 @@
         var cCoords = pCoords && typeof pCoords.then === "function"
           ? pCoords.catch(function() {})
           : Promise.resolve();
-        if (!hasColorFilter || !pin || typeof Plotly.relayout !== "function") {
+        if (!viewPin || typeof Plotly.relayout !== "function") {
           return cCoords.then(finishRedraw);
         }
-        var axisPatch = typeof P3S.relayoutCameraAndAxisPatch === "function"
-          ? P3S.relayoutCameraAndAxisPatch(pin, fig.layout, true)
-          : P3S.sceneRelayoutPatchCameraOnly(pin);
+        var axisPatch = typeof P3S.relayoutPreserveViewPatch === "function"
+          ? P3S.relayoutPreserveViewPatch(viewPin)
+          : typeof P3S.sceneRelayoutPatchFromSnap === "function"
+            ? P3S.sceneRelayoutPatchFromSnap(viewPin)
+            : P3S.sceneRelayoutPatchCameraOnly(viewPin);
         return cCoords
           .then(function() {
             if (!axisPatch || !Object.keys(axisPatch).length) return;
@@ -1884,11 +1921,11 @@
       }
     }
 
-    if (pin && P3S) {
-      if (sameAxes && typeof P3S.applySnapshotCameraOnlyToFigureLayout === "function") {
-        P3S.applySnapshotCameraOnlyToFigureLayout(fig, pin);
+    if (viewPin && P3S && !sameAxes) {
+      if (typeof P3S.applySnapshotCameraOnlyToFigureLayout === "function") {
+        P3S.applySnapshotCameraOnlyToFigureLayout(fig, viewPin);
       } else if (typeof P3S.applySnapshotToFigureLayout === "function") {
-        P3S.applySnapshotToFigureLayout(fig, pin);
+        P3S.applySnapshotToFigureLayout(fig, viewPin);
       }
     }
     var pReact = Plotly.react(gd, fig.data, fig.layout, latent3dPlotlyConfig());
@@ -1902,9 +1939,21 @@
    * After the loading overlay is removed, legend chrome and plot size change — resize then
    * re-pin the camera (this is when users see the snap if we restore too early).
    */
-  function latent3dStabilizeSceneAfterOverlay(pin, onDone) {
+  function latent3dStabilizeSceneAfterOverlay(pin, onDone, opts) {
+    opts = opts || {};
     syncControlsAlignment();
     syncLatent3dAsideLayout();
+    if (opts.light) {
+      requestAnimationFrame(function() {
+        try {
+          Plotly.Plots.resize(gd);
+        } catch (eRszLight) { /* ignore */ }
+        if (typeof onDone === "function") {
+          try { onDone(); } catch (eDoneLight) { /* ignore */ }
+        }
+      });
+      return;
+    }
     if (pin) latent3dExtendSceneHold(6000);
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
@@ -2155,6 +2204,9 @@
       if (typeof latent3dColorLegend.fitDiscreteSwitchColumnWidths === "function") {
         latent3dColorLegend.fitDiscreteSwitchColumnWidths();
       }
+      if (typeof latent3dColorLegend.fitDiscreteLegendScrollRegion === "function") {
+        latent3dColorLegend.fitDiscreteLegendScrollRegion();
+      }
       if (typeof latent3dColorLegend.scheduleInvertTypographyFit === "function") {
         latent3dColorLegend.scheduleInvertTypographyFit();
       }
@@ -2383,7 +2435,15 @@
       gd._cryoLatent3dScenePin = null;
     }
     var sceneSnap;
-    if (latent3dSceneHoldActive() && latent3dLoadScenePin) {
+    var hasLivePlot = gd && gd.data && gd.data[0] && gd._fullLayout && gd._fullLayout.scene;
+    if (latent3dSameAxesAsLast && hasLivePlot) {
+      sceneSnap = latent3dCaptureScenePinPreferLive();
+      if (!latent3dSceneSnapHasCamera(sceneSnap)) {
+        sceneSnap = latent3dLoadScenePin || lastLatent3dPersistedSceneSnap;
+      }
+      latent3dSceneHoldUntil = 0;
+      gd._cryoLatent3dSceneHoldUntil = 0;
+    } else if (latent3dSceneHoldActive() && latent3dLoadScenePin) {
       sceneSnap = latent3dLoadScenePin;
     } else {
       sceneSnap = latent3dCaptureScenePinPreferLive();
@@ -2405,7 +2465,6 @@
     var myGen = ++latent3dScatterLoadGen;
     if (st) st.textContent = "";
     var payload = buildLatent3dPostPayload({});
-    var hasColorFilter = !!(payload.color_filter);
     var useNonblockingOverlay = !!(
       latent3dSameAxesAsLast
       && sceneSnap
@@ -2436,8 +2495,7 @@
               return latent3dApplyFigurePreservingScene(
                 fig,
                 sceneSnap,
-                latent3dSameAxesAsLast,
-                hasColorFilter
+                latent3dSameAxesAsLast
               ).then(function() {
                 if (myGen !== latent3dScatterLoadGen) {
                   return;
@@ -2484,7 +2542,9 @@
                         || sceneSnap
                         || latent3dCaptureScenePinPreferLive();
                       setRendering(false);
-                      latent3dStabilizeSceneAfterOverlay(finishPin, function() {
+                      latent3dStabilizeSceneAfterOverlay(
+                        finishPin,
+                        function() {
                         if (myGen !== latent3dScatterLoadGen) {
                           resolve();
                           return;
@@ -2502,7 +2562,9 @@
                             resolve();
                           }
                         });
-                      });
+                      },
+                        { light: useNonblockingOverlay }
+                      );
                     });
                   });
                 }

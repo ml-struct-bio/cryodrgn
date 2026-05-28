@@ -51,6 +51,159 @@ from cryodrgn.dashboard.plots_figure_utils import (
 )
 
 
+# Interactive Plotly 3-D scatters (legend filters must not change trace x/y/z — see helpers
+# below). Consumed by ``/latent-3d``, ``/api/scatter3d_z``, ``/api/scatter3d_z_landscape_full``,
+# and ``landscape_full_3d_scatter_plotly_json``. Static Matplotlib exports
+# (``scatter3d_z_preview_png``, ``scatter3d_discrete_level_png_bytes``) are separate.
+
+
+def _scatter3d_subsample_full_table(
+    df_all: pd.DataFrame,
+    max_points: int,
+    *,
+    no_subsample: bool,
+    seed: int = 1,
+) -> tuple[pd.DataFrame, np.ndarray]:
+    """Fixed-seed subsample of the full analysis table (never a colour-filtered subset)."""
+    if no_subsample:
+        return _subsample(df_all, None, seed=seed)
+    if VOL_LANDSCAPE_IS_SKETCH_CENTROID in df_all.columns:
+        from cryodrgn.dashboard.plots_figure_utils import (
+            _subsample_preserving_sketch_centroids,
+        )
+
+        return _subsample_preserving_sketch_centroids(
+            df_all,
+            max_points,
+            seed=seed,
+            centroid_col=VOL_LANDSCAPE_IS_SKETCH_CENTROID,
+        )
+    return _subsample(df_all, max_points, seed=seed)
+
+
+def _scatter3d_filter_visibility_on_subsample(
+    df_all: pd.DataFrame,
+    row_indices: np.ndarray,
+    color_col: str | None,
+    color_filter: dict[str, Any] | None,
+) -> np.ndarray | None:
+    """Per-subsample-row visibility mask for legend filters (True = show particle)."""
+    if not color_filter or not color_col or color_col == "none":
+        return None
+    if color_col not in df_all.columns:
+        return None
+    kind = color_filter.get("kind")
+    discrete_col = _lower_color_series_is_discrete(df_all[color_col])
+    if kind == "discrete" and not discrete_col:
+        return None
+    if kind in ("threshold", "range") and discrete_col:
+        return None
+    mask_all = plot_df_color_filter_mask(df_all, color_col, color_filter)
+    if not bool(np.any(mask_all)):
+        raise ValueError("No particles match the current colour covariate filter.")
+    return mask_all[row_indices]
+
+
+# Plotly ``scatter3d`` draws per-point ``marker.size`` arrays smaller than a scalar at the
+# same value; boost filtered visible sizes so they scale up from the subsample baseline.
+_SCATTER3D_FILTERED_MARKER_SIZE_ARRAY_BOOST = 2.0
+
+
+def _scatter3d_glyph_count_for_filter(
+    n_sub: int,
+    filter_vis: np.ndarray | None,
+) -> int:
+    """Effective n for the size curve when enlarging a partial legend filter."""
+    n_sub = int(n_sub)
+    if filter_vis is None or bool(np.all(filter_vis)):
+        return n_sub
+    n_visible = int(np.count_nonzero(filter_vis))
+    if 0 < n_visible < n_sub:
+        return n_visible
+    return n_sub
+
+
+def _scatter3d_style_marker_size_opacity(
+    n_points: int,
+    *,
+    point_cap: int,
+    volume_landscape_3d_style: bool,
+) -> tuple[float, float]:
+    """``_scatter3d_marker_size_opacity`` plus dashboard / volume-landscape glyph scaling."""
+    msize, mopacity = _scatter3d_marker_size_opacity(n_points, point_cap=point_cap)
+    if volume_landscape_3d_style:
+        msize *= (1.0 - 0.31) * (1.0 - 0.13) * (1.0 - 0.13) * 0.8
+    msize, mopacity = _dashboard_scatter3d_glyph_visual_scale(msize, mopacity)
+    if volume_landscape_3d_style:
+        msize *= 1.13 * 1.728 * 1.11
+        mopacity = float(max(0.0, min(1.0, mopacity * 0.81)))
+    return msize, mopacity
+
+
+def _scatter3d_marker_sizes_with_legend_filter(
+    n_sub: int,
+    filter_vis: np.ndarray | None,
+    *,
+    point_cap: int,
+    volume_landscape_3d_style: bool,
+) -> tuple[float, float, float]:
+    """Baseline glyph size (full subsample) and visible size when filtering.
+
+    ``baseline`` always matches the unfiltered subsample. ``visible`` scales up from
+    that baseline when rows are hidden, never down.
+    """
+    n_sub = int(n_sub)
+    baseline, mopacity = _scatter3d_style_marker_size_opacity(
+        n_sub,
+        point_cap=point_cap,
+        volume_landscape_3d_style=volume_landscape_3d_style,
+    )
+    visible = float(baseline)
+    if filter_vis is not None and not bool(np.all(filter_vis)):
+        n_visible = int(np.count_nonzero(filter_vis))
+        if 0 < n_visible < n_sub:
+            ref, ref_op = _scatter3d_style_marker_size_opacity(
+                n_visible,
+                point_cap=point_cap,
+                volume_landscape_3d_style=volume_landscape_3d_style,
+            )
+            mopacity = ref_op
+            if baseline > 0:
+                visible = baseline * (ref / baseline)
+            else:
+                visible = ref
+            visible *= _SCATTER3D_FILTERED_MARKER_SIZE_ARRAY_BOOST
+            visible = max(
+                visible, baseline * _SCATTER3D_FILTERED_MARKER_SIZE_ARRAY_BOOST
+            )
+    return baseline, mopacity, visible
+
+
+def _scatter3d_apply_filter_visibility_sizes(
+    marker: dict[str, Any],
+    filter_vis: np.ndarray | None,
+    baseline_size: float,
+    visible_size: float | None = None,
+) -> None:
+    """Hide filtered-out subsample rows via per-point ``marker.size`` (0 = hidden).
+
+    Plotly ``scatter3d`` rejects array ``marker.opacity``; shrinking hidden points keeps
+    per-point hex colours and scalar opacity intact.
+
+    Leave a scalar ``marker.size`` when every subsample row is still visible — per-point
+    size arrays render smaller than the same numeric scalar in WebGL.
+    """
+    if filter_vis is None:
+        return
+    n = int(len(filter_vis))
+    if bool(np.all(filter_vis)):
+        return
+    vis = float(visible_size if visible_size is not None else baseline_size)
+    marker["size"] = [vis if bool(filter_vis[i]) else 0.0 for i in range(n)]
+    marker["sizemode"] = "diameter"
+    marker["sizeref"] = 1.0
+
+
 def _dashboard_scatter3d_glyph_visual_scale(
     size: float, opacity: float
 ) -> tuple[float, float]:
@@ -312,11 +465,13 @@ def scatter3d_z_json(
     and bumps scene tick label size for the
     full-volume-landscape 3D view.
 
-    When ``no_subsample`` is true, every row in the
-    (possibly colour-filtered) table is plotted
+    When ``no_subsample`` is true, every row in the analysis table is plotted
     instead of capping at ``max_points`` — used for discrete-level GIF
-    frames so rare categories
-    are not randomly thinned away.
+    frames so rare categories are not randomly thinned away.
+
+    With ``color_filter``, the subsample is drawn from the full table and
+    non-matching particles are hidden via ``marker.size`` (0 px) so axis limits
+    stay stable while toggling the colour legend.
     """
     plotly_cs = normalize_continuous_palette(continuous_palette)
     df_all = exp.plot_df if plot_df is None else plot_df
@@ -337,37 +492,19 @@ def scatter3d_z_json(
         _, pcmin, pcmax = _continuous_series_stats(df_all[color_col])
         pinned_color_range = (pcmin, pcmax)
 
-    if color_filter and color_col and color_col != "none":
-        mask = plot_df_color_filter_mask(df_all, color_col, color_filter)
-        if not bool(np.any(mask)):
-            raise ValueError("No particles match the current colour covariate filter.")
-        df = df_all.loc[mask].reset_index(drop=True)
-
-    if no_subsample:
-        sub, row_indices = _subsample(df, None, seed=1)
-    elif VOL_LANDSCAPE_IS_SKETCH_CENTROID in df.columns:
-        from cryodrgn.dashboard.plots_figure_utils import (
-            _subsample_preserving_sketch_centroids,
-        )
-
-        sub, row_indices = _subsample_preserving_sketch_centroids(
-            df, max_points, seed=1, centroid_col=VOL_LANDSCAPE_IS_SKETCH_CENTROID
-        )
-    else:
-        sub, row_indices = _subsample(df, max_points, seed=1)
+    sub, row_indices = _scatter3d_subsample_full_table(
+        df_all, max_points, no_subsample=no_subsample
+    )
+    filter_vis = _scatter3d_filter_visibility_on_subsample(
+        df_all, row_indices, color_col, color_filter
+    )
     cap = max(len(sub), 1) if no_subsample else max_points
-    msize, mopacity = _scatter3d_marker_size_opacity(len(sub), point_cap=cap)
-    if volume_landscape_3d_style:
-        # ~31% smaller vs the usual n-points curve,
-        # then two ~13% reductions for this 3D UI,
-        # then a further 20% shrink for the volume-landscape glyph size.
-        msize *= (1.0 - 0.31) * (1.0 - 0.13) * (1.0 - 0.13) * 0.8
-    msize, mopacity = _dashboard_scatter3d_glyph_visual_scale(msize, mopacity)
-    if volume_landscape_3d_style:
-        # ~13% larger points, then +73% radius vs pre-landscape baseline
-        # (three +20% steps); ~19% more transparent.
-        msize *= 1.13 * 1.728 * 1.11
-        mopacity = float(max(0.0, min(1.0, mopacity * 0.81)))
+    msize, mopacity, visible_msize = _scatter3d_marker_sizes_with_legend_filter(
+        len(sub),
+        filter_vis,
+        point_cap=cap,
+        volume_landscape_3d_style=volume_landscape_3d_style,
+    )
 
     discrete_trace = (
         color_col
@@ -445,6 +582,7 @@ def scatter3d_z_json(
 
     # Plotly Scatter3d otherwise picks up a default marker outline in WebGL.
     marker["line"] = dict(width=0)
+    _scatter3d_apply_filter_visibility_sizes(marker, filter_vis, msize, visible_msize)
 
     if VOL_LANDSCAPE_3D_PLOT_DF_ROW in sub.columns:
         row_cd = np.asarray(sub[VOL_LANDSCAPE_3D_PLOT_DF_ROW], dtype=np.int64)
@@ -575,21 +713,11 @@ def scatter3d_z_json(
             d.update(extra)
         return d
 
-    scene_axes_extra: dict[str, dict[str, Any]] = {}
-    if color_filter:
-        scene_axes_extra["xaxis"] = _scene_axis(
-            {"range": list(_pair_grid_axis_lim_padded(df_all[xcol]))}
-        )
-        scene_axes_extra["yaxis"] = _scene_axis(
-            {"range": list(_pair_grid_axis_lim_padded(df_all[ycol]))}
-        )
-        scene_axes_extra["zaxis"] = _scene_axis(
-            {"range": list(_pair_grid_axis_lim_padded(df_all[zcol]))}
-        )
-    else:
-        scene_axes_extra["xaxis"] = _scene_axis()
-        scene_axes_extra["yaxis"] = _scene_axis()
-        scene_axes_extra["zaxis"] = _scene_axis()
+    scene_axes_extra: dict[str, dict[str, Any]] = {
+        "xaxis": _scene_axis(),
+        "yaxis": _scene_axis(),
+        "zaxis": _scene_axis(),
+    }
 
     plot_meta: dict[str, Any] = {}
     if legend_meta is not None:
@@ -778,10 +906,11 @@ def scatter3d_discrete_level_png_bytes(
 ) -> bytes:
     """One Matplotlib 3D frame: every row in a single discrete category.
 
-    No subsampling.
+    No subsampling. This export path **subsets** rows to one category and pins axis
+    limits to the full table — unlike :func:`scatter3d_z_json`, which keeps a fixed
+    subsample and toggles rgba ``marker.color`` for interactive legend filters.
 
-    Used for server-side discrete-level GIFs. Axis limits use padded min/max on the full
-    ``plot_df`` (same idea as the colour-filtered Plotly scene).
+    Used for server-side discrete-level GIF frames only.
 
     Pass ``xyz_axes_allowed`` for volume-PCA landscape tables (with ``exp=None``), or
     ``exp`` with ``xyz_axes_allowed=None`` for standard ``z*`` latent axes.

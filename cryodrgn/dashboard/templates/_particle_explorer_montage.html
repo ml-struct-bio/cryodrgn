@@ -1,6 +1,22 @@
 {# Particle explorer montage region: scrollable controls + fixed-height image grid. #}
 <aside class="cryo-dash-montage" aria-label="Particle preview">
 <div class="cryo-dash-montage-scroll">
+<div id="montage-actions" class="cryo-explorer-montage-actions">
+      <section class="cryo-explorer-panel-section" aria-labelledby="color-selection-panel-toggle">
+        <div id="color-selection-panel-shell" class="cryo-explorer-panel-shell cryo-explorer-panel-shell--inactive">
+        <div class="cryo-explorer-panel-header">
+        <div class="cryo-explorer-panel-toolbar">
+          <button type="button" id="color-selection-panel-toggle"
+            class="cryo-image-grid-menu-toggle cryo-explorer-panel-toggle"
+            aria-expanded="false" aria-controls="color-selection-panel-body">
+            <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
+            <span class="cryo-explorer-panel-toggle__label">Toggle selection</span>
+          </button>
+        </div>
+        <p id="color-selection-inactive-note"
+          class="cryo-explorer-panel-inactive-note cryo-dash-legend-note">Choose a color scale to select by color levels</p>
+        </div>
+        <div id="color-selection-panel-body" class="cryo-explorer-panel-body" hidden>
 <div id="color-hist-panel" class="cryo-color-hist-panel" hidden aria-hidden="true">
       <div class="cryo-cc-legend-region-heading-row">
         <h3 id="color-legend-region-heading" class="cryo-color-legend-region-heading" hidden></h3>
@@ -50,11 +66,24 @@
         </div>
       </div>
     </div>
+        </div>
+        </div>
+      </section>
 
-
-<div id="montage-actions" class="cryo-explorer-montage-actions">
-      <fieldset id="cryo-explorer-image-cache-fieldset" class="cryo-explorer-montage-group">
-        <legend>Load particle images into cache to display in grid</legend>
+      <section class="cryo-explorer-panel-section" aria-labelledby="cache-panel-toggle">
+        <div id="cache-panel-shell" class="cryo-explorer-panel-shell">
+        <div class="cryo-explorer-panel-header">
+        <div class="cryo-explorer-panel-toolbar">
+          <button type="button" id="cache-panel-toggle" class="cryo-image-grid-menu-toggle cryo-explorer-panel-toggle"
+            aria-expanded="true" aria-controls="cryo-explorer-cache-panel-body">
+            <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
+            <span class="cryo-explorer-panel-toggle__label">Load particle images into cache to display in grid</span>
+          </button>
+        </div>
+        </div>
+        <div id="cryo-explorer-cache-panel-body" class="cryo-explorer-panel-body">
+      <fieldset id="cryo-explorer-image-cache-fieldset" class="cryo-explorer-montage-group cryo-explorer-montage-group--panel-body">
+        <legend class="cryo-explorer-montage-group__legend--visually-hidden">Load particle images into cache to display in grid</legend>
         <div id="cryo-explorer-cache-load-body" class="cryo-explorer-cache-load-body">
         <div class="cryo-explorer-load-images-toolbar">
           <label class="cryo-explorer-cache-size-label" for="montage-cache-size-input">
@@ -82,7 +111,7 @@
           </div>
         </div>
         <div class="cryo-explorer-cache-selection-row" aria-label="Selection cache actions">
-          <button type="button" class="btn" id="btn-cache-selection-uncached" disabled
+          <button type="button" class="btn cryo-explorer-cache-selection-add-btn" id="btn-cache-selection-uncached" disabled
             title="Select particles first.">
             Add 0 selection images to cache
           </button>
@@ -93,7 +122,7 @@
             id="btn-clear-image-cache"
             disabled
             title="Build new cache before you can clear one.">
-            Clear cache
+            <span class="cryo-explorer-cache-clear-btn__label">Clear<br>cache</span>
           </button>
         </div>
         </div>
@@ -120,9 +149,82 @@
           </div>
         </div>
       </fieldset>
-            {% if show_volume_explorer %}
-<fieldset class="cryo-explorer-montage-group">
-        <legend>Display reconstructed volumes</legend>
+        </div>
+        </div>
+      </section>
+    </div>
+</div>
+
+<div class="cryo-dash-montage-grid-region" aria-label="Image grid">
+  <section class="cryo-explorer-panel-section" aria-labelledby="image-grid-menu-toggle">
+    <div id="image-grid-panel-shell" class="cryo-explorer-panel-shell cryo-explorer-panel-shell--inactive">
+      <div class="cryo-explorer-panel-header">
+        <div class="cryo-explorer-panel-toolbar">
+          <button type="button" id="image-grid-menu-toggle"
+            class="cryo-image-grid-menu-toggle cryo-explorer-panel-toggle" aria-expanded="false"
+            aria-controls="image-grid-menu-body">
+            <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
+            <span class="cryo-explorer-panel-toggle__label">Image grid</span>
+          </button>
+        </div>
+        <div id="image-grid-toolbar-controls" class="cryo-image-grid-toolbar__controls" hidden>
+          <label id="image-grid-size-inline" class="cryo-image-grid-size-inline">
+            Grid size
+            <select id="grid-size" disabled>
+              <option value="1">1 × 1</option>
+              <option value="2">2 × 2</option>
+              <option value="3" selected>3 × 3</option>
+              <option value="4">4 × 4</option>
+              <option value="5">5 × 5</option>
+              <option value="6">6 × 6</option>
+              <option value="7">7 × 7</option>
+              <option value="8">8 × 8</option>
+            </select>
+          </label>
+          <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
+            aria-label="Resample images from cache" disabled>
+            <span class="cryo-image-grid-resample-btn__label">Resample images<br>from cache</span>
+          </button>
+        </div>
+        <p id="image-grid-inactive-note"
+          class="cryo-explorer-panel-inactive-note cryo-dash-legend-note">Build image cache to populate grid</p>
+      </div>
+      <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
+        <div class="cryo-montage-grid-wrap">
+          <div id="montage-grid" class="cryo-montage-grid"></div>
+          <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
+            <div class="cryo-plot-rendering-overlay__inner">
+              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image
+                cache...</span>
+              <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
+                <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+{% if show_volume_explorer %}
+<div class="cryo-dash-montage-volumes-region" aria-label="Reconstructed volumes">
+  <section class="cryo-explorer-panel-section" aria-labelledby="volumes-panel-toggle">
+    <div id="volumes-panel-shell" class="cryo-explorer-panel-shell cryo-explorer-panel-shell--inactive">
+    <div class="cryo-explorer-panel-header">
+    <div class="cryo-explorer-panel-toolbar">
+      <button type="button" id="volumes-panel-toggle" class="cryo-image-grid-menu-toggle cryo-explorer-panel-toggle"
+        aria-expanded="false" aria-controls="volumes-panel-body">
+        <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
+        <span class="cryo-explorer-panel-toggle__label">Display reconstructed volumes</span>
+      </button>
+    </div>
+    <p id="volumes-inactive-note"
+      class="cryo-explorer-panel-inactive-note cryo-dash-legend-note">Build image cache and choose images first</p>
+    </div>
+    <div id="volumes-panel-body" class="cryo-explorer-panel-body" hidden>
+      <fieldset class="cryo-explorer-montage-group cryo-explorer-montage-group--panel-body">
+        <legend class="cryo-explorer-montage-group__legend--visually-hidden">Display reconstructed volumes</legend>
       <div class="cryo-explorer-action-row">
         <div class="cryo-explorer-action-row__btn">
           <button type="button" class="btn btn-secondary" id="btn-volume-generate" disabled>Generate volumes</button>
@@ -152,56 +254,10 @@
         </div>
       </div>
       </fieldset>
-      {% endif %}    </div>
-</div>
-
-<div class="cryo-dash-montage-grid-region" aria-label="Image grid">
-<div id="montage-inner" class="cryo-dash-montage-inner cryo-dash-montage-inner--disabled">
-      <div class="cryo-image-grid-toolbar">
-        <button type="button" id="image-grid-menu-toggle" class="cryo-image-grid-menu-toggle" aria-expanded="false"
-          aria-controls="image-grid-menu-body">
-          <span class="cryo-image-grid-menu-toggle__chev" aria-hidden="true">&#9656;</span>
-          <span>Image grid</span>
-        </button>
-        <div id="image-grid-toolbar-controls" class="cryo-image-grid-toolbar__controls" hidden>
-          <label id="image-grid-size-inline" class="cryo-image-grid-size-inline">
-            Grid size
-            <select id="grid-size" disabled>
-              <option value="1">1 × 1</option>
-              <option value="2">2 × 2</option>
-              <option value="3" selected>3 × 3</option>
-              <option value="4">4 × 4</option>
-              <option value="5">5 × 5</option>
-              <option value="6">6 × 6</option>
-              <option value="7">7 × 7</option>
-              <option value="8">8 × 8</option>
-            </select>
-          </label>
-          <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
-            aria-label="Resample images from cache" disabled>
-            <span class="cryo-image-grid-resample-btn__label">Resample images<br>from cache</span>
-          </button>
-        </div>
-      </div>
-      <p id="image-grid-inactive-note"
-        class="cryo-dash-legend-note"
-        style="margin:0.22rem 0 0;"
-        hidden>Build image cache to populate grid</p>
-      <div id="image-grid-menu-body" class="cryo-image-grid-menu-body" hidden>
-        <div class="cryo-montage-grid-wrap">
-          <div id="montage-grid" class="cryo-montage-grid"></div>
-          <div id="montage-preload-overlay" class="cryo-plot-rendering-overlay" aria-hidden="true">
-            <div class="cryo-plot-rendering-overlay__inner">
-              <span id="montage-preload-overlay-label" class="cryo-plot-rendering-overlay__label">Loading image
-                cache...</span>
-              <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading image cache">
-                <div class="cryo-plot-rendering-overlay__indeterminate"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
+    </div>
+  </section>
 </div>
+{% endif %}
 
 </aside>

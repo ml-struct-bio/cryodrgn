@@ -44,7 +44,7 @@
   var imageCacheProgressEl = document.getElementById("image-cache-progress");
   var imageCacheProgressBarEl = document.getElementById("image-cache-progress-bar");
   var imageCacheProgressLabelEl = document.getElementById("image-cache-progress-label");
-  var montageInner = document.getElementById("montage-inner");
+  var montageGridRegionEl = document.querySelector(".cryo-dash-montage-grid-region");
   var montagePreloadOverlayEl = document.getElementById("montage-preload-overlay");
   var montagePreloadOverlayLabel = document.getElementById("montage-preload-overlay-label");
   var btnExpandCache = document.getElementById("btn-expand-cache");
@@ -54,6 +54,17 @@
   var volumeStatusEl = document.getElementById("volume-status");
   var volumeStatusProgressEl = document.getElementById("volume-status-progress");
   var gridSizeSelect = document.getElementById("grid-size");
+  var cachePanelToggle = document.getElementById("cache-panel-toggle");
+  var cachePanelBody = document.getElementById("cryo-explorer-cache-panel-body");
+  var colorSelectionPanelToggle = document.getElementById("color-selection-panel-toggle");
+  var colorSelectionPanelBody = document.getElementById("color-selection-panel-body");
+  var colorSelectionInactiveNote = document.getElementById("color-selection-inactive-note");
+  var volumesPanelToggle = document.getElementById("volumes-panel-toggle");
+  var volumesPanelBody = document.getElementById("volumes-panel-body");
+  var volumesInactiveNote = document.getElementById("volumes-inactive-note");
+  var colorSelectionPanelShell = document.getElementById("color-selection-panel-shell");
+  var volumesPanelShell = document.getElementById("volumes-panel-shell");
+  var imageGridPanelShell = document.getElementById("image-grid-panel-shell");
   var imageGridMenuToggle = document.getElementById("image-grid-menu-toggle");
   var imageGridToolbarControls = document.getElementById("image-grid-toolbar-controls");
   var btnMontageResampleCache = document.getElementById("btn-montage-resample-cache");
@@ -77,6 +88,85 @@
   var lastMontageRows = [];
   var volumeCacheId = null;
   var volumeAnimateGeneration = 0;
+
+  function explorerPanelIsOpen(toggleEl) {
+    return !!(toggleEl && toggleEl.getAttribute("aria-expanded") === "true");
+  }
+
+  function syncExplorerPanelInactiveNote(inactiveNoteEl, activated) {
+    if (!inactiveNoteEl) return;
+    inactiveNoteEl.hidden = !!activated;
+  }
+
+  function syncExplorerPanelShellInactive(shellEl, activated) {
+    if (!shellEl) return;
+    shellEl.classList.toggle("cryo-explorer-panel-shell--inactive", !activated);
+  }
+
+  function syncExplorerPanelToggleInactive(toggleEl, shellEl, activated) {
+    if (!toggleEl) return;
+    if (shellEl) syncExplorerPanelShellInactive(shellEl, activated);
+    toggleEl.setAttribute("aria-disabled", activated ? "false" : "true");
+  }
+
+  function colorSelectionPanelActivated() {
+    return !!(sc && sc.value && sc.value !== "none");
+  }
+
+  function imageGridPanelActivated() {
+    return !!(preloaded || imagesViewEnabled);
+  }
+
+  function volumesPanelActivated() {
+    return imageGridPanelActivated() && !!(lastMontageRows && lastMontageRows.length);
+  }
+
+  function syncExplorerMontagePanelReadiness() {
+    var colorAct = colorSelectionPanelActivated();
+    syncExplorerPanelToggleInactive(
+      colorSelectionPanelToggle,
+      colorSelectionPanelShell,
+      colorAct
+    );
+    syncExplorerPanelInactiveNote(colorSelectionInactiveNote, colorAct);
+    if (!colorAct && explorerPanelIsOpen(colorSelectionPanelToggle)) {
+      setExplorerPanelOpen(colorSelectionPanelToggle, colorSelectionPanelBody, false);
+    }
+
+    var gridAct = imageGridPanelActivated();
+    syncExplorerPanelToggleInactive(imageGridMenuToggle, imageGridPanelShell, gridAct);
+    syncExplorerPanelInactiveNote(imageGridInactiveNote, gridAct);
+    if (!gridAct && imageGridMenuIsOpen()) {
+      setImageGridMenuOpen(false);
+    }
+
+    if (volumesPanelToggle && volumesPanelBody) {
+      var volAct = volumesPanelActivated();
+      syncExplorerPanelToggleInactive(volumesPanelToggle, volumesPanelShell, volAct);
+      syncExplorerPanelInactiveNote(volumesInactiveNote, volAct);
+      if (!volAct && explorerPanelIsOpen(volumesPanelToggle)) {
+        setExplorerPanelOpen(volumesPanelToggle, volumesPanelBody, false);
+      }
+    }
+  }
+
+  function setExplorerPanelOpen(toggleEl, bodyEl, open) {
+    if (!toggleEl || !bodyEl) return;
+    var isOpen = !!open;
+    toggleEl.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    bodyEl.hidden = !isOpen;
+  }
+
+  function wireExplorerPanelToggle(toggleEl, bodyEl, isReadyFn, defaultOpen, onChange) {
+    if (!toggleEl || !bodyEl) return;
+    setExplorerPanelOpen(toggleEl, bodyEl, !!defaultOpen);
+    toggleEl.addEventListener("click", function() {
+      if (isReadyFn && !isReadyFn()) return;
+      var next = !explorerPanelIsOpen(toggleEl);
+      setExplorerPanelOpen(toggleEl, bodyEl, next);
+      if (onChange) onChange(next);
+    });
+  }
 
   function imageGridMenuIsOpen() {
     return !!(imageGridMenuToggle && imageGridMenuToggle.getAttribute("aria-expanded") === "true");
@@ -113,9 +203,7 @@
   }
 
   function syncImageGridInactiveNote() {
-    if (!imageGridInactiveNote) return;
-    var inactiveNoCache = !preloaded && !imagesViewEnabled;
-    imageGridInactiveNote.hidden = !inactiveNoCache;
+    syncExplorerMontagePanelReadiness();
   }
 
   function montageResampleFromCachePool() {
@@ -146,7 +234,7 @@
         hi = mid - 1;
       }
     }
-    label.style.fontSize = best + "px";
+    label.style.fontSize = Math.max(3, Math.round(best * 0.5)) + "px";
   }
 
   function syncMontageResampleFromCacheButton() {
@@ -449,6 +537,14 @@
   var labels = makeLabels(gridSize);
   /** Top annotation band height as a fraction of square thumbnail width (see particle_explorer.css 19cqw). */
   var MONTAGE_META_TOP_FRAC = 0.19;
+  /** Grid letter label height as a fraction of the meta band (see .cryo-montage-label height). */
+  var MONTAGE_LABEL_META_HEIGHT_FRAC = 0.7885; /* 95% × 0.83 — 17% shorter than prior target */
+  /** Approx cap-height / font-size for Georgia on grid letters. */
+  var MONTAGE_GEORGIA_CAP_HEIGHT_EM = 0.715;
+  /** Vertical padding on light montage cells (1px top + bottom). */
+  var MONTAGE_CELL_PAD_Y = 2;
+  /** Gap between meta band and thumbnail in the fitted grid. */
+  var MONTAGE_META_IMG_GAP = 1;
 
   /* ---------- montage grid DOM ---------- */
   var gridEl = document.getElementById("montage-grid");
@@ -468,17 +564,17 @@
       var meta = document.createElement("div");
       meta.className = "cryo-montage-meta";
       meta.style.boxSizing = "border-box";
-      meta.style.alignItems = "flex-start";
+      meta.style.alignItems = "center";
       meta.style.gap = "0";
 
       var lbl = document.createElement("span");
       lbl.className = "cryo-montage-label";
       var labStr = labels[i];
       lbl.textContent = labStr;
-      lbl.style.lineHeight = "1";
+      lbl.style.lineHeight = String(MONTAGE_GEORGIA_CAP_HEIGHT_EM);
       lbl.style.display = "inline-flex";
-      lbl.style.alignItems = "flex-start";
-      lbl.style.alignSelf = "flex-start";
+      lbl.style.alignItems = "center";
+      lbl.style.alignSelf = "center";
       lbl.style.boxSizing = "border-box";
 
       var rightMeta = document.createElement("div");
@@ -513,16 +609,20 @@
   function applyMontageMetaTypography(cellW) {
     cellW = Math.max(1, Math.round(Number(cellW) || 0));
     var metaH = cellW * MONTAGE_META_TOP_FRAC;
-    var letterSlotPx = metaH * 0.612;
+    var letterBandPx = metaH * MONTAGE_LABEL_META_HEIGHT_FRAC;
     var annPx = metaH * 0.418;
     for (var mi = 0; mi < montageCells.length; mi++) {
       var mc = montageCells[mi];
       if (!mc.lbl) continue;
       var labStr = mc.lbl.textContent || "";
-      var letterFontPx = labStr.length <= 1
-        ? letterSlotPx
-        : letterSlotPx * Math.min(0.92, 1.22 / labStr.length);
+      var letterFontPx = letterBandPx / MONTAGE_GEORGIA_CAP_HEIGHT_EM;
+      if (labStr.length > 1) {
+        letterFontPx *= Math.min(0.92, 1.22 / labStr.length);
+      }
+      mc.lbl.style.height = letterBandPx.toFixed(2) + "px";
+      mc.lbl.style.maxHeight = letterBandPx.toFixed(2) + "px";
       mc.lbl.style.fontSize = letterFontPx.toFixed(2) + "px";
+      mc.lbl.style.lineHeight = String(MONTAGE_GEORGIA_CAP_HEIGHT_EM);
       mc.lbl.style.transform = "translate(" + (letterFontPx * 0.11).toFixed(2) + "px,0)";
       if (mc.covar) mc.covar.style.fontSize = annPx.toFixed(2) + "px";
       if (mc.idx) mc.idx.style.fontSize = annPx.toFixed(2) + "px";
@@ -545,7 +645,32 @@
         mc.wrap.style.height = "";
         mc.wrap.style.flex = "";
       }
+      if (mc.meta) {
+        mc.meta.style.height = "";
+        mc.meta.style.minHeight = "";
+        mc.meta.style.maxHeight = "";
+      }
     }
+  }
+  function montageRowExtraPx() {
+    return MONTAGE_CELL_PAD_Y + MONTAGE_META_IMG_GAP;
+  }
+  function montageGridLayoutAvailSize() {
+    if (!imageGridMenuBody) return { w: 0, h: 0 };
+    var availW = imageGridMenuBody.clientWidth;
+    var availH = imageGridMenuBody.clientHeight;
+    if (availH < 48 && montageGridRegionEl && imageGridPanelShell) {
+      var headerEl = imageGridPanelShell.querySelector(".cryo-explorer-panel-header");
+      var headerH = headerEl ? headerEl.offsetHeight : 0;
+      var regionH = montageGridRegionEl.clientHeight;
+      if (regionH > headerH + 16) {
+        availH = regionH - headerH;
+      }
+    }
+    if (availW < 8 && montageGridRegionEl) {
+      availW = montageGridRegionEl.clientWidth;
+    }
+    return { w: availW, h: availH };
   }
   function syncMontageGridRegionLayout() {
     if (!montageAsideEl || !gridEl) return;
@@ -557,24 +682,26 @@
     }
     resetMontageGridRegionLayout();
     var n = gridSize;
-    var availW = imageGridMenuBody.clientWidth;
-    var availH = imageGridMenuBody.clientHeight;
+    var layoutAvail = montageGridLayoutAvailSize();
+    var availW = layoutAvail.w;
+    var availH = layoutAvail.h;
     if (availW < 8 || availH < 8 || !montageCells.length) return;
     var gridStyle = window.getComputedStyle(gridEl);
     var gap = parseFloat(gridStyle.columnGap || gridStyle.gap) || 4;
     var gridMarginTop = parseFloat(gridStyle.marginTop) || 0;
     availH = Math.max(0, availH - gridMarginTop);
+    var rowExtra = montageRowExtraPx();
     var rowScale = 1 + MONTAGE_META_TOP_FRAC;
     var cellW = Math.floor((availW - gap * (n - 1)) / n);
     if (cellW < 1) cellW = 1;
     var metaH = Math.round(cellW * MONTAGE_META_TOP_FRAC);
-    var rowH = cellW + metaH;
+    var rowH = cellW + metaH + rowExtra;
     var totalH = n * rowH + gap * (n - 1);
     if (totalH > availH) {
-      cellW = Math.floor((availH - gap * (n - 1)) / (n * rowScale));
+      cellW = Math.floor((availH - gap * (n - 1) - n * rowExtra) / (n * rowScale));
       if (cellW < 1) cellW = 1;
       metaH = Math.round(cellW * MONTAGE_META_TOP_FRAC);
-      rowH = cellW + metaH;
+      rowH = cellW + metaH + rowExtra;
     }
     var gridW = cellW * n + gap * (n - 1);
     gridEl.style.width = gridW + "px";
@@ -582,10 +709,16 @@
     gridEl.style.gridTemplateColumns = "repeat(" + n + ", " + cellW + "px)";
     gridEl.style.gridTemplateRows = "repeat(" + n + ", " + rowH + "px)";
     for (var gi = 0; gi < montageCells.length; gi++) {
-      if (montageCells[gi].wrap) {
-        montageCells[gi].wrap.style.width = cellW + "px";
-        montageCells[gi].wrap.style.height = cellW + "px";
-        montageCells[gi].wrap.style.flex = "0 0 auto";
+      var mcLay = montageCells[gi];
+      if (mcLay.meta) {
+        mcLay.meta.style.height = metaH + "px";
+        mcLay.meta.style.minHeight = metaH + "px";
+        mcLay.meta.style.maxHeight = metaH + "px";
+      }
+      if (mcLay.wrap) {
+        mcLay.wrap.style.width = cellW + "px";
+        mcLay.wrap.style.height = cellW + "px";
+        mcLay.wrap.style.flex = "0 0 auto";
       }
     }
     applyMontageMetaTypography(cellW);
@@ -732,6 +865,7 @@
     });
     montageLayoutResizeObserver.observe(montageAsideEl);
     if (imageGridMenuBody) montageLayoutResizeObserver.observe(imageGridMenuBody);
+    if (montageGridRegionEl) montageLayoutResizeObserver.observe(montageGridRegionEl);
   }
   if (plotlyStackEl && typeof ResizeObserver !== "undefined") {
     var plotStackResizeObserver = new ResizeObserver(function() {
@@ -1140,7 +1274,6 @@
       }
       preloaded = null;
       imagesViewEnabled = false;
-      montageInner.classList.add("cryo-dash-montage-inner--disabled");
       gridSizeSelect.disabled = true;
       setImageGridMenuOpen(false);
       lastMontageRows = [];
@@ -1477,7 +1610,6 @@
         preloaded = {rows: rowsSet, rowToSrc: rowToSrc, traceMap: null};
         if (opts.enableImages) {
           imagesViewEnabled = true;
-          montageInner.classList.remove("cryo-dash-montage-inner--disabled");
           gridSizeSelect.disabled = false;
           setImageGridMenuOpen(true);
         }
@@ -1617,7 +1749,6 @@
       return;
     }
     if (imagesViewEnabled && preloaded && allImagesCached()) {
-      montageInner.classList.remove("cryo-dash-montage-inner--disabled");
       gridSizeSelect.disabled = false;
       setImageGridMenuOpen(true);
       buildTraceMap();
@@ -1740,7 +1871,6 @@
         ensureHighlightTrace();
         var picked = pickRandomMontageItemsFilled(neighborK);
         if (!picked.length) return;
-        montageInner.classList.remove("cryo-dash-montage-inner--disabled");
         gridSizeSelect.disabled = false;
         updateMontage(picked);
       }

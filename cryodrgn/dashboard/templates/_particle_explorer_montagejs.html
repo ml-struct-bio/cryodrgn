@@ -191,18 +191,125 @@
 
   /**
    * Grid-letter scatter overlay (trace 1): constant marker opacity; selection is shown only by filled vs hollow
-   * markers; each point keeps a covariate-coloured outline so hue is readable when unfilled.
+   * markers; each point keeps a white marker ring; fill reflects covariate / selection.
    * When no selection exists yet, every annotated grid point is drawn filled (same as “in selection”).
    * (cryo-grid-highlight-marker-policy)
    */
   var GRID_HIGHLIGHT_CLEAR_FILL = "rgba(0,0,0,0)";
   var GRID_HIGHLIGHT_LINE_WIDTH = 2.5;
-  var GRID_HIGHLIGHT_MARKER_OPACITY = 1;
+  /** White ring around grid-letter marker circles (fill still reflects covariate / selection). */
+  var GRID_HIGHLIGHT_MARKER_LINE_COLOR = "#ffffff";
+  /** Match ``scatter_json`` marker opacity for the main explorer scatter trace. */
+  var EXPLORER_SCATTER_MARKER_OPACITY = 0.35;
+  var GRID_HIGHLIGHT_MARKER_OPACITY = 0.53;
+  var gridLetterGlyphsOverlayEl = document.getElementById("scatter-grid-letter-glyphs-overlay");
+  var gridLetterGlyphHookWired = false;
 
   /**
    * Keep grid-letter trace (index 1) from inheriting scattergl selection dimming when trace 0 has
    * ``selectedpoints`` — use SVG scatter + explicit ``unselected`` opacities (cryo-grid-highlight-no-dim).
    */
+  /** Image grid row count for highlight sizing (1–8). */
+  function gridHighlightRowsForSizing(gridSz) {
+    var n = parseInt(gridSz, 10);
+    if (!isFinite(n) || n < 1) n = 1;
+    if (n > 8) n = 8;
+    return n;
+  }
+
+  /** Marker diameter: 24 at 1×1, −1 per row (17 at 8×8). */
+  function gridHighlightMarkerSizePx(gridSz) {
+    return 25 - gridHighlightRowsForSizing(gridSz);
+  }
+
+  /** Plot letter size: 16 at 1×1, −1 per row (9 at 8×8). */
+  function gridHighlightTextSizePx(gridSz) {
+    return 17 - gridHighlightRowsForSizing(gridSz);
+  }
+
+  function explorerDataToPlotStackXY(dataX, dataY) {
+    var fl = gd && gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.yaxis || !gridLetterGlyphsOverlayEl || !gd) return null;
+    var plotArea = gd.querySelector(".nsewdrag");
+    if (!plotArea) return null;
+    var plotRect = plotArea.getBoundingClientRect();
+    var stackEl = gridLetterGlyphsOverlayEl.parentElement;
+    if (!stackEl) return null;
+    var stackRect = stackEl.getBoundingClientRect();
+    var xr = fl.xaxis.range;
+    var yr = fl.yaxis.range;
+    if (!xr || xr.length < 2 || !yr || yr.length < 2) return null;
+    if (xr[1] === xr[0] || yr[1] === yr[0]) return null;
+    var fracX = (dataX - xr[0]) / (xr[1] - xr[0]);
+    var fracY = (yr[1] - dataY) / (yr[1] - yr[0]);
+    return [
+      plotRect.left - stackRect.left + fracX * plotRect.width,
+      plotRect.top - stackRect.top + fracY * plotRect.height
+    ];
+  }
+
+  function gridLetterTextColorAt(trace, idx) {
+    if (!trace || !trace.textfont) return "#ffffff";
+    var tc = trace.textfont.color;
+    if (Array.isArray(tc)) return tc[idx] != null ? String(tc[idx]) : "#ffffff";
+    if (typeof tc === "string" && tc) return tc;
+    return "#ffffff";
+  }
+
+  function clearGridLetterGlyphOverlay() {
+    if (gridLetterGlyphsOverlayEl) gridLetterGlyphsOverlayEl.innerHTML = "";
+  }
+
+  function syncGridLetterGlyphOverlay() {
+    clearGridLetterGlyphOverlay();
+    if (!gridLetterGlyphsOverlayEl || !gd || !gd._fullLayout || !showGridHighlightsOnPlot()) {
+      if (gridLetterGlyphsOverlayEl) {
+        gridLetterGlyphsOverlayEl.setAttribute("aria-hidden", "true");
+      }
+      return;
+    }
+    var tr = gd.data && gd.data[1];
+    if (!tr || !Array.isArray(tr.x) || !tr.x.length) {
+      gridLetterGlyphsOverlayEl.setAttribute("aria-hidden", "true");
+      return;
+    }
+    gridLetterGlyphsOverlayEl.setAttribute("aria-hidden", "false");
+    var fontSize = gridHighlightTextSizePx(gridSize);
+    if (tr.textfont && typeof tr.textfont.size === "number" && isFinite(tr.textfont.size)) {
+      fontSize = tr.textfont.size;
+    }
+    var fontFamily = (tr.textfont && tr.textfont.family)
+      ? String(tr.textfont.family)
+      : "Georgia, 'Times New Roman', serif";
+    for (var gi = 0; gi < tr.x.length; gi++) {
+      var lab = "";
+      if (Array.isArray(tr.text) && tr.text[gi] != null) {
+        lab = String(tr.text[gi]);
+      } else if (gi < labels.length) {
+        lab = String(labels[gi]);
+      }
+      if (!lab) continue;
+      var pt = explorerDataToPlotStackXY(tr.x[gi], tr.y[gi]);
+      if (!pt) continue;
+      var glyph = document.createElement("span");
+      glyph.className = "cryo-explorer-grid-letter-glyph";
+      glyph.style.left = pt[0].toFixed(2) + "px";
+      glyph.style.top = pt[1].toFixed(2) + "px";
+      glyph.style.fontSize = fontSize + "px";
+      glyph.style.fontFamily = fontFamily;
+      glyph.style.color = gridLetterTextColorAt(tr, gi);
+      glyph.textContent = lab;
+      gridLetterGlyphsOverlayEl.appendChild(glyph);
+    }
+  }
+
+  function wireGridLetterGlyphOverlayHook() {
+    if (gridLetterGlyphHookWired || !gd) return;
+    gridLetterGlyphHookWired = true;
+    gd.on("plotly_afterplot", syncGridLetterGlyphOverlay);
+    gd.on("plotly_relayout", syncGridLetterGlyphOverlay);
+  }
+
   function stampHighlightTraceAntiDim(restyleData) {
     if (!restyleData) return;
     restyleData.selectedpoints = [null];
@@ -269,12 +376,7 @@
       var rowN = Number(rowH);
       var inSel = treatAll || (isFinite(rowN) && selSet.has(rowN));
       var rIdxgeom = (!hasColor && multiGeom) ? selectionRegionIndexForRow(rowH) : -1;
-      var borderCss = hasColor
-        ? montageCovariateBorderCss(tiH, colorMode, markerColors, cmin, cmax)
-        : (rIdxgeom >= 0
-            ? scatterRegionPlotStyle(rIdxgeom).line
-            : (multiGeom ? "#94a3b8" : ACCENT));
-      lineColors.push(borderCss);
+      lineColors.push(GRID_HIGHLIGHT_MARKER_LINE_COLOR);
       if (!hasColor) {
         if (multiGeom && rIdxgeom >= 0) {
           var stRg = selectionRegionMontageStyles(rIdxgeom);
@@ -302,7 +404,9 @@
     restyleData["marker.color"] = [fillColors];
     restyleData["marker.line.color"] = [lineColors];
     restyleData["marker.line.width"] = [GRID_HIGHLIGHT_LINE_WIDTH];
+    restyleData["marker.size"] = [gridHighlightMarkerSizePx(gridSize)];
     restyleData["marker.opacity"] = [GRID_HIGHLIGHT_MARKER_OPACITY];
+    restyleData["textfont.size"] = [gridHighlightTextSizePx(gridSize)];
     restyleData["textfont.color"] = [textFontColors];
     stampHighlightTraceAntiDim(restyleData);
   }
@@ -725,7 +829,7 @@
     var restyleData = {
       x: [nx],
       y: [ny],
-      mode: [showPlotHighlights ? "markers+text" : "markers"],
+      mode: ["markers"],
       text: [txt],
       visible: [showPlotHighlights]
     };
@@ -739,6 +843,7 @@
       ctx.cmax
     );
     queueHighlightRestyle(restyleData);
+    syncGridLetterGlyphOverlay();
   }
 
   function updateMontageOrdered(nbs) {
@@ -780,6 +885,7 @@
       syncVolumeExploreButtons();
     }
     scheduleSyncMontageGridRegionLayout();
+    syncExplorerMontagePanelReadiness();
   }
 
   /** Replace one montage letter slot; other cells are left unchanged (double-click → A). */
@@ -842,7 +948,7 @@
     var restyleData = {
       x: [oldX],
       y: [oldY],
-      mode: [showPlotHighlights ? "markers+text" : "markers"],
+      mode: ["markers"],
       text: [showPlotHighlights ? oldText : []],
       visible: [showPlotHighlights]
     };
@@ -856,6 +962,7 @@
       ctx.cmax
     );
     queueHighlightRestyle(restyleData);
+    syncGridLetterGlyphOverlay();
   }
 
   function rowFromPlotlyPoint(pt) {
@@ -952,6 +1059,10 @@
       updateMontage(items);
     } else if (preloaded.traceMap.length >= want) {
       showRandomPreloaded();
+    }
+    if (highlightTraceAdded && lastMontageRows && lastMontageRows.length) {
+      refreshGridHighlightMarkerStylesFromLastRows();
+      syncGridLetterGlyphOverlay();
     }
   }
 
@@ -1984,7 +2095,7 @@
     }
     try {
       Plotly.restyle(gd, {
-        mode: [showHighlights ? "markers+text" : "markers"],
+        mode: ["markers"],
         text: [text],
         visible: [showHighlights],
         selectedpoints: [null],
@@ -1995,30 +2106,37 @@
       console.error(err);
     }
     refreshGridHighlightMarkerStylesFromLastRows();
+    syncGridLetterGlyphOverlay();
   }
 
   function ensureHighlightTrace() {
     if (highlightTraceAdded) return;
     highlightTraceAdded = true;
+    wireGridLetterGlyphOverlayHook();
     Plotly.addTraces(gd, [{
       type: "scatter",
       x: [], y: [],
-      mode: showGridHighlightsOnPlot() ? "markers+text" : "markers",
+      mode: "markers",
       text: [],
       textposition: "middle center",
-      textfont: {size: 9, color: "#fff", family: "Georgia, 'Times New Roman', serif"},
+      textfont: {
+        size: gridHighlightTextSizePx(gridSize),
+        color: "#fff",
+        family: "Georgia, 'Times New Roman', serif"
+      },
       selectedpoints: null,
       unselected: { marker: { opacity: 1 }, textfont: { opacity: 1 } },
       marker: {
-        size: 15,
+        size: gridHighlightMarkerSizePx(gridSize),
         opacity: GRID_HIGHLIGHT_MARKER_OPACITY,
         color: ACCENT,
-        line: {width: GRID_HIGHLIGHT_LINE_WIDTH, color: ACCENT}
+        line: {width: GRID_HIGHLIGHT_LINE_WIDTH, color: GRID_HIGHLIGHT_MARKER_LINE_COLOR}
       },
       visible: showGridHighlightsOnPlot(),
       hoverinfo: "skip",
       showlegend: false
     }]);
+    syncGridLetterGlyphOverlay();
   }
 
   /* ---------- scatter load ---------- */
@@ -2033,6 +2151,7 @@
     var hasActiveSelection = !!(saveSelectionRows && saveSelectionRows.length);
     suppressSelectionEvents = true;
     highlightTraceAdded = false;
+    clearGridLetterGlyphOverlay();
     cancelLassoSelectionDebounce();
     cancelPendingHighlightRestyle();
     cancelPendingScatterAfterPlot();
@@ -2462,6 +2581,7 @@
         console.error(err);
       } finally {
         endScatterSelectionRenderingOverlay();
+        syncGridLetterGlyphOverlay();
       }
     });
   }
@@ -2962,7 +3082,6 @@
         if (preloadStatus) setPreloadStatusCachedTotalOnly();
       } else {
         imagesViewEnabled = false;
-        montageInner.classList.add("cryo-dash-montage-inner--disabled");
         gridSizeSelect.disabled = true;
         setImageGridMenuOpen(false);
         syncImageCacheButton(false);
@@ -3292,6 +3411,7 @@
         }
       }
       syncScatterPaletteFieldset();
+      syncExplorerMontagePanelReadiness();
     },
     onDiscreteColorChange: function(evt) {
       if (!evt || !evt.catKey || !evt.hex) return;
@@ -3322,6 +3442,7 @@
       applyRowsSelection([], "Covariate change");
     }
     triggerRedraw(true);
+    syncExplorerMontagePanelReadiness();
   });
   document.querySelectorAll("input[name=\"scatter_palette\"]").forEach(function(inp) {
     inp.addEventListener("change", function() { triggerRedraw(true); });
@@ -3333,11 +3454,26 @@
       syncScatterPaletteFieldset();
     });
   }
+  wireExplorerPanelToggle(cachePanelToggle, cachePanelBody, null, true);
+  wireExplorerPanelToggle(
+    colorSelectionPanelToggle,
+    colorSelectionPanelBody,
+    colorSelectionPanelActivated,
+    false,
+    function(open) {
+      if (open) syncParticleExplorerRowExpandForColorHist();
+    }
+  );
+  if (volumesPanelToggle && volumesPanelBody) {
+    wireExplorerPanelToggle(volumesPanelToggle, volumesPanelBody, volumesPanelActivated, false);
+  }
   if (imageGridMenuToggle) {
     imageGridMenuToggle.addEventListener("click", function() {
+      if (!imageGridPanelActivated()) return;
       setImageGridMenuOpen(!imageGridMenuIsOpen());
     });
   }
+  syncExplorerMontagePanelReadiness();
   if (btnMontageResampleCache) {
     btnMontageResampleCache.addEventListener("click", function() {
       if (btnMontageResampleCache.disabled) return;

@@ -242,6 +242,47 @@ def _wait_scatter_ready(page, timeout_ms: float) -> None:
     )
 
 
+def _explorer_scatter_ready_js() -> str:
+    """Scatter has finished loading with visible trace data (not just overlay hidden)."""
+    return """() => {
+      const overlay = document.getElementById('scatter-rendering-overlay');
+      const overlayHidden = overlay
+        && !overlay.classList.contains('cryo-plot-rendering-overlay--show');
+      const status = document.getElementById('scatter-plot-status');
+      const statusText = status ? String(status.textContent || '').trim() : '';
+      const gd = document.getElementById('scatter');
+      const n = gd && gd.data && gd.data[0] && gd.data[0].x ? gd.data[0].x.length : 0;
+      const plotlyOk = typeof Plotly !== 'undefined';
+      const errish = /Could not load|Plotly is not defined|Plot took too long|Scatter API/i.test(
+        statusText
+      );
+      return !!(overlayHidden && plotlyOk && n > 0 && !errish);
+    }"""
+
+
+def _wait_explorer_scatter_ready(page, timeout_ms: float) -> None:
+    page.wait_for_function(_explorer_scatter_ready_js(), timeout=timeout_ms)
+
+
+def _install_explorer_scatter_recording_routes(context, *, log) -> None:
+    """Force SVG scatter for headless GIF capture (Scattergl often paints nothing)."""
+
+    def _route_scatter(route):
+        req = route.request
+        if "/api/scatter" not in req.url:
+            route.continue_()
+            return
+        parsed = urllib.parse.urlparse(req.url)
+        qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        qs["use_svg"] = ["1"]
+        new_query = urllib.parse.urlencode(qs, doseq=True)
+        new_url = urllib.parse.urlunparse(parsed._replace(query=new_query))
+        route.continue_(url=new_url)
+
+    context.route("**/api/scatter?*", _route_scatter)
+    log("Recording route: /api/scatter requests use SVG scatter (use_svg=1)")
+
+
 def _wait_latent3d_ready(page, timeout_ms: float) -> None:
     page.wait_for_function(
         """() => {
@@ -651,6 +692,59 @@ def _montage_cache_ready_js() -> str:
       }
       return false;
     }"""
+
+
+def _montage_cell_count_js() -> str:
+    return (
+        """() => document.querySelectorAll('#montage-grid .cryo-montage-cell').length"""
+    )
+
+
+def _montage_image_ready_count_js() -> str:
+    return """() => {
+      const api = window.__cdrgnExplorerGif;
+      if (api && typeof api.montageImageReadyCount === 'function') {
+        return api.montageImageReadyCount();
+      }
+      const imgs = document.querySelectorAll('#montage-grid .cryo-montage-img-wrap img');
+      let n = 0;
+      for (let i = 0; i < imgs.length; i++) {
+        const im = imgs[i];
+        if (im && im.src && im.naturalWidth > 0) n++;
+      }
+      return n;
+    }"""
+
+
+def _montage_gif_ready_count_js() -> str:
+    return """() => {
+      const api = window.__cdrgnExplorerGif;
+      if (api && typeof api.montageGifReadyCount === 'function') {
+        return api.montageGifReadyCount();
+      }
+      const imgs = document.querySelectorAll('#montage-grid .cryo-montage-img-wrap img');
+      let n = 0;
+      for (let i = 0; i < imgs.length; i++) {
+        const im = imgs[i];
+        const s = im && im.src ? String(im.src) : '';
+        if (s.indexOf('data:image/gif') === 0 && im.naturalWidth > 0) n++;
+      }
+      return n;
+    }"""
+
+
+def _set_gif_suppress_scatter_grid_letters(page, on: bool) -> None:
+    page.evaluate(
+        """(on) => {
+      const api = window.__cdrgnExplorerGif;
+      if (api && typeof api.setSuppressScatterGridLetters === 'function') {
+        api.setSuppressScatterGridLetters(!!on);
+        return true;
+      }
+      return false;
+    }""",
+        on,
+    )
 
 
 def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:

@@ -47,7 +47,7 @@ from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle
     _stamp_step,
 )
 
-DEFAULT_CONDA_PREFIX = Path("/projects/CRYOEM/zhonglab/mg2332/conda_envs/cdrgn_beta")
+DEFAULT_CONDA_PREFIX = Path("/scratch/gpfs/ZHONGE/mg2332/conda-envs/cdrgn_gifs")
 DEFAULT_OUTPUT = DEMO_ANIMATIONS_RECORDERS_DIR / "latent3d_actions_demo.gif"
 _LOG_PREFIX = "[record-latent3d-actions-gif]"
 # Matches ``_DASHBOARD_CREAM`` and dashboard overlay heading colour (~``#243b53``).

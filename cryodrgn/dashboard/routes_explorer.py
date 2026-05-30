@@ -418,6 +418,7 @@ def explorer():
     preload_cache_step = explorer_cache_size_power10_step(scatter_plotted_n)
     return render_template(
         "particle_explorer.html",
+        explorer_gif_recorder=request.args.get("gif_recorder") == "1",
         numeric_cols=axis_cols,
         color_cols=color_cols,
         covariate_display_map=_covariate_display_map(color_cols),

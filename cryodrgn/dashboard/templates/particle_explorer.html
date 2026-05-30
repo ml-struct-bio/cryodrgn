@@ -30,6 +30,9 @@
 {% include "_particle_explorer_scatter_color_filters.html" %}
 {% include "_particle_explorer_montage_paint_selection.html" %}
 {% include "_particle_explorer_montage_load_save.html" %}
+{% if explorer_gif_recorder %}
+{% include "_particle_explorer_gif_recorder_hooks.html" %}
+{% endif %}
 })();
 </script>
 {% endblock %}

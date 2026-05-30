@@ -1872,6 +1872,9 @@
 (function() {
 {% include "_particle_explorer_scatterjs.html" %}
 {% include "_particle_explorer_montagejs.html" %}
+{% if explorer_gif_recorder %}
+{% include "_particle_explorer_gif_recorder_hooks.html" %}
+{% endif %}
 })();
 </script>
 {% endblock %}

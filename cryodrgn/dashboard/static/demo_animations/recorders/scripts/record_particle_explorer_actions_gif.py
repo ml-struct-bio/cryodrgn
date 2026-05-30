@@ -19,7 +19,7 @@ Depends on Pillow, Playwright/Chromium — same assumptions as ``record_dashboar
 Example::
 
     PYTHONPATH=/path/to/cryodrgn_beta \\
-      conda run -p /projects/CRYOEM/zhonglab/mg2332/conda_envs/cdrgn_beta \\
+      conda run -p /scratch/gpfs/ZHONGE/mg2332/conda-envs/cdrgn_gifs \\
         --no-capture-output \\
         python -m cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle_explorer_actions_gif \\
         /scratch/gpfs/.../004_train-vae_1gpu_dim.1024/ \\
@@ -52,13 +52,16 @@ from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_dashboar
     _ensure_plotly_cached,
     _free_port,
     _montage_cache_ready_js,
+    _montage_cell_count_js,
+    _montage_image_ready_count_js,
     _scatter_plot_box,
+    _set_gif_suppress_scatter_grid_letters,
     _timed_step,
     _wait_http,
     _wait_scatter_ready,
 )
 
-DEFAULT_CONDA_PREFIX = Path("/projects/CRYOEM/zhonglab/mg2332/conda_envs/cdrgn_beta")
+DEFAULT_CONDA_PREFIX = Path("/scratch/gpfs/ZHONGE/mg2332/conda-envs/cdrgn_gifs")
 DEFAULT_OUTPUT = DEMO_ANIMATIONS_RECORDERS_DIR / "particle_explorer_actions_demo.gif"
 _LOG_PREFIX = "[record-particle-explorer-actions-gif]"
 
@@ -291,14 +294,40 @@ def _snap_montage_load(
     *,
     frame_ms: int,
     max_polls: int = 400,
+    count_js: str | None = None,
 ) -> None:
+    """Snapshot whenever another montage cell finishes loading (image or per-cell volume GIF)."""
     render_ms = max(1, int(frame_ms * RENDER_POLL_FRAME_DURATION_MULT))
+    ready_js = count_js or _montage_image_ready_count_js()
+    seen = -1
+    idle_polls = 0
     for step in range(max_polls):
-        if page.evaluate(_montage_cache_ready_js()):
+        try:
+            ready_n = int(page.evaluate(ready_js) or 0)
+        except Exception:
+            ready_n = 0
+        try:
+            expected = int(page.evaluate(_montage_cell_count_js()) or 0)
+        except Exception:
+            expected = 0
+        if ready_n > seen:
+            buf.snap(page, duration_ms=render_ms)
+            seen = ready_n
+            idle_polls = 0
+        else:
+            idle_polls += 1
+        cache_ok = False
+        with contextlib.suppress(Exception):
+            cache_ok = bool(page.evaluate(_montage_cache_ready_js()))
+        if expected > 0 and ready_n >= expected:
             break
-        if step % RENDER_POLL_SNAPSHOT_STRIDE == 0:
+        if cache_ok and idle_polls >= 6:
+            break
+        if step % RENDER_POLL_SNAPSHOT_STRIDE == 0 and seen < 0:
             buf.snap(page, duration_ms=render_ms)
         time.sleep(frame_ms / 1000.0)
+    if seen < 0:
+        buf.snap(page, duration_ms=render_ms)
 
 
 def normalize_frames_fixed_fps(
@@ -580,6 +609,7 @@ def record_sequence(
             time.sleep(frame_ms / 1000.0)
 
     with _timed_step(log, "Open image grid from cache", slow_note=True):
+        _set_gif_suppress_scatter_grid_letters(page, True)
         view_btn = page.locator("#btn-view-images")
         if view_btn.count() and view_btn.is_enabled():
             _stamp_step(
@@ -747,7 +777,7 @@ def main() -> int:
         "--conda-prefix",
         type=Path,
         default=DEFAULT_CONDA_PREFIX,
-        help="conda env prefix for conda run -p … (default cdrgn_beta path on zhonglab fs)",
+        help="conda env prefix for conda run -p … (default cdrgn_gifs on GPFS scratch)",
     )
     parser.add_argument(
         "--fps",

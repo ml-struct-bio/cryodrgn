@@ -43,7 +43,7 @@ from cryodrgn.dashboard.static.demo_animations.recorders.scripts.record_particle
     _stamp_step,
 )
 
-DEFAULT_CONDA_PREFIX = Path("/projects/CRYOEM/zhonglab/mg2332/conda_envs/cdrgn_beta")
+DEFAULT_CONDA_PREFIX = Path("/scratch/gpfs/ZHONGE/mg2332/conda-envs/cdrgn_gifs")
 DEFAULT_OUTPUT = DEMO_ANIMATIONS_RECORDERS_DIR / "pair_grid_actions_demo.gif"
 _LOG_PREFIX = "[record-pairplot-actions-gif]"
 

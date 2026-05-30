@@ -83,8 +83,11 @@
   var volumeStaticKey = null;
   var volumeGifDataUrls = null;
   var volumeGifsKey = null;
-  var EXPLORER_GIF_FRAMES = 40;
   var EXPLORER_CHIMERAX_CPUS = 16;
+  /** Must match ``EXPLORER_GIF_DURATION_S`` in ``chimerax_animation.py`` (seconds). */
+  var EXPLORER_GIF_LOOP_MS = 4000;
+  var volumeGifLeaderStartMs = null;
+  var volumeGifSyncTimerIds = [];
   var lastMontageRows = [];
   var volumeCacheId = null;
   var volumeAnimateGeneration = 0;
@@ -425,6 +428,8 @@
     volumeStaticKey = null;
     volumeGifDataUrls = null;
     volumeGifsKey = null;
+    volumeGifLeaderStartMs = null;
+    clearVolumeGifSyncTimers();
     volumeCacheId = null;
     volumeAnimateGeneration++;
     montageDisplayMode = "images";
@@ -462,10 +467,104 @@
     syncVolumeExploreButtons();
   }
 
+  function clearVolumeGifSyncTimers() {
+    for (var ti = 0; ti < volumeGifSyncTimerIds.length; ti++) {
+      clearTimeout(volumeGifSyncTimerIds[ti]);
+    }
+    volumeGifSyncTimerIds = [];
+  }
+
+  function preloadMontageGifUrl(url) {
+    return new Promise(function(resolve, reject) {
+      if (!url) {
+        resolve();
+        return;
+      }
+      var img = new Image();
+      img.onload = function() { resolve(); };
+      img.onerror = function() { reject(new Error("GIF preload failed")); };
+      img.src = url;
+    });
+  }
+
+  function msUntilNextGifLoopPhase(leaderStartMs) {
+    var elapsed = (Date.now() - leaderStartMs) % EXPLORER_GIF_LOOP_MS;
+    return elapsed === 0 ? 0 : EXPLORER_GIF_LOOP_MS - elapsed;
+  }
+
+  /** Cell 0: show GIF immediately and record loop phase for followers. */
+  function startMontageGifLeader(cellIndex, url, generation) {
+    return preloadMontageGifUrl(url).then(function() {
+      if (generation != null && generation !== volumeAnimateGeneration) return;
+      return new Promise(function(resolve) {
+        requestAnimationFrame(function() {
+          if (generation != null && generation !== volumeAnimateGeneration) {
+            resolve();
+            return;
+          }
+          if (cellIndex < montageCells.length) montageCells[cellIndex].img.src = url;
+          volumeGifLeaderStartMs = Date.now();
+          montageDisplayMode = "volumes";
+          syncVolumeExploreButtons();
+          resolve();
+        });
+      });
+    });
+  }
+
+  /** Later cells: wait until the leader's next frame-0 tick, then assign ``src``. */
+  function showMontageCellGifSynced(cellIndex, url, leaderStartMs, generation) {
+    return preloadMontageGifUrl(url).then(function() {
+      if (generation != null && generation !== volumeAnimateGeneration) return;
+      var delay = msUntilNextGifLoopPhase(leaderStartMs);
+      return new Promise(function(resolve) {
+        var tid = setTimeout(function() {
+          requestAnimationFrame(function() {
+            if (generation != null && generation !== volumeAnimateGeneration) {
+              resolve();
+              return;
+            }
+            if (cellIndex < montageCells.length) montageCells[cellIndex].img.src = url;
+            montageDisplayMode = "volumes";
+            syncVolumeExploreButtons();
+            resolve();
+          });
+        }, delay);
+        volumeGifSyncTimerIds.push(tid);
+      });
+    });
+  }
+
+  function showAllCachedVolumeGifsPhaseSynced(urls, generation) {
+    var n = Math.min(
+      montageCells.length,
+      lastMontageRows.length,
+      urls ? urls.length : 0
+    );
+    if (!n || !urls[0]) return Promise.resolve();
+    return startMontageGifLeader(0, urls[0], generation).then(function() {
+      if (generation != null && generation !== volumeAnimateGeneration) return;
+      var leader = volumeGifLeaderStartMs;
+      if (leader == null) return;
+      var jobs = [];
+      for (var ci = 1; ci < n; ci++) {
+        if (urls[ci]) jobs.push(showMontageCellGifSynced(ci, urls[ci], leader, generation));
+      }
+      return Promise.all(jobs);
+    });
+  }
+
   function showVolumesInMontage() {
     if (!lastMontageRows.length) return;
     var key = montageRowsOrderKey();
     if (!(volumeStaticDataUrls && volumeStaticKey === key && volumeStaticDataUrls.length)) return;
+    if (volumeGifDataUrls && volumeGifsKey === key) {
+      showAllCachedVolumeGifsPhaseSynced(volumeGifDataUrls).catch(function() {
+        setVolumeStatus("Could not load volume GIFs.", false);
+        syncVolumeExploreButtons();
+      });
+      return;
+    }
     var n = Math.min(montageCells.length, lastMontageRows.length, volumeStaticDataUrls.length);
     for (var i = 0; i < montageCells.length; i++) {
       if (i < n) {
@@ -1925,7 +2024,6 @@
         volume_cache_id: cacheId,
         cell_index: cellIndex,
         rows: lastMontageRows.slice(),
-        gif_frames: EXPLORER_GIF_FRAMES,
         chimerax_cpus: EXPLORER_CHIMERAX_CPUS,
       }),
     })
@@ -1950,6 +2048,8 @@
     var n = lastMontageRows.length;
     volumeAnimateGeneration++;
     var myGen = volumeAnimateGeneration;
+    clearVolumeGifSyncTimers();
+    volumeGifLeaderStartMs = null;
     btnVolumeAnimate.disabled = true;
     if (btnVolumeGenerate) btnVolumeGenerate.disabled = true;
     volumeGifDataUrls = new Array(n);
@@ -1965,8 +2065,9 @@
         syncVolumeExploreButtons();
         return;
       }
-      setVolumeStatus("GIF " + (i + 1) + " / " + n + "…", false);
-      postVolumeAnimateCell(volumeCacheId, i)
+      var cellIndex = i;
+      setVolumeStatus("GIF " + (cellIndex + 1) + " / " + n + "…", false);
+      postVolumeAnimateCell(volumeCacheId, cellIndex)
         .then(function(j) {
           if (myGen !== volumeAnimateGeneration) return;
           if (!j || !j.image) {
@@ -1974,10 +2075,26 @@
             return;
           }
           var url = "data:image/gif;base64," + j.image;
-          volumeGifDataUrls[i] = url;
-          if (i < montageCells.length) montageCells[i].img.src = url;
-          i++;
-          step();
+          volumeGifDataUrls[cellIndex] = url;
+          var showP;
+          if (cellIndex === 0) {
+            showP = startMontageGifLeader(cellIndex, url, myGen);
+          } else if (volumeGifLeaderStartMs != null) {
+            showP = showMontageCellGifSynced(
+              cellIndex, url, volumeGifLeaderStartMs, myGen
+            );
+          } else {
+            showP = Promise.resolve();
+          }
+          showP.catch(function() {
+            if (myGen === volumeAnimateGeneration) {
+              setVolumeStatus("Could not show volume GIF.", false);
+            }
+          }).then(function() {
+            if (myGen !== volumeAnimateGeneration) return;
+            i++;
+            step();
+          });
         })
         .catch(function() {
           if (myGen === volumeAnimateGeneration) {

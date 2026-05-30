@@ -51,7 +51,7 @@ from cryodrgn.dashboard.landscape_volpca import (
 from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
-    DEFAULT_GIF_FRAMES,
+    explorer_rotation_gif_frames,
     explorer_volumes_eligible,
     generate_montage_volume_pngs,
     volume_cell_gif_from_cache,
@@ -433,8 +433,14 @@ def api_explorer_volume_media():
                 cell_index = int(raw_ci)
             except (TypeError, ValueError):
                 return jsonify(error="cell_index must be an integer."), 400
-            gf = int(data.get("gif_frames", DEFAULT_GIF_FRAMES))
-            cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
+            cc = max(
+                1, min(int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL)), 32)
+            )
+            raw_gf = data.get("gif_frames")
+            if raw_gf is None:
+                gf = explorer_rotation_gif_frames(cc)
+            else:
+                gf = max(4, min(int(raw_gf), 120))
             gif_bytes = volume_cell_gif_from_cache(
                 cache_id,
                 cell_index,

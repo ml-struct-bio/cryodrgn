@@ -24,16 +24,20 @@ from cryodrgn import utils
 from cryodrgn.dashboard.covariate_labels import covariate_display_name
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.plots_color_covariate import numeric_array_to_plotly_hex
-from cryodrgn.dashboard.particle_explorer import (
+from cryodrgn.dashboard.chimerax_animation import (
     ChimeraxViewTurn,
     DEFAULT_CHIMERAX_PARALLEL,
     DEFAULT_GIF_FRAMES,
+    GIF_DURATION_S,
+    LandscapeStaticView,
+    batch_landscape_rotate_gifs,
+    chimerax_animation_meta,
     chimerax_view_matrix_camera_arg,
+    chimerax_volume_color_spec,
     format_chimerax_view_matrix_display,
-    montage_cell_label,
-    mrc_to_rotating_gif,
-    mrc_to_static_png,
+    render_landscape_cycle_static_views,
 )
+from cryodrgn.dashboard.particle_explorer import montage_cell_label
 from cryodrgn.dashboard.palette_config import normalize_continuous_palette
 from cryodrgn.dashboard.plots_color_covariate import (
     _continuous_series_stats,
@@ -713,8 +717,6 @@ def sketch_vol_rotate_frames_covariate_overlay(
                 vmax=cmax,
             )[0]
         )
-    from cryodrgn.dashboard.particle_explorer import GIF_DURATION_S
-
     frame_ms = max(20, int(GIF_DURATION_S * 1000 / gif_frames))
     out: dict[str, Any] = {
         "style": "rotate_frames",
@@ -1217,8 +1219,6 @@ def generate_landscape_volume_animations(
 
         Align with scatter / preview badges.
         """
-        from cryodrgn.dashboard.particle_explorer import chimerax_volume_color_spec
-
         if vol_state_hex is not None:
             h = vol_state_hex.get(int(vol))
             if h:
@@ -1243,7 +1243,8 @@ def generate_landscape_volume_animations(
 
     if mode == "rotate_each" and rot_vols:
         os.makedirs(keyframe_dir, exist_ok=True)
-        for v in rot_vols:
+        rotate_specs: list[dict[str, Any]] = []
+        for i, v in enumerate(rot_vols):
             mp = vol_mrc_path(kmeans_dir, v)
             out_gif = os.path.join(job_dir, f"vol_{v:03d}_rotate.gif")
             rot_overlay = sketch_vol_rotate_frames_covariate_overlay(
@@ -1258,25 +1259,30 @@ def generate_landscape_volume_animations(
             )
             frame_volume_colors = None
             if rot_overlay and rot_overlay.get("frame_badge_backgrounds"):
-                from cryodrgn.dashboard.particle_explorer import (
-                    chimerax_volume_color_spec,
-                )
-
                 frame_volume_colors = [
                     chimerax_volume_color_spec(str(c))
                     for c in rot_overlay["frame_badge_backgrounds"]
                 ]
-            vm = mrc_to_rotating_gif(
-                mp,
-                out_gif,
-                gif_frames=gif_frames,
-                ncpus=chimerax_cpus,
-                volume_color=_vol_chimerax_color(v),
-                volume_colors=frame_volume_colors,
-                view_turns=view_turns,
-                view_matrix_camera=view_matrix_camera,
-                report_view_matrix=view_matrix_text is None,
+            rotate_specs.append(
+                {
+                    "vol_key": int(v),
+                    "mrc_path": mp,
+                    "out_gif": out_gif,
+                    "volume_color": _vol_chimerax_color(v),
+                    "frame_volume_colors": frame_volume_colors,
+                    "view_turns": view_turns,
+                    "view_matrix_camera": view_matrix_camera,
+                    "report_view_matrix": view_matrix_text is None and i == 0,
+                }
             )
+        batch_results = batch_landscape_rotate_gifs(
+            rotate_specs,
+            gif_frames=gif_frames,
+            chimerax_cpus=chimerax_cpus,
+        )
+        for v in rot_vols:
+            out_gif = os.path.join(job_dir, f"vol_{v:03d}_rotate.gif")
+            vm = next((m for vk, m in batch_results if vk == int(v)), None)
             if vm and view_matrix_text is None:
                 view_matrix_text = vm
             elif view_matrix_camera and view_matrix_text is None:
@@ -1312,113 +1318,120 @@ def generate_landscape_volume_animations(
 
     if mode == "cycle" and cyc_vols:
         fpv_c, frame_ms = _landscape_cycle_gif_timing(cycle_frames_per_vol)
-        png_sequence: list[str] = []
-        tmp_cycle_pngs: list[str] = []
-        try:
-            for v in cyc_vols:
-                src = reuse_pngs.get(int(v)) if reuse_pngs else None
-                if src:
-                    png_sequence.append(src)
-                else:
-                    mp = vol_mrc_path(kmeans_dir, v)
-                    tmp = os.path.join(job_dir, f"_cyc_vol_{int(v):03d}.png")
-                    vm = mrc_to_static_png(
-                        mp,
-                        tmp,
-                        dpi=100,
+        png_by_vol: dict[int, str] = {}
+        cycle_views: list[LandscapeStaticView] = []
+        cycle_render_vols: list[int] = []
+        for v in cyc_vols:
+            src = reuse_pngs.get(int(v)) if reuse_pngs else None
+            if src:
+                png_by_vol[int(v)] = src
+            else:
+                mp = vol_mrc_path(kmeans_dir, v)
+                tmp = os.path.join(job_dir, f"_cyc_vol_{int(v):03d}.png")
+                cycle_views.append(
+                    LandscapeStaticView(
+                        mrc_path=mp,
+                        out_png=tmp,
                         volume_color=_vol_chimerax_color(v),
                         view_turns=view_turns,
                         view_matrix_camera=view_matrix_camera,
-                        report_view_matrix=view_matrix_text is None,
+                        report_view_matrix=view_matrix_text is None and not cycle_views,
                     )
-                    if vm and view_matrix_text is None:
-                        view_matrix_text = vm
-                    elif view_matrix_camera and view_matrix_text is None:
-                        view_matrix_text = format_chimerax_view_matrix_display(
-                            view_matrix_camera
-                        )
-                    png_sequence.append(tmp)
-                    tmp_cycle_pngs.append(tmp)
+                )
+                cycle_render_vols.append(int(v))
+        if cycle_views:
+            rendered_paths, vm = render_landscape_cycle_static_views(
+                cycle_views, chimerax_cpus=chimerax_cpus
+            )
+            for vol_i, path in zip(cycle_render_vols, rendered_paths, strict=True):
+                png_by_vol[vol_i] = path
+            if vm and view_matrix_text is None:
+                view_matrix_text = vm
+            elif view_matrix_camera and view_matrix_text is None:
+                view_matrix_text = format_chimerax_view_matrix_display(
+                    view_matrix_camera
+                )
+        png_sequence = [png_by_vol[int(v)] for v in cyc_vols]
+        tmp_cycle_pngs = [v.out_png for v in cycle_views]
 
-            if len(cyc_vols) == 1:
-                v0 = cyc_vols[0]
-                out_gif = os.path.join(job_dir, f"vol_{v0:03d}_cycle.gif")
-                _cycle_gif_from_png_paths(
-                    png_sequence,
-                    out_gif,
-                    cycle_frames_per_vol=cycle_frames_per_vol,
-                )
-                out_files.append(
-                    {
-                        "vol": v0,
-                        "kind": "cycle",
-                        "filename": os.path.basename(out_gif),
-                        "path": out_gif,
-                        "label": label_for_vol[int(v0)],
-                        "preview_overlay": {
-                            "style": "static",
-                            "text": label_for_vol[int(v0)],
-                            "badge_background": _label_hex(int(v0)),
-                            **_cov_preview_fields(int(v0)),
-                        },
-                    }
-                )
-            else:
-                out_gif = os.path.join(
-                    job_dir,
-                    "cycle_" + "_".join(f"{v:03d}" for v in cyc_vols) + ".gif",
-                )
-                _cycle_gif_from_png_paths(
-                    png_sequence,
-                    out_gif,
-                    cycle_frames_per_vol=cycle_frames_per_vol,
-                )
-                cyc_preview: dict[str, Any] = {
-                    "style": "cycle_segments",
-                    "segment_labels": [label_for_vol[int(v)] for v in cyc_vols],
-                    "segment_backgrounds": [_label_hex(int(v)) for v in cyc_vols],
-                    "frames_per_segment": fpv_c,
-                    "frame_duration_ms": frame_ms,
-                    "total_frames": int(len(cyc_vols) * fpv_c),
+        if len(cyc_vols) == 1:
+            v0 = cyc_vols[0]
+            out_gif = os.path.join(job_dir, f"vol_{v0:03d}_cycle.gif")
+            _cycle_gif_from_png_paths(
+                png_sequence,
+                out_gif,
+                cycle_frames_per_vol=cycle_frames_per_vol,
+            )
+            out_files.append(
+                {
+                    "vol": v0,
+                    "kind": "cycle",
+                    "filename": os.path.basename(out_gif),
+                    "path": out_gif,
+                    "label": label_for_vol[int(v0)],
+                    "preview_overlay": {
+                        "style": "static",
+                        "text": label_for_vol[int(v0)],
+                        "badge_background": _label_hex(int(v0)),
+                        **_cov_preview_fields(int(v0)),
+                    },
                 }
-                if pcm_lower != "none":
-                    cyc_preview["segment_covariate_texts"] = [
-                        sketch_vol_color_covariate_overlay_text(
-                            landscape_dir,
-                            kmeans_dir,
-                            k_sketch,
-                            exp,
-                            pcm,
-                            int(vx),
-                        )
-                        or ""
-                        for vx in cyc_vols
+            )
+        else:
+            out_gif = os.path.join(
+                job_dir,
+                "cycle_" + "_".join(f"{v:03d}" for v in cyc_vols) + ".gif",
+            )
+            _cycle_gif_from_png_paths(
+                png_sequence,
+                out_gif,
+                cycle_frames_per_vol=cycle_frames_per_vol,
+            )
+            cyc_preview: dict[str, Any] = {
+                "style": "cycle_segments",
+                "segment_labels": [label_for_vol[int(v)] for v in cyc_vols],
+                "segment_backgrounds": [_label_hex(int(v)) for v in cyc_vols],
+                "frames_per_segment": fpv_c,
+                "frame_duration_ms": frame_ms,
+                "total_frames": int(len(cyc_vols) * fpv_c),
+            }
+            if pcm_lower != "none":
+                cyc_preview["segment_covariate_texts"] = [
+                    sketch_vol_color_covariate_overlay_text(
+                        landscape_dir,
+                        kmeans_dir,
+                        k_sketch,
+                        exp,
+                        pcm,
+                        int(vx),
+                    )
+                    or ""
+                    for vx in cyc_vols
+                ]
+                if _plot_color_mode_is_continuous_numeric(
+                    exp, pcm, landscape_dir=landscape_dir
+                ):
+                    cyc_preview["segment_covariate_backgrounds"] = [
+                        _label_hex(int(vx)) for vx in cyc_vols
                     ]
-                    if _plot_color_mode_is_continuous_numeric(
-                        exp, pcm, landscape_dir=landscape_dir
-                    ):
-                        cyc_preview["segment_covariate_backgrounds"] = [
-                            _label_hex(int(vx)) for vx in cyc_vols
-                        ]
-                    vlab_c = sketch_plot_color_covariate_variable_label(pcm)
-                    if vlab_c:
-                        cyc_preview["covariate_variable_label"] = vlab_c
-                out_files.append(
-                    {
-                        "vol": None,
-                        "kind": "cycle",
-                        "filename": os.path.basename(out_gif),
-                        "path": out_gif,
-                        "label": ", ".join(label_for_vol[int(v)] for v in cyc_vols),
-                        "preview_overlay": cyc_preview,
-                    }
-                )
-        finally:
-            for tpath in tmp_cycle_pngs:
-                try:
-                    os.remove(tpath)
-                except OSError:
-                    pass
+                vlab_c = sketch_plot_color_covariate_variable_label(pcm)
+                if vlab_c:
+                    cyc_preview["covariate_variable_label"] = vlab_c
+            out_files.append(
+                {
+                    "vol": None,
+                    "kind": "cycle",
+                    "filename": os.path.basename(out_gif),
+                    "path": out_gif,
+                    "label": ", ".join(label_for_vol[int(v)] for v in cyc_vols),
+                    "preview_overlay": cyc_preview,
+                }
+            )
+        for tpath in tmp_cycle_pngs:
+            try:
+                os.remove(tpath)
+            except OSError:
+                pass
 
     with _LANDSCAPE_ANIM_LOCK:
         entry: dict[str, Any] = {
@@ -1560,7 +1573,7 @@ def meta_for_api(exp: DashboardExperiment) -> dict[str, Any]:
     evr = load_pca_explained_variance(landscape_dir)
     evr_list = [float(x) for x in evr] if evr is not None else None
     states = load_sketch_state_labels(landscape_dir)
-    chimerax_cpus = max(1, min(int(DEFAULT_CHIMERAX_PARALLEL), 32))
+    meta = chimerax_animation_meta()
 
     return {
         "ok": True,
@@ -1575,5 +1588,6 @@ def meta_for_api(exp: DashboardExperiment) -> dict[str, Any]:
         "has_state_color": states is not None,
         "color_options": landscape_color_options(exp),
         "default_save_dir": kmeans_dir,
-        "chimerax_cpus": int(chimerax_cpus),
+        "chimerax_cpus": meta["chimerax_cpus_default"],
+        **meta,
     }

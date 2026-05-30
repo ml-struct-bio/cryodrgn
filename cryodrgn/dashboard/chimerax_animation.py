@@ -30,6 +30,16 @@ import numpy as np
 DEFAULT_GIF_FRAMES = 40
 DEFAULT_CHIMERAX_PARALLEL = 16
 GIF_DURATION_S = 3.0
+# Particle explorer montage cell GIFs: fixed loop length, constant deg/frame.
+EXPLORER_GIF_DURATION_S = 4.0
+
+
+def explorer_rotation_gif_frames(chimerax_cpus: int) -> int:
+    """Default explorer rotation frame count: ``2 * chimerax_cpus`` (clamped 4–120)."""
+    cpus = max(1, min(int(chimerax_cpus), 32))
+    return max(4, min(cpus * 2, 120))
+
+
 # Parallelize across volumes when total frame work is large enough.
 LANDSCAPE_ROTATE_BATCH_MIN_TASKS = 48
 # Cap parallel volume workers — ChimeraX oversubscribes above ~8 on shared nodes.
@@ -42,6 +52,17 @@ CHIMERAX_MAX_CONCURRENT_SLOTS = max(
 _CHIMERAX_SLOT_SEM = threading.Semaphore(CHIMERAX_MAX_CONCURRENT_SLOTS)
 
 ChimeraxViewTurn = tuple[str, float]
+
+
+def rotation_turn_y_increments(gif_frames: int) -> list[float]:
+    """Per-frame ``turn y`` degrees for one full 360° loop at constant angular speed.
+
+    ChimeraX ``turn`` is relative to the current orientation, so each frame after the
+    first uses the same increment (``360 / n`` degrees).
+    """
+    n = max(4, int(gif_frames))
+    step = 360.0 / n
+    return [0.0 if i == 0 else step for i in range(n)]
 
 
 def chimerax_path() -> str:
@@ -395,12 +416,17 @@ LandscapeRotateSpec = dict[str, Any]
 
 
 def _assemble_rotation_pngs_to_gif(
-    frame_paths: list[str], out_gif: str, gif_frames: int
+    frame_paths: list[str],
+    out_gif: str,
+    gif_frames: int,
+    *,
+    gif_duration_s: float = GIF_DURATION_S,
 ) -> None:
     from PIL import Image
 
     images = [Image.open(p) for p in frame_paths]
-    frame_ms = max(20, int(GIF_DURATION_S * 1000 / gif_frames))
+    duration_s = max(0.5, float(gif_duration_s))
+    frame_ms = max(20, int(duration_s * 1000 / gif_frames))
     images[0].save(
         out_gif,
         save_all=True,
@@ -569,11 +595,15 @@ def render_rotating_gif_single_session(
     view_matrix_camera: str | None = None,
     report_view_matrix: bool = False,
     landscape_rotate: bool = False,
+    gif_duration_s: float | None = None,
 ) -> str | None:
     """One ChimeraX subprocess per volume (all rotation frames in one session)."""
 
     gif_frames = max(4, int(gif_frames))
-    frame_rots = np.linspace(0, 360, gif_frames, endpoint=False)
+    frame_rots = rotation_turn_y_increments(gif_frames)
+    loop_duration_s = (
+        GIF_DURATION_S if gif_duration_s is None else float(gif_duration_s)
+    )
     per_frame_colors: list[str | None] | None = None
     if volume_colors is not None:
         per_frame_colors = [
@@ -616,7 +646,9 @@ def render_rotating_gif_single_session(
             if report_view_matrix and matrix_log
             else None
         )
-        _assemble_rotation_pngs_to_gif(paths, out_gif, gif_frames)
+        _assemble_rotation_pngs_to_gif(
+            paths, out_gif, gif_frames, gif_duration_s=loop_duration_s
+        )
         return view_matrix
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -677,7 +709,7 @@ def _rotation_frame_plan(
 ) -> tuple[int, str, list[tuple[str, float, str | None]], list[str | None] | None]:
     """PNG paths and per-frame colours for one landscape rotate volume."""
     vol_key = int(spec["vol_key"])
-    frame_rots = np.linspace(0, 360, gif_frames, endpoint=False)
+    frame_rots = rotation_turn_y_increments(gif_frames)
     per_frame_colors: list[str | None] | None = None
     volume_colors = spec.get("frame_volume_colors")
     if volume_colors is not None:
@@ -896,6 +928,7 @@ def render_rotating_gif(
     view_turns: Sequence[ChimeraxViewTurn] | None = None,
     view_matrix_camera: str | None = None,
     report_view_matrix: bool = False,
+    gif_duration_s: float | None = None,
 ) -> str | None:
     """Rotating GIF via one ChimeraX session per volume (preferred over per-frame processes)."""
     _ = ncpus  # kept for API compatibility; session path does not fan out frames
@@ -910,6 +943,7 @@ def render_rotating_gif(
         view_turns=view_turns,
         view_matrix_camera=view_matrix_camera,
         report_view_matrix=report_view_matrix,
+        gif_duration_s=gif_duration_s,
     )
 
 

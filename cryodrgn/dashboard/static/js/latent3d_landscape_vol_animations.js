@@ -796,6 +796,7 @@
     var gifFrames = $("gif-frames");
     var gifFramesWrap = $("gif-frames-wrap");
     var previewGrid = $("preview-grid");
+    var previewWrap = $("preview-wrap");
     var randomSelBtn = $("random-sel");
     var saveGifBtn = $("save-gif");
     var viewRotateRow = document.querySelector(".l3dva-view-rotate-row");
@@ -880,6 +881,7 @@
     function clearPreviewGrid() {
       teardownPreviews();
       if (previewGrid) previewGrid.innerHTML = "";
+      syncPreviewRegion();
       syncViewRotationControls();
     }
 
@@ -931,22 +933,37 @@
       gifModeDescEl.innerHTML = GIF_MODE_DESC[m] || GIF_MODE_DESC.cycle;
     }
 
-    function syncPreviewGridLayout() {
+    function syncPreviewRegion() {
       if (!previewGrid) return;
       var cycle = currentGifMode() === "cycle";
       previewGrid.classList.toggle("volsketch-preview-grid--cycle", cycle);
+      var n = previewGrid.querySelectorAll("figure").length;
+      var show = animationsEnabled() && n > 0;
+      var cols = 1;
+      if (show) {
+        cols = cycle || n <= 1 ? 1 : 2;
+      }
+      previewGrid.style.setProperty("--volsketch-preview-cols", String(cols));
+      if (previewWrap) {
+        previewWrap.hidden = !show;
+        previewWrap.style.setProperty("--volsketch-preview-cols", String(cols));
+        if (!show) {
+          safeSetPreviewAnimLoading(false);
+        }
+      }
     }
 
     function syncGifFramesVisibility() {
       if (!gifFramesWrap) return;
       var m = currentGifMode();
       gifFramesWrap.style.display = m === "rotate_each" ? "block" : "none";
-      syncPreviewGridLayout();
+      syncPreviewRegion();
     }
 
     function syncAnimOutputControls() {
       syncGifModeDescription();
       syncGifFramesVisibility();
+      syncPreviewRegion();
       if (randomSelBtn && META) {
         randomSelBtn.disabled = landscapeAnimInFlight;
         if (landscapeAnimInFlight) {
@@ -1880,6 +1897,7 @@
       if (!keepPreviews) {
         teardownPreviews();
         previewGrid.innerHTML = "";
+        syncPreviewRegion();
       }
       var animPayload = {
         vol_indices: vols,
@@ -1924,6 +1942,7 @@
           : "Finished animating.";
         setAnimateStatus(doneMsg, false, false);
         if (!j.items || !j.items.length) {
+          syncPreviewRegion();
           syncSaveGifButton();
           return;
         }
@@ -1989,7 +2008,7 @@
           previewGrid.appendChild(fig);
         });
         refreshPreviewOverlayLetterColors();
-        syncPreviewGridLayout();
+        syncPreviewRegion();
         if (j.rendered_vol_indices && j.rendered_vol_indices.length) {
           var synced = new Set();
           j.rendered_vol_indices.forEach(function(x) {
@@ -2224,6 +2243,7 @@
         lastAnimToken = null;
         lastBatchMode = null;
         setAnimateStatus("", false, false);
+        syncPreviewRegion();
         syncSaveGifButton();
         function applyRandomPickAndHighlight() {
           var k = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;

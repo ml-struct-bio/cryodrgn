@@ -14,6 +14,7 @@
   var gifFrames = document.getElementById("volsketch-gif-frames");
   var gifFramesWrap = document.getElementById("volsketch-gif-frames-wrap");
   var previewGrid = document.getElementById("volsketch-preview-grid");
+  var previewWrap = document.getElementById("volsketch-preview-wrap");
   var randomSelBtn = document.getElementById("volsketch-random-sel");
   var saveGifBtn = document.getElementById("volsketch-save-gif");
   var viewRotateRow = document.querySelector(".volsketch-view-rotate-row");
@@ -35,6 +36,7 @@
   function clearVolsketchPreviewGrid() {
     teardownVolsketchPreviews();
     if (previewGrid) previewGrid.innerHTML = "";
+    syncPreviewRegion();
     syncViewRotationControls();
   }
 
@@ -400,6 +402,7 @@
   function syncAnimOutputControls() {
     syncGifModeDescription();
     syncGifFramesVisibility();
+    syncPreviewRegion();
     if (randomSelBtn && META) {
       randomSelBtn.disabled = landscapeAnimInFlight;
       if (landscapeAnimInFlight) {
@@ -417,10 +420,21 @@
     gifModeDescEl.innerHTML = GIF_MODE_DESC[m] || GIF_MODE_DESC.cycle;
   }
 
-  function syncPreviewGridLayout() {
+  function syncPreviewRegion() {
     if (!previewGrid) return;
     var cycle = currentGifMode() === "cycle";
     previewGrid.classList.toggle("volsketch-preview-grid--cycle", cycle);
+    var n = previewGrid.querySelectorAll("figure").length;
+    var show = animationsEnabled() && n > 0;
+    var cols = 1;
+    if (show) {
+      cols = cycle || n <= 1 ? 1 : 2;
+    }
+    previewGrid.style.setProperty("--volsketch-preview-cols", String(cols));
+    if (previewWrap) {
+      previewWrap.hidden = !show;
+      previewWrap.style.setProperty("--volsketch-preview-cols", String(cols));
+    }
   }
 
   function syncGifFramesVisibility() {
@@ -428,7 +442,7 @@
     var m = currentGifMode();
     var showRot = m === "rotate_each";
     gifFramesWrap.style.display = showRot ? "block" : "none";
-    syncPreviewGridLayout();
+    syncPreviewRegion();
   }
   syncAnimOutputControls();
 
@@ -1481,6 +1495,7 @@
     if (!keepPreviews) {
       teardownVolsketchPreviews();
       previewGrid.innerHTML = "";
+      syncPreviewRegion();
     }
     var animPayload = {
       vol_indices: vols,
@@ -1520,6 +1535,7 @@
         : "Finished animating.";
       setAnimateStatus(doneMsg, false, false);
       if (!j.items || !j.items.length) {
+        syncPreviewRegion();
         syncSaveGifButton();
         return;
       }
@@ -1550,7 +1566,7 @@
         mountVolsketchPreviewOverlay(wrap, badge, covBadge, covVarEl, covValEl, img, it.preview_overlay);
         previewGrid.appendChild(fig);
       });
-      syncPreviewGridLayout();
+      syncPreviewRegion();
       if (
         j.rendered_vol_indices
         && j.rendered_vol_indices.length

@@ -304,32 +304,12 @@
     font-size: 0.72rem;
     padding: 0.22rem 0.5rem;
   }
-  /* Fixed preview footprint so the aside column does not grow when GIFs finish loading. */
-  .cryo-dash-page--latent3d #l3dva-preview-wrap {
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 14.5rem;
-    max-height: 14.5rem;
-    display: flex;
-    flex-direction: column;
+  /* Preview sizing: landscape_volpca.css; margins only when previews are visible. */
+  .cryo-dash-page--latent3d #l3dva-preview-wrap:not([hidden]) {
     margin-top: 0.35rem !important;
     margin-bottom: 0.4rem;
-    overflow: hidden;
   }
-  .cryo-dash-page--latent3d #l3dva-preview-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.4rem;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    scrollbar-gutter: stable;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .cryo-dash-page--latent3d #l3dva-preview-grid.volsketch-preview-grid--cycle {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  /* Grid layout in landscape_volpca.css; no flex grow — height follows GIF cells only. */
   .cryo-dash-page--latent3d #l3dva-preview-grid figure {
     margin: 0;
     border: 1px solid rgba(36, 59, 83, 0.15);
@@ -344,18 +324,6 @@
     padding: 0.15rem 0.28rem;
     color: var(--muted, #5c6b7a);
     font-variant-numeric: tabular-nums;
-  }
-  .cryo-dash-page--latent3d #l3dva-preview-grid img {
-    width: 100%;
-    display: block;
-    vertical-align: middle;
-    background: #e8ecf1;
-  }
-  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-anim-wrap {
-    position: relative;
-    display: block;
-    width: 100%;
-    line-height: 0;
   }
   /* landscape_volpca.css scopes these under .cryo-dash-page--volsketch — duplicate for the latent 3D right column. */
   .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-sel-indices-wrap {
@@ -470,7 +438,6 @@
   }
   .cryo-dash-page--latent3d #l3dva-preview-wrap {
     position: relative;
-    min-height: 5rem;
   }
   .cryo-dash-page--latent3d .l3dva-preview-anim-overlay {
     display: none;
@@ -827,7 +794,7 @@
     width: 100%;
     box-sizing: border-box;
   }
-  .cryo-dash-page--latent3d .l3dva-display-col #l3dva-preview-wrap {
+  .cryo-dash-page--latent3d .l3dva-display-col #l3dva-preview-wrap:not([hidden]) {
     margin-top: 0 !important;
   }
   .cryo-dash-page--latent3d .l3dva-display-col .volsketch-sel-indices-wrap {
@@ -1445,7 +1412,7 @@
                 aria-label="Selected sketch volume indices"></ul>
             </details>
           </div>
-          <div id="l3dva-preview-wrap" class="volsketch-preview-wrap" style="margin-top:0;">
+          <div id="l3dva-preview-wrap" class="volsketch-preview-wrap" hidden style="margin-top:0;">
             <div id="l3dva-preview-grid" class="volsketch-preview-grid"></div>
             <div id="l3dva-preview-anim-overlay" class="l3dva-preview-anim-overlay" aria-hidden="true">
               <div class="l3dva-preview-anim-overlay__inner">

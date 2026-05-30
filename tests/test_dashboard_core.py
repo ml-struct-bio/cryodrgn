@@ -811,6 +811,99 @@ class TestDiscreteCovariateLegendContracts:
         assert "el.onload = function()" in text
 
 
+class TestChimeraxAnimation:
+    """Unified ChimeraX rotation GIF helpers (``cryodrgn.dashboard.chimerax_animation``)."""
+
+    def test_explorer_rotation_gif_frames_default(self) -> None:
+        from cryodrgn.dashboard.chimerax_animation import explorer_rotation_gif_frames
+
+        assert explorer_rotation_gif_frames(8) == 16
+        assert explorer_rotation_gif_frames(1) == 4
+        assert explorer_rotation_gif_frames(32) == 64
+        assert explorer_rotation_gif_frames(100) == 64
+
+    def test_rotation_turn_y_increments_constant_speed(self) -> None:
+        from cryodrgn.dashboard.chimerax_animation import rotation_turn_y_increments
+
+        assert rotation_turn_y_increments(4) == [0.0, 90.0, 90.0, 90.0]
+        assert rotation_turn_y_increments(8) == [0.0] + [45.0] * 7
+        inc = rotation_turn_y_increments(16)
+        assert inc[0] == 0.0
+        assert inc[1:] == pytest.approx([22.5] * 15)
+
+    def test_parallel_jobs_caps_at_eight(self) -> None:
+        from cryodrgn.dashboard.chimerax_animation import (
+            landscape_rotate_parallel_jobs,
+            parallel_jobs,
+        )
+
+        assert parallel_jobs(16, 12) == 8
+        assert parallel_jobs(4, 12) == 4
+        assert landscape_rotate_parallel_jobs(16, 12) == 8
+
+    def test_landscape_rotate_render_strategy_hybrid(self) -> None:
+        from cryodrgn.dashboard.chimerax_animation import (
+            landscape_rotate_render_strategy,
+        )
+
+        assert landscape_rotate_render_strategy(1, 16, 8) == "serial_session"
+        assert landscape_rotate_render_strategy(3, 16, 8) == "parallel_session"
+        assert landscape_rotate_render_strategy(2, 8, 4) == "serial_session"
+
+    def test_landscape_rotate_parallel_jobs_capped_at_eight(self) -> None:
+        from cryodrgn.dashboard.chimerax_animation import (
+            landscape_rotate_parallel_jobs,
+        )
+
+        assert landscape_rotate_parallel_jobs(16, 5) == 5
+        assert landscape_rotate_parallel_jobs(16, 12) == 8
+        assert landscape_rotate_parallel_jobs(4, 12) == 4
+
+    def test_chimerax_animation_meta(self) -> None:
+        from cryodrgn.dashboard.chimerax_animation import chimerax_animation_meta
+
+        meta = chimerax_animation_meta(8)
+        assert meta["chimerax_cpus_effective"] == 8
+        assert meta["chimerax_parallel_volume_cap"] == 8
+
+    def test_rotation_session_cmds_single_exit_incremental_turns(self) -> None:
+        from cryodrgn.dashboard.chimerax_animation import (
+            chimerax_rotation_session_cmds,
+            rotation_turn_y_increments,
+        )
+
+        turns = rotation_turn_y_increments(4)
+        frames = [(f"/tmp/f{i}.png", float(turns[i]), None) for i in range(4)]
+        cmds, matrix_log = chimerax_rotation_session_cmds(
+            "/tmp/x.mrc",
+            frames,
+            100,
+            volume_color="#336699",
+        )
+        assert cmds.count("exit") == 1
+        assert sum(1 for c in cmds if c.startswith("open ")) == 1
+        assert sum(1 for c in cmds if c.startswith("save ")) == 4
+        assert turns[1:] == [90.0, 90.0, 90.0]
+        assert any("turn y 90" in c for c in cmds)
+        assert matrix_log is None
+
+    def test_render_rotating_gif_dispatches_to_session(self, monkeypatch) -> None:
+        from cryodrgn.dashboard.chimerax_animation import render_rotating_gif
+
+        called: list[str] = []
+
+        def _fake_session(*_a, **_k):
+            called.append("session")
+            return None
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.chimerax_animation.render_rotating_gif_single_session",
+            _fake_session,
+        )
+        render_rotating_gif("/tmp/x.mrc", "/tmp/out.gif", gif_frames=8, ncpus=4)
+        assert called == ["session"]
+
+
 class TestDashboardModules:
     """Imports, pure helpers, and landscape-full helpers (folded from ``test_dashboard_modules``)."""
 

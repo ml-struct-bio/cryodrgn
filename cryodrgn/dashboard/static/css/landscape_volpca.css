@@ -182,17 +182,24 @@
   .cryo-dash-page--volsketch #volsketch-preview-wrap {
     width: 100%;
     box-sizing: border-box;
+    --volsketch-preview-rows: 0;
+    --volsketch-preview-cols: 2;
+    --volsketch-preview-gap: 0.5rem;
+  }
+  .cryo-dash-page--volsketch #volsketch-preview-wrap[hidden] {
+    display: none !important;
   }
   .cryo-dash-page--volsketch .volsketch-preview-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(var(--volsketch-preview-cols, 2), minmax(0, 1fr));
+    gap: var(--volsketch-preview-gap, 0.5rem);
     margin-top: 0.65rem;
     max-height: min(55vh, 28rem);
     overflow-y: auto;
     scrollbar-gutter: stable;
     width: 100%;
     box-sizing: border-box;
+    container-type: inline-size;
   }
   .cryo-dash-page--volsketch .volsketch-preview-grid.volsketch-preview-grid--cycle {
     grid-template-columns: minmax(0, 1fr);
@@ -208,6 +215,8 @@
     overflow: hidden;
     background: #fff;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
   .cryo-dash-page--volsketch .volsketch-preview-grid figcaption {
     font-size: 0.72rem;
@@ -217,15 +226,74 @@
   }
   .cryo-dash-page--volsketch .volsketch-preview-grid img {
     width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
     display: block;
+    object-fit: contain;
     vertical-align: middle;
-    background: #e8ecf1;
+    background: transparent;
   }
   .cryo-dash-page--volsketch .volsketch-anim-wrap {
     position: relative;
-    display: block;
+    flex: 0 0 auto;
     width: 100%;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #e8ecf1;
     line-height: 0;
+  }
+
+  /* Latent 3D: preview region hidden unless a GIF preview is mounted (see syncPreviewRegion). */
+  .cryo-dash-page--latent3d #l3dva-preview-wrap {
+    --volsketch-preview-cols: 2;
+    --volsketch-preview-gap: 0.4rem;
+    width: 100%;
+    box-sizing: border-box;
+    position: relative;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-wrap[hidden] {
+    display: none !important;
+    margin: 0 !important;
+    padding: 0;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--volsketch-preview-cols, 2), minmax(0, 1fr));
+    gap: var(--volsketch-preview-gap, 0.4rem);
+    width: 100%;
+    box-sizing: border-box;
+    max-height: min(52vh, 28rem);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid figure {
+    display: flex;
+    flex-direction: column;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-anim-wrap {
+    position: relative;
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #e8ecf1;
+    line-height: 0;
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid img {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+    background: transparent;
   }
   .cryo-dash-page--volsketch .volsketch-gif-overlay {
     position: absolute;

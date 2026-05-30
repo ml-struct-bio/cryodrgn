@@ -158,7 +158,6 @@ def volume_cell_gif_from_cache(
             out_gif,
             gif_frames=gif_frames,
             ncpus=chimerax_cpus,
-            corner_label=montage_cell_label(cell_index),
             gif_duration_s=EXPLORER_GIF_DURATION_S,
         )
         with open(out_gif, "rb") as fh:

@@ -939,6 +939,16 @@ class TestDashboardModules:
             == "Vol cluster"
         )
 
+    def test_covariate_display_name_landscape_vol_umap(self) -> None:
+        assert (
+            covariate_labels.covariate_display_name("landscape_vol_UMAP1")
+            == "Vol UMAP1"
+        )
+        assert (
+            covariate_labels.covariate_display_name("landscape_vol_umap2")
+            == "Vol UMAP2"
+        )
+
     def test_landscape_vol_pc_pretty_label_with_variance(self) -> None:
         evr = np.array([0.453, 0.12], dtype=np.float64)
         assert (

@@ -33,8 +33,6 @@ from cryodrgn import utils
 from cryodrgn.dashboard import app as dash_app
 from cryodrgn.dashboard.data import DashboardExperiment, load_experiment
 from cryodrgn.dashboard.landscape_volpca import (
-    LANDSCAPE_ANIM_MAX_ROTATE,
-    _sample_landscape_vols,
     _sketch_continuous_covariate_per_volume_values,
     kmeans_sorted_vol_indices,
     landscape_analysis_ready,
@@ -449,15 +447,3 @@ class TestLandscapeVolpcaFlaskRoutes:
             json={"token": "nope", "out_dir": 123},
         )
         assert r.status_code == 400
-
-
-class TestLandscapeAnimVolumeCaps:
-    def test_default_rotate_cap_is_five(self) -> None:
-        assert LANDSCAPE_ANIM_MAX_ROTATE == 5
-
-    def test_sample_keeps_twelve_when_cap_allows(self) -> None:
-        import random
-
-        vols = list(range(1, 13))
-        got = _sample_landscape_vols(vols, 12, random.Random(0))
-        assert got == vols

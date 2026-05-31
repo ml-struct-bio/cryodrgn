@@ -32,10 +32,23 @@ def landscape_vol_pc_column_pretty_label(
     explained_variance_ratio: np.ndarray | Sequence[float] | None,
 ) -> str:
     """Pretty label for ``landscape_vol_PC*`` columns; other names left unchanged."""
-    m = re.fullmatch(r"landscape_vol_PC(\d+)", str(column))
+    m = re.fullmatch(r"landscape_vol_PC(\d+)", str(column), re.IGNORECASE)
     if not m:
         return str(column)
     return landscape_vol_pc_pretty_label(int(m.group(1)), explained_variance_ratio)
+
+
+def landscape_vol_umap_pretty_label(umap_index_1_based: int) -> str:
+    """Label for a volume UMAP axis, e.g. ``Vol UMAP1``."""
+    return f"Vol UMAP{int(umap_index_1_based)}"
+
+
+def landscape_vol_umap_column_pretty_label(column: str) -> str:
+    """Pretty label for ``landscape_vol_UMAP*`` columns; other names left unchanged."""
+    m = re.fullmatch(r"landscape_vol_umap(\d+)", str(column), re.IGNORECASE)
+    if not m:
+        return str(column)
+    return landscape_vol_umap_pretty_label(int(m.group(1)))
 
 
 def covariate_display_name(name: str) -> str:
@@ -44,7 +57,10 @@ def covariate_display_name(name: str) -> str:
         return "k-means labels"
     if name == "landscape_vol_cluster":
         return "Vol cluster"
-    m = re.fullmatch(r"landscape_vol_PC(\d+)", name)
+    m = re.fullmatch(r"landscape_vol_umap(\d+)", name, re.IGNORECASE)
+    if m:
+        return landscape_vol_umap_pretty_label(int(m.group(1)))
+    m = re.fullmatch(r"landscape_vol_PC(\d+)", name, re.IGNORECASE)
     if m:
         return landscape_vol_pc_pretty_label(int(m.group(1)), None)
     return name
@@ -58,10 +74,10 @@ def covariate_display_map(
     """Map column names to display strings for template covariate dropdowns."""
     out: dict[str, str] = {}
     for c in names:
-        m = re.fullmatch(r"landscape_vol_PC(\d+)", str(c))
-        if m:
+        m_pc = re.fullmatch(r"landscape_vol_PC(\d+)", str(c), re.IGNORECASE)
+        if m_pc:
             out[c] = landscape_vol_pc_pretty_label(
-                int(m.group(1)),
+                int(m_pc.group(1)),
                 vol_pc_explained_variance_ratio,
             )
         else:

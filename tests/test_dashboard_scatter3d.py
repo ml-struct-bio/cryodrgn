@@ -989,7 +989,10 @@ class TestScatter3dLatent3dCameraSnapBack:
             ".cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band", 1
         )[1]
         volanim = volanim.split("{% endif %}", 1)[0]
-        assert "grid-template-columns: minmax(0, 1fr) minmax(0, 9.25rem)" in volanim
+        assert (
+            "grid-template-columns: minmax(0, max-content) minmax(0, 9.25rem)"
+            in volanim
+        )
         assert "cryo-cc-discrete-switches--pair-2col" in volanim
 
 

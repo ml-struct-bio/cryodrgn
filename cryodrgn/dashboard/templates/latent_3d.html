@@ -70,19 +70,32 @@
 {% if show_landscape_vol_animations %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/landscape_volpca.css') }}"/>
 <style>
-  /* Controls | plot+legend band | volume panel — plot centred before the legend column. */
+  /* Plot sized to full row height first (JS); left + right columns split the horizontal remainder. */
+  .cryo-dash-page--latent3d:has(.cryo-dash-row--latent3d-volanim) {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
   .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple.cryo-dash-row--latent3d-volanim {
+    --latent3d-volanim-plot-side: calc(100svh - var(--cryo-dash-below-nav-tall));
+    --latent3d-band-w: calc(var(--latent3d-volanim-plot-side) + 9.25rem);
+    --latent3d-right-w: max(0px, calc(100% - 12.825rem - var(--latent3d-band-w)));
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    max-height: none;
     grid-template-columns:
-      minmax(8.60625rem, 12.825rem)
+      max-content
       minmax(0, 1fr)
-      minmax(11.5rem, 22rem);
+      minmax(0, var(--latent3d-right-w));
     column-gap: 0;
+    row-gap: 0;
     align-items: stretch;
     width: 100%;
     max-width: none;
-    height: calc(100svh - var(--cryo-dash-below-nav-tall));
-    min-height: calc(100svh - var(--cryo-dash-below-nav-tall));
-    max-height: calc(100svh - var(--cryo-dash-below-nav-tall));
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-side,
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .cryo-dash-main,
@@ -95,7 +108,12 @@
     width: auto;
     min-width: 0;
     max-width: 12.825rem;
+    height: 100%;
+    min-height: 0;
+    margin-right: 2rem;
     justify-self: start;
+    align-self: stretch;
+    position: relative;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -108,38 +126,76 @@
     width: 100%;
     min-width: 0;
     height: 100%;
-    display: block;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: stretch;
+    overflow: hidden;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim > .latent3d-volanim-aside {
-    width: auto;
-    max-width: 22rem;
-    justify-self: end;
-    align-items: flex-end;
-    margin-left: 1.5rem;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
+    justify-self: stretch;
+    align-self: stretch;
+    align-items: stretch;
+    margin-left: 0;
     padding-right: 0;
+    position: relative;
+  }
+  main:has(.cryo-dash-row--latent3d-volanim)::after {
+    content: "";
+    position: fixed;
+    left: 1.5rem;
+    right: 0;
+    bottom: 0;
+    height: var(--latent3d-volanim-panel-fade-h, 1.35rem);
+    pointer-events: none;
+    z-index: 20;
+    background: linear-gradient(
+      to bottom,
+      rgba(250, 248, 244, 0),
+      rgba(250, 248, 244, 0.55) 42%,
+      var(--cream, #faf8f4) 100%
+    );
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 9.25rem);
+    grid-template-columns: minmax(0, max-content) minmax(0, 9.25rem);
+    column-gap: 0;
     grid-template-rows: minmax(0, 1fr);
-    align-items: start;
-    width: 100%;
+    align-items: stretch;
+    justify-content: center;
+    width: max-content;
+    max-width: 100%;
     height: 100%;
+    max-height: 100%;
     min-height: 0;
     box-sizing: border-box;
+    flex: 0 0 auto;
+    align-self: center;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band .cryo-dash-viewport--plotly {
     grid-column: 1;
     grid-row: 1;
     justify-self: center;
-    --latent3d-volanim-plot-side: calc(100svh - var(--cryo-dash-below-nav-tall));
     flex: 0 0 auto;
-    width: min(100%, var(--latent3d-volanim-plot-side));
-    height: min(100%, var(--latent3d-volanim-plot-side));
-    max-height: 100%;
-    min-height: 0;
+    width: var(--latent3d-volanim-plot-side);
+    height: var(--latent3d-volanim-plot-side) !important;
+    min-width: 0;
+    min-height: 0 !important;
+    max-width: var(--latent3d-volanim-plot-side);
+    max-height: var(--latent3d-volanim-plot-side);
     aspect-ratio: 1 / 1;
     align-self: center;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band .cryo-dash-viewport--plotly .cryo-plotly-stack,
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band .cryo-dash-viewport--plotly #latent3d {
+    min-height: 0 !important;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-plot-stack {
     min-height: 0;
@@ -150,11 +206,16 @@
     grid-column: 2;
     grid-row: 1;
     justify-self: end;
-    align-self: start;
+    align-self: stretch;
     width: auto;
     max-width: min(9.25rem, 100%);
     height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     justify-content: flex-start;
+    position: relative;
+    overflow: hidden;
     z-index: 2;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-legend-panel {
@@ -200,18 +261,53 @@
     min-height: 0;
     max-height: none;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-legend-panel:not([hidden]) {
     flex: 1 1 auto;
     min-height: 0;
-    max-height: 100%;
+    max-height: none;
     width: 100%;
     max-width: 100%;
     align-self: stretch;
+    position: relative;
+    overflow: hidden;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim
+    .latent3d-color-legend-aside #latent3d-color-legend-panel:not([hidden])::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--latent3d-volanim-panel-fade-h, 1.35rem);
+    pointer-events: none;
+    z-index: 4;
+    background: linear-gradient(
+      to bottom,
+      rgba(250, 248, 244, 0),
+      rgba(250, 248, 244, 0.62) 44%,
+      rgba(250, 248, 244, 0.96) 100%
+    );
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-color-legend-aside {
     min-height: 0;
     overflow: hidden;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim #latent3d-color-continuous-wrap:not([hidden]) {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .pair-legend-continuous-stack {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-legend__footer--continuous {
+    margin-top: auto;
+    flex-shrink: 0;
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .cryo-cc-discrete-switches--pair-2col {
     width: 100%;
@@ -229,10 +325,12 @@
   .cryo-dash-page--latent3d .latent3d-volanim-aside {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: stretch;
     min-width: 0;
-    max-width: 22rem;
-    width: auto;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
     box-sizing: border-box;
     position: relative;
     top: auto;
@@ -247,7 +345,9 @@
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card {
     width: 100%;
-    max-width: min(100%, 22rem);
+    max-width: none;
+    flex: 1 1 auto;
+    min-height: 0;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -483,22 +583,30 @@
   .cryo-dash-page--latent3d .l3dva-preview-anim-overlay--show .cryo-plot-rendering-overlay__indeterminate {
     height: 100%;
   }
-  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay {
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-anim-wrap {
+    container-type: inline-size;
+    --l3dva-cell-label-size: max(0.45rem, 13cqw);
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid:not(.volsketch-preview-grid--cycle) .volsketch-anim-wrap {
+    --l3dva-cell-label-size: max(0.45rem, calc(13cqw * 1.55));
+  }
+  .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay:not(.volsketch-gif-overlay--cov) {
     position: absolute;
-    top: 0.28rem;
-    left: 0.28rem;
+    top: 2px;
+    left: 2px;
     z-index: 1;
-    font-size: clamp(1.685rem, 5.18vw, 2.203rem);
+    font-size: var(--l3dva-cell-label-size);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: #1a1a1a;
-    line-height: 1.12;
-    padding: 0.14rem 0.38rem;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.92);
+    line-height: 1;
+    padding: 0;
+    margin: 0;
+    border-radius: 0;
+    background: transparent;
     border: none;
     pointer-events: none;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    box-shadow: none;
     text-shadow:
       0 1px 1px rgba(255, 255, 255, 0.5),
       0 1px 2px rgba(0, 0, 0, 0.07);
@@ -507,13 +615,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.38em;
-    height: 1.38em;
-    min-width: 1.38em;
+    width: auto;
+    height: auto;
+    min-width: 0;
     padding: 0;
     border-radius: 50%;
     line-height: 1;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    box-shadow: none;
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--on-tint {
     box-shadow:
@@ -534,9 +642,9 @@
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid
     .volsketch-gif-overlay--letter-cov-glyph:not(.volsketch-gif-overlay--cov) {
-    padding: 0.1rem 0.22rem;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.86);
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
     text-shadow:
       0 0 2px rgba(255, 255, 255, 0.75),
       0 1px 2px rgba(0, 0, 0, 0.1);
@@ -545,18 +653,28 @@
     display: none !important;
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-overlay--cov {
+    position: absolute;
+    top: 2px;
+    right: 2px;
     left: auto;
-    right: 0.28rem;
-    max-width: min(78%, calc(100% - 4.2rem));
+    pointer-events: none;
+    width: max-content;
+    max-width: calc(100% - var(--l3dva-cell-label-size) - 6px);
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 0.08rem;
-    line-height: 1.12;
+    justify-content: flex-start;
+    gap: 0.04em;
+    line-height: 1;
     text-align: right;
-    overflow: hidden;
-    font-size: clamp(0.62rem, 1.9vw, 0.82rem);
-    padding: 0.11rem 0.3rem;
+    font-size: calc(var(--l3dva-cell-label-size) * 0.408);
+    padding: 0.1em 0.16em;
+    border-radius: 2px;
+    z-index: 1;
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid
     .volsketch-gif-overlay--cov.volsketch-gif-overlay--on-tint .volsketch-gif-cov-var {
@@ -574,22 +692,23 @@
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-cov-var {
     display: block;
+    width: auto;
     max-width: 100%;
     font-family: inherit;
-    font-size: 0.72em;
+    font-size: 0.62em;
     font-weight: 600;
-    letter-spacing: 0.02em;
-    line-height: 1.1;
+    letter-spacing: 0;
+    line-height: 1;
     color: rgba(26, 26, 26, 0.92);
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: right;
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-cov-var[hidden] {
     display: none !important;
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid .volsketch-gif-cov-val {
     display: block;
+    width: auto;
     max-width: 100%;
     font-family:
       ui-serif,
@@ -599,13 +718,12 @@
       Georgia,
       "Times New Roman",
       serif;
-    font-size: 0.95em;
+    font-size: 0.88em;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    line-height: 1.08;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1;
     white-space: nowrap;
+    text-align: right;
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-gif-mode-fieldset.volsketch-gif-modes {
     margin: 0;
@@ -712,10 +830,6 @@
     outline: 2px solid var(--nav-bg, #243b53);
     outline-offset: 2px;
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card #l3dva-mode-desc {
-    margin: 0.38rem 0 0;
-    line-height: 1.22;
-  }
   .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row {
     display: flex;
     align-items: end;
@@ -773,12 +887,12 @@
   }
   .cryo-dash-page--latent3d .l3dva-display-col {
     width: 100%;
-    max-width: min(100%, 22rem);
+    max-width: none;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    align-self: flex-start;
+    align-self: stretch;
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card > #l3dva-gif-preview-note {
     margin: 0 0 0.45rem;
@@ -1447,7 +1561,6 @@
             <input type="radio" name="l3dva-gif-mode" id="l3dva-mode-disabled" value="disabled" checked />
             <label for="l3dva-mode-disabled">Disable<br />animation</label>
           </div>
-          <p id="l3dva-mode-desc" class="cryo-dash-legend-note"></p>
         </fieldset>
         <div id="l3dva-gif-frames-wrap" style="display:none;">
           <label class="cryo-select-line" for="l3dva-gif-frames">GIF frames (rotation)</label>
@@ -2184,7 +2297,100 @@
     return !!document.querySelector(".cryo-dash-row--latent3d-volanim");
   }
 
+  function syncLatent3dVolanimViewportHeight() {
+    if (!latent3dIsVolanimLayout()) {
+      return;
+    }
+    var header = document.querySelector("header.nav");
+    var main = document.querySelector("main");
+    if (!header || !main) {
+      return;
+    }
+    var navH = Math.ceil(header.getBoundingClientRect().height);
+    if (navH > 0) {
+      main.style.setProperty("--cryo-dash-volanim-nav-h", navH + "px");
+    }
+  }
+
+  function syncLatent3dVolanimGridColumns() {
+    if (!latent3dIsVolanimLayout()) {
+      return;
+    }
+    var row = document.querySelector(".cryo-dash-row--latent3d-volanim");
+    if (!row) {
+      return;
+    }
+    var side = row.querySelector(".cryo-dash-side");
+    var band = row.querySelector(".latent3d-plot-legend-band");
+    var legendAside = band && band.querySelector(".latent3d-color-legend-aside");
+    if (!side || !band) {
+      return;
+    }
+    var rowW = row.clientWidth;
+    var rowH = row.clientHeight;
+    if (rowW < 1 || rowH < 1) {
+      return;
+    }
+    var leftW = side.offsetWidth;
+    if (leftW < 1) {
+      leftW = side.scrollWidth;
+    }
+    var sideMarginR = parseFloat(getComputedStyle(side).marginRight) || 0;
+    var rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    var legendW = 9.25 * rootPx;
+    if (legendAside && legendAside.offsetWidth > 0) {
+      legendW = legendAside.offsetWidth;
+    }
+    var minPlotSide = 11.25 * rootPx;
+
+    function applyPlotAndColumns(plotSide) {
+      plotSide = Math.max(minPlotSide, plotSide);
+      row.style.setProperty("--latent3d-volanim-plot-side", Math.round(plotSide) + "px");
+      if (legendAside && legendAside.offsetWidth > 0) {
+        legendW = legendAside.offsetWidth;
+      }
+      var bandW = plotSide + legendW;
+      var rightW = Math.max(0, rowW - leftW - sideMarginR - bandW);
+      row.style.setProperty("--latent3d-band-w", Math.round(bandW) + "px");
+      row.style.setProperty("--latent3d-right-w", Math.round(rightW) + "px");
+    }
+
+    // Size the square plot to the full row height first, then clamp only if panels won't fit.
+    var plotSide = rowH;
+    var maxPlotSide = rowW - leftW - sideMarginR - legendW;
+    if (maxPlotSide < plotSide) {
+      plotSide = maxPlotSide;
+    }
+    applyPlotAndColumns(plotSide);
+    requestAnimationFrame(function() {
+      if (!latent3dIsVolanimLayout()) {
+        return;
+      }
+      if (legendAside && legendAside.offsetWidth > 0) {
+        legendW = legendAside.offsetWidth;
+      }
+      leftW = side.offsetWidth;
+      if (leftW < 1) {
+        leftW = side.scrollWidth;
+      }
+      sideMarginR = parseFloat(getComputedStyle(side).marginRight) || 0;
+      rowW = row.clientWidth;
+      rowH = row.clientHeight;
+      if (rowW < 1 || rowH < 1) {
+        return;
+      }
+      plotSide = rowH;
+      maxPlotSide = rowW - leftW - sideMarginR - legendW;
+      if (maxPlotSide < plotSide) {
+        plotSide = maxPlotSide;
+      }
+      applyPlotAndColumns(plotSide);
+    });
+  }
+
   function syncLatent3dVolanimPlotGeometry() {
+    syncLatent3dVolanimViewportHeight();
+    syncLatent3dVolanimGridColumns();
     if (!latent3dIsVolanimLayout() || !gd) {
       return;
     }
@@ -2211,11 +2417,35 @@
     var minH = latent3dLegendHistMinHeightPx;
     if (latent3dIsVolanimLayout()) {
       histEl.style.maxWidth = "";
-      var track = histEl.closest(".pair-legend-middle-track--continuous");
-      var trackH = track && track.clientHeight > 0 ? track.clientHeight : 0;
-      var h = trackH > 0
-        ? Math.max(minH, Math.floor(trackH * latent3dLegendHistHeightScale))
-        : minH;
+      var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      var mainEl = document.querySelector("main");
+      var fadeH = 21.6;
+      if (mainEl) {
+        var fadeVar = parseFloat(
+          getComputedStyle(mainEl).getPropertyValue("--latent3d-volanim-panel-fade-h")
+        );
+        if (fadeVar > 0) {
+          fadeH = fadeVar;
+        }
+      }
+      var targetBottom = vh - fadeH;
+      if (mainEl) {
+        var mainBottom = mainEl.getBoundingClientRect().bottom;
+        if (mainBottom > 0 && mainBottom <= vh) {
+          targetBottom = mainBottom - fadeH;
+        }
+      }
+      var stack = histEl.closest(".pair-legend-continuous-stack");
+      var footer = stack && stack.querySelector(".cryo-cc-legend__footer--continuous");
+      var footerReserve = footer ? footer.offsetHeight + 8 : 0;
+      var padding = 6;
+      var rect = histEl.getBoundingClientRect();
+      var h = Math.floor(
+        (targetBottom - rect.top - padding - footerReserve) * latent3dLegendHistHeightScale
+      );
+      if (h < minH) {
+        h = minH;
+      }
       histEl.style.height = h + "px";
       histEl.style.minHeight = minH + "px";
       try {

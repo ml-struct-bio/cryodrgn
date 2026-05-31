@@ -1448,9 +1448,17 @@
       box-sizing: border-box;
     }
     main:has(.cryo-dash-row--latent3d-volanim) {
-      max-height: 100svh;
+      --cryo-dash-volanim-nav-h: var(--cryo-dash-below-nav);
+      --latent3d-volanim-panel-fade-h: 1.35rem;
+      max-height: none;
+      height: calc(100svh - var(--cryo-dash-volanim-nav-h));
+      min-height: calc(100svh - var(--cryo-dash-volanim-nav-h));
       overflow: hidden;
-      padding-bottom: 0.5rem;
+      padding-top: 0;
+      padding-bottom: 0;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
     }
     .cryo-dash-page--latent3d .cryo-dash-row {
       align-items: stretch;

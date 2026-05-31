@@ -249,7 +249,7 @@
 
   /* Latent 3D: preview region hidden unless a GIF preview is mounted (see syncPreviewRegion). */
   .cryo-dash-page--latent3d #l3dva-preview-wrap {
-    --volsketch-preview-cols: 2;
+    --volsketch-preview-cols: 4;
     --volsketch-preview-gap: 0.4rem;
     width: 100%;
     box-sizing: border-box;
@@ -262,7 +262,7 @@
   }
   .cryo-dash-page--latent3d #l3dva-preview-grid {
     display: grid;
-    grid-template-columns: repeat(var(--volsketch-preview-cols, 2), minmax(0, 1fr));
+    grid-template-columns: repeat(var(--volsketch-preview-cols, 4), minmax(0, 1fr));
     gap: var(--volsketch-preview-gap, 0.4rem);
     width: 100%;
     box-sizing: border-box;

@@ -177,10 +177,10 @@
     if (isCircledMontageGlyphText(label)) {
       var rgba = null;
       if (/^#([0-9a-fA-F]{6})$/.test(c)) {
-        rgba = hex6ToRgba(c, 0.95);
+        rgba = hex6ToRgba(c, 0.85);
       } else {
         var rm = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(c);
-        if (rm) rgba = "rgba(" + rm[1] + "," + rm[2] + "," + rm[3] + ",0.95)";
+        if (rm) rgba = "rgba(" + rm[1] + "," + rm[2] + "," + rm[3] + ",0.85)";
         else rgba = c;
       }
       badge.style.color = rgba;
@@ -439,21 +439,6 @@
     if (isNaN(n)) return String(v);
     return String(n).padStart(3, "0");
   }
-
-  var GIF_MODE_DESC = {
-    cycle: (
-      "Fixed camera angle, steps through your selected k-means volumes. <br /><br />"
-      + "If you select more than <strong>50</strong>, volumes are chosen at random."
-    ),
-    rotate_each: (
-      "One rotating angle GIF per selected volume in a tiled grid. "
-      + "If you select more than <strong>16</strong>, volumes are chosen at random."
-    ),
-    disabled: (
-      "No ChimeraX GIF previews — double-click volumes on the scatter plot to select them "
-      + "and update montage labels only."
-    ),
-  };
 
   var P3S = global.CryoPlotlyScatter3dScene;
   if (!P3S || typeof P3S.snapshot !== "function") {
@@ -792,7 +777,6 @@
     var selIndicesDetails = $("sel-indices-details");
     var selIndicesSummaryLabel = $("sel-indices-summary-label");
     var selIndicesList = $("sel-indices-list");
-    var gifModeDescEl = $("mode-desc");
     var gifFrames = $("gif-frames");
     var gifFramesWrap = $("gif-frames-wrap");
     var previewGrid = $("preview-grid");
@@ -927,12 +911,6 @@
       return landscapeAnimInFlight && !selectedVols.has(v);
     }
 
-    function syncGifModeDescription() {
-      if (!gifModeDescEl) return;
-      var m = currentGifMode();
-      gifModeDescEl.innerHTML = GIF_MODE_DESC[m] || GIF_MODE_DESC.cycle;
-    }
-
     function syncPreviewRegion() {
       if (!previewGrid) return;
       var cycle = currentGifMode() === "cycle";
@@ -941,7 +919,7 @@
       var show = animationsEnabled() && n > 0;
       var cols = 1;
       if (show) {
-        cols = cycle || n <= 1 ? 1 : 2;
+        cols = cycle || n <= 1 ? 1 : 4;
       }
       previewGrid.style.setProperty("--volsketch-preview-cols", String(cols));
       if (previewWrap) {
@@ -961,7 +939,6 @@
     }
 
     function syncAnimOutputControls() {
-      syncGifModeDescription();
       syncGifFramesVisibility();
       syncPreviewRegion();
       if (randomSelBtn && META) {
@@ -2017,7 +1994,7 @@
           });
           selectedVols = synced;
           // Preserve bold/italic anchors for volumes that remain selected.
-          // (Server may subsample render outputs; we only drop anchors for removed volumes.)
+          // Drop montage anchors only for volumes removed from the selection.
           if (lastDblClickVol != null && !selectedVols.has(lastDblClickVol)) {
             lastDblClickVol = null;
           }

@@ -8,7 +8,6 @@ from __future__ import annotations
 import atexit
 import base64
 import os
-import random
 import re
 import secrets
 import shutil
@@ -66,9 +65,6 @@ _KMEANS_SKETCH_VOL_MRC_RE = re.compile(r"^vol_(\d+)\.mrc$")
 # Particle PCA columns from ``analysis.load_dataframe`` (``PC1``, ``PC2``, …).
 _PARTICLE_PC_COV_COL_RE = re.compile(r"^PC(\d+)$", re.IGNORECASE)
 
-# ChimeraX cost: cap how many volumes go into each animation style (extras subsampled).
-LANDSCAPE_ANIM_MAX_ROTATE = 5
-LANDSCAPE_ANIM_MAX_CYCLE = 50
 # Default ChimeraX rotation-frame count (sketch GIFs + vol-PCA ``generate_animations``).
 LANDSCAPE_SKETCH_GIF_FRAMES_DEFAULT = 20
 _LANDSCAPE_VIEW_ROTATION_AXES: tuple[str, ...] = ("x", "y", "z")
@@ -77,13 +73,6 @@ _LANDSCAPE_VIEW_ROTATION_AXES: tuple[str, ...] = ("x", "y", "z")
 # (+30% size, −20% opacity vs that base).
 _VOLSKETCH_SCATTER_MARKER = float(9 * (1.0 - 0.13) * 1.3)
 _VOLSKETCH_SCATTER_OPACITY = float(min(0.98, 0.75 * 0.8))
-
-
-def _sample_landscape_vols(vols: list[int], k: int, rng: random.Random) -> list[int]:
-    """Up to ``k`` volumes without replacement; sorted ascending."""
-    if len(vols) <= k:
-        return list(vols)
-    return sorted(rng.sample(vols, k))
 
 
 def normalize_landscape_view_rotations(
@@ -258,7 +247,7 @@ def _volsketch_covariate_display(name: str) -> str:
     """Match particle explorer naming for covariate selectors."""
     if name == "labels":
         return "k-means labels"
-    return str(name)
+    return covariate_display_name(name)
 
 
 def sketch_plot_color_covariate_variable_label(plot_color_mode: str) -> str | None:
@@ -272,7 +261,7 @@ def sketch_plot_color_covariate_variable_label(plot_color_mode: str) -> str | No
     m = _PARTICLE_PC_COV_COL_RE.match(raw)
     if m:
         return f"latent-space PC{m.group(1)}"
-    return _volsketch_covariate_display(pcm)
+    return covariate_display_name(raw)
 
 
 def landscape_color_options(exp: DashboardExperiment) -> list[dict[str, str]]:
@@ -1198,14 +1187,13 @@ def generate_landscape_volume_animations(
         overlay.update(_cov_preview_fields(int(vol)))
         return overlay
 
-    rng = random.Random()
     rot_vols: list[int] = []
     cyc_vols: list[int] = []
 
     if mode == "rotate_each":
-        rot_vols = _sample_landscape_vols(vol_indices, LANDSCAPE_ANIM_MAX_ROTATE, rng)
+        rot_vols = sorted(int(v) for v in vol_indices)
     else:
-        cyc_vols = _sample_landscape_vols(vol_indices, LANDSCAPE_ANIM_MAX_CYCLE, rng)
+        cyc_vols = sorted(int(v) for v in vol_indices)
 
     color_mode = (color_mode or "none").strip().lower()
     vol_state_hex: dict[int, str] | None = None

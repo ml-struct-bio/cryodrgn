@@ -34,6 +34,8 @@
       /* Full-viewport dash layouts: reserve space for taller header + logo. */
       --cryo-dash-below-nav: 9.5rem;
       --cryo-dash-below-nav-tall: 13.75rem;
+      /* Viewport-fixed bottom fade on dash pages with scrollable menu columns. */
+      --cryo-dash-menu-scroll-fade-h: 1.35rem;
     }
     * { box-sizing: border-box; }
     body {
@@ -828,6 +830,99 @@
     }
     textarea { min-height: 4rem; }
     .muted { color: var(--muted); font-size: 0.92rem; }
+    /* File browser (used by particle explorer save modal, and trajectory creator pickers). */
+    .cryo-file-browser-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.3rem 0.4rem;
+      border-bottom: 1px solid rgba(36, 59, 83, 0.10);
+      background: rgba(36, 59, 83, 0.04);
+      flex-shrink: 0;
+    }
+    .cryo-file-browser-bar button {
+      background: none;
+      border: 1px solid rgba(36, 59, 83, 0.18);
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 0.72rem;
+      padding: 0.15rem 0.4rem;
+      color: #243b53;
+      flex-shrink: 0;
+    }
+    .cryo-file-browser-bar button:hover {
+      background: rgba(36, 59, 83, 0.08);
+    }
+    .cryo-file-browser-path {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      direction: rtl;
+      text-align: left;
+      color: rgba(36, 59, 83, 0.6);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.65rem;
+    }
+    .cryo-file-browser-list {
+      overflow-y: auto;
+      flex: 1;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .cryo-file-browser-list li {
+      padding: 0.22rem 0.45rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      border-bottom: 1px solid rgba(36, 59, 83, 0.04);
+    }
+    .cryo-file-browser-list li:hover {
+      background: rgba(36, 59, 83, 0.06);
+    }
+    .cryo-file-browser-list .fb-icon {
+      flex-shrink: 0;
+      width: 1rem;
+      text-align: center;
+      opacity: 0.5;
+    }
+    .cryo-file-browser-list .fb-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cryo-file-browser-empty {
+      padding: 0.6rem 0.45rem;
+      color: rgba(36, 59, 83, 0.45);
+      text-align: center;
+      font-style: italic;
+    }
+    .cryo-file-browser-save-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.3rem;
+      align-items: center;
+      padding: 0.35rem 0.4rem;
+      border-top: 1px solid rgba(36, 59, 83, 0.10);
+      background: rgba(36, 59, 83, 0.03);
+    }
+    .cryo-file-browser-save-input {
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      font-size: 0.72rem;
+      padding: 0.2rem 0.35rem;
+      border: 1px solid rgba(36, 59, 83, 0.22);
+      border-radius: 3px;
+      font-family: "IBM Plex Mono", monospace;
+    }
+    .cryo-file-browser-save-row .btn {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.45rem;
+      white-space: nowrap;
+    }
     .layout-split {
       display: grid;
       grid-template-columns: 1fr 320px;
@@ -851,6 +946,23 @@
       max-width: min(100%, 1680px);
       padding-top: 0.85rem;
       padding-bottom: 1rem;
+    }
+    /* Same pattern as latent 3D volume-landscape: fixed cream fade at the viewport bottom. */
+    main:has(.cryo-dash-page--menu-scroll-fade)::after {
+      content: "";
+      position: fixed;
+      left: 1.5rem;
+      right: 0;
+      bottom: 0;
+      height: var(--cryo-dash-menu-scroll-fade-h, 1.35rem);
+      pointer-events: none;
+      z-index: 20;
+      background: linear-gradient(
+        to bottom,
+        rgba(250, 248, 244, 0),
+        rgba(250, 248, 244, 0.55) 42%,
+        var(--cream, #faf8f4) 100%
+      );
     }
     .cryo-dash-page .cryo-dash-lead {
       margin: 0 0 0.35rem;
@@ -1449,7 +1561,7 @@
     }
     main:has(.cryo-dash-row--latent3d-volanim) {
       --cryo-dash-volanim-nav-h: var(--cryo-dash-below-nav);
-      --latent3d-volanim-panel-fade-h: 1.35rem;
+      --latent3d-volanim-panel-fade-h: var(--cryo-dash-menu-scroll-fade-h, 1.35rem);
       max-height: none;
       height: calc(100svh - var(--cryo-dash-volanim-nav-h));
       min-height: calc(100svh - var(--cryo-dash-volanim-nav-h));
@@ -1523,6 +1635,7 @@
     })();
   </script>
   <script src="{{ url_for('static', filename='js/cryo_dashboard_icons.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/cryo_resize_observer_utils.js') }}"></script>
   {% block head %}{% endblock %}
 </head>
 <body{% if command_builder_page_mode %} class="cmd-builder-github-pages"{% endif %}>
@@ -1784,21 +1897,479 @@
     }
 
     var sel = document.getElementById("dash-epoch");
-    if (!sel || sel.options.length <= 1) return;
-    sel.addEventListener("change", function() {
-      var v = parseInt(this.value, 10);
-      if (isNaN(v)) return;
-      fetch("{{ url_for('api_set_epoch') }}", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ epoch: v })
-      })
-        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
-        .then(function(res) {
-          if (res.ok && res.j.ok) window.location.reload();
+    if (sel && sel.options.length > 1) {
+      sel.addEventListener("change", function() {
+        var v = parseInt(this.value, 10);
+        if (isNaN(v)) return;
+        fetch("{{ url_for('api_set_epoch') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ epoch: v })
         })
-        .catch(function() {});
-    });
+          .then(function(r) {
+            return r.json().then(function(j) { return { ok: r.ok, j: j }; });
+          })
+          .then(function(res) {
+            if (res.ok && res.j.ok) window.location.reload();
+          })
+          .catch(function() {});
+      });
+    }
+
+    // Auto-fit typography in all dashboard buttons:
+    // - maximise font-size while keeping label inside the current button box
+    // - leave an internal inset margin (implemented as padding):
+    //   - 5% of button height (top/bottom)
+    //   - 10% of button width (left/right)
+    (function() {
+      var FIT_MARGIN_RATIO = 0.05;
+      var FIT_MARGIN_RATIO_X = FIT_MARGIN_RATIO * 2;
+      var FIT_GLOBAL_FONT_SHRINK_RATIO = 0.13;
+      // Derived from the particle-explorer cache-toolbar buttons:
+      //   globalMinBtnHeight = round(max(refHeights) * 0.77)
+      var GLOBAL_MIN_BTN_HEIGHT_FRAC = 0.77;
+      var GLOBAL_MIN_BTN_SESSION_KEY = "cryoDashGlobalMinBtnHeightPx";
+      var globalMinBtnHeightPx = null;
+      var globalMinLoadedFromSession = false;
+      var FIT_MIN_FONT_PX = 4;
+      var FIT_MAX_FONT_PX = 240;
+      var FIT_OVERFLOW_TOL_PX = 0.75;
+
+      function parseFinitePx(v) {
+        var n = parseFloat(v || "");
+        return isFinite(n) && n > 0 ? n : null;
+      }
+
+      function loadGlobalMinBtnHeightFromSession() {
+        if (globalMinLoadedFromSession) return globalMinBtnHeightPx;
+        globalMinLoadedFromSession = true;
+        try {
+          var v = sessionStorage.getItem(GLOBAL_MIN_BTN_SESSION_KEY);
+          globalMinBtnHeightPx = parseFinitePx(v);
+        } catch (e) {}
+        return globalMinBtnHeightPx;
+      }
+
+      function computeGlobalMinBtnHeightFromParticleExplorerRefs() {
+        var refExpand = document.getElementById("btn-expand-cache");
+        var refView = document.getElementById("btn-view-images");
+        var refH = 0;
+        if (refExpand) {
+          var r1 = refExpand.getBoundingClientRect();
+          if (r1 && isFinite(r1.height) && r1.height > 2) refH = Math.max(refH, r1.height);
+        }
+        if (refView) {
+          var r2 = refView.getBoundingClientRect();
+          if (r2 && isFinite(r2.height) && r2.height > 2) refH = Math.max(refH, r2.height);
+        }
+        if (!(refH > 2)) return null;
+        return Math.round(refH * GLOBAL_MIN_BTN_HEIGHT_FRAC);
+      }
+
+      function ensureGlobalMinBtnHeightPx() {
+        if (globalMinBtnHeightPx != null && isFinite(globalMinBtnHeightPx) && globalMinBtnHeightPx > 0) {
+          return globalMinBtnHeightPx;
+        }
+        // Prefer cached value so the exact same height applies across interfaces.
+        loadGlobalMinBtnHeightFromSession();
+        if (globalMinBtnHeightPx != null && isFinite(globalMinBtnHeightPx) && globalMinBtnHeightPx > 0) {
+          return globalMinBtnHeightPx;
+        }
+        var computed = computeGlobalMinBtnHeightFromParticleExplorerRefs();
+        if (computed != null && isFinite(computed) && computed > 0) {
+          globalMinBtnHeightPx = computed;
+          try { sessionStorage.setItem(GLOBAL_MIN_BTN_SESSION_KEY, String(computed)); } catch (e2) {}
+          return globalMinBtnHeightPx;
+        }
+        return null;
+      }
+
+      function isPlotlyButton(btn) {
+        return !!(
+          btn
+          && btn.closest
+          && (btn.closest(".js-plotly-plot") || btn.closest(".modebar"))
+        );
+      }
+
+      function buttonHasVisibleText(btn) {
+        var t = (btn && btn.textContent) ? String(btn.textContent) : "";
+        // Treat NBSP as whitespace; collapse all whitespace so only real label chars remain.
+        t = t.replace(/\u00A0/g, " ").replace(/\s+/g, "");
+        return t.length > 0;
+      }
+
+      function applyDescendantFontInherit(btn) {
+        if (!btn || btn.dataset.cryoFitButtonsInheritApplied === "1") return;
+        var els = btn.querySelectorAll("*");
+        for (var i = 0; i < els.length; i++) {
+          var el = els[i];
+          var tag = (el.tagName || "").toLowerCase();
+          if (tag === "svg" || tag === "path" || tag === "g") continue;
+          el.style.fontSize = "inherit";
+        }
+        btn.dataset.cryoFitButtonsInheritApplied = "1";
+      }
+
+      function getCurrentFontSizePx(btn) {
+        var inline = parseFloat(btn.style.fontSize || "");
+        if (isFinite(inline)) return inline;
+        var cs = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+        return cs ? parseFloat(cs.fontSize) : NaN;
+      }
+
+      // Toggle-list "select" headers (palette / discrete collapse titles).
+      function isToggleListSelectButton(btn) {
+        if (!btn || !btn.classList) return false;
+        return (
+          btn.classList.contains("cryo-palette-select__title")
+          || btn.classList.contains("pairplot-palette-select__title")
+          || btn.classList.contains("cryo-cc-discrete-toggle-title")
+        );
+      }
+
+      // Estimate how many "code-defined" lines a button label contains:
+      // - `<br>` tags always count as a line break.
+      // - literal newline characters only count when `white-space` preserves them
+      //   (e.g. `pre-line` / `pre-wrap`), so template indentation doesn't inflate `l`.
+      function estimateButtonCodeLineCount(btn) {
+        var brCount = 0;
+        if (btn && btn.getElementsByTagName) {
+          brCount = btn.getElementsByTagName("br").length || 0;
+        }
+
+        var ws = "";
+        try {
+          ws = window.getComputedStyle ? window.getComputedStyle(btn).whiteSpace : "";
+        } catch (e) {}
+
+        var countNewlines = ws === "pre-line" || ws === "pre-wrap" || ws === "pre";
+
+        var nlCount = 0;
+        if (countNewlines) {
+          var txt = (btn && btn.textContent) ? String(btn.textContent) : "";
+          txt = txt.replace(/\r/g, "\n");
+          for (var i = 0; i < txt.length; i++) {
+            if (txt.charAt(i) !== "\n") continue;
+            var prev = txt.charAt(i - 1);
+            var next = txt.charAt(i + 1);
+            if (prev && next && prev.trim() !== "" && next.trim() !== "") nlCount++;
+          }
+        }
+
+        var l = brCount + nlCount + 1;
+        if (!isFinite(l) || l < 1) l = 1;
+        return l;
+      }
+
+      // Global height base (`h`) rules requested by the UI update:
+      // - one line:  minHeight = 0.6h
+      // - l lines:   minHeight = h + 0.7h(l-1)
+      // - toggle headers: minHeight = 0.7h
+      function computeMinHeightForButton(btn, h) {
+        if (h == null || !isFinite(h) || h <= 0) return null;
+        if (isToggleListSelectButton(btn)) return h * 0.7;
+
+        var l = estimateButtonCodeLineCount(btn);
+        if (l <= 1) return h * 0.6;
+        return h + 0.7 * h * (l - 1);
+      }
+
+      function fitButtonLabel(btn) {
+        if (!btn || btn.nodeType !== 1) return;
+        if (btn.dataset.cryoFitButtonsBusy === "1") return;
+        if (btn.hidden) return;
+        if (isPlotlyButton(btn)) return;
+        if (!buttonHasVisibleText(btn)) return;
+
+        var isCacheButtonTextMatchTarget =
+          btn.id === "btn-cache-selection-uncached"
+          || btn.id === "btn-clear-image-cache";
+        var isVolumeHeightMatchTarget =
+          btn.id === "btn-volume-generate" || btn.id === "btn-volume-animate";
+
+        // Apply the requested global min-height rules based on:
+        // - `h` = ensureGlobalMinBtnHeightPx()
+        // - `l` = code-defined label lines (br + template newlines where `white-space` preserves them)
+        var h = ensureGlobalMinBtnHeightPx();
+        if (h != null && isFinite(h) && h > 0 && window.getComputedStyle) {
+          var desiredMinH = computeMinHeightForButton(btn, h);
+          if (desiredMinH != null && isFinite(desiredMinH) && desiredMinH > 0) {
+            var csMin = parseFloat(window.getComputedStyle(btn).minHeight || "");
+            if (!isFinite(csMin)) csMin = parseFloat(btn.style.minHeight || "");
+            if (!isFinite(csMin)) csMin = 0;
+            if (csMin + 0.5 < desiredMinH) {
+              btn.style.minHeight = desiredMinH + "px";
+            }
+          }
+        }
+
+        // For cache/volume buttons, also freeze `height` to the computed min-height
+        // so the font-size probe runs on stable geometry.
+        if ((isCacheButtonTextMatchTarget || isVolumeHeightMatchTarget) && window.getComputedStyle) {
+          if (h != null && isFinite(h) && h > 0) {
+            var desiredH2 = computeMinHeightForButton(btn, h);
+            if (desiredH2 != null && isFinite(desiredH2) && desiredH2 > 0) {
+              var curInlineH = parseFloat(btn.style.height || "");
+              if (!isFinite(curInlineH) || Math.abs(curInlineH - desiredH2) > 0.5) {
+                btn.style.height = desiredH2 + "px";
+                btn.style.minHeight = desiredH2 + "px";
+              }
+            }
+          }
+        }
+
+        var rect = btn.getBoundingClientRect();
+        var h = rect.height;
+        var w = rect.width;
+        if (!(h > 2 && w > 2)) return;
+
+        var lastH = parseFloat(btn.dataset.cryoFitButtonsLastH || "");
+        var lastW = parseFloat(btn.dataset.cryoFitButtonsLastW || "");
+        var lastFont = parseFloat(btn.dataset.cryoFitButtonsLastFont || "");
+        var curFont = getCurrentFontSizePx(btn);
+        if (
+          !isCacheButtonTextMatchTarget
+          &&
+          isFinite(lastH)
+          && isFinite(lastW)
+          && isFinite(lastFont)
+          && isFinite(curFont)
+          && Math.abs(lastH - h) < 0.5
+          && Math.abs(lastW - w) < 0.5
+          && Math.abs(lastFont - curFont) < 0.5
+        ) {
+          return;
+        }
+
+        btn.dataset.cryoFitButtonsBusy = "1";
+
+        // Keep/restore these so we don't permanently override layout constraints.
+        var origHeight = btn.style.height;
+        var origWidth = btn.style.width;
+        var origBoxSizing = btn.style.boxSizing;
+
+        try {
+          applyDescendantFontInherit(btn);
+
+          // Internal margin (inset) as requested:
+          // - top/bottom inset = 5% of button height
+          // - left/right inset = 10% of button width (doubled)
+          var marginYPx = Math.max(0, h * FIT_MARGIN_RATIO);
+          var marginXPx = Math.max(0, w * FIT_MARGIN_RATIO_X);
+
+          // Freeze the outer box while we probe for the max font-size.
+          btn.style.boxSizing = "border-box";
+          btn.style.height = h + "px";
+          btn.style.width = w + "px";
+
+          // Implement inset as padding so label layout naturally wraps/centres inside.
+          btn.style.paddingTop = marginYPx + "px";
+          btn.style.paddingBottom = marginYPx + "px";
+          btn.style.paddingLeft = marginXPx + "px";
+          btn.style.paddingRight = marginXPx + "px";
+
+          var maxContentH = Math.floor(h - 2 * marginYPx);
+          if (!(maxContentH > 0)) maxContentH = 1;
+
+          var lo = FIT_MIN_FONT_PX;
+          var hi = Math.min(FIT_MAX_FONT_PX, Math.max(lo, maxContentH));
+          var best = lo;
+
+          // Special-case: clear-selection button should visually start around
+          // 80% of the font-size of the “Selected: <x>/<y> particles” label.
+          // We treat this as an initial probe inside the binary search.
+          var startProbeBestPx = null; // internal “best” font-size (before global shrink)
+          if (btn.id === "clear-explorer-selection") {
+            var selCountEl = document.getElementById("sel-count");
+            if (selCountEl && window.getComputedStyle) {
+              var selCs = window.getComputedStyle(selCountEl);
+              var selFontPx = parseFloat(selCs.fontSize || "");
+              if (isFinite(selFontPx) && selFontPx > 0) {
+                var targetAppliedPx = selFontPx * 0.8;
+                startProbeBestPx = targetAppliedPx / (1 - FIT_GLOBAL_FONT_SHRINK_RATIO);
+                startProbeBestPx = Math.round(startProbeBestPx);
+                startProbeBestPx = Math.max(lo, Math.min(hi, startProbeBestPx));
+                if (!isFinite(startProbeBestPx)) startProbeBestPx = null;
+              }
+            }
+          }
+
+          if (startProbeBestPx != null && startProbeBestPx !== lo) {
+            btn.style.fontSize = startProbeBestPx + "px";
+            var startFits =
+              btn.scrollHeight <= btn.clientHeight + FIT_OVERFLOW_TOL_PX
+              && btn.scrollWidth <= btn.clientWidth + FIT_OVERFLOW_TOL_PX;
+            if (startFits) {
+              best = startProbeBestPx;
+              lo = startProbeBestPx + 1;
+            } else {
+              hi = startProbeBestPx - 1;
+            }
+          }
+
+          while (lo <= hi) {
+            var mid = (lo + hi) >> 1;
+            btn.style.fontSize = mid + "px";
+
+            var fits =
+              btn.scrollHeight <= btn.clientHeight + FIT_OVERFLOW_TOL_PX
+              && btn.scrollWidth <= btn.clientWidth + FIT_OVERFLOW_TOL_PX;
+
+            if (fits) {
+              best = mid;
+              lo = mid + 1;
+            } else {
+              hi = mid - 1;
+            }
+          }
+
+          // User requested extra safety/legibility: reduce label size slightly
+          // after the "best-fit" probe.
+          var appliedFontPx = best * (1 - FIT_GLOBAL_FONT_SHRINK_RATIO);
+          // Trajectory anchor-picker buttons need a bit more text legibility.
+          if (
+            btn.id === "btn-anchor-import-pkl"
+            || btn.id === "btn-anchor-kmeans"
+            || btn.id === "btn-anchor-random"
+          ) {
+            appliedFontPx = appliedFontPx * 1.1;
+          }
+          // Ensure we never exceed the binary-search "best-fit" maximum.
+          if (appliedFontPx > best) appliedFontPx = best;
+          appliedFontPx = Math.round(appliedFontPx * 100) / 100;
+          btn.style.fontSize = appliedFontPx + "px";
+
+          // For these two particle-explorer cache buttons, match the clear
+          // selection button's computed text size (if that reference exists
+          // and the exact size still fits in this button).
+          if (isCacheButtonTextMatchTarget) {
+            var clearBtn = document.getElementById("clear-explorer-selection");
+            if (clearBtn && clearBtn.dataset) {
+              var refFont = parseFloat(clearBtn.dataset.cryoFitButtonsLastFont || "");
+              if (isFinite(refFont) && refFont > 0) {
+                btn.style.fontSize = refFont + "px";
+                var refFits =
+                  btn.scrollHeight <= btn.clientHeight + FIT_OVERFLOW_TOL_PX
+                  && btn.scrollWidth <= btn.clientWidth + FIT_OVERFLOW_TOL_PX;
+                if (refFits) {
+                  appliedFontPx = refFont;
+                } else {
+                  btn.style.fontSize = appliedFontPx + "px";
+                }
+              }
+            }
+          }
+
+          btn.dataset.cryoFitButtonsLastH = h.toFixed(1);
+          btn.dataset.cryoFitButtonsLastW = w.toFixed(1);
+          btn.dataset.cryoFitButtonsLastFont = String(appliedFontPx);
+        } finally {
+          btn.dataset.cryoFitButtonsBusy = "0";
+          btn.style.height = origHeight;
+          btn.style.width = origWidth;
+          btn.style.boxSizing = origBoxSizing;
+        }
+      }
+
+      var pending = new Set();
+      var scheduled = false;
+
+      function scheduleFit(btn) {
+        if (!btn || btn.nodeType !== 1) return;
+        // Avoid queueing plotly modebar stuff.
+        if (isPlotlyButton(btn)) return;
+        pending.add(btn);
+        if (scheduled) return;
+        scheduled = true;
+        var raf = window.requestAnimationFrame || function(cb) { return setTimeout(cb, 16); };
+        raf(function() {
+          scheduled = false;
+          // Ensure reference button is fitted first, so other buttons can
+          // copy its computed font-size deterministically.
+          var clearBtnEl = document.getElementById("clear-explorer-selection");
+          if (clearBtnEl && pending.has(clearBtnEl)) {
+            fitButtonLabel(clearBtnEl);
+            pending.delete(clearBtnEl);
+          }
+          pending.forEach(function(b) { fitButtonLabel(b); });
+          pending.clear();
+        });
+      }
+
+      var ro = null;
+      if (window.CryoResizeObserverUtils && window.CryoResizeObserverUtils.create) {
+        ro = window.CryoResizeObserverUtils.create(function(entries) {
+          for (var i = 0; i < entries.length; i++) {
+            var t = entries[i].target;
+            if (!t || t.dataset && t.dataset.cryoFitButtonsBusy === "1") continue;
+            scheduleFit(t);
+          }
+        });
+      } else if (window.ResizeObserver) {
+        ro = new ResizeObserver(function(entries) {
+          for (var i = 0; i < entries.length; i++) {
+            var t = entries[i].target;
+            if (!t || t.dataset && t.dataset.cryoFitButtonsBusy === "1") continue;
+            scheduleFit(t);
+          }
+        });
+      }
+
+      function observeButton(btn) {
+        if (!btn || !ro) return;
+        if (btn.dataset.cryoFitButtonsObserved === "1") return;
+        ro.observe(btn);
+        btn.dataset.cryoFitButtonsObserved = "1";
+      }
+
+      function fitExistingButtons() {
+        var buttons = document.querySelectorAll("button");
+        for (var i = 0; i < buttons.length; i++) {
+          var btn = buttons[i];
+          observeButton(btn);
+          if (buttonHasVisibleText(btn)) scheduleFit(btn);
+        }
+      }
+
+      // Handle buttons created after initial page load.
+      if (document.body && window.MutationObserver) {
+        var mo = new MutationObserver(function(mutations) {
+          for (var mi = 0; mi < mutations.length; mi++) {
+            var m = mutations[mi];
+            if (!m.addedNodes || m.addedNodes.length === 0) continue;
+            for (var ni = 0; ni < m.addedNodes.length; ni++) {
+              var node = m.addedNodes[ni];
+              if (!node || node.nodeType !== 1) continue;
+
+              if (node.tagName && String(node.tagName).toLowerCase() === "button") {
+                observeButton(node);
+                if (buttonHasVisibleText(node)) scheduleFit(node);
+              } else if (node.querySelectorAll) {
+                var innerButtons = node.querySelectorAll("button");
+                for (var bi = 0; bi < innerButtons.length; bi++) {
+                  var ib = innerButtons[bi];
+                  observeButton(ib);
+                  if (buttonHasVisibleText(ib)) scheduleFit(ib);
+                }
+              }
+            }
+          }
+        });
+        mo.observe(document.body, { childList: true, subtree: true });
+      }
+
+      // Initial pass after the browser lays out the page.
+      var initialRaf = window.requestAnimationFrame || function(cb) { return setTimeout(cb, 16); };
+      initialRaf(function() { fitExistingButtons(); });
+
+      // Also catch size changes from user resizing (some layout shifts don't always fire ResizeObserver fast enough).
+      var resizeT = null;
+      window.addEventListener("resize", function() {
+        if (resizeT) clearTimeout(resizeT);
+        resizeT = setTimeout(fitExistingButtons, 120);
+      });
+    })();
   })();
   </script>
 </body>

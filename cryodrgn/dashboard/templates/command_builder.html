@@ -3526,9 +3526,8 @@
         updateCommandDisplay();
       });
     }
-    if (typeof ResizeObserver !== "undefined") {
-      var ro = new ResizeObserver(schedule);
-      ro.observe(out.parentElement);
+    if (window.CryoResizeObserverUtils) {
+      window.CryoResizeObserverUtils.observeResize(out.parentElement, schedule);
     }
     window.addEventListener("resize", schedule);
   })();
@@ -3545,9 +3544,8 @@
         scheduleFitPrimaryRegionFields();
       });
     }
-    if (typeof ResizeObserver !== "undefined") {
-      var ro = new ResizeObserver(schedule);
-      ro.observe(page);
+    if (window.CryoResizeObserverUtils) {
+      window.CryoResizeObserverUtils.observeResize(page, schedule);
     }
     window.addEventListener("resize", schedule);
   })();

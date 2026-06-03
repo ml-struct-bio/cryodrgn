@@ -1,5 +1,6 @@
 {# Particle explorer scatter region: left sidebar controls + Plotly scatter viewport. #}
 <div class="cryo-dash-side">
+  <div class="cryo-explorer-menu-scroll">
     <div class="cryo-dash-lead">
       Select particle subset using either:
       <ul class="cryo-explorer-lead-list">
@@ -32,7 +33,9 @@
         <p id="sel-count-footnote" class="cryo-explorer-sel-count-footnote" hidden></p>
       </div>
       <div class="cryo-explorer-clear-selection">
-        <button type="button" class="btn btn-secondary" id="clear-explorer-selection" disabled>Clear selection</button>
+        <button type="button" class="btn btn-secondary" id="clear-explorer-selection" disabled>
+          Clear<br/>selection
+        </button>
       </div>
       <fieldset id="particle-sel-fieldset" disabled>
         <legend>Create indices file</legend>
@@ -60,6 +63,8 @@
       </fieldset>
     </div>
   </div>
+  <div class="cryo-explorer-menu-fade cryo-explorer-menu-fade--cream" aria-hidden="true"></div>
+</div>
 
   <div class="cryo-dash-viewport--plotly">
     <p id="scatter-plot-status" class="cryo-dash-legend-note cryo-particle-explorer-plot-status"

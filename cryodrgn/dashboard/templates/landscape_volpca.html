@@ -7,7 +7,7 @@
 {% endblock %}
 {% block content %}
 <!-- === Volume sketched landscape (analyze_landscape PCA / k-means volumes) === -->
-<div class="cryo-dash-page cryo-dash-page--volsketch">
+<div class="cryo-dash-page cryo-dash-page--volsketch cryo-dash-page--menu-scroll-fade">
   {% if no_landscape %}
   <p class="cryo-dash-lead">{{ reason|safe }}</p>
   {% else %}
@@ -112,8 +112,7 @@
       <p class="cryo-dash-legend-note" style="margin:0.5rem 0 0;">GIF previews update automatically a moment after you
         change the selection (ChimeraX offscreen).</p>
       <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">
-        <button type="button" class="btn btn--primary" id="volsketch-save-gif" disabled>Save GIFs to k-means
-          folder…</button>
+        <button type="button" class="btn btn--primary" id="volsketch-save-gif" disabled>Save GIFs<br/>to k-means folder…</button>
       </div>
     </div>
   </div>

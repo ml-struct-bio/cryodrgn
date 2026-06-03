@@ -348,7 +348,7 @@
   }
   .cryo-traj-anchor-import-grid {
     display: grid;
-    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 21%) minmax(0, 1fr);
     gap: 0.35rem 0.65rem;
     align-items: center;
     width: 100%;
@@ -357,7 +357,7 @@
   .cryo-traj-anchor-import-grid .btn {
     justify-self: start;
     width: 100%;
-    max-width: 12.5rem;
+    max-width: 100%;
     font-size: 0.72rem;
     padding: 0.32rem 0.4rem;
     line-height: 1.25;
@@ -420,98 +420,6 @@
     width: 100%;
     box-sizing: border-box;
   }
-  .cryo-file-browser-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.3rem 0.4rem;
-    border-bottom: 1px solid rgba(36, 59, 83, 0.10);
-    background: rgba(36, 59, 83, 0.04);
-    flex-shrink: 0;
-  }
-  .cryo-file-browser-bar button {
-    background: none;
-    border: 1px solid rgba(36, 59, 83, 0.18);
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.72rem;
-    padding: 0.15rem 0.4rem;
-    color: #243b53;
-    flex-shrink: 0;
-  }
-  .cryo-file-browser-bar button:hover {
-    background: rgba(36, 59, 83, 0.08);
-  }
-  .cryo-file-browser-path {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    direction: rtl;
-    text-align: left;
-    color: rgba(36, 59, 83, 0.6);
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 0.65rem;
-  }
-  .cryo-file-browser-list {
-    overflow-y: auto;
-    flex: 1;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .cryo-file-browser-list li {
-    padding: 0.22rem 0.45rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    border-bottom: 1px solid rgba(36, 59, 83, 0.04);
-  }
-  .cryo-file-browser-list li:hover {
-    background: rgba(36, 59, 83, 0.06);
-  }
-  .cryo-file-browser-list .fb-icon {
-    flex-shrink: 0;
-    width: 1rem;
-    text-align: center;
-    opacity: 0.5;
-  }
-  .cryo-file-browser-list .fb-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .cryo-file-browser-empty {
-    padding: 0.6rem 0.45rem;
-    color: rgba(36, 59, 83, 0.45);
-    text-align: center;
-    font-style: italic;
-  }
-  .cryo-file-browser-save-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.3rem;
-    align-items: center;
-    padding: 0.35rem 0.4rem;
-    border-top: 1px solid rgba(36, 59, 83, 0.10);
-    background: rgba(36, 59, 83, 0.03);
-  }
-  .cryo-file-browser-save-input {
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    font-size: 0.72rem;
-    padding: 0.2rem 0.35rem;
-    border: 1px solid rgba(36, 59, 83, 0.22);
-    border-radius: 3px;
-    font-family: "IBM Plex Mono", monospace;
-  }
-  .cryo-file-browser-save-row .btn {
-    font-size: 0.72rem;
-    padding: 0.2rem 0.45rem;
-    white-space: nowrap;
-  }
   .cryo-traj-z-wrap {
     display: flex;
     max-height: 9rem;
@@ -549,7 +457,7 @@
 {% endblock %}
 {% block content %}
 <!-- === Trajectory creator: interactive path + volume strip === -->
-<div class="cryo-dash-page cryo-dash-page--image-viewer">
+<div class="cryo-dash-page cryo-dash-page--image-viewer cryo-dash-page--menu-scroll-fade">
 <div class="cryo-dash-row">
   <div class="cryo-dash-side">
     <div class="card cryo-dash-controls" id="scatter-controls-card">
@@ -680,7 +588,7 @@
       <button type="button" class="btn btn-secondary" id="btn-anchor-remove">Remove indices</button>
     </div>
     <button type="button" class="btn" id="btn-generate-volumes"
-      style="width:100%;margin-top:0.45rem;font-size:0.88rem;padding:0.45rem 0.5rem;">Generate 4 volumes</button>
+      style="width:77%;display:block;margin:0.45rem auto 0;font-size:0.88rem;padding:0.45rem 0.5rem;">Generate 4 volumes</button>
     <p id="traj-status" class="cryo-traj-status"></p>
     <div id="traj-z-panel" class="cryo-traj-z-panel" hidden>
       <details class="cryo-traj-z-details">
@@ -1230,15 +1138,14 @@
     scatterControlsCard.style.marginTop = Math.round(px) + "px";
   }
 
-  if (plotlyStackEl && typeof ResizeObserver !== "undefined") {
-    var plotStackResizeObserver = new ResizeObserver(function() {
+  if (plotlyStackEl && window.CryoResizeObserverUtils) {
+    window.CryoResizeObserverUtils.observeResize([plotlyStackEl], function() {
       window.requestAnimationFrame(function() {
         syncScatterControlsAlignment();
         if (!gd || !gd.data || !gd.data.length) return;
         try { Plotly.Plots.resize(gd); } catch (e) {}
       });
     });
-    plotStackResizeObserver.observe(plotlyStackEl);
   }
 
   /* ── Convert a DOM click on the plot to data coordinates ── */

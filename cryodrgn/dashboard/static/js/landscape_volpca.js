@@ -1469,28 +1469,9 @@
       reason === "color" || reason === "gif_mode" || reason === "gif_frames"
       || reason === "view_rotation" || reason === "view_matrix"
     );
-    var statusMsg;
-    if (keepPreviews && reason === "color") {
-      statusMsg = (
-        "Re-rendering volume previews with the new plot colors — current GIFs keep playing until "
-        + "the update finishes (ChimeraX, "
-        + cpuPhrase + ")…"
-      );
-    } else if (keepPreviews && (reason === "gif_mode" || reason === "gif_frames")) {
-      statusMsg = (
-        "Re-rendering volume previews for the new animation settings — current GIFs keep playing until "
-        + "the update finishes (ChimeraX, "
-        + cpuPhrase + ")…"
-      );
-    } else if (keepPreviews && (reason === "view_rotation" || reason === "view_matrix")) {
-      statusMsg = (
-        "Re-rendering volume previews for the new view angle — current GIFs keep playing until "
-        + "the update finishes (ChimeraX, "
-        + cpuPhrase + ")…"
-      );
-    } else {
-      statusMsg = "Rendering GIFs with ChimeraX (using " + cpuPhrase + ")…";
-    }
+    var statusMsg = keepPreviews
+      ? ("Re-rendering volume previews with " + cpus + " CPUs")
+      : ("Rendering GIFs with ChimeraX (using " + cpuPhrase + ")…");
     setAnimateStatus(statusMsg, true, false);
     if (!keepPreviews) {
       teardownVolsketchPreviews();

@@ -117,6 +117,48 @@
   #scatter-controls-card > fieldset:first-of-type {
     margin-bottom: 0.275rem;
   }
+  .cryo-dash-page--particle-explorer {
+    --cryo-explorer-menu-fade-h: 1.85rem;
+  }
+  /* Fade sits outside .cryo-explorer-menu-scroll so it stays at the menu bottom while content scrolls. */
+  .cryo-dash-page--particle-explorer .cryo-explorer-menu-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+  }
+
+  /* Buffer so the menu-bottom fade overlays empty space, not the last content. */
+  .cryo-dash-page--particle-explorer aside.cryo-dash-montage .cryo-explorer-menu-scroll {
+    padding-bottom: var(--cryo-explorer-menu-fade-h, 1.85rem);
+  }
+  .cryo-dash-page--particle-explorer .cryo-explorer-menu-fade {
+    flex: 0 0 var(--cryo-explorer-menu-fade-h, 1.85rem);
+    height: var(--cryo-explorer-menu-fade-h, 1.85rem);
+    margin-top: calc(-1 * var(--cryo-explorer-menu-fade-h, 1.85rem));
+    pointer-events: none;
+    z-index: 6;
+    flex-shrink: 0;
+  }
+  .cryo-dash-page--particle-explorer .cryo-explorer-menu-fade--cream {
+    background: linear-gradient(
+      to bottom,
+      rgba(250, 248, 244, 0),
+      rgba(250, 248, 244, 0.78) 36%,
+      var(--cream, #faf8f4) 100%
+    );
+  }
+  .cryo-dash-page--particle-explorer .cryo-explorer-menu-fade--paper {
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0),
+      rgba(255, 255, 255, 0.72) 36%,
+      var(--paper, #fff) 100%
+    );
+  }
   .cryo-dash-page--particle-explorer.cryo-dash-page--image-viewer .cryo-dash-row {
     gap: 0.4rem;
   }
@@ -239,7 +281,10 @@
     margin: 0.28rem 0 0.42rem;
   }
   .cryo-explorer-clear-selection .btn {
-    width: 100%;
+    width: 77%;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
     box-sizing: border-box;
     line-height: 1.25;
     padding-top: 0.4rem;
@@ -426,6 +471,23 @@
     grid-template-columns: max-content minmax(11.5rem, 1fr);
     gap: 0.4rem 0.55rem;
     align-items: center;
+  }
+  /* Volume buttons share one column sized to the wider label (works when panel is collapsed). */
+  .cryo-explorer-volume-actions {
+    display: grid;
+    /* Button column ~35% of panel width (rest is hint text). */
+    grid-template-columns: 0.35fr 0.65fr;
+    column-gap: 0.55rem;
+    row-gap: 0.4rem;
+    align-items: center;
+  }
+  .cryo-explorer-volume-actions .cryo-explorer-action-row {
+    display: contents;
+  }
+  .cryo-explorer-volume-actions .cryo-explorer-action-row__btn .btn {
+    width: 100%;
+    max-width: none;
+    white-space: nowrap;
   }
   .cryo-explorer-action-row__btn {
     flex-shrink: 0;
@@ -667,6 +729,8 @@
     min-width: 0;
     box-sizing: border-box;
     margin-top: 0.35rem;
+    container-type: inline-size;
+    container-name: cryo-image-grid-toolbar;
   }
   .cryo-image-grid-size-inline {
     display: inline-flex;
@@ -689,21 +753,22 @@
     container-type: inline-size;
     container-name: cryo-image-grid-menu;
   }
-  /* Primary ``.btn`` (same accent as ``#btn-view-images``); compact to sit beside grid size. */
+  /* Primary ``.btn`` (same accent as ``#btn-view-images``); 23% of toolbar row beside grid size. */
   .cryo-image-grid-toolbar .cryo-image-grid-resample-btn.btn {
-    flex: 0 1 auto;
-    width: auto;
+    flex: 0 0 auto;
+    width: 23cqw;
     min-width: 0;
-    max-width: 23cqw; /* 23% of #image-grid-panel-shell (nearest container) */
-    height: 1.65rem;
-    min-height: 1.65rem;
+    max-width: 23cqw;
+    margin-left: 0;
+    height: auto;
+    min-height: 0;
     max-height: 1.65rem;
     box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    padding: 0.048rem 0.21rem;
+    padding: 0;
     border: none;
     border-radius: 3px;
     line-height: 1;
@@ -721,25 +786,26 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 100%;
+    width: auto;
     max-width: 100%;
+    height: auto;
+    max-height: 100%;
     min-width: 0;
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow: visible;
     pointer-events: none;
   }
   .cryo-image-grid-resample-btn__line {
     display: block;
-    width: 100%;
+    width: auto;
     max-width: 100%;
     box-sizing: border-box;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: clip;
+    overflow: visible;
     text-align: center;
-    line-height: 1.06;
+    line-height: 1;
     font-weight: 600;
   }
   #save-status {
@@ -842,98 +908,6 @@
   }
   .cryo-explorer-save-modal .cryo-file-browser-list {
     max-height: min(42vh, 14rem);
-  }
-  .cryo-file-browser-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.3rem 0.4rem;
-    border-bottom: 1px solid rgba(36, 59, 83, 0.10);
-    background: rgba(36, 59, 83, 0.04);
-    flex-shrink: 0;
-  }
-  .cryo-file-browser-bar button {
-    background: none;
-    border: 1px solid rgba(36, 59, 83, 0.18);
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.72rem;
-    padding: 0.15rem 0.4rem;
-    color: #243b53;
-    flex-shrink: 0;
-  }
-  .cryo-file-browser-bar button:hover {
-    background: rgba(36, 59, 83, 0.08);
-  }
-  .cryo-file-browser-path {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    direction: rtl;
-    text-align: left;
-    color: rgba(36, 59, 83, 0.6);
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 0.65rem;
-  }
-  .cryo-file-browser-list {
-    overflow-y: auto;
-    flex: 1;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .cryo-file-browser-list li {
-    padding: 0.22rem 0.45rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    border-bottom: 1px solid rgba(36, 59, 83, 0.04);
-  }
-  .cryo-file-browser-list li:hover {
-    background: rgba(36, 59, 83, 0.06);
-  }
-  .cryo-file-browser-list .fb-icon {
-    flex-shrink: 0;
-    width: 1rem;
-    text-align: center;
-    opacity: 0.5;
-  }
-  .cryo-file-browser-list .fb-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .cryo-file-browser-empty {
-    padding: 0.6rem 0.45rem;
-    color: rgba(36, 59, 83, 0.45);
-    text-align: center;
-    font-style: italic;
-  }
-  .cryo-file-browser-save-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.3rem;
-    align-items: center;
-    padding: 0.35rem 0.4rem;
-    border-top: 1px solid rgba(36, 59, 83, 0.10);
-    background: rgba(36, 59, 83, 0.03);
-  }
-  .cryo-file-browser-save-input {
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    font-size: 0.72rem;
-    padding: 0.2rem 0.35rem;
-    border: 1px solid rgba(36, 59, 83, 0.22);
-    border-radius: 3px;
-    font-family: "IBM Plex Mono", monospace;
-  }
-  .cryo-file-browser-save-row .btn {
-    font-size: 0.72rem;
-    padding: 0.2rem 0.45rem;
-    white-space: nowrap;
   }
   .cryo-volume-status-row {
     display: flex;
@@ -1442,10 +1416,9 @@
     align-self: flex-start;
     height: auto;
     max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
   .cryo-dash-page--particle-explorer .cryo-dash-montage-scroll {
     display: block;
@@ -1468,14 +1441,14 @@
   .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-grid-wrap {
     display: flex;
     align-items: flex-start;
-    justify-content: center;
+    justify-content: flex-end;
     overflow: visible;
     box-sizing: border-box;
   }
   .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region #montage-grid {
     box-sizing: border-box;
-    margin-left: auto;
-    margin-right: auto;
+    margin-left: 0;
+    margin-right: 0;
   }
   /* Meta band height = 19% of square thumbnail width (container query on cell). */
   .cryo-dash-page--particle-explorer .cryo-dash-montage-grid-region .cryo-montage-cell {
@@ -1520,14 +1493,14 @@
     flex-shrink: 0;
     box-sizing: border-box;
   }
-  /* Match legend width to the load-images / volumes menu stack below. */
+  /* Full width of the montage column (resample button aligns to the right edge). */
   .cryo-dash-page--particle-explorer
     .cryo-dash-montage-scroll
     > #montage-actions.cryo-explorer-montage-actions {
-    width: 95%;
-    max-width: 95%;
-    margin-left: auto;
-    margin-right: auto;
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
     margin-top: 0;
     box-sizing: border-box;
   }
@@ -1719,7 +1692,7 @@
   /* Selection row: Add | centered cached status | narrow Clear (two-line label). */
   .cryo-explorer-cache-selection-row {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: 31% 1fr 13%;
     align-items: center;
     gap: 0.35rem 0.5rem;
     width: 100%;
@@ -1752,14 +1725,15 @@
     font-size: 0.72rem;
   }
   .cryo-explorer-cache-selection-row #btn-cache-selection-uncached.cryo-explorer-cache-selection-add-btn {
-    width: max-content;
+    width: 100%;
     max-width: 100%;
-    justify-self: start;
+    justify-self: center;
+    text-align: center;
   }
   .cryo-explorer-cache-selection-row .cryo-explorer-cache-clear-btn.btn {
-    width: max-content;
+    width: 100%;
     max-width: 100%;
-    justify-self: end;
+    justify-self: center;
     padding: 0.32rem 0.38rem;
     font-size: 0.648rem;
     line-height: 1.06;
@@ -1834,9 +1808,9 @@
     align-self: flex-start;
     min-height: 0;
     max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
-    overflow: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     position: sticky;
     top: 1rem;
   }

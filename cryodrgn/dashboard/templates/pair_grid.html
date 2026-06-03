@@ -636,7 +636,7 @@
 {% from "_macros.html" import nav_page_title_span %}
 {% block nav_page_title %}{{ nav_page_title_span("Pair-plot generator") }}{% endblock %}
 {% block content %}
-<div class="cryo-dash-page cryo-dash-page--pairplot">
+<div class="cryo-dash-page cryo-dash-page--pairplot cryo-dash-page--menu-scroll-fade">
 <div class="cryo-dash-row cryo-dash-row--plot-triple">
   <div class="cryo-dash-side">
     <p class="cryo-dash-lead">Each panel square compares two latent z-space axes, with coloring according to the chosen
@@ -1633,17 +1633,19 @@
     syncPairLegendMiddleWidth();
     syncControlsAlignment(activeCellLayout);
   });
-  if (window.ResizeObserver) {
-    var pairplotBoundsObserver = new ResizeObserver(function() {
-      syncPairplotTripleGridColumns();
-      syncPairLegendMiddleWidth();
-      syncSkeletonBounds();
-      syncControlsAlignment(activeCellLayout);
-    });
-    pairplotBoundsObserver.observe(stack);
-    pairplotBoundsObserver.observe(el);
-    var pairTripleRow = document.querySelector(".cryo-dash-page--pairplot .cryo-dash-row--plot-triple");
-    if (pairTripleRow) pairplotBoundsObserver.observe(pairTripleRow);
+  if (window.CryoResizeObserverUtils) {
+    var pairTripleRow = document.querySelector(
+      ".cryo-dash-page--pairplot .cryo-dash-row--plot-triple"
+    );
+    window.CryoResizeObserverUtils.observeResize(
+      [stack, el, pairTripleRow],
+      function() {
+        syncPairplotTripleGridColumns();
+        syncPairLegendMiddleWidth();
+        syncSkeletonBounds();
+        syncControlsAlignment(activeCellLayout);
+      }
+    );
   }
   requestAnimationFrame(function() {
     requestAnimationFrame(function() {

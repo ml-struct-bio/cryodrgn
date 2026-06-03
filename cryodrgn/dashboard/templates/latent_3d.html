@@ -147,22 +147,6 @@
     padding-right: 0;
     position: relative;
   }
-  main:has(.cryo-dash-row--latent3d-volanim)::after {
-    content: "";
-    position: fixed;
-    left: 1.5rem;
-    right: 0;
-    bottom: 0;
-    height: var(--latent3d-volanim-panel-fade-h, 1.35rem);
-    pointer-events: none;
-    z-index: 20;
-    background: linear-gradient(
-      to bottom,
-      rgba(250, 248, 244, 0),
-      rgba(250, 248, 244, 0.55) 42%,
-      var(--cream, #faf8f4) 100%
-    );
-  }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band {
     display: grid;
     grid-template-columns: minmax(0, max-content) minmax(0, 9.25rem);
@@ -273,23 +257,6 @@
     align-self: stretch;
     position: relative;
     overflow: hidden;
-  }
-  .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim
-    .latent3d-color-legend-aside #latent3d-color-legend-panel:not([hidden])::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: var(--latent3d-volanim-panel-fade-h, 1.35rem);
-    pointer-events: none;
-    z-index: 4;
-    background: linear-gradient(
-      to bottom,
-      rgba(250, 248, 244, 0),
-      rgba(250, 248, 244, 0.62) 44%,
-      rgba(250, 248, 244, 0.96) 100%
-    );
   }
   .cryo-dash-page--latent3d .cryo-dash-row--latent3d-volanim .latent3d-color-legend-aside {
     min-height: 0;
@@ -403,6 +370,7 @@
     align-self: flex-start;
     font-size: 0.72rem;
     padding: 0.22rem 0.5rem;
+    white-space: nowrap;
   }
   /* Preview sizing: landscape_volpca.css; margins only when previews are visible. */
   .cryo-dash-page--latent3d #l3dva-preview-wrap:not([hidden]) {
@@ -832,7 +800,7 @@
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-row.volsketch-view-rotate-row {
     display: flex;
-    align-items: end;
+    align-items: stretch;
     gap: 0.38rem;
     margin: 0.38rem 0 0;
     min-width: 0;
@@ -863,17 +831,20 @@
     button.l3dva-view-rotate-btn {
     flex: 1 1 0;
     min-width: 0;
+    height: 81%;
+    align-self: center;
     padding-left: 0.22rem;
     padding-right: 0.22rem;
-    padding-top: 0.32rem;
-    padding-bottom: 0.32rem;
+    padding-top: 0.26rem;
+    padding-bottom: 0.26rem;
     line-height: 1;
     white-space: nowrap;
     font-size: 0.8em;
     display: inline-flex;
+    flex-direction: column-reverse;
     align-items: center;
     justify-content: center;
-    gap: 0.22rem;
+    gap: 0.12rem;
   }
   .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-rotate-btn__axis-icon {
     width: 1.15em;
@@ -1373,7 +1344,7 @@
 {% endif %}
 {% endblock %}
 {% block content %}
-<div class="cryo-dash-page cryo-dash-page--latent3d">
+<div class="cryo-dash-page cryo-dash-page--latent3d cryo-dash-page--menu-scroll-fade">
 <div class="cryo-dash-row cryo-dash-row--plot-triple{% if show_landscape_vol_animations %}
             cryo-dash-row--latent3d-volanim{% endif %}">
   <div class="cryo-dash-side">
@@ -1617,8 +1588,7 @@
             disabled>Apply view matrix</button>
         </div>
         <div class="cryo-explorer-save-btns" style="margin-top:0.55rem;">
-          <button type="button" class="btn btn--primary" id="l3dva-save-gif" disabled>Save GIFs to k-means
-            folder…</button>
+          <button type="button" class="btn btn--primary" id="l3dva-save-gif" disabled>Save GIFs<br/>to k-means folder…</button>
         </div>
       </div>
     </aside>
@@ -2422,8 +2392,13 @@
       var fadeH = 21.6;
       if (mainEl) {
         var fadeVar = parseFloat(
-          getComputedStyle(mainEl).getPropertyValue("--latent3d-volanim-panel-fade-h")
+          getComputedStyle(mainEl).getPropertyValue("--cryo-dash-menu-scroll-fade-h")
         );
+        if (!(fadeVar > 0)) {
+          fadeVar = parseFloat(
+            getComputedStyle(mainEl).getPropertyValue("--latent3d-volanim-panel-fade-h")
+          );
+        }
         if (fadeVar > 0) {
           fadeH = fadeVar;
         }
@@ -2835,17 +2810,16 @@
     var pin = latent3dGetScenePin();
     if (pin) latent3dEnforceScenePin(pin);
   });
-  if (window.ResizeObserver) {
+  if (window.CryoResizeObserverUtils) {
     var panelEl = document.getElementById("latent3d-color-legend-panel");
     if (panelEl) {
-      var latent3dLegendHeadingFitObserver = new ResizeObserver(function() {
+      window.CryoResizeObserverUtils.observeResize([panelEl], function() {
         scheduleLatent3dLegendHeadingTitleFit();
       });
-      latent3dLegendHeadingFitObserver.observe(panelEl);
     }
   }
-  if (window.ResizeObserver && plotStack) {
-    var latent3dPlotStackObserver = new ResizeObserver(function() {
+  if (window.CryoResizeObserverUtils && plotStack) {
+    window.CryoResizeObserverUtils.observeResize([plotStack], function() {
       syncControlsAlignment();
       syncLatent3dAsideLayout();
       syncLatent3dVolanimPlotGeometry();
@@ -2858,7 +2832,6 @@
         latent3dEnforceScenePin(pin);
       }, 80);
     });
-    latent3dPlotStackObserver.observe(plotStack);
   }
   syncLatent3dPaletteFieldset();
   syncControlsAlignment();

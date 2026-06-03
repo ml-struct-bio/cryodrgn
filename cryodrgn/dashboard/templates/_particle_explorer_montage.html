@@ -1,5 +1,6 @@
 {# Particle explorer montage region: scrollable panels; image grid nested in load-images panel. #}
 <aside class="cryo-dash-montage" aria-label="Particle preview">
+<div class="cryo-explorer-menu-scroll">
 <div class="cryo-dash-montage-scroll">
 <div id="montage-actions" class="cryo-explorer-montage-actions">
       <section class="cryo-explorer-panel-section" aria-labelledby="color-selection-panel-toggle">
@@ -100,13 +101,13 @@
               disabled>Build new cache&#10;with {{ preload_image_limit }} images</button>
           </div>
           <div class="cryo-explorer-action-row__btn">
-            <button type="button" class="btn" id="btn-view-images" disabled>Load all images</button>
+            <button type="button" class="btn" id="btn-view-images" disabled>Load all<br/>images</button>
           </div>
         </div>
         <div class="cryo-explorer-cache-selection-row" aria-label="Selection cache actions">
           <button type="button" class="btn cryo-explorer-cache-selection-add-btn" id="btn-cache-selection-uncached" disabled
             title="Select particles first.">
-            Add 0 selection images to cache
+            Add 0<br/>selection images to cache
           </button>
           <p id="preload-status" class="cryo-explorer-preload-status cryo-dash-legend-note"
             aria-live="polite"></p>
@@ -215,21 +216,23 @@
               <div id="volumes-panel-body" class="cryo-explorer-panel-body" hidden>
                 <fieldset class="cryo-explorer-montage-group cryo-explorer-montage-group--panel-body">
                   <legend class="cryo-explorer-montage-group__legend--visually-hidden">Display reconstructed volumes</legend>
-                  <div class="cryo-explorer-action-row">
-                    <div class="cryo-explorer-action-row__btn">
-                      <button type="button" class="btn btn-secondary" id="btn-volume-generate" disabled>Generate volumes</button>
+                  <div class="cryo-explorer-volume-actions">
+                    <div class="cryo-explorer-action-row">
+                      <div class="cryo-explorer-action-row__btn">
+                        <button type="button" class="btn btn-secondary" id="btn-volume-generate" disabled>Generate volumes</button>
+                      </div>
+                      <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+                        Use decoder to produce and display volumes for particles currently shown in grid.
+                      </p>
                     </div>
-                    <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
-                      Use decoder to produce and display volumes for particles currently shown in grid.
-                    </p>
-                  </div>
-                  <div class="cryo-explorer-action-row">
-                    <div class="cryo-explorer-action-row__btn">
-                      <button type="button" class="btn btn-secondary" id="btn-volume-animate" disabled>Animate volumes</button>
+                    <div class="cryo-explorer-action-row">
+                      <div class="cryo-explorer-action-row__btn">
+                        <button type="button" class="btn btn-secondary" id="btn-volume-animate" disabled>Animate volumes</button>
+                      </div>
+                      <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
+                        Rotate currently displayed volumes.
+                      </p>
                     </div>
-                    <p class="cryo-explorer-action-row__hint cryo-dash-legend-note">
-                      Rotate currently displayed volumes.
-                    </p>
                   </div>
                   <div class="cryo-volume-status-row" aria-live="polite">
                     <span id="volume-status" class="status" style="margin:0;"></span>
@@ -254,5 +257,6 @@
       </section>
     </div>
 </div>
-
+</div>
+<div class="cryo-explorer-menu-fade cryo-explorer-menu-fade--paper" aria-hidden="true"></div>
 </aside>

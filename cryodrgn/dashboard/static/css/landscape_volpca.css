@@ -508,7 +508,7 @@
   }
   .cryo-dash-page--volsketch .volsketch-view-rotate-row {
     display: flex;
-    align-items: end;
+    align-items: stretch;
     gap: 0.45rem;
     margin: 0.44rem 0 0;
     min-width: 0;
@@ -538,6 +538,8 @@
   .cryo-dash-page--volsketch .volsketch-view-rotate-row button {
     flex: 1 1 0;
     min-width: 0;
+    height: 81%;
+    align-self: center;
     padding-left: 0.3rem;
     padding-right: 0.3rem;
     padding-top: 0.4rem;
@@ -573,4 +575,5 @@
     align-self: flex-start;
     font-size: 0.72rem;
     padding: 0.22rem 0.5rem;
+    white-space: nowrap;
   }

@@ -807,7 +807,7 @@ class TestParticleExplorerTemplateRegressions:
         assert 'id="btn-clear-image-cache"' in body
         assert 'id="montage-cache-size-label-text"' in body
         assert 'id="btn-cache-selection-uncached"' in body
-        assert "Add 0 selection images to cache" in body
+        assert "Add 0<br/>selection images to cache" in body
         assert 'id="color-discrete-switches"' in body
         assert "js/cryo_cc_legend_primitives.js" in body
         assert "js/color_covariate_legend.js" in body

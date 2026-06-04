@@ -7,26 +7,49 @@
     margin: 0 auto;
     padding: 1.25rem 1.5rem 1.5rem;
     box-sizing: border-box;
+    overflow-x: visible;
   }
   .landing-hub {
+    --landing-below-header: var(--cryo-dash-below-nav, 9.5rem);
+    --landing-viewport-h: calc(100svh - var(--landing-below-header));
+    --landing-row-h: calc(var(--landing-viewport-h) * 0.62);
+    --landing-cards-width: 97%;
+    --landing-cards-side-bleed: 2rem;
     width: 100%;
     max-width: none;
     margin: 0 auto;
-    min-height: calc(100vh - 5.5rem);
+    min-height: var(--landing-viewport-h);
     display: flex;
     flex-direction: column;
+    align-items: center;
+    overflow-x: visible;
+  }
+  /* Fixed 97% content width; allow hover shadow to paint in the side bleed. */
+  .landing-cards-viewport {
+    width: var(--landing-cards-width);
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: var(--landing-viewport-h);
+    margin-left: auto;
+    margin-right: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
   }
   /* Scroll the card grid in-place; keep a vertical scrollbar gutter always reserved. */
   .landing-cards-scroll {
+    width: calc(100% + 2 * var(--landing-cards-side-bleed));
+    margin-inline: calc(-1 * var(--landing-cards-side-bleed));
     flex: 1 1 auto;
     min-height: 0;
-    max-height: calc(100vh - 5.5rem);
     overflow-x: hidden;
     overflow-y: scroll;
     scrollbar-gutter: stable;
     scrollbar-width: auto;
     scrollbar-color: rgba(36, 59, 83, 0.42) rgba(36, 59, 83, 0.09);
-    padding-right: 2px;
+    padding-top: 0.65rem;
+    padding-left: var(--landing-cards-side-bleed);
+    padding-right: calc(var(--landing-cards-side-bleed) + 2px);
     box-sizing: border-box;
   }
   .landing-cards-scroll::-webkit-scrollbar {
@@ -48,13 +71,26 @@
     background-clip: padding-box;
   }
   .landing-cards {
+    width: 100%;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: var(--landing-row-h);
     gap: 1rem;
     align-items: stretch;
+    box-sizing: border-box;
   }
-  .landing-cards > .landing-card,
-  .landing-cards > .landing-card-link {
+  .landing-card-slot {
+    position: relative;
+    min-height: 0;
+    height: 100%;
+    z-index: 0;
+  }
+  .landing-card-slot:hover,
+  .landing-card-slot:focus-within {
+    z-index: 8;
+  }
+  .landing-cards > .landing-card-slot > .landing-card,
+  .landing-cards > .landing-card-slot > .landing-card-link {
     height: 100%;
     min-height: 0;
   }
@@ -69,7 +105,6 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    aspect-ratio: 1 / 1.082;
     overflow: hidden;
     box-sizing: border-box;
     transition:
@@ -79,7 +114,8 @@
       background 0.26s ease;
   }
   .landing-card:hover {
-    transform: translateY(-8px) scale(1.02);
+    transform: scale(1.02);
+    transform-origin: 50% 0%;
     box-shadow:
       0 6px 12px rgba(36, 59, 83, 0.08),
       0 22px 48px rgba(36, 59, 83, 0.18),
@@ -89,7 +125,8 @@
     background: linear-gradient(165deg, #fffefb 0%, #fff 55%, #faf8f4 100%);
   }
   .landing-card:focus-within {
-    transform: translateY(-5px) scale(1.015);
+    transform: scale(1.015);
+    transform-origin: 50% 0%;
     box-shadow:
       0 4px 10px rgba(36, 59, 83, 0.07),
       0 16px 36px rgba(36, 59, 83, 0.14),
@@ -119,7 +156,17 @@
     display: block;
     object-fit: contain;
     object-position: center top;
+    border: 1px solid #000;
+    box-sizing: border-box;
   }
+  .landing-card-text-wrap {
+    --landing-card-text-fade-h: 1.35rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Fade sits outside .landing-card-text-scroll so it stays at the text region bottom while content scrolls. */
   .landing-card-text-scroll {
     flex: 1 1 auto;
     min-height: 0;
@@ -134,6 +181,33 @@
     border-radius: 0;
     background: transparent;
     box-sizing: border-box;
+  }
+  .landing-card-text-fade {
+    flex: 0 0 var(--landing-card-text-fade-h);
+    height: var(--landing-card-text-fade-h);
+    margin-top: calc(-1 * var(--landing-card-text-fade-h));
+    pointer-events: none;
+    z-index: 2;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0),
+      rgba(255, 255, 255, 0.72) 38%,
+      var(--paper, #fff) 100%
+    );
+  }
+  .landing-card-text-wrap.is-overflowing:not(.is-scrolled-bottom) .landing-card-text-fade {
+    opacity: 1;
+  }
+  .landing-card--inactive .landing-card-text-fade {
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 248, 249, 0),
+      rgba(255, 244, 246, 0.8) 38%,
+      #fff4f6 100%
+    );
   }
   .landing-card-text-scroll:focus {
     outline: none;
@@ -219,7 +293,8 @@
     color: inherit;
   }
   .landing-card-link:focus-visible {
-    transform: translateY(-5px) scale(1.015);
+    transform: scale(1.015);
+    transform-origin: 50% 0%;
     box-shadow:
       0 4px 10px rgba(36, 59, 83, 0.07),
       0 16px 36px rgba(36, 59, 83, 0.14),
@@ -233,6 +308,7 @@
 {% endblock %}
 {% block content %}
 <div class="landing-hub">
+<div class="landing-cards-viewport">
 <div class="landing-cards-scroll">
 <div class="landing-cards">
   {% set explorer_active = can_images and not command_builder_only %}
@@ -425,15 +501,82 @@
 </div>
 </div>
 </div>
+</div>
 <script>
 (function() {
-  document.querySelectorAll(".landing-card-link .landing-card-text-scroll").forEach(function(box) {
-    ["mousedown", "click", "dblclick"].forEach(function(evtName) {
-      box.addEventListener(evtName, function(e) {
-        e.stopPropagation();
-      });
-    });
+  document.querySelectorAll(".landing-cards > .landing-card").forEach(function(card) {
+    var slot = document.createElement("div");
+    slot.className = "landing-card-slot";
+    var parent = card.parentNode;
+    if (!parent) return;
+    parent.insertBefore(slot, card);
+    slot.appendChild(card);
   });
+
+  function updateLandingTextFade(wrap, scrollEl) {
+    var overflow = scrollEl.scrollHeight > scrollEl.clientHeight + 1;
+    var atBottom =
+      scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 2;
+    wrap.classList.toggle("is-overflowing", overflow);
+    wrap.classList.toggle("is-scrolled-bottom", !overflow || atBottom);
+  }
+
+  function wrapLandingCardTextScroll(box) {
+    var wrap = document.createElement("div");
+    wrap.className = "landing-card-text-wrap";
+    var parent = box.parentNode;
+    if (!parent) return null;
+    parent.insertBefore(wrap, box);
+    wrap.appendChild(box);
+    var fade = document.createElement("div");
+    fade.className = "landing-card-text-fade";
+    fade.setAttribute("aria-hidden", "true");
+    wrap.appendChild(fade);
+
+    function refresh() {
+      updateLandingTextFade(wrap, box);
+    }
+    box.addEventListener("scroll", refresh, { passive: true });
+    refresh();
+    return { wrap: wrap, scroll: box, refresh: refresh };
+  }
+
+  var scrollRegions = [];
+  document.querySelectorAll(".landing-card-text-scroll").forEach(function(box) {
+    var region = wrapLandingCardTextScroll(box);
+    if (region) scrollRegions.push(region);
+    var cardLink = box.closest(".landing-card-link");
+    if (cardLink) {
+      ["mousedown", "click", "dblclick"].forEach(function(evtName) {
+        box.addEventListener(evtName, function(e) {
+          e.stopPropagation();
+        });
+      });
+    }
+  });
+
+  function refreshAllLandingTextFades() {
+    for (var i = 0; i < scrollRegions.length; i++) {
+      scrollRegions[i].refresh();
+    }
+  }
+
+  if (scrollRegions.length) {
+    var fadeTargets = scrollRegions.map(function(r) {
+      return r.wrap;
+    });
+    fadeTargets = fadeTargets.concat(
+      scrollRegions.map(function(r) {
+        return r.scroll;
+      })
+    );
+    if (window.CryoResizeObserverUtils) {
+      window.CryoResizeObserverUtils.observeResize(fadeTargets, refreshAllLandingTextFades);
+    } else {
+      window.addEventListener("resize", refreshAllLandingTextFades);
+    }
+    window.addEventListener("load", refreshAllLandingTextFades);
+  }
 })();
 </script>
 {% endblock %}

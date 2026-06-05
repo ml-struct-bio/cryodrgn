@@ -23,6 +23,7 @@ from cryodrgn.dashboard.command_builder_data import (
 from cryodrgn.dashboard.context import (
     abbrev_middle,
     nav_interface_title,
+    api_set_chimerax_path,
     api_set_epoch,
     api_set_workdir,
     bind_dashboard_exp,
@@ -64,6 +65,7 @@ _STATIC_DIR = os.path.join(_THIS_DIR, "static")
 _ROUTES = (
     ("/api/set_epoch", api_set_epoch, ("POST",)),
     ("/api/set_workdir", api_set_workdir, ("POST",)),
+    ("/api/set_chimerax_path", api_set_chimerax_path, ("POST",)),
     ("/", re.index, ("GET",)),
     ("/command-builder", re.command_builder_page, ("GET",)),
     ("/abinit-builder", re.abinit_builder_redirect, ("GET",)),
@@ -164,6 +166,9 @@ def create_app(
     # Invalidates Flask session epoch when the dashboard process restarts so CLI
     # ``--epoch`` matches the first load (see :func:`resolve_epoch`).
     app.config["DASHBOARD_SESSION_BOOT_ID"] = str(uuid.uuid4())
+    app.config["DASHBOARD_CHIMERAX_BOOT_ENV_SET"] = bool(
+        os.environ.get("CHIMERAX_PATH", "").strip()
+    )
     command_builder_only = workdir is None
     app.config["COMMAND_BUILDER_ONLY"] = command_builder_only
 

@@ -724,6 +724,153 @@
       opacity: 0.88;
       white-space: nowrap;
     }
+    .nav-right--with-chimerax {
+      display: flex;
+      flex-direction: row;
+      align-items: flex-end;
+      justify-content: flex-end;
+      gap: 0.65rem;
+    }
+    /* ChimeraX left of stamp + Epoch; button ~2× prior chip via min-width clamp. */
+    .nav-chimerax-epoch-lane {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: flex-start;
+      gap: calc(0.45rem * 0.7);
+      max-width: 100%;
+    }
+    /* ChimeraX left of stamp + Epoch; width stepped down again; vertical padding scales up. */
+    .nav-chimerax-epoch-lane .nav-chimerax-btn {
+      flex: 0 0 auto;
+      min-width: clamp(3.185rem, 8.33vw, 5.88rem);
+      max-width: min(6.37rem, 13.475vw);
+      box-sizing: border-box;
+      text-align: center;
+      white-space: pre-line;
+      line-height: 1.14;
+      padding-block: calc(0.3rem * 1.7 * 1.5 * 1.5 / 2 * 0.7);
+      padding-inline: calc(0.45rem * 0.7 * 0.5 * 0.7);
+      min-height: 0;
+      font-size: calc(0.7 * clamp(0.58rem, 0.18rem + 1.05vw, 0.88rem));
+      font-weight: 700;
+    }
+    .nav-chimerax-epoch-lane .nav-epoch-post-chimerax {
+      flex: 0 0 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.096rem;
+    }
+    .nav-right--with-chimerax > .nav-chimerax-btn {
+      white-space: pre-line;
+      line-height: 1.14;
+      text-align: center;
+      padding-block: calc(0.3rem * 1.7 * 1.5 * 1.5 / 2 * 0.7);
+      padding-inline: calc(0.55rem * 0.7 * 0.5 * 0.7);
+      min-width: clamp(3.185rem, 8.33vw, 5.88rem);
+      max-width: min(6.37rem, 13.475vw);
+      font-size: calc(0.7 * clamp(0.58rem, 0.18rem + 1.05vw, 0.88rem));
+      font-weight: 700;
+    }
+    .nav-chimerax-btn {
+      flex-shrink: 0;
+      font-size: calc(0.7 * (0.62rem * 1.13 * 0.8));
+      font-weight: 700;
+      line-height: 1.15;
+      padding: calc(0.22rem * 0.7) calc(0.5rem * 0.7);
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.38);
+      background: rgba(255, 255, 255, 0.1);
+      color: #f8fbff;
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.02em;
+    }
+    .nav-chimerax-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.52);
+    }
+    .nav-chimerax-btn:focus-visible {
+      outline: 2px solid var(--accent, #c4703a);
+      outline-offset: 2px;
+    }
+    .cryo-chimerax-modal[hidden] {
+      display: none !important;
+    }
+    .cryo-chimerax-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10050;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      box-sizing: border-box;
+    }
+    .cryo-chimerax-modal__backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(26, 35, 50, 0.45);
+      cursor: pointer;
+    }
+    .cryo-chimerax-modal__panel {
+      position: relative;
+      z-index: 1;
+      width: min(32rem, 100%);
+      max-height: min(90vh, 28rem);
+      overflow: auto;
+      background: var(--paper, #fff);
+      border-radius: 6px;
+      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.22);
+      border: 1px solid rgba(36, 59, 83, 0.14);
+      padding: 1.1rem 1.25rem 1.2rem;
+      color: var(--ink, #1a2332);
+      container-type: inline-size;
+      container-name: cryochimeraxdlg;
+    }
+    .cryo-chimerax-modal__panel h2 {
+      margin: 0 0 0.5rem;
+      font-size: 1.2rem;
+      color: var(--nav-bg, #243b53);
+    }
+    .cryo-chimerax-modal__panel .cryo-chimerax-modal__actions {
+      margin-top: 0.85rem;
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      align-items: stretch;
+      width: 100%;
+      box-sizing: border-box;
+      /* Two gaps between three buttons; cap total gap at 37% of panel inline size. */
+      gap: min(calc(0.85rem * 0.7), calc(18.5cqw * 0.7));
+    }
+    .cryo-chimerax-modal__panel .cryo-chimerax-modal__actions .btn {
+      flex: 1 0 0;
+      min-width: calc(4.75rem * 0.7);
+      min-height: calc(2.75rem / 4 * 0.7);
+      font-size: calc(0.7 * clamp(1.02rem, 0.95rem + 0.45vw, 1.18rem));
+      padding: calc(0.52rem / 2 * 0.7) calc(0.65rem * 0.7);
+      text-align: center;
+      white-space: normal;
+      line-height: 1.3;
+    }
+    .cryo-chimerax-modal__panel label {
+      margin-top: 0.65rem;
+    }
+    .cryo-chimerax-modal__panel input[type="text"] {
+      max-width: none;
+      width: 100%;
+      box-sizing: border-box;
+      font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+      font-size: 0.88rem;
+    }
+    .cryo-chimerax-modal__err {
+      margin: 0.45rem 0 0;
+      font-size: 0.88rem;
+      min-height: 1.25em;
+    }
     main {
       max-width: 1200px;
       margin: 0 auto;
@@ -1816,10 +1963,64 @@
         <p class="nav-cmd-doc-text" id="nav-cmd-doc-text">{{ command_builder_command_docs.get('abinit', '')|e }}</p>
       </div>
     </div>
-    {% elif not command_builder_only %}
-    <div class="nav-right">
+    {% else %}
+    {% if chimerax_dashboard_path_ui or not command_builder_only %}
+    <div class="nav-right nav-right--with-chimerax">
+      {% if chimerax_dashboard_path_ui and command_builder_only %}
+      <button
+        type="button"
+        class="nav-chimerax-btn"
+        id="cryo-chimerax-setup-open"
+        aria-haspopup="dialog"
+        aria-controls="cryo-chimerax-modal"
+        data-api-url="{{ url_for('api_set_chimerax_path') }}"
+        title="{% if chimerax_path_resolved %}Change or clear saved ChimeraX path{% else %}Set CHIMERAX_PATH for this dashboard session{% endif %}"
+      >Select ChimeraX installation
+for volume rendering</button>
+      {% endif %}
+      {% if not command_builder_only %}
       <div class="nav-right-stack">
         <div class="nav-epoch">
+          {% if chimerax_dashboard_path_ui %}
+          <div class="nav-chimerax-epoch-lane">
+            <button
+              type="button"
+              class="nav-chimerax-btn"
+              id="cryo-chimerax-setup-open"
+              aria-haspopup="dialog"
+              aria-controls="cryo-chimerax-modal"
+              data-api-url="{{ url_for('api_set_chimerax_path') }}"
+              title="{% if chimerax_path_resolved %}Change or clear saved ChimeraX path{% else %}Set CHIMERAX_PATH for this dashboard session{% endif %}"
+            >Select ChimeraX installation
+for volume rendering</button>
+            <div class="nav-epoch-post-chimerax">
+              {% if exp_epoch_output_stamp or exp_run_log_cryodrgn_version %}
+              <div class="nav-epoch-meta">
+                {% if exp_epoch_output_stamp %}
+                <span class="nav-epoch-stamp"
+                  {% if exp_epoch_output_stamp_title %}title="{{ exp_epoch_output_stamp_title|e }}"{% endif %}
+                  >analyze.{{ exp_epoch }} updated {{ exp_epoch_output_stamp|e }}</span>
+                {% endif %}
+                {% if exp_run_log_cryodrgn_version %}
+                <span class="nav-epoch-runlog-version"
+                  {% if exp_run_log_cryodrgn_version_title -%}
+                    title="{{ exp_run_log_cryodrgn_version_title|e }}"
+                  {%- endif %}
+                  >trained with cryoDRGN v{{ exp_run_log_cryodrgn_version_short|e }}</span>
+                {% endif %}
+              </div>
+              {% endif %}
+              <div class="nav-epoch-controls">
+                <label for="dash-epoch">Epoch</label>
+                <select id="dash-epoch" title="Analysis checkpoint (z.N.pkl)">
+                  {% for ep in dashboard_epochs %}
+                  <option value="{{ ep }}" {% if ep == exp_epoch %}selected{% endif %}>{{ ep }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+          {% else %}
           {% if exp_epoch_output_stamp or exp_run_log_cryodrgn_version %}
           <div class="nav-epoch-meta">
             {% if exp_epoch_output_stamp %}
@@ -1844,12 +2045,36 @@
               {% endfor %}
             </select>
           </div>
+          {% endif %}
         </div>
         <div class="nav-kmeans-row" title="k-means folder under analyze.{{ exp_epoch }}">k-means {{ exp_kmeans }}</div>
       </div>
+      {% endif %}
     </div>
     {% endif %}
+    {% endif %}
   </header>
+  {% if chimerax_dashboard_path_ui %}
+  <div id="cryo-chimerax-modal" class="cryo-chimerax-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="cryo-chimerax-modal-title">
+    <div class="cryo-chimerax-modal__backdrop" data-cryo-chimerax-close="1"></div>
+    <div class="cryo-chimerax-modal__panel">
+      <h2 id="cryo-chimerax-modal-title">ChimeraX executable</h2>
+      <p class="muted" style="margin: 0 0 0.5rem; font-size: 0.9rem;">
+        The dashboard was started without <code>CHIMERAX_PATH</code>. Set the full path to the
+        ChimeraX binary here for this session (saved in your browser cookie). For a permanent
+        default, export <code>CHIMERAX_PATH</code> in your shell before launching the dashboard.
+      </p>
+      <label for="cryo-chimerax-path-input">Path to ChimeraX</label>
+      <input type="text" id="cryo-chimerax-path-input" autocomplete="off" spellcheck="false" placeholder="/usr/local/bin/chimerax" value="{{ chimerax_path_display_for_modal|e }}" />
+      <p id="cryo-chimerax-modal-err" class="cryo-chimerax-modal__err cryo-status-error" aria-live="polite"></p>
+      <div class="cryo-chimerax-modal__actions">
+        <button type="button" class="btn" id="cryo-chimerax-save">Save</button>
+        <button type="button" class="btn btn-secondary" id="cryo-chimerax-clear">Clear saved path</button>
+        <button type="button" class="btn btn-secondary" id="cryo-chimerax-cancel" data-cryo-chimerax-close="1">Cancel</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
   <main>
     {% block content %}{% endblock %}
   </main>
@@ -1895,6 +2120,113 @@
         cryoPostWorkdir(w);
       });
     }
+
+    (function() {
+      var openBtn = document.getElementById("cryo-chimerax-setup-open");
+      var modal = document.getElementById("cryo-chimerax-modal");
+      if (!openBtn || !modal) return;
+      var apiUrl = String(openBtn.getAttribute("data-api-url") || "").trim();
+      var inp = document.getElementById("cryo-chimerax-path-input");
+      var errEl = document.getElementById("cryo-chimerax-modal-err");
+      var saveBtn = document.getElementById("cryo-chimerax-save");
+      var clearBtn = document.getElementById("cryo-chimerax-clear");
+
+      function setErr(s) {
+        if (!errEl) return;
+        errEl.textContent = s || "";
+        if (window.cryoApplyStatusTone) window.cryoApplyStatusTone(errEl, s || "");
+      }
+
+      function openModal() {
+        setErr("");
+        modal.removeAttribute("hidden");
+        modal.setAttribute("aria-hidden", "false");
+        if (inp) {
+          try {
+            inp.focus();
+            inp.select();
+          } catch (e2) {}
+        }
+      }
+
+      function closeModal() {
+        modal.setAttribute("hidden", "hidden");
+        modal.setAttribute("aria-hidden", "true");
+        setErr("");
+      }
+
+      openBtn.addEventListener("click", openModal);
+
+      modal.addEventListener("click", function(ev) {
+        var t = ev.target;
+        if (t && t.getAttribute && t.getAttribute("data-cryo-chimerax-close") === "1") {
+          closeModal();
+        }
+      });
+
+      document.addEventListener("keydown", function(ev) {
+        if (ev.key === "Escape" && !modal.hasAttribute("hidden")) closeModal();
+      });
+
+      if (saveBtn) {
+        saveBtn.addEventListener("click", function() {
+          var p = inp ? String(inp.value || "").trim() : "";
+          if (!p) {
+            setErr("Enter the full path to the ChimeraX executable.");
+            return;
+          }
+          setErr("");
+          fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: p })
+          })
+            .then(function(r) {
+              return r.json().then(function(j) {
+                return { ok: r.ok, j: j };
+              });
+            })
+            .then(function(res) {
+              if (res.ok && res.j && res.j.ok) {
+                window.location.reload();
+                return;
+              }
+              var msg = res.j && res.j.error ? String(res.j.error) : "Could not save path.";
+              setErr(msg);
+            })
+            .catch(function() {
+              setErr("Request failed.");
+            });
+        });
+      }
+
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function() {
+          setErr("");
+          fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: null })
+          })
+            .then(function(r) {
+              return r.json().then(function(j) {
+                return { ok: r.ok, j: j };
+              });
+            })
+            .then(function(res) {
+              if (res.ok && res.j && res.j.ok) {
+                window.location.reload();
+                return;
+              }
+              var msg = res.j && res.j.error ? String(res.j.error) : "Could not clear.";
+              setErr(msg);
+            })
+            .catch(function() {
+              setErr("Request failed.");
+            });
+        });
+      }
+    })();
 
     var sel = document.getElementById("dash-epoch");
     if (sel && sel.options.length > 1) {
@@ -2080,6 +2412,10 @@
         if (btn.dataset.cryoFitButtonsBusy === "1") return;
         if (btn.hidden) return;
         if (isPlotlyButton(btn)) return;
+        // ChimeraX path modal: flex + [hidden] gives bogus rects; do not shrink these buttons.
+        if (btn.closest && btn.closest("#cryo-chimerax-modal")) return;
+        // Header ChimeraX: custom sizing; global fit overwrites width/height/font.
+        if (btn.classList && btn.classList.contains("nav-chimerax-btn")) return;
         if (!buttonHasVisibleText(btn)) return;
 
         var isCacheButtonTextMatchTarget =
@@ -2319,6 +2655,14 @@
       function observeButton(btn) {
         if (!btn || !ro) return;
         if (btn.dataset.cryoFitButtonsObserved === "1") return;
+        if (btn.closest && btn.closest("#cryo-chimerax-modal")) {
+          btn.dataset.cryoFitButtonsObserved = "1";
+          return;
+        }
+        if (btn.classList && btn.classList.contains("nav-chimerax-btn")) {
+          btn.dataset.cryoFitButtonsObserved = "1";
+          return;
+        }
         ro.observe(btn);
         btn.dataset.cryoFitButtonsObserved = "1";
       }
@@ -2328,6 +2672,8 @@
         for (var i = 0; i < buttons.length; i++) {
           var btn = buttons[i];
           observeButton(btn);
+          if (btn.closest && btn.closest("#cryo-chimerax-modal")) continue;
+          if (btn.classList && btn.classList.contains("nav-chimerax-btn")) continue;
           if (buttonHasVisibleText(btn)) scheduleFit(btn);
         }
       }
@@ -2344,13 +2690,21 @@
 
               if (node.tagName && String(node.tagName).toLowerCase() === "button") {
                 observeButton(node);
-                if (buttonHasVisibleText(node)) scheduleFit(node);
+                if (!(node.closest && node.closest("#cryo-chimerax-modal"))
+                    && !(node.classList && node.classList.contains("nav-chimerax-btn"))
+                    && buttonHasVisibleText(node)) {
+                  scheduleFit(node);
+                }
               } else if (node.querySelectorAll) {
                 var innerButtons = node.querySelectorAll("button");
                 for (var bi = 0; bi < innerButtons.length; bi++) {
                   var ib = innerButtons[bi];
                   observeButton(ib);
-                  if (buttonHasVisibleText(ib)) scheduleFit(ib);
+                  if (!(ib.closest && ib.closest("#cryo-chimerax-modal"))
+                      && !(ib.classList && ib.classList.contains("nav-chimerax-btn"))
+                      && buttonHasVisibleText(ib)) {
+                    scheduleFit(ib);
+                  }
                 }
               }
             }

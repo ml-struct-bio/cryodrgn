@@ -324,6 +324,7 @@ def get_dashboard_exp(app: Flask) -> DashboardExperiment:
 def bind_dashboard_exp() -> None:
     """``before_request`` hook: attach the loaded experiment to ``flask.g``."""
     _sync_discovery_session_boot()
+    _sync_session_chimerax_to_environ(current_app)
     wd = active_workdir(current_app)
     if not wd:
         if request.endpoint in EXP_REQUIRED_ENDPOINTS:
@@ -341,6 +342,79 @@ def _request_json_dict() -> dict:
     """Parsed JSON object from the request body, or ``{}`` if missing / invalid."""
     data = request.get_json(force=True, silent=True)
     return data if isinstance(data, dict) else {}
+
+
+_SESSION_CHIMERAX_PATH_KEY = "dashboard_chimerax_path"
+
+
+def _validate_chimerax_executable(raw: str) -> tuple[str | None, str | None]:
+    """Return ``(resolved_executable_path, error_message)``."""
+    path = str(Path(str(raw).strip()).expanduser())
+    try:
+        rp = os.path.realpath(path)
+    except OSError as exc:
+        return None, f"Invalid path ({exc})"
+    if not os.path.isfile(rp):
+        return None, "Path is not a regular file."
+    if not os.access(rp, os.X_OK):
+        return None, "File is not executable."
+    return rp, None
+
+
+def _sync_session_chimerax_to_environ(app: Flask) -> None:
+    """Mirror session into ``CHIMERAX_PATH`` when the server booted without it.
+
+    ChimeraX subprocesses (including joblib/loky workers) read :func:`chimerax_path`
+    from the process environment only.
+    """
+    if app.config.get("DASHBOARD_CHIMERAX_BOOT_ENV_SET"):
+        return
+    raw = (session.get(_SESSION_CHIMERAX_PATH_KEY) or "").strip()
+    if not raw:
+        os.environ.pop("CHIMERAX_PATH", None)
+        return
+    ok_path, _err = _validate_chimerax_executable(raw)
+    if ok_path:
+        os.environ["CHIMERAX_PATH"] = ok_path
+    else:
+        session.pop(_SESSION_CHIMERAX_PATH_KEY, None)
+        os.environ.pop("CHIMERAX_PATH", None)
+
+
+def _chimerax_nav_template_context(app: Flask) -> dict[str, object]:
+    boot = bool(app.config.get("DASHBOARD_CHIMERAX_BOOT_ENV_SET"))
+    env_path = os.environ.get("CHIMERAX_PATH", "").strip()
+    has_now = bool(env_path)
+    return {
+        "chimerax_boot_env_set": boot,
+        "chimerax_dashboard_path_ui": not boot,
+        "chimerax_path_resolved": has_now,
+        "chimerax_path_display_for_modal": "" if boot else env_path,
+    }
+
+
+def api_set_chimerax_path():
+    """API: store ChimeraX path in session + env when boot did not set ``CHIMERAX_PATH``."""
+    if current_app.config.get("DASHBOARD_CHIMERAX_BOOT_ENV_SET"):
+        return (
+            jsonify(
+                error="CHIMERAX_PATH was set when the server started; change your shell "
+                "environment and restart the dashboard to use a different executable."
+            ),
+            400,
+        )
+    data = _request_json_dict()
+    raw = data.get("path")
+    if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+        session.pop(_SESSION_CHIMERAX_PATH_KEY, None)
+        os.environ.pop("CHIMERAX_PATH", None)
+        return jsonify(ok=True, cleared=True)
+    ok_path, err = _validate_chimerax_executable(str(raw))
+    if err:
+        return jsonify(error=err), 400
+    session[_SESSION_CHIMERAX_PATH_KEY] = ok_path
+    os.environ["CHIMERAX_PATH"] = ok_path
+    return jsonify(ok=True, path=ok_path)
 
 
 def api_set_epoch():
@@ -662,6 +736,7 @@ def inject_meta() -> dict:
         "exp_run_log_cryodrgn_version_short": runlog_ver_short,
         "exp_run_log_cryodrgn_version_title": runlog_ver_title,
         **_cryodrgn_version_context(),
+        **_chimerax_nav_template_context(current_app),
     }
 
 
@@ -707,4 +782,5 @@ def inject_meta_command_builder_only() -> dict:
         "exp_run_log_cryodrgn_version_short": runlog_ver_short,
         "exp_run_log_cryodrgn_version_title": runlog_ver_title,
         **_cryodrgn_version_context(),
+        **_chimerax_nav_template_context(current_app),
     }

@@ -642,6 +642,50 @@ class TestSetWorkdirEndpoint:
             assert r.status_code == 200
 
 
+class TestChimeraXPathApi:
+    def test_set_chimerax_path_rejected_when_boot_env_set(
+        self, dashboard_workdir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CHIMERAX_PATH", "/opt/chimerax/bin/ChimeraX")
+        app = dash_app.create_app(workdir=dashboard_workdir)
+        with app.test_client() as c:
+            r = c.post("/api/set_chimerax_path", json={"path": "/tmp/should-not-apply"})
+            assert r.status_code == 400
+
+    def test_set_chimerax_path_accepts_executable(
+        self, dashboard_workdir: str, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        monkeypatch.delenv("CHIMERAX_PATH", raising=False)
+        fake = tmp_path / "fake_chimerax"
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(0o755)
+        app = dash_app.create_app(workdir=dashboard_workdir)
+        try:
+            with app.test_client() as c:
+                r = c.post("/api/set_chimerax_path", json={"path": str(fake)})
+                assert r.status_code == 200
+                j = r.get_json()
+                assert j is not None
+                assert j.get("ok") is True
+                resolved = os.path.realpath(str(fake))
+                assert j.get("path") == resolved
+                assert os.environ.get("CHIMERAX_PATH") == resolved
+        finally:
+            os.environ.pop("CHIMERAX_PATH", None)
+
+    def test_set_chimerax_path_rejects_non_executable(
+        self, dashboard_workdir: str, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        monkeypatch.delenv("CHIMERAX_PATH", raising=False)
+        fake = tmp_path / "not_run"
+        fake.write_text("not a script")
+        fake.chmod(0o644)
+        app = dash_app.create_app(workdir=dashboard_workdir)
+        with app.test_client() as c:
+            r = c.post("/api/set_chimerax_path", json={"path": str(fake)})
+            assert r.status_code == 400
+
+
 class TestRoutesTableIntegrity:
     def test_every_entry_is_callable(self) -> None:
         for rule, view_func, methods in dash_app._ROUTES:

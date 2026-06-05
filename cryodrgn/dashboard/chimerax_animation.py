@@ -66,12 +66,18 @@ def rotation_turn_y_increments(gif_frames: int) -> list[float]:
 
 
 def chimerax_path() -> str:
-    """ChimeraX executable from ``CHIMERAX_PATH`` or raise if unset."""
+    """ChimeraX executable from ``CHIMERAX_PATH`` (process environment) or raise.
+
+    When the dashboard was started without ``CHIMERAX_PATH``, the UI can save a path
+    in the Flask session; the server mirrors that into ``os.environ`` on each request
+    so ChimeraX subprocesses (including joblib workers) see the same executable.
+    """
     p = os.environ.get("CHIMERAX_PATH", "").strip()
     if not p:
         raise EnvironmentError(
             "CHIMERAX_PATH is not set. Set it to your ChimeraX executable "
-            "(same as for cryodrgn-experiments pipelines) and restart the dashboard."
+            "(same as for cryodrgn-experiments pipelines), use the dashboard header "
+            '"ChimeraX…" control if shown, or restart after exporting CHIMERAX_PATH.'
         )
     return p
 

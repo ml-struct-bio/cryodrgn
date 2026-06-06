@@ -821,21 +821,40 @@
     min-height: 0;
     overflow: hidden;
     box-sizing: border-box;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* Body field copy in *opened* submenus (~30% smaller than prior sizing). Card face title / subtitle stay 13px / 12px. */
+    --cmd-adv-submenu-font: calc(0.76rem * 0.7);
+    --cmd-adv-submenu-input-font: calc(0.82rem * 0.7);
+    --cmd-adv-submenu-check-font: calc(0.8rem * 0.7);
+    --cmd-adv-open-pad-scale: 0.7;
   }
   body.cmd-builder-github-pages .cmd-builder-advanced-region-title {
     flex: 0 0 auto;
     margin: 0;
     padding: 0.35rem 0 0.15rem;
     font-weight: 700;
-    font-size: var(--gp-arg-region-title-font);
-    line-height: 1.2;
+    font-size: var(--gp-nav-cmd-label-font);
+    line-height: 1.15;
     letter-spacing: 0.02em;
+    white-space: normal;
     color: var(--nav-bg, #243b53);
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-cards-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    box-sizing: border-box;
   }
   body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-builder-group-cards {
     flex: 1 1 auto;
     min-height: 0;
-    padding-top: 0.15rem;
+    padding: 0.35rem 0 0.45rem;
+    overflow: hidden;
+    box-sizing: border-box;
   }
   body.cmd-builder-github-pages .cmd-builder-tilt-region {
     display: flex;
@@ -1290,6 +1309,153 @@
     gap: 0.5rem;
     overflow: hidden;
   }
+  /* When a card is open, reserve cross-axis space so the row is not sized only by collapsed headers
+     (otherwise the expanded body's flex share collapses and hides the parameter list). */
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-builder-group-cards:has(.cmd-group-card--open),
+  body.cmd-builder-github-pages .cmd-builder-group-cards:has(.cmd-group-card--open) {
+    min-height: min(52dvh, 30rem);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region--split .cmd-builder-advanced-cards-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region--split .cmd-builder-group-cards {
+    display: grid;
+    grid-template-columns: minmax(0, 72fr) minmax(0, 28fr);
+    column-gap: 0.45rem;
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+    height: 100%;
+    overflow: hidden;
+    padding-top: 0.25rem;
+    box-sizing: border-box;
+  }
+  /* Beat :has(.cmd-group-card--open) min-height so split grid stays inside the advanced region flex box */
+  body.cmd-builder-github-pages
+    .cmd-builder-advanced-region.cmd-builder-advanced-region--split
+    .cmd-builder-group-cards {
+    min-height: 0;
+  }
+  /* Right column: one flex stack so every “remaining” submenu card is listed vertically */
+  body.cmd-builder-github-pages .cmd-builder-group-cards--split > .cmd-builder-advanced-nav-rail {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    min-height: 0;
+    max-height: 100%;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.05rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  body.cmd-builder-github-pages .cmd-builder-group-cards--split > .cmd-group-card--split-main {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-height: 100%;
+    height: 100%;
+    flex: unset;
+    align-self: stretch;
+    overflow: hidden;
+    transition: none;
+  }
+  body.cmd-builder-github-pages .cmd-builder-group-cards--split > .cmd-group-card--split-main.cmd-group-card--open {
+    min-width: 0;
+    min-height: 0;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    flex: unset;
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-nav-rail .cmd-group-card--split-nav {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    flex: 0 0 auto;
+    opacity: 1;
+    margin: 0;
+    min-height: 0;
+    transition: none;
+    border-radius: 2px;
+    box-shadow: none;
+    border: 1px solid rgba(36, 59, 83, 0.1);
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-nav-rail .cmd-group-card--split-nav .cmd-group-card-trigger {
+    flex: 0 0 auto;
+    padding: 0.07rem 0.2rem;
+    gap: 0.02rem;
+    min-height: 0;
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-advanced-region
+    .cmd-builder-advanced-nav-rail
+    .cmd-group-card--split-nav
+    .cmd-group-card-title {
+    font-size: 10px;
+    line-height: 1.05;
+    margin: 0;
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-advanced-region
+    .cmd-builder-advanced-nav-rail
+    .cmd-group-card--split-nav
+    .cmd-group-card-desc {
+    font-size: 9px;
+    line-height: 1.08;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  body.cmd-builder-github-pages .cmd-group-card-split-dismiss {
+    display: none;
+    position: absolute;
+    z-index: 6;
+    top: 0.28rem;
+    right: 0.32rem;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.92);
+    color: rgba(36, 59, 83, 0.72);
+    font-size: 1.15rem;
+    line-height: 1;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 0 0 1px rgba(36, 59, 83, 0.14);
+  }
+  body.cmd-builder-github-pages .cmd-group-card-split-dismiss:hover {
+    background: #fff;
+    color: var(--nav-bg, #243b53);
+  }
+  body.cmd-builder-github-pages .cmd-group-card--split-main.cmd-group-card--open .cmd-group-card-split-dismiss {
+    display: inline-flex;
+  }
+  body.cmd-builder-github-pages .cmd-group-card--split-main.cmd-group-card--open .cmd-group-card-trigger {
+    padding-right: 2.1rem;
+  }
   body.cmd-builder-github-pages .cmd-builder-page--dock {
     flex: 1 1 auto;
     min-height: 0;
@@ -1312,7 +1478,6 @@
     border: 1px solid rgba(36, 59, 83, 0.12);
     box-shadow: var(--card-shadow, 0 2px 12px rgba(36, 59, 83, 0.08));
     transition:
-      transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
       flex-grow 0.34s cubic-bezier(0.22, 1, 0.36, 1),
       flex-basis 0.34s cubic-bezier(0.22, 1, 0.36, 1),
       box-shadow 0.34s cubic-bezier(0.22, 1, 0.36, 1),
@@ -1320,45 +1485,49 @@
       background 0.26s ease;
   }
   body.cmd-builder-github-pages .cmd-group-card:not(.cmd-group-card--open):hover {
-    transform: translateY(-4px) scale(1.015);
     box-shadow:
-      0 6px 12px rgba(36, 59, 83, 0.08),
-      0 18px 40px rgba(36, 59, 83, 0.16),
-      0 0 0 1px rgba(196, 112, 58, 0.4),
-      0 0 32px rgba(196, 112, 58, 0.18);
+      0 2px 8px rgba(36, 59, 83, 0.1),
+      0 4px 14px rgba(36, 59, 83, 0.08),
+      0 0 0 1px rgba(196, 112, 58, 0.4);
     border-color: rgba(196, 112, 58, 0.65);
     background: linear-gradient(165deg, #fffefb 0%, #fff 55%, #faf8f4 100%);
   }
   body.cmd-builder-github-pages .cmd-group-card--open {
     flex: 3.5 1 0;
     min-width: min(38vw, 20rem);
-    transform: translateY(-8px);
-    z-index: 4;
+    z-index: 2;
     border-color: rgba(196, 112, 58, 0.65);
     background: linear-gradient(165deg, #fffefb 0%, #fff 52%, #faf8f4 100%);
     box-shadow:
-      0 10px 20px rgba(36, 59, 83, 0.1),
-      0 28px 56px rgba(36, 59, 83, 0.2),
-      0 0 0 1px rgba(196, 112, 58, 0.45),
-      0 0 48px rgba(196, 112, 58, 0.26);
-    outline: 2px solid var(--accent, #c4703a);
-    outline-offset: 3px;
+      0 2px 10px rgba(36, 59, 83, 0.12),
+      0 6px 18px rgba(36, 59, 83, 0.1),
+      0 0 0 2px rgba(196, 112, 58, 0.45);
   }
   body.cmd-builder-github-pages .cmd-group-card--open:hover {
-    transform: translateY(-8px);
+    box-shadow:
+      0 2px 10px rgba(36, 59, 83, 0.12),
+      0 6px 18px rgba(36, 59, 83, 0.1),
+      0 0 0 2px rgba(196, 112, 58, 0.45);
   }
   body.cmd-builder-github-pages .cmd-builder-group-cards:has(.cmd-group-card--open)
     .cmd-group-card:not(.cmd-group-card--open) {
     flex: 0.72 1 0;
+    flex-shrink: 0;
     opacity: 0.88;
+    /* Wide enough for wrapped title + subtitle; flex-shrink 0 avoids -webkit-line-clamp bugs in skinny columns */
+    min-width: max(7.25rem, 12vw);
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-advanced-nav-rail
+    .cmd-group-card--split-nav.cmd-group-card:not(.cmd-group-card--open) {
+    min-width: 0;
   }
   body.cmd-builder-github-pages .cmd-group-card-trigger {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 0.28rem;
     flex: 1 1 auto;
-    min-height: 0;
     width: 100%;
     margin: 0;
     padding: 0.55rem 0.65rem;
@@ -1376,37 +1545,65 @@
     border-bottom: 1px solid rgba(36, 59, 83, 0.12);
     background: rgba(255, 255, 255, 0.55);
   }
-  body.cmd-builder-github-pages .cmd-group-card-title {
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-title {
     font-weight: 700;
-    font-size: calc(0.92rem * var(--gp-font-scale));
-    line-height: 1.2;
+    font-size: 13px;
+    line-height: 1.15;
     color: var(--nav-bg, #243b53);
     letter-spacing: 0.01em;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
-  body.cmd-builder-github-pages .cmd-group-card-desc {
-    font-size: calc(0.76rem * var(--gp-font-scale));
-    line-height: 1.35;
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-desc {
+    font-size: 12px;
+    line-height: 1.28;
     color: var(--muted, #5c6b7a);
     font-weight: 400;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
-  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-desc {
-    -webkit-line-clamp: 2;
+  /* Collapsed faces (idle row only — not split-nav rail): block layout avoids WebKit line-clamp collapsing to blank */
+  body.cmd-builder-github-pages
+    .cmd-builder-advanced-region
+    .cmd-group-card:not(.cmd-group-card--open):not(.cmd-group-card--split-nav)
+    .cmd-group-card-desc {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    -webkit-box-orient: unset;
+    overflow: visible;
+    max-height: none;
+  }
+  body.cmd-builder-github-pages
+    .cmd-builder-advanced-region
+    .cmd-group-card:not(.cmd-group-card--open):not(.cmd-group-card--split-nav)
+    .cmd-group-card-title,
+  body.cmd-builder-github-pages
+    .cmd-builder-advanced-region
+    .cmd-group-card:not(.cmd-group-card--open):not(.cmd-group-card--split-nav)
+    .cmd-group-card-desc {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body {
     display: block;
+    /* flex-basis 0 so this pane gets a definite share of column height; 1 1 auto grows with content and kills scrolling */
     flex: 1 1 0;
     min-height: 0;
-    height: 0;
-    padding: 0.4rem 0.5rem 0.75rem;
-    overflow-x: hidden;
-    overflow-y: scroll;
+    padding: calc(0.4rem * var(--cmd-adv-open-pad-scale, 0.7)) calc(0.5rem * var(--cmd-adv-open-pad-scale, 0.7))
+      calc(0.75rem * var(--cmd-adv-open-pad-scale, 0.7));
+    overflow-x: auto;
+    overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
+    touch-action: pan-x pan-y;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: rgba(36, 59, 83, 0.4) rgba(36, 59, 83, 0.1);
@@ -1426,49 +1623,63 @@
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .cryo-select-line {
     display: block;
-    margin: 0.2rem 0 0.06rem;
-    font-size: calc(0.7rem * var(--gp-font-scale) * 0.8);
+    margin: calc(0.2rem * var(--cmd-adv-open-pad-scale, 0.7)) 0 calc(0.06rem * var(--cmd-adv-open-pad-scale, 0.7));
     line-height: 1.2;
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .cmd-arg-norm2-inputs {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.25rem;
-    margin-bottom: 0.15rem;
+    gap: calc(0.25rem * var(--cmd-adv-open-pad-scale, 0.7));
+    margin-bottom: calc(0.15rem * var(--cmd-adv-open-pad-scale, 0.7));
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-line {
     display: block;
+    margin: calc(0.18rem * var(--cmd-adv-open-pad-scale, 0.7)) 0 calc(0.08rem * var(--cmd-adv-open-pad-scale, 0.7));
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body input[type="text"],
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body input[type="number"],
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body select {
-    margin-bottom: 0.15rem;
-    font-size: calc(0.74rem * var(--gp-font-scale) * 0.8);
-    padding: 0.2rem 0.32rem;
+    margin-bottom: calc(0.15rem * var(--cmd-adv-open-pad-scale, 0.7));
+    padding: calc(0.24rem * var(--cmd-adv-open-pad-scale, 0.7)) calc(0.38rem * var(--cmd-adv-open-pad-scale, 0.7));
     line-height: 1.25;
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line {
-    margin: 0.18rem 0;
-    font-size: calc(0.72rem * var(--gp-font-scale) * 0.8);
+    margin: calc(0.18rem * var(--cmd-adv-open-pad-scale, 0.7)) 0;
     line-height: 1.25;
-    gap: 0.3rem;
-  }
-  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line span {
-    font-size: calc(0.72rem * var(--gp-font-scale) * 0.8);
-  }
-  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .check-line code {
-    font-size: calc(0.68rem * var(--gp-font-scale) * 0.8);
-  }
-  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-line {
-    margin: 0.18rem 0 0.08rem;
-    font-size: calc(0.7rem * var(--gp-font-scale) * 0.8);
+    gap: calc(0.3rem * var(--cmd-adv-open-pad-scale, 0.7));
   }
   body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-options {
-    margin: 0 0 0.12rem;
-    gap: 0.18rem 0.45rem;
+    margin: 0 0 calc(0.12rem * var(--cmd-adv-open-pad-scale, 0.7));
+    gap: calc(0.18rem * var(--cmd-adv-open-pad-scale, 0.7)) calc(0.45rem * var(--cmd-adv-open-pad-scale, 0.7));
   }
-  body.cmd-builder-github-pages .cmd-group-card--open .cmd-group-card-body .choice-options .check-line {
-    font-size: calc(0.72rem * var(--gp-font-scale) * 0.8);
+  /* Split main: four-column parameter grid (must follow .cmd-group-card--open .cmd-group-card-body { display: block } above) */
+  body.cmd-builder-github-pages .cmd-group-card--split-main.cmd-group-card--open .cmd-group-card-body {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: calc(0.38rem * var(--cmd-adv-open-pad-scale, 0.7));
+    row-gap: calc(0.22rem * var(--cmd-adv-open-pad-scale, 0.7));
+    align-content: start;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  body.cmd-builder-github-pages .cmd-group-card-arg-slot {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.1rem;
+  }
+  body.cmd-builder-github-pages
+    .cmd-group-card--split-main.cmd-group-card--open
+    .cmd-group-card-body
+    > .cmd-group-card-arg-slot {
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body .cmd-arg-unit {
+    font-size: var(--cmd-adv-submenu-input-font);
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-outdir-step {
+    font-size: var(--cmd-adv-submenu-input-font);
   }
   body.cmd-builder-github-pages .cmd-outdir-step {
     font-size: calc(1.15rem * var(--gp-font-scale));
@@ -1481,6 +1692,53 @@
   }
   body.cmd-builder-github-pages .cmd-form .choice-options .check-line {
     font-size: calc(0.84rem * var(--gp-font-scale));
+  }
+  /* Advanced cards: explicit font (overrides .cmd-form rules below); reset shorthand so .card cannot leak through. */
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-trigger {
+    font: initial;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.28;
+    font-style: normal;
+    font-variant: normal;
+    letter-spacing: normal;
+    color: inherit;
+    gap: 0.12rem;
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body .cryo-select-line,
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body label.cryo-select-line {
+    font-size: var(--cmd-adv-submenu-font);
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body .choice-line {
+    font-size: var(--cmd-adv-submenu-font);
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body .check-line,
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body .choice-options .check-line {
+    font-size: var(--cmd-adv-submenu-check-font);
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body .check-line span {
+    font-size: var(--cmd-adv-submenu-check-font);
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body .check-line code {
+    font-size: var(--cmd-adv-submenu-font);
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body input[type="text"],
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body input[type="number"],
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body select,
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card-body textarea {
+    font-size: var(--cmd-adv-submenu-input-font);
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-group-card code {
+    font-size: inherit;
+  }
+  body.cmd-builder-github-pages .cmd-builder-advanced-region .cmd-arg-display-name {
+    font-size: inherit;
+    white-space: normal;
   }
   body.cmd-builder-github-pages .cmd-builder-cmd-dock {
     flex-shrink: 0;
@@ -1975,6 +2233,7 @@
         <h3 class="cmd-builder-advanced-region-title" id="{{ cmd_key }}-advanced-title">
           Advanced parameters
         </h3>
+        <div class="cmd-builder-advanced-cards-wrap">
         <div class="cmd-builder-group-cards">
           {% for group in command_builder_schema[cmd_key] %}
             {% set _primary_titles = ['Dataset loading', 'Training parameters',
@@ -1985,6 +2244,7 @@
               {{ render_schema_group(group) }}
             {% endif %}
           {% endfor %}
+        </div>
         </div>
       </section>
     {% endmacro %}
@@ -2014,12 +2274,17 @@
     {% macro render_schema_group(group) %}
       {% if command_builder_page_mode %}
         <div class="cmd-group-card">
+          <button type="button"
+                  class="cmd-group-card-split-dismiss"
+                  aria-label="Back to advanced parameters overview">×</button>
           <button type="button" class="cmd-group-card-trigger cmd-group-card-summary" aria-expanded="false">
             <span class="cmd-group-card-title">{{ group.title }}</span>
             <span class="cmd-group-card-desc">{{ group.description }}</span>
           </button>
           <div class="cmd-group-card-body" hidden>
-            {% for a in group.args %}{{ render_cmd_arg(a) }}{% endfor %}
+            {% for a in group.args %}
+              <div class="cmd-group-card-arg-slot">{{ render_cmd_arg(a) }}</div>
+            {% endfor %}
           </div>
         </div>
       {% else %}
@@ -2533,6 +2798,7 @@
               {% endcall %}
               {{ render_github_primary_pair('backproject_voxel', 'bpv_datadir') }}
               {{ render_github_tilt_region('backproject_voxel') }}
+              {{ render_github_panel_groups('backproject_voxel') }}
             </div>
             {% else %}
             <div class="cmd-builder-top-row">
@@ -3555,13 +3821,75 @@
       var panel = document.querySelector(".cmd-panel.cmd-panel--active");
       return panel ? panel.querySelectorAll(".cmd-group-card") : [];
     }
-    function syncBodyHeight(card) {
-      var body = card.querySelector(".cmd-group-card-body");
-      var trigger = card.querySelector(".cmd-group-card-trigger");
-      if (!body || !card.classList.contains("cmd-group-card--open")) return;
-      var triggerH = trigger ? trigger.offsetHeight : 0;
-      var maxH = Math.max(96, card.clientHeight - triggerH);
-      body.style.maxHeight = maxH + "px";
+    var cardOrderByGroup =
+      typeof WeakMap === "undefined" ? null : new WeakMap();
+    function rememberCardOrder(groupCards) {
+      if (!cardOrderByGroup || cardOrderByGroup.has(groupCards)) return;
+      var roots = [];
+      var ch = groupCards.children;
+      for (var i = 0; i < ch.length; i++) {
+        if (ch[i].classList && ch[i].classList.contains("cmd-group-card")) {
+          roots.push(ch[i]);
+        }
+      }
+      cardOrderByGroup.set(groupCards, roots);
+    }
+    function restoreCardOrder(groupCards) {
+      if (!cardOrderByGroup) return;
+      var rail = groupCards.querySelector(".cmd-builder-advanced-nav-rail");
+      if (rail) {
+        while (rail.firstChild) {
+          groupCards.appendChild(rail.firstChild);
+        }
+        rail.remove();
+      }
+      var list = cardOrderByGroup.get(groupCards);
+      if (!list) return;
+      for (var i = 0; i < list.length; i++) {
+        groupCards.appendChild(list[i]);
+      }
+    }
+    function stripSplitMarkers(nodeList) {
+      for (var i = 0; i < nodeList.length; i++) {
+        nodeList[i].classList.remove("cmd-group-card--split-main");
+        nodeList[i].classList.remove("cmd-group-card--split-nav");
+      }
+    }
+    function syncAdvancedSplit(advancedRegion) {
+      if (!advancedRegion) return;
+      var groupCards = advancedRegion.querySelector(".cmd-builder-group-cards");
+      if (!groupCards) return;
+      var openCard = groupCards.querySelector(".cmd-group-card--open");
+      if (!openCard) {
+        advancedRegion.classList.remove("cmd-builder-advanced-region--split");
+        groupCards.classList.remove("cmd-builder-group-cards--split");
+        stripSplitMarkers(groupCards.querySelectorAll(".cmd-group-card"));
+        restoreCardOrder(groupCards);
+        return;
+      }
+      rememberCardOrder(groupCards);
+      advancedRegion.classList.add("cmd-builder-advanced-region--split");
+      groupCards.classList.add("cmd-builder-group-cards--split");
+      groupCards.insertBefore(openCard, groupCards.firstChild);
+      var rail = groupCards.querySelector(".cmd-builder-advanced-nav-rail");
+      if (!rail) {
+        rail = document.createElement("div");
+        rail.className = "cmd-builder-advanced-nav-rail";
+        rail.setAttribute("role", "navigation");
+        rail.setAttribute("aria-label", "Other parameter groups");
+      }
+      groupCards.insertBefore(rail, openCard.nextSibling);
+      var allCards = Array.prototype.slice.call(
+        groupCards.querySelectorAll(".cmd-group-card")
+      );
+      stripSplitMarkers(allCards);
+      openCard.classList.add("cmd-group-card--split-main");
+      for (var i = 0; i < allCards.length; i++) {
+        var c = allCards[i];
+        if (c === openCard) continue;
+        rail.appendChild(c);
+        c.classList.add("cmd-group-card--split-nav");
+      }
     }
     function bindWheelScroll(body) {
       if (body.dataset.cmdScrollBound === "1") return;
@@ -3580,47 +3908,78 @@
       );
     }
     function setCardOpen(card, open) {
+      var curOpen = card.classList.contains("cmd-group-card--open");
+      if (!open && !curOpen) return;
+      if (open && curOpen) return;
       if (open) {
         var peers = cardsInActivePanel();
         for (var i = 0; i < peers.length; i++) {
-          if (peers[i] !== card) setCardOpen(peers[i], false);
+          if (peers[i] === card) continue;
+          if (!peers[i].classList.contains("cmd-group-card--open")) continue;
+          peers[i].classList.remove("cmd-group-card--open");
+          var tr = peers[i].querySelector(".cmd-group-card-trigger");
+          var bd = peers[i].querySelector(".cmd-group-card-body");
+          if (tr) tr.setAttribute("aria-expanded", "false");
+          if (bd) {
+            bd.hidden = true;
+            bd.style.maxHeight = "";
+          }
         }
       }
       card.classList.toggle("cmd-group-card--open", open);
       var trigger = card.querySelector(".cmd-group-card-trigger");
       var body = card.querySelector(".cmd-group-card-body");
       if (trigger) trigger.setAttribute("aria-expanded", open ? "true" : "false");
-      if (!body) return;
-      body.hidden = !open;
-      if (open) {
-        body.scrollTop = 0;
-        requestAnimationFrame(function() {
-          syncBodyHeight(card);
-          body.scrollTop = 0;
-        });
-      } else {
+      if (body) {
+        body.hidden = !open;
         body.style.maxHeight = "";
+        if (open) body.scrollTop = 0;
       }
+      syncAdvancedSplit(card.closest(".cmd-builder-advanced-region"));
     }
     var form = document.getElementById("cmd-form");
     if (!form) return;
+    var groupCardsLists = form.querySelectorAll(".cmd-builder-group-cards");
+    for (var gc = 0; gc < groupCardsLists.length; gc++) {
+      rememberCardOrder(groupCardsLists[gc]);
+    }
     var cards = form.querySelectorAll(".cmd-group-card");
     for (var j = 0; j < cards.length; j++) {
       var card = cards[j];
       var body = card.querySelector(".cmd-group-card-body");
       if (body) bindWheelScroll(body);
-      var trigger = card.querySelector(".cmd-group-card-trigger");
-      if (trigger) {
-        trigger.addEventListener("click", function() {
-          var c = this.closest(".cmd-group-card");
-          if (!c) return;
-          setCardOpen(c, !c.classList.contains("cmd-group-card--open"));
-        });
-      }
     }
-    window.addEventListener("resize", function() {
-      var openCard = document.querySelector(".cmd-panel.cmd-panel--active .cmd-group-card--open");
-      if (openCard) syncBodyHeight(openCard);
+    form.addEventListener("click", function(e) {
+      if (e.target.closest && e.target.closest(".cmd-group-card-split-dismiss")) {
+        e.preventDefault();
+        e.stopPropagation();
+        var dc = e.target.closest(".cmd-group-card");
+        if (!dc || !form.contains(dc)) return;
+        setCardOpen(dc, false);
+        return;
+      }
+      var card = e.target.closest(".cmd-group-card");
+      if (!card || !form.contains(card)) return;
+      var panel = card.closest(".cmd-panel");
+      if (!panel || !panel.classList.contains("cmd-panel--active")) return;
+      var trigger = card.querySelector(".cmd-group-card-trigger");
+      var body = card.querySelector(".cmd-group-card-body");
+      if (!trigger || !body) return;
+
+      if (card.classList.contains("cmd-group-card--open")) {
+        if (trigger.contains(e.target)) {
+          setCardOpen(card, false);
+          return;
+        }
+        var interactive = e.target.closest(
+          "input, select, textarea, button, a, label, option"
+        );
+        if (interactive && body.contains(interactive) && interactive !== trigger) {
+          return;
+        }
+        return;
+      }
+      setCardOpen(card, true);
     });
     var cmdTypeEl = document.getElementById("cmd-type");
     if (cmdTypeEl) {

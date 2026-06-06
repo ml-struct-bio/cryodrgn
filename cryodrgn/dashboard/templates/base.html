@@ -2416,6 +2416,9 @@ for volume rendering</button>
         if (btn.closest && btn.closest("#cryo-chimerax-modal")) return;
         // Header ChimeraX: custom sizing; global fit overwrites width/height/font.
         if (btn.classList && btn.classList.contains("nav-chimerax-btn")) return;
+        // Command builder (GitHub Pages): advanced-parameter submenu headers use fixed CSS
+        // title/subtitle sizes; global button-fit would overwrite them when the card resizes.
+        if (btn.classList && btn.classList.contains("cmd-group-card-trigger")) return;
         if (!buttonHasVisibleText(btn)) return;
 
         var isCacheButtonTextMatchTarget =
@@ -2663,6 +2666,10 @@ for volume rendering</button>
           btn.dataset.cryoFitButtonsObserved = "1";
           return;
         }
+        if (btn.classList && btn.classList.contains("cmd-group-card-trigger")) {
+          btn.dataset.cryoFitButtonsObserved = "1";
+          return;
+        }
         ro.observe(btn);
         btn.dataset.cryoFitButtonsObserved = "1";
       }
@@ -2674,6 +2681,7 @@ for volume rendering</button>
           observeButton(btn);
           if (btn.closest && btn.closest("#cryo-chimerax-modal")) continue;
           if (btn.classList && btn.classList.contains("nav-chimerax-btn")) continue;
+          if (btn.classList && btn.classList.contains("cmd-group-card-trigger")) continue;
           if (buttonHasVisibleText(btn)) scheduleFit(btn);
         }
       }
@@ -2692,6 +2700,7 @@ for volume rendering</button>
                 observeButton(node);
                 if (!(node.closest && node.closest("#cryo-chimerax-modal"))
                     && !(node.classList && node.classList.contains("nav-chimerax-btn"))
+                    && !(node.classList && node.classList.contains("cmd-group-card-trigger"))
                     && buttonHasVisibleText(node)) {
                   scheduleFit(node);
                 }
@@ -2702,6 +2711,7 @@ for volume rendering</button>
                   observeButton(ib);
                   if (!(ib.closest && ib.closest("#cryo-chimerax-modal"))
                       && !(ib.classList && ib.classList.contains("nav-chimerax-btn"))
+                      && !(ib.classList && ib.classList.contains("cmd-group-card-trigger"))
                       && buttonHasVisibleText(ib)) {
                     scheduleFit(ib);
                   }

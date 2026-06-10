@@ -701,16 +701,31 @@ def record_sequence(
             "Legend switches — mute or highlight individual clusters without redrawing.",
         )
         with _timed_step(log, "Toggle first legend cluster switch", slow_note=False):
-            page.locator(
-                "#color-discrete-switches label.cryo-color-discrete-switch"
-            ).first.click(force=True)
-            try:
-                _wait_scatter_ready(page, 120_000)
-            except Exception:
-                pass
-            for _ in range(max(1, int(round(1.2 * 1000 / frame_ms)))):
-                buf.snap(page)
-                time.sleep(frame_ms / 1000.0)
+            clicked = page.evaluate(
+                """() => {
+                  const sw = document.querySelector(
+                    '#color-discrete-switches label.cryo-color-discrete-switch'
+                  );
+                  if (sw) { sw.click(); return true; }
+                  const inp = document.querySelector(
+                    '#color-discrete-switches input[type="checkbox"]'
+                  );
+                  if (inp) { inp.click(); return true; }
+                  return false;
+                }"""
+            )
+            if not clicked:
+                log(
+                    "Discrete switch UI present but no clickable target; skipping toggle."
+                )
+            else:
+                try:
+                    _wait_scatter_ready(page, 120_000)
+                except Exception:
+                    pass
+                for _ in range(max(1, int(round(1.2 * 1000 / frame_ms)))):
+                    buf.snap(page)
+                    time.sleep(frame_ms / 1000.0)
 
     zn = _znorm_option_value(page)
     if zn:

@@ -848,8 +848,14 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
                     _wait_scatter_ready(page, 180_000)
                     turbo = page.locator('input[name="scatter_palette"][value="Turbo"]')
                     if turbo.count():
-                        turbo.scroll_into_view_if_needed()
-                        turbo.click(force=True)
+                        page.evaluate(
+                            """() => {
+                              const el = document.querySelector(
+                                'input[name="scatter_palette"][value="Turbo"]'
+                              );
+                              if (el) el.click();
+                            }"""
+                        )
                         _wait_scatter_ready(page, 180_000)
     buf.sleep_snap(page, 1.6)
 
@@ -991,8 +997,14 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
             slow_note=True,
         ):
             r = radios.nth(min(1, rc - 1))
-            r.scroll_into_view_if_needed()
-            r.click(force=True)
+            try:
+                r.evaluate("el => el.click()")
+            except Exception:
+                try:
+                    r.scroll_into_view_if_needed(timeout=5000)
+                except Exception:
+                    pass
+                r.click(force=True)
             rendering_ms = _snap_until_pairplot_ready(
                 buf, page, max_steps=PAIRPLOT_SNAP_MAX_STEPS
             )
@@ -1006,8 +1018,14 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
             slow_note=True,
         ):
             r2 = radios.nth(min(2, rc - 1))
-            r2.scroll_into_view_if_needed()
-            r2.click(force=True)
+            try:
+                r2.evaluate("el => el.click()")
+            except Exception:
+                try:
+                    r2.scroll_into_view_if_needed(timeout=5000)
+                except Exception:
+                    pass
+                r2.click(force=True)
             rendering_ms = _snap_until_pairplot_ready(
                 buf, page, max_steps=PAIRPLOT_SNAP_MAX_STEPS
             )

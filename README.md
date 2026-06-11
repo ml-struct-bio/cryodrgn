@@ -16,20 +16,17 @@ a *continuous* distribution over 3D structures by using a neural network based r
 The latest documentation for cryoDRGN is available in our [user guide](https://ez-lab.gitbook.io/cryodrgn/), including
 an overview and walkthrough of cryoDRGN installation, training and analysis. A brief quick start is provided below.
 
-Try the hosted [**command builder**](https://ml-struct-bio.github.io/cryodrgn/) (GitHub Pages) to assemble
-`cryodrgn abinit`, `train_vae`, `train_nn`, and `train_dec` CLI commands in your browser without running the full
-dashboard.
-
 For any feedback, questions, or bugs, please file a Github issue or start a Github discussion.
 
 
-### Updates in Version 4.2.x
-* [NEW] interactive dashboard for visualizing cryoDRGN results in a series of web apps
-* [NEW] cryoDRGN-AI *ab initio* reconstruction method integrated into cryoDRGN as `cryodrgn abinit`
-	* former ab-initio reconstruction methods are deprecated as `cryodrgn abinit_het_old` and `cryodrgn abinit_homo_old`
-	* `cryodrgn analyze`, `landscape`, etc. now support cryoDRGN-AI models as well as the previous cryoDRGN models
-* more memory-efficient *ab initio* reconstruction
-* support for Python 3.13 and PyTorch 2.9; PyTorch <2.0 is no longer supported
+### Updates in Version 4.3.x
+
+* [NEW] end-to-end interactive dashboard web application for visualizing cryoDRGN results
+        launched with `cryodrgn dashboard`
+* [NEW] [command builder page](https://ml-struct-bio.github.io/cryodrgn/) for assembling
+        cryoDRGN commands in your browser
+* `cryodrgn parse_pose_csparc` can automatically detect `-D` resolution from a `.cs` file if available
+* support for `cryodrgn eval_vol` with `abinit` ab-initio reconstruction outputs
 
 A full list of cryoDRGN version updates can be found at our
 [release notes](https://github.com/ml-struct-bio/cryodrgn/releases).

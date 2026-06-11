@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Headless GIF: 3-D latent scatter — camera sweeps and Colour-by covariates.
+"""Headless GIF: 3-D latent scatter — camera motion, zoom, and Colour-by covariates.
 
 The clip composites matplotlib preview PNGs over the Plotly viewport (WebGL blanks in headless Chromium).
 Aside **covariate legend** (histogram / discrete toggles) is hidden — only ``#sc`` and camera motion are
 shown so the GIF never centres cluster-toggle UI.
+
+Full **rendering** hand-offs (overlay polling via :func:`_latent3d_refresh`) are capped at **two** per
+clip so the GIF does not dwell on “Rendering…”. Further ``#sc`` / palette tweaks wait on Plotly then
+composite without the placeholder strip.
 
 Depends on Pillow, Playwright/Chromium — same assumptions as ``record_dashboard_interactions_gif``.
 """
@@ -167,6 +171,17 @@ def _latent3d_refresh(buf: CaptionedExplorerBuffer, page, base: str) -> None:
     _latent3d_sleep_snap_composite(buf, page, base, max(0.001, rms / 1000.0))
 
 
+def _latent3d_quiet_after_restyle(
+    buf: CaptionedExplorerBuffer, page, base: str, hold_s: float
+) -> None:
+    """Wait for the latent-3D overlay without appending render-poll placeholder frames."""
+
+    _wait_latent3d_ready(page, PAIRPLOT_WAIT_MS)
+    _hide_latent3d_plotly_colorbar(page)
+    _hide_latent3d_color_legend(page)
+    _latent3d_sleep_snap_composite(buf, page, base, max(0.001, float(hold_s)))
+
+
 def _latent3d_covariate_demo_values(page, *, max_pick: int = 6) -> list[str]:
     """``#sc`` values for the GIF: skip ``none``, ``labels``, and k-means labelling."""
 
@@ -229,7 +244,7 @@ def record_latent3d_sequence(
         buf,
         "3-D latent scatter — drag rotates the Plotly scene; scroll zooms.",
     )
-    for _ in range(max(1, int(round(0.4 * 1000 / frame_ms)))):
+    for _ in range(max(1, int(round(0.12 * 1000 / frame_ms)))):
         _append_latent3d_rendering_placeholder(buf, page, duration_ms=frame_ms)
         time.sleep(frame_ms / 1000.0)
 
@@ -237,6 +252,7 @@ def record_latent3d_sequence(
         buf,
         "Rendering overlay hides once the latent scatter response is applied in the viewer.",
     )
+    # First full render poll + composite hold (rendering transition 1 of 2 max).
     _latent3d_refresh(buf, page, base)
     _hide_latent3d_plotly_colorbar(page)
     _hide_latent3d_color_legend(page)
@@ -262,21 +278,21 @@ def record_latent3d_sequence(
 
     _stamp_step(
         buf,
-        "Second sweep — climb and wrap azimuth from the far side of the cloud.",
+        "Zoom in — enlarge the preview with a gentle drift instead of a second orbit.",
     )
     sleep_snap_composite_3d(
         buf,
         page,
         base,
         2.75,
-        pan_start=(-0.06, 0.04),
-        pan_end=(0.07, -0.03),
-        zoom_start=1.0,
-        zoom_end=1.04,
-        elev_start=10.0,
-        elev_end=38.0,
-        azim_start=-118.0,
-        azim_end=44.0,
+        pan_start=(-0.02, 0.02),
+        pan_end=(0.02, -0.01),
+        zoom_start=0.78,
+        zoom_end=1.38,
+        elev_start=22.0,
+        elev_end=26.0,
+        azim_start=-92.0,
+        azim_end=-84.0,
     )
 
     demo_cols = _latent3d_covariate_demo_values(page, max_pick=5)
@@ -286,9 +302,23 @@ def record_latent3d_sequence(
     )
     if demo_cols:
         try:
+            # At most one more full _latent3d_refresh (render-poll strip) after the
+            # initial load — use _latent3d_quiet_after_restyle for further covariates.
+            n_render_polls = 0
+
+            def _maybe_full_refresh() -> None:
+                nonlocal n_render_polls
+                if n_render_polls >= 1:
+                    return
+                _latent3d_refresh(buf, page, base)
+                n_render_polls += 1
+
             for i, col in enumerate(demo_cols):
                 page.select_option("#sc", col)
-                _latent3d_refresh(buf, page, base)
+                if i == 0:
+                    _maybe_full_refresh()
+                else:
+                    _latent3d_quiet_after_restyle(buf, page, base, 0.22)
                 _hide_latent3d_plotly_colorbar(page)
                 _hide_latent3d_color_legend(page)
                 _latent3d_sleep_snap_composite(buf, page, base, 0.42)
@@ -307,7 +337,7 @@ def record_latent3d_sequence(
                     )
                 if i == 2:
                     _latent3d_palette_click(page, "Plasma")
-                    _latent3d_refresh(buf, page, base)
+                    _latent3d_quiet_after_restyle(buf, page, base, 0.22)
                     _hide_latent3d_plotly_colorbar(page)
                     _hide_latent3d_color_legend(page)
                     _latent3d_sleep_snap_composite(buf, page, base, 0.4)

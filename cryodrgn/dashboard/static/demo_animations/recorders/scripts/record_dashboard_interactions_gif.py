@@ -923,18 +923,20 @@ def record_sequence(page, base: str, buf: FrameBuffer, *, log) -> None:
         center_end=(0.0, 0.0, 0.04),
         locked_base=locked_base,
     )
+    # Second move: zoom in (smaller ``r``) with only a slight orbit instead of a
+    # wide azimuth sweep — matches the dedicated latent-3D recorder pacing.
     sleep_snap_latent3d_pan(
         buf,
         page,
         0.75,
         elev_start=24.0,
-        elev_end=28.0,
+        elev_end=25.5,
         azim_start=-62.0,
-        azim_end=-48.0,
-        r_start=2.06,
-        r_end=2.02,
+        azim_end=-56.0,
+        r_start=2.08,
+        r_end=1.58,
         center_start=(0.0, 0.0, 0.04),
-        center_end=(0.0, 0.0, 0.10),
+        center_end=(0.0, 0.0, 0.08),
         locked_base=locked_base,
     )
     sleep_snap_latent3d_pan(

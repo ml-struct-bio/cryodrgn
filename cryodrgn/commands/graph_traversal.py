@@ -152,15 +152,15 @@ class GraphLatentTraversor:
 
 def main(args: argparse.Namespace) -> None:
     """Find the shortest path in a z-space neighbor graph (see `add_args` above)."""
-    zdata_np = pickle.load(open(args.zfile, "rb"))
-    zdata = torch.from_numpy(zdata_np)
-
     use_cuda = torch.cuda.is_available()
-    print(f"Use cuda {use_cuda}")
     device = torch.device("cuda" if use_cuda else "cpu")
-    zdata = zdata.to(device)
-    N, D = zdata.shape
+    print(f"Use cuda {use_cuda}")
 
+    with open(args.zfile, "rb") as fi:
+        zdata_np = pickle.load(fi)
+
+    zdata = torch.from_numpy(zdata_np).to(device)
+    N, D = zdata.shape
     anchors = parse_anchors(args.anchors, zdata, args.zfile)
     n2 = (zdata * zdata).sum(-1, keepdim=True)
     B = min(args.batch_size, N)
@@ -195,7 +195,7 @@ def main(args: argparse.Namespace) -> None:
         max_dist = max_dist.to("cpu")
     neighbors = neighbors.to("cpu")
     ndist = ndist.to("cpu")
-    edges = []
+    edges = list()
     for i in range(neighbors.shape[0]):
         for j in range(neighbors.shape[1]):
             if max_dist is None or ndist[i, j] < max_dist:

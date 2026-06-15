@@ -22,10 +22,13 @@ def parse_args():
 
 
 def main(args):
-    z = pickle.load(open(args.input, "rb"))
+    with open(args.input, "rb") as fi:
+        z = pickle.load(fi)
+
     if args.stride:
         z = z[:: args.stride]
     print(z.shape)
+
     reducer = umap.UMAP()
     z_embedded = reducer.fit_transform(z)
     if args.o:

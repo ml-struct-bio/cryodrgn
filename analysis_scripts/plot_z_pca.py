@@ -60,7 +60,8 @@ def main(args):
     np.random.seed(args.seed)
     fig, ax = plt.subplots()
     print(args.input)
-    x = pickle.load(open(args.input, "rb"))
+    with open(args.input, "rb") as fi:
+        x = pickle.load(fi)
 
     # PCA
     pca = PCA(x.shape[1])

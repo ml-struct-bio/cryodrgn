@@ -203,9 +203,11 @@ def main(args):
     # Load the particle stack used as input for the reconstruction model
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
+        with open(args.ind, "rb") as fi:
+            ind = pickle.load(fi)
     else:
         ind = None
+
     if "encode_mode" in cfg["model_args"]:
         enc_mode = cfg["model_args"]["encode_mode"]
     else:

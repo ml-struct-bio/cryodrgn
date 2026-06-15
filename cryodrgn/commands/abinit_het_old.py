@@ -785,7 +785,8 @@ def main(args):
     # load index filter
     if args.ind is not None:
         logger.info("Filtering image dataset with {}".format(args.ind))
-        ind = pickle.load(open(args.ind, "rb"))
+        with open(args.ind, "rb") as fi:
+            ind = pickle.load(fi)
     else:
         ind = None
 

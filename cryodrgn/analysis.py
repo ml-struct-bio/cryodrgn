@@ -28,11 +28,14 @@ warnings.filterwarnings(
 
 def parse_loss(f: str) -> np.ndarray:
     """Parse loss from run.log"""
-    lines = open(f).readlines()
+    with open(f) as fi:
+        lines = fi.readlines()
+
     lines = [x for x in lines if "====" in x]
     regex = "total\sloss\s=\s(\d.\d+)"  # type: ignore  # noqa: W605
     matches = [re.search(regex, x) for x in lines]
-    loss = []
+
+    loss = list()
     for m in matches:
         # assert m is not None
         if m:

@@ -1,16 +1,15 @@
 """Dashboard support for the ``analyze_landscape_full`` 3D volume-landscapes view.
 
 Loads ``landscape.{epoch}/landscape_full`` pickles (``z.sampled.pkl``,
-``ind.sampled.pkl``, ``vol_pca_all.pkl``, …), builds the sampled ``plot_df``
-used for colouring, and produces the Plotly JSON for the scatter (axes
-restricted to ``landscape_vol_PC*`` from ``vol_pca_all.pkl``).
+``ind.sampled.pkl``, ``vol_pca_all.pkl``, …) and builds the sampled ``plot_df``
+used for colouring and the volume-landscape 3D scatter (axes restricted to
+``landscape_vol_PC*`` from ``vol_pca_all.pkl``).
 """
 
 from __future__ import annotations
 
 import os
 import re
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -21,7 +20,6 @@ from cryodrgn.dashboard.column_names import (
     VOL_LANDSCAPE_IS_SKETCH_CENTROID,
     VOL_LANDSCAPE_NEAREST_SKETCH_VOL,
 )
-from cryodrgn.dashboard.covariate_labels import covariate_display_map
 from cryodrgn.dashboard.data import DashboardExperiment
 
 _LANDSCAPE_FULL_SUBDIR = "landscape_full"
@@ -203,6 +201,7 @@ def attach_landscape_nearest_sketch_vol_column(
     try:
         centers_ind = load_sketch_centroid_plot_df_rows(kmeans_dir, n)
     except (FileNotFoundError, OSError, ValueError):
+        # Sketch-centroid indices are optional; leave is_cent as zeros.
         pass
     else:
         plot_rows = out[VOL_LANDSCAPE_3D_PLOT_DF_ROW].to_numpy(dtype=np.int64)
@@ -299,84 +298,3 @@ def landscape_full_sampled_plot_df(exp: DashboardExperiment) -> pd.DataFrame:
     built = _build_landscape_full_sampled_plot_df(exp)
     _LANDSCAPE_FULL_SAMPLED_DF_CACHE[key] = built
     return built
-
-
-def landscape_full_3d_scatter_plotly_json(
-    exp: DashboardExperiment,
-    *,
-    xcol: str,
-    ycol: str,
-    zcol: str,
-    color_col: str | None,
-    continuous_palette: str | None = None,
-    color_filter: dict[str, Any] | None = None,
-    discrete_label_colors: dict[str, str] | None = None,
-) -> str:
-    """Plotly figure JSON for the volume-landscape 3D scatter (volume PCA axes only)."""
-    from cryodrgn.dashboard.plots_scatter import scatter3d_z_json
-
-    sampled = landscape_full_sampled_plot_df(exp)
-    vol_axes = landscape_full_vol_pca_axis_columns(sampled)
-    if len(vol_axes) < 3:
-        raise ValueError(
-            "vol_pca_all.pkl must yield at least three landscape_vol_PC* columns "
-            "in the sampled table."
-        )
-    ax_allow = frozenset(vol_axes)
-    return scatter3d_z_json(
-        exp,
-        xcol,
-        ycol,
-        zcol,
-        color_col,
-        continuous_palette=continuous_palette,
-        color_filter=color_filter,
-        discrete_label_colors=discrete_label_colors,
-        plot_df=sampled,
-        uirevision="scatter3d_z_landscape_full",
-        xyz_axes_allowed=ax_allow,
-        volume_landscape_3d_style=True,
-    )
-
-
-def landscape_full_3d_latent_3d_template_kwargs(
-    exp: DashboardExperiment,
-    *,
-    scatter3d_url: str,
-) -> dict[str, Any]:
-    """Keyword arguments for ``latent_3d.html`` when the interface is fully available.
-
-    Raises ``FileNotFoundError``, ``ValueError``, or ``OSError`` if the sampled
-    table cannot be built. Raises ``ValueError`` if fewer than three volume
-    PCA columns are present.
-    """
-    sampled = landscape_full_sampled_plot_df(exp)
-    vol_axes = landscape_full_vol_pca_axis_columns(sampled)
-    if len(vol_axes) < 3:
-        raise ValueError(
-            "Expected at least three columns in vol_pca_all.pkl (landscape_vol_PC1 …) "
-            "for this epoch."
-        )
-    dx, dy, dz = vol_axes[0], vol_axes[1], vol_axes[2]
-    cols = landscape_full_sampled_numeric_covariates(sampled)
-    return {
-        "page_title": "3D volume landscapes · cryoDRGN",
-        "nav_bar_title": "3D volume landscapes",
-        "lead_html": LANDSCAPE_FULL_3D_LEAD_HTML,
-        "axis_cols": vol_axes,
-        "numeric_cols": cols,
-        "covariate_display_map": covariate_display_map(cols),
-        "default_x": dx,
-        "default_y": dy,
-        "default_z": dz,
-        "scatter3d_url": scatter3d_url,
-        "legend_context_body_extra": LANDSCAPE_FULL_3D_LEGEND_CONTEXT_EXTRA,
-        "show_vol_landscape_quick_actions": True,
-    }
-
-
-def landscape_full_3d_not_ready_template_kwargs(
-    exp_epoch: int, error_message: str = ""
-) -> dict[str, Any]:
-    """Keyword arguments for ``volume_landscape_3d_need_outputs.html``."""
-    return {"exp_epoch": int(exp_epoch), "error_message": error_message}

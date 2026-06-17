@@ -57,7 +57,6 @@ _LANDSCAPE_ANIM_ROOT: str | None = None
 # optional rotate_keyframes: { vol_index: png_path } (first frame of each rotate GIF)
 _LANDSCAPE_ANIM_ENTRIES: dict[str, dict[str, Any]] = {}
 
-_LANDSCAPE_VOLPCA_KMEANS_RE = re.compile(r"^kmeans(\d+)$")
 _LANDSCAPE_VOLPCA_PKL_RE = re.compile(r"^vol_pca_(\d+)\.pkl$")
 _LANDSCAPE_VOL_PC_COL_RE = re.compile(r"^landscape_vol_PC(\d+)$", re.IGNORECASE)
 # ``vol_mean.mrc`` and similar match ``vol_*.mrc`` but are not k-means centroids.
@@ -440,11 +439,13 @@ def _sketch_continuous_covariate_per_volume_values(
                                         else np.nan
                                     )
                             except ValueError:
+                                # Plot-row lookup failed for this volume; leave NaN.
                                 pass
                     if np.isfinite(out).any():
                         _, cmin, cmax = _continuous_series_stats(bounds)
                         return out, cmin, cmax
         except (FileNotFoundError, ValueError, OSError):
+            # Sampled landscape table unavailable; fall back to plot_df below.
             pass
 
     df = exp.plot_df
@@ -611,6 +612,7 @@ def _plot_color_mode_is_continuous_numeric(
             ):
                 return True
         except (FileNotFoundError, ValueError, OSError):
+            # Sketch bundle missing; check plot_df covariates instead.
             pass
     col = _resolve_covariate_column_name(exp.plot_df, pcm)
     return bool(
@@ -1021,6 +1023,7 @@ def _cycle_gif_from_png_paths(
             try:
                 f.close()
             except Exception:
+                # Best-effort PIL frame cleanup after GIF assembly.
                 pass
 
 
@@ -1419,6 +1422,7 @@ def generate_landscape_volume_animations(
             try:
                 os.remove(tpath)
             except OSError:
+                # Best-effort removal of temporary cycle PNGs.
                 pass
 
     with _LANDSCAPE_ANIM_LOCK:

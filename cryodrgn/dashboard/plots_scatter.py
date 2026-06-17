@@ -54,7 +54,7 @@ from cryodrgn.dashboard.plots_figure_utils import (
 
 # Interactive Plotly 3-D scatters (legend filters must not change trace x/y/z — see helpers
 # below). Consumed by ``/latent-3d``, ``/api/scatter3d_z``, ``/api/scatter3d_z_landscape_full``,
-# and ``landscape_full_3d_scatter_plotly_json``. Static Matplotlib exports
+# ``scatter3d_z_json`` (and the landscape-full API route). Static Matplotlib exports
 # (``scatter3d_z_preview_png``, ``scatter3d_discrete_level_png_bytes``) are separate.
 
 
@@ -108,20 +108,6 @@ def _scatter3d_filter_visibility_on_subsample(
 # Plotly ``scatter3d`` draws per-point ``marker.size`` arrays smaller than a scalar at the
 # same value; boost filtered visible sizes so they scale up from the subsample baseline.
 _SCATTER3D_FILTERED_MARKER_SIZE_ARRAY_BOOST = 2.0
-
-
-def _scatter3d_glyph_count_for_filter(
-    n_sub: int,
-    filter_vis: np.ndarray | None,
-) -> int:
-    """Effective n for the size curve when enlarging a partial legend filter."""
-    n_sub = int(n_sub)
-    if filter_vis is None or bool(np.all(filter_vis)):
-        return n_sub
-    n_visible = int(np.count_nonzero(filter_vis))
-    if 0 < n_visible < n_sub:
-        return n_visible
-    return n_sub
 
 
 def _scatter3d_style_marker_size_opacity(

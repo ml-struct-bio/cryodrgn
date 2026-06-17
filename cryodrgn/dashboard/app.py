@@ -7,7 +7,6 @@ static/template paths, and URL wiring.
 
 from __future__ import annotations
 
-import logging
 import os
 import uuid
 
@@ -51,8 +50,6 @@ __all__ = [
     "_particle_explorer_scatter_cap_from_env",
     "_particle_explorer_scatter_max_points",
 ]
-
-logger = logging.getLogger(__name__)
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _TEMPLATE_DIR = os.path.join(_THIS_DIR, "templates")

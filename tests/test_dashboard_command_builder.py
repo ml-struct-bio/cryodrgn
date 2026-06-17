@@ -653,15 +653,25 @@ class TestCommandBuilderPage:
         assert "CMD_WRAP_MIN_CHARS = 80" in html
         assert "CMD_LINE_MAX_CHARS = 100" in html
         assert "layoutCommandLineGroups" in html
+        assert "layoutBodyLineGroupsEvenly" in html
+        assert "lineGroupCharLen" in html
         assert "CMD_LINE_HANG_SPACES" in html
         assert "cmd-line-hang" in html
         assert "--cmd-line-hang-indent: 2ch" in html
         assert "updateCommandDisplay" in html
         assert "Advanced parameters" in html
         assert "cmd-builder-advanced-region" in html
-        assert "gap: calc(0.45rem * 3 * 1.13)" in html
-        assert "min-width: calc(4.75rem * 1.3)" in html
+        assert "gap: calc(0.45rem * 1.13 * 0.8)" in html
+        assert "flex: 0 0 41%" in html
+        assert "height: 41%" in html
+        assert (
+            "flex-direction: column"
+            in html.split("body.cmd-builder-github-pages .cmd-output-actions {", 1)[1][
+                :220
+            ]
+        )
         assert "max-height: 17dvh" in html
+        assert "gap: 0.35rem calc(0.85rem * 0.8)" in html
         assert "cmd-builder-cmd-dock" in html
         assert "cmd-arg-unit--scaled" in html
         assert "cmd-arg-unit--num-epochs" in html

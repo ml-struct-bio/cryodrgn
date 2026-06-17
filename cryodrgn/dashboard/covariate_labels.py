@@ -43,14 +43,6 @@ def landscape_vol_umap_pretty_label(umap_index_1_based: int) -> str:
     return f"Vol UMAP{int(umap_index_1_based)}"
 
 
-def landscape_vol_umap_column_pretty_label(column: str) -> str:
-    """Pretty label for ``landscape_vol_UMAP*`` columns; other names left unchanged."""
-    m = re.fullmatch(r"landscape_vol_umap(\d+)", str(column), re.IGNORECASE)
-    if not m:
-        return str(column)
-    return landscape_vol_umap_pretty_label(int(m.group(1)))
-
-
 def covariate_display_name(name: str) -> str:
     """Human-friendly covariate names in dashboard selectors."""
     if name == "labels":

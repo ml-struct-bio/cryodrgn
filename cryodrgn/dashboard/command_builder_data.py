@@ -1118,19 +1118,6 @@ BACKPROJECT_VOXEL_GROUPS: list[Group] = [
     ),
 ]
 
-# Primary-band group titles surfaced in the GitHub Pages dataset / run-parameter pair.
-COMMAND_BUILDER_PRIMARY_RUN_GROUP_TITLES: frozenset[str] = frozenset(
-    {
-        "Training parameters",
-        "Backprojection parameters",
-        "Run options",
-        "Volumes to generate",
-        "Extra arguments for volume generation",
-        "Volume generation arguments",
-        "Volume mapping arguments",
-    }
-)
-
 
 def _remap_group_ids(
     groups: list[Group], from_prefix: str, to_prefix: str

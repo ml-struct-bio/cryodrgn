@@ -183,6 +183,7 @@ def _extract_chimerax_view_matrix_text(
             with open(log_path, encoding="utf-8", errors="replace") as fh:
                 chunks.append(fh.read())
         except OSError:
+            # View-matrix log is optional; parse stdout/stderr only.
             pass
     text = "\n".join(chunks)
     if not text.strip():
@@ -360,6 +361,7 @@ def render_static_png(
             try:
                 os.remove(matrix_log)
             except OSError:
+                # Best-effort removal of the temporary view-matrix log.
                 pass
     return None
 

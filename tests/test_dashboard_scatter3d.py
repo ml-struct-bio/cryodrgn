@@ -36,7 +36,6 @@ from cryodrgn.dashboard.plots_figure_utils import (
 from cryodrgn.dashboard.plots_scatter import (
     _SCATTER3D_FILTERED_MARKER_SIZE_ARRAY_BOOST,
     _scatter3d_apply_filter_visibility_sizes,
-    _scatter3d_glyph_count_for_filter,
     _scatter3d_marker_sizes_with_legend_filter,
     scatter3d_discrete_level_png_bytes,
     scatter3d_z_json,
@@ -64,7 +63,9 @@ def _scatter3d_figure(
     color: str | None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    return decode_plotly_figure(json.loads(scatter3d_z_json(exp, x, y, z, color, **kwargs)))
+    return decode_plotly_figure(
+        json.loads(scatter3d_z_json(exp, x, y, z, color, **kwargs))
+    )
 
 
 def _expected_dashboard_scatter3d_glyph(
@@ -417,7 +418,6 @@ class TestScatter3dLegendFilterAxisStability:
         assert hasattr(plots_scatter_mod, "_scatter3d_subsample_full_table")
         assert hasattr(plots_scatter_mod, "_scatter3d_filter_visibility_on_subsample")
         assert hasattr(plots_scatter_mod, "_scatter3d_apply_filter_visibility_sizes")
-        assert hasattr(plots_scatter_mod, "_scatter3d_glyph_count_for_filter")
         assert hasattr(plots_scatter_mod, "_scatter3d_marker_sizes_with_legend_filter")
 
     def test_scatter3d_apply_filter_visibility_sizes_keeps_scalar_when_all_visible(
@@ -478,16 +478,6 @@ class TestScatter3dLegendFilterAxisStability:
         assert plotly_trace_array(m, "x") == plotly_trace_array(u, "x")
         assert m["marker"]["size"] == u["marker"]["size"]
         assert m["marker"]["opacity"] == u["marker"]["opacity"]
-
-    def test_scatter3d_glyph_count_for_filter_curve(self) -> None:
-        import numpy as np
-
-        assert _scatter3d_glyph_count_for_filter(1000, None) == 1000
-        all_vis = np.ones(1000, dtype=bool)
-        assert _scatter3d_glyph_count_for_filter(1000, all_vis) == 1000
-        part = all_vis.copy()
-        part[::2] = False
-        assert _scatter3d_glyph_count_for_filter(1000, part) == 500
 
     def test_scatter3d_full_subsample_filter_matches_no_colour_glyph(
         self, dashboard_experiment: DashboardExperiment

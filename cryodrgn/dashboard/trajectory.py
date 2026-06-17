@@ -813,6 +813,7 @@ def default_trajectory_endpoints_xy(
             if nrm > 1e-15:
                 v = cand / nrm
     except np.linalg.LinAlgError:
+        # Ill-conditioned SVD; keep the axis-aligned default direction.
         pass
 
     t = xc @ v

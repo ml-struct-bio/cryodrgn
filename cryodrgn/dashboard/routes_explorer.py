@@ -495,6 +495,7 @@ def api_scatter():
             try:
                 max_pts = max(1, min(int(raw_max_pts), 200_000))
             except ValueError:
+                # Invalid max_points query param; keep the default cap.
                 pass
     preselect_rows, pre_err = _parse_preselect_rows_param(
         request.args.get("preselect_rows"),
@@ -507,6 +508,7 @@ def api_scatter():
         try:
             marker_size = max(0.5, min(float(raw_ms), 20))
         except ValueError:
+            # Invalid marker_size query param; keep the default size.
             pass
     use_svg = request.args.get("use_svg") == "1"
     try:

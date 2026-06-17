@@ -42,6 +42,7 @@ from cryodrgn.dashboard.landscape_volpca import (
     meta_for_api,
     sketch_vol_marker_hex_by_vol_index,
 )
+from tests.conftest import decode_plotly_figure, plotly_trace_array
 
 # Must match ``DASHBOARD_ANALYZE_EPOCH`` in ``tests/conftest.py``.
 _ANALYZE_EPOCH = 2
@@ -270,10 +271,10 @@ class TestLandscapeVolpcaMetaAndScatter:
             axis_y="umap:1",
             color_mode="none",
         )
-        fig = json.loads(js)
+        fig = decode_plotly_figure(json.loads(js))
         trace = fig["data"][0]
-        assert trace["x"] == [0.0, 2.0, 4.0]
-        assert trace["y"] == [1.0, 3.0, 5.0]
+        assert plotly_trace_array(trace, "x") == [0.0, 2.0, 4.0]
+        assert plotly_trace_array(trace, "y") == [1.0, 3.0, 5.0]
 
 
 class TestSketchVolContinuousColors:

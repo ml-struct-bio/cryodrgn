@@ -6,7 +6,7 @@ import argparse
 import shutil
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Union, Generator, Any
+from typing import Any, Generator, Optional, Union
 from dataclasses import dataclass
 
 from cryodrgn.commands import analyze, train_vae
@@ -565,6 +565,38 @@ def flask_client(dashboard_workdir: str):
 # ---------------------------------------------------------------------------
 # Shared helpers for dashboard test modules
 # ---------------------------------------------------------------------------
+
+
+def is_plotly_typed_array(value: Any) -> bool:
+    return isinstance(value, dict) and "dtype" in value and "bdata" in value
+
+
+def decode_plotly_value(value: Any) -> Any:
+    """Expand Plotly 6 typed-array blobs (``{dtype, bdata[, shape]}``) to Python lists."""
+    if is_plotly_typed_array(value):
+        import base64
+
+        import numpy as np
+
+        raw = base64.b64decode(value["bdata"])
+        arr = np.frombuffer(raw, dtype=np.dtype(value["dtype"]))
+        shape = value.get("shape")
+        if shape is not None:
+            arr = arr.reshape(tuple(int(s) for s in str(shape).split(",")))
+        return arr.tolist()
+    if isinstance(value, list):
+        return [decode_plotly_value(v) for v in value]
+    if isinstance(value, dict):
+        return {k: decode_plotly_value(v) for k, v in value.items()}
+    return value
+
+
+def decode_plotly_figure(fig: dict[str, Any]) -> dict[str, Any]:
+    return decode_plotly_value(fig)
+
+
+def plotly_trace_array(trace: dict[str, Any], key: str) -> Any:
+    return decode_plotly_value(trace[key])
 
 
 def dashboard_repo_root() -> "Path":

@@ -260,10 +260,10 @@ def main(args: argparse.Namespace) -> None:
     all_2d_rows = []
     tilt_image_dims = args.tilt_dim
 
-    voltage = optics_df["rlnVoltage"].values[0]
-    angpix = optics_df["rlnImagePixelSize"].values[0]
-    cs = optics_df["rlnSphericalAberration"].values[0]
-    w = optics_df["rlnAmplitudeContrast"].values[0]
+    voltage = optics_df["rlnVoltage"].iloc[0]
+    angpix = optics_df["rlnImagePixelSize"].iloc[0]
+    cs = optics_df["rlnSphericalAberration"].iloc[0]
+    w = optics_df["rlnAmplitudeContrast"].iloc[0]
     ps = 0
 
     for idx, row in particles_df.iterrows():

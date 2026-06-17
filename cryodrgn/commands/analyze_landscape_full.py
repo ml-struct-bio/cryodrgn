@@ -25,6 +25,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from matplotlib.colors import ListedColormap
 import seaborn as sns
 import umap
@@ -410,10 +411,11 @@ def choose_cmap(M):
 
 
 def get_colors_for_cmap(cmap, M):
+    cm = colormaps.get_cmap(cmap)
     if M <= 20:
-        colors = plt.cm.get_cmap(cmap)(np.arange(M) / (np.ceil(M / 10) * 10))
+        colors = cm(np.arange(M) / (np.ceil(M / 10) * 10))
     else:
-        colors = plt.cm.get_cmap(cmap)(np.linspace(0, 1, M))
+        colors = cm(np.linspace(0, 1, M))
     return colors
 
 

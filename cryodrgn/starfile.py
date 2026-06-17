@@ -213,12 +213,15 @@ class Starfile:
                 )
             else:
                 vals = np.array(
-                    [self.data_optics[fieldname][0] for _ in range(self.df.shape[0])]
+                    [
+                        self.data_optics[fieldname].iloc[0]
+                        for _ in range(self.df.shape[0])
+                    ]
                 )
 
         # If can't find this field in the optics table, look in the primary data table
         elif fieldname in self.df:
-            vals = self.df[fieldname].values.reshape(-1)
+            vals = np.asarray(self.df[fieldname]).ravel()
         else:
             vals = None
 

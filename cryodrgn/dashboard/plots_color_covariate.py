@@ -57,7 +57,7 @@ def _lower_color_series_is_discrete(s: pd.Series) -> bool:
         return True
     if pd.api.types.is_integer_dtype(s) and not pd.api.types.is_float_dtype(s):
         return True
-    if s.dtype == object:
+    if pd.api.types.is_string_dtype(s) or s.dtype == object:
         return True
     if pd.api.types.is_float_dtype(s):
         u = np.unique(s.to_numpy())

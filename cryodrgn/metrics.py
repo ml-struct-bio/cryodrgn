@@ -163,7 +163,7 @@ def get_trans_metrics(trans_gt, trans_pred, rotmat, correct_global_trans=False):
         b = torch.cat([(trans_pred - trans_gt)[:, 0], (trans_pred - trans_gt)[:, 1]], 0)
 
         matrix_a = torch.cat([rotmat[:, 0, :], rotmat[:, 1, :]], 0)
-        u = torch.tensor(np.linalg.lstsq(matrix_a, b, rcond=-1)[0]).float()
+        u = torch.tensor(np.linalg.lstsq(matrix_a, b, rcond=None)[0]).float()
         matrix_n = torch.tensor([[1, 0, 0], [0, 1, 0]]).reshape(1, 2, 3).float()
         batch_size = rotmat.shape[0]
 

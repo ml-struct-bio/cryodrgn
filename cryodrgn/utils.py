@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def get_igraph_from_adjacency(adjacency):
     sources, targets = adjacency.nonzero()
-    weights = (adjacency[sources, targets]).A.ravel()
+    weights = np.asarray(adjacency[sources, targets]).ravel()
     g = ig.Graph(directed=False)
     g.add_vertices(adjacency.shape[0])  # this adds adjacency.shape[0] vertices
     g.add_edges(list(zip(sources, targets)))

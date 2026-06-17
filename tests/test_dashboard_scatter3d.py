@@ -43,7 +43,10 @@ from cryodrgn.dashboard.plots_scatter import (
 )
 from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from tests.conftest import (
+    decode_plotly_figure,
+    decode_plotly_value,
     js_function_body,
+    plotly_trace_array,
     png_b64_rgb,
     read_dashboard_static_js,
     read_latent_3d_html,
@@ -61,7 +64,7 @@ def _scatter3d_figure(
     color: str | None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    return json.loads(scatter3d_z_json(exp, x, y, z, color, **kwargs))
+    return decode_plotly_figure(json.loads(scatter3d_z_json(exp, x, y, z, color, **kwargs)))
 
 
 def _expected_dashboard_scatter3d_glyph(
@@ -84,9 +87,9 @@ def _expected_dashboard_scatter3d_glyph(
 
 
 def _trace_visible_glyph(trace: dict[str, Any]) -> tuple[float, float, int, int]:
-    n_total = len(trace["x"])
+    n_total = len(plotly_trace_array(trace, "x"))
     op = float(trace["marker"]["opacity"])
-    sz = trace["marker"]["size"]
+    sz = decode_plotly_value(trace["marker"]["size"])
     if isinstance(sz, list):
         vis = [float(s) for s in sz if float(s) > 0.0]
         assert vis, "expected at least one visible point"
@@ -98,25 +101,27 @@ def _trace_visible_glyph(trace: dict[str, Any]) -> tuple[float, float, int, int]
 def _assert_filter_preserves_plotly_xyz(unfiltered: dict, filtered: dict) -> None:
     u = unfiltered["data"][0]
     f = filtered["data"][0]
-    assert len(f["x"]) == len(u["x"])
-    assert f["x"] == u["x"]
-    assert f["y"] == u["y"]
-    assert f["z"] == u["z"]
+    ux = plotly_trace_array(u, "x")
+    fx = plotly_trace_array(f, "x")
+    assert len(fx) == len(ux)
+    assert fx == ux
+    assert plotly_trace_array(f, "y") == plotly_trace_array(u, "y")
+    assert plotly_trace_array(f, "z") == plotly_trace_array(u, "z")
     for axis_name in ("xaxis", "yaxis", "zaxis"):
         scene = filtered["layout"]["scene"]
         assert "range" not in (scene.get(axis_name) or {})
-    sizes = f["marker"]["size"]
+    sizes = decode_plotly_value(f["marker"]["size"])
     assert isinstance(sizes, list)
-    assert len(sizes) == len(f["x"])
+    assert len(sizes) == len(fx)
     assert any(float(s) == 0.0 for s in sizes)
     assert any(float(s) > 0.0 for s in sizes)
-    colors = f["marker"]["color"]
+    colors = decode_plotly_value(f["marker"]["color"])
     assert isinstance(colors, list)
     assert not any(str(c).strip().lower().startswith("rgba") for c in colors[:50])
     op = f["marker"]["opacity"]
     assert isinstance(op, (int, float))
     vis_sizes = [float(s) for s in sizes if float(s) > 0.0]
-    u_sz = u["marker"]["size"]
+    u_sz = decode_plotly_value(u["marker"]["size"])
     u_base = float(u_sz) if not isinstance(u_sz, list) else float(max(u_sz))
     if vis_sizes and len(vis_sizes) == len(sizes):
         assert max(vis_sizes) == pytest.approx(u_base)
@@ -470,7 +475,7 @@ class TestScatter3dLegendFilterAxisStability:
         mismatched = _scatter3d_figure(e, "z0", "z1", "z2", "znorm", color_filter=stale)
         u = unfiltered["data"][0]
         m = mismatched["data"][0]
-        assert m["x"] == u["x"]
+        assert plotly_trace_array(m, "x") == plotly_trace_array(u, "x")
         assert m["marker"]["size"] == u["marker"]["size"]
         assert m["marker"]["opacity"] == u["marker"]["opacity"]
 
@@ -695,7 +700,7 @@ class TestScatter3dLegendFilterAxisStability:
             no_subsample=True,
             color_filter={"kind": "discrete", "keys": [fk]},
         )
-        assert len(unfiltered["data"][0]["x"]) == len(sub)
+        assert len(plotly_trace_array(unfiltered["data"][0], "x")) == len(sub)
         _assert_filter_preserves_plotly_xyz(unfiltered, filtered)
         point_cap = max(len(sub), 1)
         u_sz, _, _, n_all = _trace_visible_glyph(unfiltered["data"][0])

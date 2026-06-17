@@ -35,6 +35,8 @@ from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
 from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
 from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
 from tests.conftest import (
+    decode_plotly_figure,
+    decode_plotly_value,
     read_dashboard_static_css,
     read_dashboard_static_js,
     read_dashboard_template,
@@ -114,8 +116,8 @@ class TestDashboardScatterApis:
     def test_api_scatter_honors_explicit_max_points(self, flask_client) -> None:
         r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none&max_points=2")
         assert r.status_code == 200
-        js = r.get_json()
-        assert len(js["data"][0]["customdata"]) == 2
+        js = decode_plotly_figure(r.get_json())
+        assert len(decode_plotly_value(js["data"][0]["customdata"])) == 2
 
     def test_api_covariate_legend_context_landscape_scope_without_outputs_is_400(
         self, flask_client
@@ -158,8 +160,8 @@ class TestDashboardScatterApis:
             "/api/scatter?x=UMAP1&y=UMAP2&color=none&explorer_scatter=1"
         )
         assert r.status_code == 200
-        js = r.get_json()
-        assert len(js["data"][0]["customdata"]) == 100
+        js = decode_plotly_figure(r.get_json())
+        assert len(decode_plotly_value(js["data"][0]["customdata"])) == 100
 
     @pytest.mark.parametrize(
         "extra_query",
@@ -184,8 +186,8 @@ class TestDashboardScatterApis:
     def test_api_scatter_full_returns_entire_df(self, flask_client) -> None:
         r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none&full=1")
         assert r.status_code == 200
-        js = r.get_json()
-        assert len(js["data"][0]["customdata"]) == 100
+        js = decode_plotly_figure(r.get_json())
+        assert len(decode_plotly_value(js["data"][0]["customdata"])) == 100
 
 
 class TestDashboardScatterCapHelpers:

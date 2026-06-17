@@ -23,7 +23,7 @@ jobs:
       NUMEXPR_NUM_THREADS: 1
     strategy:
       matrix:
-        python: [ '3.10', '3.11' , '3.12' , '3.13' ]
+        python: [ '3.10', '3.11' , '3.12' , '3.13' , '3.14']
         os: [ macos-latest, ubuntu-latest ]
         include:
           - python: '3.10'
@@ -34,6 +34,8 @@ jobs:
             torch: '2.6'
           - python: '3.13'
             torch: '2.9'
+          - python: '3.14'
+            torch: '2.12'
       fail-fast: false
 
     steps:

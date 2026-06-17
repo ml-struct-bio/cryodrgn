@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import io
 import matplotlib.colors as mcolors
+from matplotlib import colormaps
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -841,7 +842,7 @@ def scatter3d_z_preview_png(
             else:
                 cvals, cmin, cmax = _continuous_series_stats(sub[color_col])
                 norm = mcolors.Normalize(vmin=cmin, vmax=cmax)
-                cmap = plt.get_cmap(mpl_cmap_name)
+                cmap = colormaps.get_cmap(mpl_cmap_name)
                 cplot = np.where(np.isfinite(cvals), cvals, 0.5 * (cmin + cmax))
                 m = ax.scatter(
                     xs,

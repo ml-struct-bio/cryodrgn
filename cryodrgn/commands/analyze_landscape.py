@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import seaborn as sns
+from matplotlib import colormaps
 from matplotlib.colors import ListedColormap
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.decomposition import PCA
@@ -275,10 +276,11 @@ def choose_cmap(M):
 
 
 def get_colors_for_cmap(cmap, M):
+    cm = colormaps.get_cmap(cmap)
     if M <= 20:
-        colors = plt.cm.get_cmap(cmap)(np.arange(M) / (np.ceil(M / 10) * 10))
+        colors = cm(np.arange(M) / (np.ceil(M / 10) * 10))
     else:
-        colors = plt.cm.get_cmap(cmap)(np.linspace(0, 1, M))
+        colors = cm(np.linspace(0, 1, M))
     return colors
 
 

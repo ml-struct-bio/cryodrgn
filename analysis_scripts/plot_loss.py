@@ -17,7 +17,7 @@ def parse_args():
 
 
 def main(args):
-    cmap = matplotlib.cm.get_cmap("jet")
+    cmap = matplotlib.colormaps.get_cmap("jet")
     i = 0
     cs = np.arange(len(args.input)) / len(args.input)
     for f in args.input:

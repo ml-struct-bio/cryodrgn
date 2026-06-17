@@ -25,7 +25,6 @@ dependencies = [
     "scipy>=1.3.1",
     "scikit-learn",
     "seaborn",
-    "cufflinks",
     "jupyterlab",
     "notebook<7",
     "umap-learn",
@@ -45,8 +44,6 @@ dev = [
     "pyright==1.1.300",
     "pytest>=6",
     "pytest-xdist",
-    "sphinx",
-    "sphinx-rtd-theme",
     "twine"
 ]
 

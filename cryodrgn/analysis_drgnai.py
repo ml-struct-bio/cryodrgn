@@ -246,7 +246,9 @@ class ModelAnalyzer:
         plt.close()
 
         plt.figure(2)
-        sns.distplot(z)
+        sns.histplot(
+            z, kde=True, stat="density", kde_kws={"cut": 3}, alpha=0.43, edgecolor=None
+        )
         plt.xlabel("z")
         plt.savefig(os.path.join(self.outdir, "z_hist.png"))
         plt.close()

@@ -80,7 +80,9 @@ def main(args):
 
     # Plot histogram
     plt.figure()
-    sns.distplot(x)
+    sns.histplot(
+        x, kde=True, stat="density", kde_kws={"cut": 3}, alpha=0.43, edgecolor=None
+    )
     plt.show()
 
 

@@ -543,7 +543,7 @@ def main(args: argparse.Namespace) -> None:
     plt.legend(markerscale=5)
     plt.xlabel("UMAP1")
     plt.ylabel("UMAP2")
-    plt.savefig(f"{clustering_dir}/umap.png")
+    plt.savefig(os.path.join(clustering_dir, "umap.png"))
     plt.close()
 
     # Plot landscape
@@ -558,7 +558,7 @@ def main(args: argparse.Namespace) -> None:
     # make new ax object for the cbar
     cbar_ax = g.fig.add_axes([0.85, 0.25, 0.03, 0.4])  # x, y, width, height
     plt.colorbar(cax=cbar_ax)
-    plt.savefig(f"{outdir}/volpca_landscape.png")
+    plt.savefig(os.path.join(outdir, "volpca_landscape.png"))
     plt.close()
 
     # Copy viz notebook

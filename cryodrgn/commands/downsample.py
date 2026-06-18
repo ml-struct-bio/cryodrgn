@@ -324,7 +324,7 @@ def main(args: argparse.Namespace) -> None:
                 )
             ]
         if isinstance(src, StarfileSource) and src.resolution is not None:
-            apix = src.apix or 1.0
+            apix = 1.0 if src.apix is None else src.apix
             src.set_optics_values(
                 "_rlnImagePixelSize", np.round(apix * src.resolution / args.D, 6)
             )

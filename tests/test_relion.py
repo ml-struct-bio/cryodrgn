@@ -343,3 +343,28 @@ def test_relion50(tmpdir, rln_starfile):
     newfile = Starfile(os.path.join(tmpdir, "new.star"))
     starfile = Starfile(rln_starfile)
     assert newfile == starfile
+
+
+@pytest.mark.parametrize("rln_starfile", ["relion5.star"], indirect=True)
+def test_parse_star_numeric_dtypes(rln_starfile):
+    """Numeric .star columns should not remain as pandas string dtype."""
+    _, optics = parse_star(rln_starfile)
+    assert optics["_rlnImagePixelSize"].dtype.kind == "f"
+    assert optics["_rlnImageSize"].dtype.kind in {"f", "i", "u"}
+    assert optics["_rlnOddZernike"].dtype.kind != "f"
+
+
+def test_starfile_source_len_respects_indices():
+    """StarfileSource len() must follow ImageSource filtering, not the full .star table."""
+    from cryodrgn.source import StarfileSource
+    from cryodrgn.utils import load_pkl
+
+    ind = load_pkl(os.path.join(pytest.DATADIR, "ind4.pkl"))
+    src = StarfileSource(
+        os.path.join(pytest.DATADIR, "toy_projections_13.star"),
+        datadir=pytest.DATADIR,
+        lazy=True,
+        indices=ind,
+    )
+    assert len(src) == len(ind)
+    assert src.df.shape[0] == 13

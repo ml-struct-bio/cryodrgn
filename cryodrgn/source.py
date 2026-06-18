@@ -308,7 +308,11 @@ class ImageSource:
             indices = np.arange(self.n)
 
         if chunksize is None:
-            header_args = {"Apix": self.apix or 1.0} if header is None else dict()
+            if header is None:
+                header_args = {"Apix": 1.0 if self.apix is None else self.apix}
+            else:
+                header_args = dict()
+
             write_mrc(
                 output_file,
                 self.images(indices),
@@ -632,7 +636,7 @@ class TxtFileSource(_MRCDataFrameSource):
             f.write("\n".join(self.df["__mrc_filename"].unique()))
 
 
-class StarfileSource(_MRCDataFrameSource, Starfile):
+class StarfileSource(Starfile, _MRCDataFrameSource):
     """Image stacks indexed using a .star file in RELION3.0 or RELION3.1 format.
 
     In RELION3.1 format, these files will have an optics table that lists parameters
@@ -645,6 +649,10 @@ class StarfileSource(_MRCDataFrameSource, Starfile):
     df (pd.DataFrame):  The primary data table in the .star file.
     data_optics (pd.Dataframe): `None` if RELION3.1
     """
+
+    def __len__(self) -> int:
+        """Number of images in this stack (respecting any index filter)."""
+        return self.n
 
     def __init__(
         self,

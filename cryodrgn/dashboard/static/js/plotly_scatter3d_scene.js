@@ -5,6 +5,8 @@
 (function(global) {
   "use strict";
 
+  var PLOTLY = global.CryoPlotlyArrays;
+
   function snapHasCamera(snap) {
     if (!snap || !snap.camera || typeof snap.camera !== "object") return false;
     var eye = snap.camera.eye;
@@ -338,7 +340,7 @@
     }
     var tr = fig.data[0];
     var live = gd.data[0];
-    return !!(tr.x && live.x && tr.x.length === live.x.length);
+    return !!(tr.x && live.x && PLOTLY.rowsEqualLength(tr.x, live.x));
   }
 
   function traceRestyleFromFigure(fig, gd) {

@@ -33,7 +33,7 @@ dependencies = [
     "jupyterlab>=4",
     "notebook>=7",
     "ipywidgets>=8",
-    "plotly>=5",
+    "plotly>=5,<7",
     "anywidget",
 ]
 

@@ -1777,7 +1777,8 @@
     var meta = gd && gd.layout && gd.layout.meta;
     if (meta && meta.cdrgn_color_mode) return String(meta.cdrgn_color_mode);
     var mc = gd && gd.data && gd.data[0] && gd.data[0].marker && gd.data[0].marker.color;
-    if (Array.isArray(mc) && mc.length && typeof mc[0] === "string" && /^#/.test(String(mc[0]))) {
+    var mcLen = plotlyArrayLength(mc);
+    if (isPlotlyArray(mc) && mcLen > 0 && typeof plotlyAt(mc, 0) === "string" && /^#/.test(String(plotlyAt(mc, 0)))) {
       return "discrete";
     }
     return "continuous";
@@ -1821,45 +1822,65 @@
     return null;
   }
 
+  var PLOTLY = CryoPlotlyArrays;
+  var customdataLength = PLOTLY.customdataLength;
+  var plotlyArrayLength = PLOTLY.length;
+  var isPlotlyArray = PLOTLY.isArray;
+  var plotlyDataRowAsArray = PLOTLY.rowAsArray;
+
   function scatterRowToTraceIndex(plotRow) {
     if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return -1;
     var want = Number(plotRow);
     if (!Number.isFinite(want)) return -1;
     var cd = gd.data[0].customdata;
-    for (var i = 0; i < cd.length; i++) {
-      if (cd[i] && Number(cd[i][1]) === want) return i;
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var row = plotlyDataRowAsArray(PLOTLY.rowAt(cd, i));
+      if (row.length > 1 && Number(row[1]) === want) return i;
     }
     return -1;
+  }
+
+  function plotlyAt(arr, idx) {
+    return PLOTLY.valueAt(arr, idx);
   }
 
   function scatterMarkerFillHexAtTraceIndex(ti) {
     if (ti < 0 || !gd || !gd.data || !gd.data[0]) return null;
     var full = gd._fullData && gd._fullData[0];
-    if (full && full.marker && Array.isArray(full.marker.color) && full.marker.color[ti] != null) {
-      var fromFull = plotlyColorToCss(full.marker.color[ti]);
-      if (fromFull) return fromFull;
+    if (full && full.marker && isPlotlyArray(full.marker.color)) {
+      var fromFullVal = plotlyAt(full.marker.color, ti);
+      if (fromFullVal != null) {
+        var fromFull = plotlyColorToCss(fromFullVal);
+        if (fromFull) return fromFull;
+      }
     }
     var trace = gd.data[0];
     var mc = trace.marker && trace.marker.color;
-    if (Array.isArray(mc) && mc[ti] != null) {
-      var direct = plotlyColorToCss(mc[ti]);
-      if (direct) return direct;
-      if (typeof mc[ti] === "string" && /^#/.test(mc[ti])) return mc[ti];
+    if (isPlotlyArray(mc)) {
+      var directVal = plotlyAt(mc, ti);
+      if (directVal != null) {
+        var direct = plotlyColorToCss(directVal);
+        if (direct) return direct;
+        if (typeof directVal === "string" && /^#/.test(directVal)) return directVal;
+      }
     }
     var cd = trace.customdata;
-    var row = cd && cd[ti] ? cd[ti] : null;
-    var covKey = row && row.length >= 3 && row[2] != null ? String(row[2]) : "";
+    var row = plotlyDataRowAsArray(PLOTLY.rowAt(cd, ti));
+    var covKey = row.length >= 3 && row[2] != null ? String(row[2]) : "";
     if (scatterColorMode() === "discrete") {
       if (covKey && discreteScatterColorMap()[covKey]) return discreteScatterColorMap()[covKey];
-      if (Array.isArray(mc) && mc[ti] != null && typeof mc[ti] === "string") return mc[ti];
+      var dVal = plotlyAt(mc, ti);
+      if (isPlotlyArray(mc) && dVal != null && typeof dVal === "string") return dVal;
     } else if (covKey !== "") {
       var cVal = parseFloat(covKey);
       if (isFinite(cVal)) {
         var fromVal = continuousHexFromCovariateValue(cVal);
         if (fromVal) return fromVal;
       }
-      if (Array.isArray(mc) && mc[ti] != null && typeof mc[ti] === "number" && isFinite(mc[ti])) {
-        return continuousHexFromCovariateValue(mc[ti]);
+      var cMc = plotlyAt(mc, ti);
+      if (isPlotlyArray(mc) && cMc != null && typeof cMc === "number" && isFinite(cMc)) {
+        return continuousHexFromCovariateValue(cMc);
       }
     }
     return null;

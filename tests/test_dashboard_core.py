@@ -193,28 +193,149 @@ class TestDashboardScatterApis:
 class TestDashboardScatterCapHelpers:
     """Caps shared by the CLI ``--filter-max`` flag and explorer scatter."""
 
-    def test_explorer_scatter_cap_reads_filter_max_env(
+    @pytest.mark.parametrize(
+        "env_value,expected_cap,expected_from_env,func",
+        [
+            ("120000", 120_000, True, dash_app._particle_explorer_scatter_max_points),
+            (
+                "not_an_int",
+                200_000,
+                False,
+                dash_app._particle_explorer_scatter_max_points,
+            ),
+            ("nope", 500_000, False, dash_app._filter_ui_scatter_max_points),
+            ("800000", 800_000, True, dash_app._particle_explorer_scatter_max_points),
+            (
+                "30000000",
+                2_000_000,
+                True,
+                dash_app._particle_explorer_scatter_max_points,
+            ),  # clamped to max
+            (
+                "10",
+                50_000,
+                True,
+                dash_app._particle_explorer_scatter_max_points,
+            ),  # clamped to min
+        ],
+    )
+    def test_scatter_cap_env_variations(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        env_value: str,
+        expected_cap: int,
+        expected_from_env: bool,
+        func: callable,
+    ) -> None:
+        """Consolidated test for scatter cap helpers with various env values."""
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", env_value)
+        assert func() == expected_cap
+        monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
+
+    def test_scatter_cap_base_helper_directly(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "120000")
-        assert dash_app._particle_explorer_scatter_max_points() == 120_000
+        """Test the base _scatter_cap helper that powers all cap functions."""
+        from cryodrgn.dashboard.route_helpers import _scatter_cap
+
+        # Valid env value
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "75000")
+        cap, from_env = _scatter_cap(100_000)
+        assert cap == 75_000
+        assert from_env is True
+
+        # Invalid env value falls back to default
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "invalid")
+        cap, from_env = _scatter_cap(100_000)
+        assert cap == 100_000
+        assert from_env is False
+
+        # Empty env uses default
+        monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
+        cap, from_env = _scatter_cap(100_000)
+        assert cap == 100_000
+        assert from_env is False
+
+    def test_explorer_scatter_cap_from_env_indicator(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test the boolean indicator for env override presence."""
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "12345")
         assert dash_app._particle_explorer_scatter_cap_from_env() is True
         monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
 
-    def test_explorer_scatter_cap_invalid_env_falls_back_to_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "not_an_int")
-        assert dash_app._particle_explorer_scatter_max_points() == 200_000
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "bad")
         assert dash_app._particle_explorer_scatter_cap_from_env() is False
         monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
 
-    def test_filter_ui_cap_invalid_env_uses_half_million_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "nope")
-        assert dash_app._filter_ui_scatter_max_points() == 500_000
-        monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
+
+class TestApiTryHelper:
+    """Tests for the _api_try helper that standardizes API error handling."""
+
+    @pytest.fixture
+    def api_try(self):
+        """Fixture to run _api_try tests within a Flask app context."""
+        from cryodrgn.dashboard.route_helpers import _api_try
+
+        app = dash_app.create_app(workdir=None)
+        with app.app_context():
+            yield _api_try
+
+    def test_api_try_success_returns_result(self, api_try) -> None:
+        def success_fn():
+            return {"data": "success"}
+
+        result = api_try(success_fn, "test error")
+        assert result == {"data": "success"}
+
+    def test_api_try_valueerror_returns_400(self, api_try) -> None:
+        def raise_valueerror():
+            raise ValueError("invalid input")
+
+        response, status = api_try(raise_valueerror, "test error")
+        assert status == 400
+        assert "error" in response.get_json()
+        assert "invalid input" in response.get_json()["error"]
+
+    def test_api_try_runtimeerror_returns_500(self, api_try) -> None:
+        def raise_runtimeerror():
+            raise RuntimeError("server error")
+
+        response, status = api_try(raise_runtimeerror, "test error")
+        assert status == 500
+        assert "error" in response.get_json()
+        assert "server error" in response.get_json()["error"]
+
+    def test_api_try_exception_returns_500_with_logging(self, api_try) -> None:
+        def raise_exception():
+            raise Exception("unexpected error")
+
+        # Create a mock logger
+        class MockLogger:
+            def __init__(self):
+                self.messages = []
+
+            def exception(self, msg):
+                self.messages.append(msg)
+
+        mock_logger = MockLogger()
+        response, status = api_try(
+            raise_exception, "custom error message", logger=mock_logger
+        )
+
+        assert status == 500
+        assert "error" in response.get_json()
+        assert "unexpected error" in response.get_json()["error"]
+        assert "custom error message" in mock_logger.messages
+
+    def test_api_try_no_logger_doesnt_fail(self, api_try) -> None:
+        def raise_exception():
+            raise Exception("error without logger")
+
+        # Should not raise even with no logger
+        response, status = api_try(raise_exception, "test message")
+        assert status == 500
+        assert "error" in response.get_json()
 
 
 class TestDashboardZPkl:
@@ -234,21 +355,40 @@ class TestDashboardZPkl:
 
 
 class TestListZEpochs:
-    def test_missing_workdir_returns_empty(self, tmp_path) -> None:
-        assert list_z_epochs(str(tmp_path / "missing")) == []
+    """Epoch discovery from z.N.pkl + analyze.N directory pairs."""
 
-    def test_requires_matching_analyze_dir(self, tmp_path) -> None:
-        # ``z.N.pkl`` without ``analyze.N/`` should be skipped.
-        (tmp_path / "z.1.pkl").write_bytes(b"")
-        (tmp_path / "z.2.pkl").write_bytes(b"")
-        (tmp_path / "analyze.2").mkdir()
-        assert list_z_epochs(str(tmp_path)) == [2]
-
-    def test_multi_epoch_sorted(self, tmp_path) -> None:
-        for ep in (5, 1, 3):
-            (tmp_path / f"z.{ep}.pkl").write_bytes(b"")
-            (tmp_path / f"analyze.{ep}").mkdir()
-        assert list_z_epochs(str(tmp_path)) == [1, 3, 5]
+    @pytest.mark.parametrize(
+        "setup_func,expected",
+        [
+            # Missing workdir returns empty
+            (lambda p: None, []),
+            # z.N.pkl without matching analyze.N is skipped
+            (
+                lambda p: [
+                    (p / "z.1.pkl").write_bytes(b""),
+                    (p / "z.2.pkl").write_bytes(b""),
+                    (p / "analyze.2").mkdir(),
+                ],
+                [2],
+            ),
+            # Multiple epochs are sorted
+            (
+                lambda p: [
+                    [
+                        (p / f"z.{ep}.pkl").write_bytes(b""),
+                        (p / f"analyze.{ep}").mkdir(),
+                    ]
+                    for ep in (5, 1, 3)
+                ],
+                [1, 3, 5],
+            ),
+        ],
+    )
+    def test_epoch_discovery(self, tmp_path, setup_func, expected) -> None:
+        """Consolidated tests for epoch listing with various directory states."""
+        if setup_func is not None:
+            setup_func(tmp_path)
+        assert list_z_epochs(str(tmp_path)) == expected
 
 
 class TestDashboardExperimentExtras:
@@ -692,7 +832,11 @@ class TestRoutesTableIntegrity:
     def test_every_entry_is_callable(self) -> None:
         for rule, view_func, methods in dash_app._ROUTES:
             assert callable(view_func), rule
-            assert isinstance(methods, tuple) and methods
+            # Methods can be a single string or a tuple of strings
+            if isinstance(methods, str):
+                assert methods, rule
+            else:
+                assert isinstance(methods, tuple) and methods, rule
 
     def test_create_app_registers_every_route(self, dashboard_workdir: str) -> None:
         app = dash_app.create_app(workdir=dashboard_workdir)

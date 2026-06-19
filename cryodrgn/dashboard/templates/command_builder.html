@@ -220,6 +220,170 @@
     border-color: rgba(196, 112, 58, 0.55);
     outline: none;
   }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-grid--5.cmd-builder-primary-fields-fit {
+    align-items: stretch;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell.cmd-batch-size-anchor-cell {
+    height: 100%;
+    align-self: stretch;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-batch-size-anchor-cell {
+    overflow: visible;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-value-wrap {
+    display: grid;
+    grid-template-columns: 4.85rem minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    column-gap: 0.35rem;
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    align-items: stretch;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    width: 4.85rem;
+    min-width: 4.85rem;
+    max-width: 4.85rem;
+    height: 100%;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: stretch;
+    gap: 0.2rem;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale--labeled {
+    height: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot--single {
+    justify-content: flex-end;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot--single .cmd-batch-size-scale {
+    flex: 0 0 61%;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: stretch;
+    height: 61%;
+    max-height: 61%;
+    gap: 0.2rem;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot--single .cmd-batch-size-step {
+    flex: 1 1 0;
+    width: auto;
+    height: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-scale-group {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0.35rem;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 1px solid rgba(36, 59, 83, 0.28);
+    border-radius: 4px;
+    padding: 0.2rem 0.35rem;
+    background: rgba(255, 255, 255, 0.55);
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-scale-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 0.2rem;
+    flex: 0 0 auto;
+    height: 100%;
+    min-height: 0;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-scale-label {
+    display: flex;
+    align-items: center;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+    text-align: left;
+    line-height: 1.15;
+    white-space: normal;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale-group,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-step,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale-label {
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit
+    .cmd-builder-primary-arg-cell .cmd-batch-size-controls-slot,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit
+    .cmd-builder-primary-arg-cell .cmd-batch-size-controls-slot .cmd-batch-size-step,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit
+    .cmd-builder-primary-arg-cell .cmd-batch-size-controls-slot .cmd-batch-size-scale-label {
+    font-size: 0.82rem;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit
+    .cmd-builder-primary-arg-cell .cmd-batch-size-controls-slot .cmd-batch-size-scale-label {
+    font-size: 0.68rem;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-step {
+    margin: 0;
+    padding: 0.12rem 0.55rem;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    flex: 1 1 0;
+    min-height: 0;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.35;
+    border: 1px solid rgba(36, 59, 83, 0.35);
+    border-radius: 4px;
+    background: var(--paper, #fff);
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+    font-family: var(--font-sans);
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-step:hover,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-step:focus-visible {
+    background: rgba(196, 112, 58, 0.12);
+    border-color: rgba(196, 112, 58, 0.55);
+    outline: none;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack,
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack .cryo-select-line,
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack .cmd-arg-value-row,
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack input[type="number"] {
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-group-card-arg-slot:has(.cmd-batch-size-value-wrap) {
+    overflow: visible;
+  }
   .cmd-form .check-line {
     display: flex;
     align-items: center;
@@ -1887,33 +2051,64 @@
             aria-label="Next run number" title="Next run number">+</button>
   </div>
   {%- endmacro %}
+  {% macro render_batch_size_scale_controls(show_label=false) -%}
+    <span class="cmd-batch-size-scale{% if show_label %} cmd-batch-size-scale--labeled{% endif %}">
+      {%- if show_label -%}
+      <span class="cmd-batch-size-scale-group">
+        <span class="cmd-batch-size-scale-label">All batch sizes</span>
+        <span class="cmd-batch-size-scale-buttons">
+      {%- endif -%}
+      <button type="button"
+              class="cmd-batch-size-step"
+              data-factor="0.5"
+              aria-label="Halve all batch sizes"
+              title="Halve all batch sizes">½</button>
+      <button type="button"
+              class="cmd-batch-size-step"
+              data-factor="2"
+              aria-label="Double all batch sizes"
+              title="Double all batch sizes">×2</button>
+      {%- if show_label -%}
+        </span>
+      </span>
+      {%- endif -%}
+    </span>
+  {%- endmacro %}
   {% macro schema_arg_title(a) -%}
     {%- if a.help -%}{{ a.help }}{%- endif -%}
-    {%- endmacro %}
-    {% macro arg_display_name_span(help_text, label_text=none, arg=none) -%}
-      {%- if help_text and (arg is none or arg|arg_show_display_name) -%}
-        {%- set dn = help_text|arg_display_name -%}
-        {%- if dn and (not label_text or dn|lower != label_text|lower) -%}
-          <span class="cmd-arg-display-name">{{ dn }}</span>
-        {%- endif -%}
+  {%- endmacro %}
+  {% macro arg_display_name_span(help_text, label_text=none, arg=none) -%}
+    {%- if help_text and (arg is none or arg|arg_show_display_name) -%}
+      {%- set dn = help_text|arg_display_name -%}
+      {%- if dn and (not label_text or dn|lower != label_text|lower) -%}
+        <span class="cmd-arg-display-name">{{ dn }}</span>
       {%- endif -%}
-    {%- endmacro %}
-    {% macro arg_display_name_for_field(field_id, label_text=none) -%}
-      {%- if field_id.endswith('_ind') -%}
-        <span class="cmd-arg-display-name">filtering .pkl</span>
-      {%- else -%}
-        {{ arg_display_name_span(command_builder_required_field_titles.get(field_id), label_text) }}
-      {%- endif -%}
-    {%- endmacro %}
-    {% macro ctf_row_title(field_id) -%}
-      {%- set h = command_builder_required_field_titles.get(field_id) -%}
-      {%- if h and default_ctf %} title="{{ (h ~ ' · ' ~ default_ctf)|trim|e }}"
-      {%- elif h %} title="{{ h|e }}"
-      {%- elif default_ctf %} title="{{ default_ctf|e }}"
-      {%- endif -%}
-    {%- endmacro %}
-    {% macro render_cmd_arg(a) %}
+    {%- endif -%}
+  {%- endmacro %}
+  {% macro arg_display_name_for_field(field_id, label_text=none) -%}
+    {%- if field_id.endswith('_ind') -%}
+      <span class="cmd-arg-display-name">filtering .pkl</span>
+    {%- else -%}
+      {{ arg_display_name_span(command_builder_required_field_titles.get(field_id), label_text) }}
+    {%- endif -%}
+  {%- endmacro %}
+  {% macro ctf_row_title(field_id) -%}
+    {%- set h = command_builder_required_field_titles.get(field_id) -%}
+    {%- if h and default_ctf %} title="{{ (h ~ ' · ' ~ default_ctf)|trim|e }}"
+    {%- elif h %} title="{{ h|e }}"
+    {%- elif default_ctf %} title="{{ default_ctf|e }}"
+    {%- endif -%}
+  {%- endmacro %}
+  {% macro render_cmd_arg(a, cmd_key=none) %}
       {% set st = schema_arg_title(a)|trim %}
+      {% set batch_ids = command_builder_batch_size_arg_ids.get(cmd_key, []) if cmd_key else [] %}
+      {% set is_batch_anchor = (
+        command_builder_page_mode
+        and a.w == 'number'
+        and a|arg_is_batch_size_denominated
+        and batch_ids
+        and a.id == batch_ids[0]
+      ) %}
       {% if a.w == 'flag_true' %}
         <label class="check-line"{{ title_attr(st) }}
           ><input type="checkbox" id="{{ a.id }}"{{ title_attr(st) }} />
@@ -1964,12 +2159,34 @@
           {% endfor %}
         </div>
       {% elif a.w == 'number' %}
+        {% if is_batch_anchor %}
+        <div class="cmd-batch-size-value-wrap">
+          <div class="cmd-batch-size-controls-slot{% if batch_ids|length == 1 %} cmd-batch-size-controls-slot--single{% endif %}">
+            {{ render_batch_size_scale_controls(batch_ids|length > 1) }}
+          </div>
+          <div class="cmd-batch-size-field-stack">
+            <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}
+              ><code>{{ a.cli[0] }}</code>{{ arg_display_name_span(a.help, arg=a) }}
+            </label>
+            <span class="cmd-arg-value-row">
+              <input type="number"
+                     id="{{ a.id }}"
+                     data-cmd-batch-size="1"
+                     {% if a.placeholder %}placeholder="{{ a.placeholder|e }}"{% endif %}
+                     autocomplete="off"
+                     {{ title_attr(st) }} />
+              <span class="cmd-arg-unit cmd-arg-unit--scaled" aria-hidden="true">images</span>
+            </span>
+          </div>
+        </div>
+        {% else %}
         <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}
           ><code>{{ a.cli[0] }}</code>{{ arg_display_name_span(a.help, arg=a) }}
         </label>
         <span class="cmd-arg-value-row">
           <input type="number"
                  id="{{ a.id }}"
+                 {% if a|arg_is_batch_size_denominated %}data-cmd-batch-size="1" {% endif %}
                  {% if a.placeholder %}placeholder="{{ a.placeholder|e }}"{% endif %}
                  autocomplete="off"
                  {{ title_attr(st) }} />
@@ -1977,6 +2194,7 @@
           elif a|arg_is_epoch_denominated %}<span class="cmd-arg-unit cmd-arg-unit--scaled" aria-hidden="true">epochs</span>{%
           elif a|arg_is_batch_size_denominated %}<span class="cmd-arg-unit cmd-arg-unit--scaled" aria-hidden="true">images</span>{% endif %}
         </span>
+        {% endif %}
       {% else %}
         <label class="cryo-select-line" for="{{ a.id }}"{{ title_attr(st) }}
           ><code>{{ a.cli[0] }}</code>{{ arg_display_name_span(a.help, arg=a) }}
@@ -1988,20 +2206,29 @@
                {{ title_attr(st) }} />
       {% endif %}
     {% endmacro %}
-    {% macro render_github_primary_arg(a) %}
+    {% macro render_github_primary_arg(a, cmd_key=none) %}
+      {% set batch_ids = command_builder_batch_size_arg_ids.get(cmd_key, []) if cmd_key else [] %}
+      {% set is_batch_anchor = (
+        command_builder_page_mode
+        and a.w == 'number'
+        and a|arg_is_batch_size_denominated
+        and batch_ids
+        and a.id == batch_ids[0]
+      ) %}
       <div class="cmd-builder-primary-arg-cell{%
         if a.w == 'number' %} cmd-builder-primary-arg-cell--numeric{%
-        elif a.w == 'select' %} cmd-builder-primary-arg-cell--wide{% endif %}">
-        {{ render_cmd_arg(a) }}
+        elif a.w == 'select' %} cmd-builder-primary-arg-cell--wide{% endif %}{%
+        if is_batch_anchor %} cmd-batch-size-anchor-cell{% endif %}">
+        {{ render_cmd_arg(a, cmd_key) }}
       </div>
     {% endmacro %}
-    {% macro render_github_checkbox_band(args) %}
+    {% macro render_github_checkbox_band(args, cmd_key=none) %}
       {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
       {% for a in args if a.w in check_ws %}
         {% if loop.first %}
           <div class="cmd-builder-primary-checkboxes">
         {% endif %}
-        {{ render_cmd_arg(a) }}
+        {{ render_cmd_arg(a, cmd_key) }}
         {% if loop.last %}
           </div>
         {% endif %}
@@ -2039,7 +2266,7 @@
           <div class="cmd-builder-primary-region-body cmd-builder-primary-region-body--dataset-split">
             {% if ds and ds.args and (ds.args | selectattr('w', 'in', check_ws) | list | length > 0) %}
             <div class="cmd-builder-primary-col cmd-builder-primary-col--checks cmd-builder-primary-checks-grid--2 cmd-builder-primary-checks-fit">
-              {{ render_github_checkbox_band(ds.args) }}
+              {{ render_github_checkbox_band(ds.args, cmd_key) }}
             </div>
             {% endif %}
             <div class="cmd-builder-dataset-split-main">
@@ -2072,7 +2299,7 @@
               {% if ds and ds.args %}
               <div class="cmd-builder-dataset-rest-fields cmd-builder-primary-fields-fit">
                 {% for a in ds.args if a.w not in check_ws and a.id != ind_id %}
-                  {{ render_github_primary_arg(a) }}
+                  {{ render_github_primary_arg(a, cmd_key) }}
                 {% endfor %}
               </div>
               {% endif %}
@@ -2088,10 +2315,10 @@
           <div class="cmd-builder-primary-region-content">
           <div class="cmd-builder-primary-region-body cmd-builder-primary-fields-grid--5 cmd-builder-primary-fields-fit">
             {% if train.group and train.group.args %}
-              {{ render_github_checkbox_band(train.group.args) }}
+              {{ render_github_checkbox_band(train.group.args, cmd_key) }}
               {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
               {% for a in train.group.args if a.w not in check_ws %}
-                {{ render_github_primary_arg(a) }}
+                {{ render_github_primary_arg(a, cmd_key) }}
               {% endfor %}
             {% else %}
               <p class="muted" style="margin:0;font-size:calc(0.8rem * var(--gp-font-scale));color:var(--muted,#5c6b7a);">
@@ -2159,9 +2386,9 @@
           <div class="cmd-builder-primary-region-body">
             {% if run and run.args %}
               {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
-              {{ render_github_checkbox_band(run.args) }}
+              {{ render_github_checkbox_band(run.args, cmd_key) }}
               {% for a in run.args if a.w not in check_ws %}
-                {{ render_github_primary_arg(a) }}
+                {{ render_github_primary_arg(a, cmd_key) }}
               {% endfor %}
             {% endif %}
           </div>
@@ -2176,9 +2403,9 @@
           <div class="cmd-builder-primary-region-body">
             {% if vol.group and vol.group.args %}
               {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
-              {{ render_github_checkbox_band(vol.group.args) }}
+              {{ render_github_checkbox_band(vol.group.args, cmd_key) }}
               {% for a in vol.group.args if a.w not in check_ws %}
-                {{ render_github_primary_arg(a) }}
+                {{ render_github_primary_arg(a, cmd_key) }}
               {% endfor %}
             {% endif %}
           </div>
@@ -2251,7 +2478,7 @@
               'Volumes to generate', 'Extra arguments for volume generation',
               'Volume generation arguments'] %}
             {% if group.title not in _primary_titles %}
-              {{ render_schema_group(group) }}
+              {{ render_schema_group(group, cmd_key) }}
             {% endif %}
           {% endfor %}
         </div>
@@ -2271,17 +2498,17 @@
         {% endif %}
         <div class="cmd-builder-tilt-region-body">
           {% set check_ws = ['flag_true', 'flag_false', 'no_amp'] %}
-          {{ render_github_checkbox_band(tilt.args) }}
+          {{ render_github_checkbox_band(tilt.args, cmd_key) }}
           <div class="cmd-builder-tilt-region-fields">
             {% for a in tilt.args if a.w not in check_ws %}
-              {{ render_github_primary_arg(a) }}
+              {{ render_github_primary_arg(a, cmd_key) }}
             {% endfor %}
           </div>
         </div>
       </section>
       {% endif %}
     {% endmacro %}
-    {% macro render_schema_group(group) %}
+    {% macro render_schema_group(group, cmd_key=none) %}
       {% if command_builder_page_mode %}
         <div class="cmd-group-card">
           <button type="button"
@@ -2293,7 +2520,7 @@
           </button>
           <div class="cmd-group-card-body" hidden>
             {% for a in group.args %}
-              <div class="cmd-group-card-arg-slot">{{ render_cmd_arg(a) }}</div>
+              <div class="cmd-group-card-arg-slot">{{ render_cmd_arg(a, cmd_key) }}</div>
             {% endfor %}
           </div>
         </div>
@@ -3602,6 +3829,47 @@
     }
   }
 
+  function scaleBatchSizeInput(input, factor) {
+    if (!input || !factor) return false;
+    var raw = String(input.value || "").trim();
+    if (!raw) raw = String(input.placeholder || "").trim();
+    if (!raw) return false;
+    var n = parseFloat(raw);
+    if (!isFinite(n) || n <= 0) return false;
+    n = Math.max(1, Math.round(n * factor));
+    input.value = String(n);
+    return true;
+  }
+
+  function initBatchSizeScalers() {
+    if (!form) return;
+    var bars = form.querySelectorAll(".cmd-batch-size-scale");
+    for (var i = 0; i < bars.length; i++) {
+      (function(bar) {
+        if (bar.dataset.batchScaleBound === "1") return;
+        bar.dataset.batchScaleBound = "1";
+        var panel = bar.closest(".cmd-panel");
+        var steps = bar.querySelectorAll(".cmd-batch-size-step");
+        for (var j = 0; j < steps.length; j++) {
+          steps[j].addEventListener("click", function() {
+            var factor = parseFloat(this.getAttribute("data-factor"));
+            if (!panel || !isFinite(factor) || factor <= 0) return;
+            var inputs = panel.querySelectorAll(
+              'input[type="number"][data-cmd-batch-size="1"]'
+            );
+            var changed = false;
+            for (var k = 0; k < inputs.length; k++) {
+              if (scaleBatchSizeInput(inputs[k], factor)) changed = true;
+            }
+            if (changed && inputs.length) {
+              inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+            }
+          });
+        }
+      })(bars[i]);
+    }
+  }
+
   var out = document.getElementById("cmd-out");
   var form = document.getElementById("cmd-form");
   var cmdType = document.getElementById("cmd-type");
@@ -3750,23 +4018,57 @@
   });
 
   initOutdirSteppers();
+  initBatchSizeScalers();
   syncPanels();
 
   {% if command_builder_page_mode %}
   var fitPrimaryFieldsPending = false;
+
+  function containerOverflowIgnoringBatchControls(container) {
+    if (!container) return false;
+    var slots = container.querySelectorAll(".cmd-batch-size-controls-slot");
+    if (!slots.length) {
+      return container.scrollWidth > container.clientWidth + 2;
+    }
+    var saved = [];
+    for (var i = 0; i < slots.length; i++) {
+      saved.push([slots[i], slots[i].style.display]);
+      slots[i].style.display = "none";
+    }
+    var overflow = container.scrollWidth > container.clientWidth + 2;
+    for (var j = 0; j < saved.length; j++) {
+      saved[j][0].style.display = saved[j][1];
+    }
+    return overflow;
+  }
 
   function primaryFieldsOverflow(container) {
     if (!container || container.offsetParent === null) return false;
     var cells = container.querySelectorAll(".cmd-builder-primary-arg-cell");
     for (var i = 0; i < cells.length; i++) {
       var cell = cells[i];
+      if (cell.classList.contains("cmd-batch-size-anchor-cell")) {
+        var batchLabel = cell.querySelector(
+          ".cmd-batch-size-field-stack .cryo-select-line"
+        );
+        var batchInp = cell.querySelector(
+          ".cmd-batch-size-field-stack input, select"
+        );
+        if (batchLabel && batchLabel.scrollWidth > batchLabel.clientWidth + 1) {
+          return true;
+        }
+        if (batchInp && batchInp.scrollWidth > batchInp.clientWidth + 1) {
+          return true;
+        }
+        continue;
+      }
       if (cell.scrollWidth > cell.clientWidth + 1) return true;
       var label = cell.querySelector(".cryo-select-line, .choice-line");
       if (label && label.scrollWidth > label.clientWidth + 1) return true;
       var inp = cell.querySelector("input, select");
       if (inp && inp.scrollWidth > inp.clientWidth + 1) return true;
     }
-    return container.scrollWidth > container.clientWidth + 2;
+    return containerOverflowIgnoringBatchControls(container);
   }
 
   function fitPrimaryFieldsContainer(container) {

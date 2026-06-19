@@ -36,8 +36,11 @@ _EXPLORER_VOLUMES_INELIGIBLE_MSG = (
 )
 
 
-def _dashboard_scatter_cap_from_env(default: int) -> tuple[int, bool]:
-    """Return clamped scatter cap and whether a valid env override was present."""
+def _scatter_cap(default: int) -> tuple[int, bool]:
+    """Return clamped scatter cap and whether a valid env override was present.
+
+    Reads ``CRYODRGN_DASHBOARD_FILTER_MAX_POINTS`` environment variable.
+    """
     raw = (os.environ.get("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS") or "").strip()
     if not raw:
         return default, False
@@ -50,7 +53,7 @@ def _dashboard_scatter_cap_from_env(default: int) -> tuple[int, bool]:
 
 def _filter_ui_scatter_max_points() -> int:
     """Cap for ``/api/scatter`` when ``filter_ui=1`` (env override available)."""
-    return _dashboard_scatter_cap_from_env(500_000)[0]
+    return _scatter_cap(500_000)[0]
 
 
 def _particle_explorer_scatter_max_points() -> int:
@@ -60,12 +63,12 @@ def _particle_explorer_scatter_max_points() -> int:
     … --filter-max N``), use that clamped cap. Otherwise keep the historical
     200k default for ``/api/scatter`` without ``filter_ui``.
     """
-    return _dashboard_scatter_cap_from_env(200_000)[0]
+    return _scatter_cap(200_000)[0]
 
 
 def _particle_explorer_scatter_cap_from_env() -> bool:
     """True when the explorer scatter cap comes from FILTER_MAX_POINTS (CLI or env)."""
-    return _dashboard_scatter_cap_from_env(200_000)[1]
+    return _scatter_cap(200_000)[1]
 
 
 def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
@@ -237,3 +240,26 @@ def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:
     )
     if pidx is not None:
         payload["traj_particle_indices"] = pidx
+
+
+def _api_try(fn: callable, msg: str, *, logger: Any = None) -> tuple:
+    """Execute ``fn`` and return Flask response with standardized error handling.
+
+    - ValueError -> 400 with error message
+    - RuntimeError -> 500 with error message
+    - Exception -> 500 with error message, logs via ``logger.exception(msg)``
+
+    Returns ``(jsonify_result, status_code)`` tuple on error, or the result of ``fn``
+    on success. Caller should check if return is a tuple to determine if it's an error
+    response that should be returned directly.
+    """
+    try:
+        return fn()
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except RuntimeError as err:
+        return jsonify(error=str(err)), 500
+    except Exception as err:
+        if logger is not None:
+            logger.exception(msg)
+        return jsonify(error=str(err)), 500

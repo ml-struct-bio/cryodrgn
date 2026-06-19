@@ -113,6 +113,16 @@ def arg_is_batch_size_denominated(arg: object) -> bool:
     return False
 
 
+def batch_size_arg_ids_for_command(cmd: str) -> list[str]:
+    """Return form field ids for batch-size CLI args on ``cmd``."""
+    ids: list[str] = []
+    for g in COMMAND_BUILDER_SCHEMA.get(cmd, []):
+        for a in g.get("args", []):
+            if a.get("w") == "number" and arg_is_batch_size_denominated(a):
+                ids.append(str(a["id"]))
+    return ids
+
+
 def _g(title: str, args: list[Arg], description: str = "") -> Group:
     return {"title": title, "args": args, "description": description}
 
@@ -165,371 +175,239 @@ def attach_group_descriptions(schema: Schema) -> None:
                 )
 
 
+# Argument factories for common patterns
+def _text(id: str, cli: list[str]) -> Arg:
+    """Text widget argument."""
+    return {"id": id, "cli": cli, "w": "text"}
+
+
+def _num(id: str, cli: list[str], placeholder: str | None = None) -> Arg:
+    """Number widget argument with optional placeholder."""
+    arg: Arg = {"id": id, "cli": cli, "w": "number"}
+    if placeholder is not None:
+        arg["placeholder"] = placeholder
+    return arg
+
+
+def _flag(id: str, cli: list[str]) -> Arg:
+    """Flag_true widget argument."""
+    return {"id": id, "cli": cli, "w": "flag_true"}
+
+
+def _flag_false(id: str, cli: list[str]) -> Arg:
+    """Flag_false widget argument."""
+    return {"id": id, "cli": cli, "w": "flag_false"}
+
+
+def _no_amp(id: str) -> Arg:
+    """no_amp widget argument (checked = omit, unchecked = --no-amp)."""
+    return {"id": id, "w": "no_amp"}
+
+
+def _select(id: str, cli: list[str], choices: list[str], **extra: Any) -> Arg:
+    """Select widget argument with choices and optional extra fields."""
+    arg: Arg = {"id": id, "cli": cli, "w": "select", "choices": choices}
+    arg.update(extra)
+    return arg
+
+
+# Common argument groups shared across commands
+def _io_logging_group(prefix: str) -> Group:
+    """I/O & logging group shared across training commands."""
+    return _g(
+        "I/O & logging",
+        [
+            _text(f"{prefix}_load", ["--load"]),
+            _flag_false(f"{prefix}_no_analysis", ["--no-analysis"]),
+            _num(f"{prefix}_checkpoint", ["--checkpoint"], "1"),
+            _num(f"{prefix}_log_interval", ["--log-interval"], "1000"),
+            _flag(f"{prefix}_verbose", ["-v"]),
+            _num(f"{prefix}_seed", ["--seed"]),
+            _num(f"{prefix}_shuffle_seed", ["--shuffle-seed"]),
+        ],
+    )
+
+
+def _dataset_loading_group(prefix: str) -> Group:
+    """Dataset loading group shared across training commands."""
+    return _g(
+        "Dataset loading",
+        [
+            _flag(f"{prefix}_uninvert", ["--uninvert-data"]),
+            _flag_false(f"{prefix}_window", ["--no-window"]),
+            _num(f"{prefix}_window_r", ["--window-r"], "0.85"),
+            _text(f"{prefix}_ind", ["--ind"]),
+            _flag(f"{prefix}_lazy", ["--lazy"]),
+            _num(f"{prefix}_shuffler_size", ["--shuffler-size"], "0"),
+        ],
+    )
+
+
+def _pose_sgd_group(prefix: str) -> Group:
+    """Pose SGD group shared across training commands."""
+    return _g(
+        "Pose SGD",
+        [
+            _flag(f"{prefix}_pose_sgd", ["--do-pose-sgd"]),
+            _num(f"{prefix}_pretrain", ["--pretrain"], "1"),
+            _select(f"{prefix}_emb_type", ["--emb-type"], ["s2s2", "quat"]),
+            _num(f"{prefix}_pose_lr", ["--pose-lr"], "1e-4"),
+        ],
+    )
+
+
 ABINIT_GROUPS: list[Group] = [
     _g(
         "Checkpoint & seed",
         [
-            {"id": "ab_load", "cli": ["--load"], "w": "text"},
-            {"id": "ab_load_poses", "cli": ["--load-poses"], "w": "text"},
-            {"id": "ab_seed", "cli": ["--seed"], "w": "number"},
-            {"id": "ab_verbose", "cli": ["-v"], "w": "flag_true"},
+            _text("ab_load", ["--load"]),
+            _text("ab_load_poses", ["--load-poses"]),
+            _num("ab_seed", ["--seed"]),
+            _flag("ab_verbose", ["-v"]),
         ],
     ),
     _g(
         "Dataset loading",
         [
-            {"id": "ab_ind", "cli": ["--ind"], "w": "text"},
-            {"id": "ab_relion31", "cli": ["--relion31"], "w": "flag_true"},
-            {"id": "ab_uninvert", "cli": ["--uninvert-data"], "w": "flag_true"},
-            {"id": "ab_lazy", "cli": ["--lazy"], "w": "flag_true"},
-            {
-                "id": "ab_max_threads",
-                "cli": ["--max-threads"],
-                "w": "number",
-                "placeholder": "16",
-            },
+            _text("ab_ind", ["--ind"]),
+            _flag("ab_relion31", ["--relion31"]),
+            _flag("ab_uninvert", ["--uninvert-data"]),
+            _flag("ab_lazy", ["--lazy"]),
+            _num("ab_max_threads", ["--max-threads"], "16"),
         ],
     ),
     _g(
         "Logging",
         [
-            {
-                "id": "ab_log_interval",
-                "cli": ["--log-interval"],
-                "w": "number",
-                "placeholder": "10000",
-            },
-            {
-                "id": "ab_checkpoint",
-                "cli": ["--checkpoint"],
-                "w": "number",
-                "placeholder": "5",
-            },
-            {"id": "ab_verbose_time", "cli": ["--verbose-time"], "w": "flag_true"},
+            _num("ab_log_interval", ["--log-interval"], "10000"),
+            _num("ab_checkpoint", ["--checkpoint"], "5"),
+            _flag("ab_verbose_time", ["--verbose-time"]),
         ],
     ),
     _g(
         "Training parameters",
         [
-            {
-                "id": "ab_n",
-                "cli": ["-n", "--num-epochs"],
-                "w": "number",
-                "placeholder": "30",
-            },
-            {
-                "id": "ab_epochs_pose_search",
-                "cli": ["--epochs-pose-search"],
-                "w": "number",
-            },
-            {
-                "id": "ab_n_imgs_pose_search",
-                "cli": ["--n-imgs-pose-search"],
-                "w": "number",
-            },
-            {"id": "ab_epochs_sgd", "cli": ["--epochs-sgd"], "w": "number"},
-            {
-                "id": "ab_pose_only_phase",
-                "cli": ["--pose-only-phase"],
-                "w": "number",
-                "placeholder": "0",
-            },
-            {"id": "ab_shuffle", "cli": ["--no-shuffle"], "w": "flag_false"},
-            {
-                "id": "ab_num_workers",
-                "cli": ["--num-workers"],
-                "w": "number",
-                "placeholder": "2",
-            },
-            {
-                "id": "ab_shuffler_size",
-                "cli": ["--shuffler-size"],
-                "w": "number",
-                "placeholder": "32768",
-            },
-            {"id": "ab_multigpu", "cli": ["--multigpu"], "w": "flag_true"},
-            {"id": "ab_use_amp", "w": "no_amp"},
-            {
-                "id": "ab_batch_size_hps",
-                "cli": ["--batch-size-hps"],
-                "w": "number",
-                "placeholder": "16",
-            },
-            {
-                "id": "ab_batch_size_known_poses",
-                "cli": ["--batch-size-known-poses"],
-                "w": "number",
-                "placeholder": "64",
-            },
-            {
-                "id": "ab_batch_size_sgd",
-                "cli": ["--batch-size-sgd"],
-                "w": "number",
-                "placeholder": "128",
-            },
+            _num("ab_n", ["-n", "--num-epochs"], "30"),
+            _num("ab_epochs_pose_search", ["--epochs-pose-search"]),
+            _num("ab_n_imgs_pose_search", ["--n-imgs-pose-search"]),
+            _num("ab_epochs_sgd", ["--epochs-sgd"]),
+            _num("ab_pose_only_phase", ["--pose-only-phase"], "0"),
+            _flag_false("ab_shuffle", ["--no-shuffle"]),
+            _num("ab_num_workers", ["--num-workers"], "2"),
+            _num("ab_shuffler_size", ["--shuffler-size"], "32768"),
+            _flag("ab_multigpu", ["--multigpu"]),
+            _no_amp("ab_use_amp"),
+            _num("ab_batch_size_hps", ["--batch-size-hps"], "16"),
+            _num("ab_batch_size_known_poses", ["--batch-size-known-poses"], "64"),
+            _num("ab_batch_size_sgd", ["--batch-size-sgd"], "128"),
         ],
     ),
     _g(
         "Optimizers",
         [
-            {"id": "ab_lr", "cli": ["--lr"], "w": "text", "placeholder": "1e-4"},
-            {
-                "id": "ab_lr_pose_table",
-                "cli": ["--lr-pose-table"],
-                "w": "text",
-                "placeholder": "1e-3",
-            },
-            {
-                "id": "ab_lr_conf_table",
-                "cli": ["--lr-conf-table"],
-                "w": "text",
-                "placeholder": "1e-2",
-            },
-            {
-                "id": "ab_lr_conf_encoder",
-                "cli": ["--lr-conf-encoder"],
-                "w": "text",
-                "placeholder": "1e-4",
-            },
-            {"id": "ab_wd", "cli": ["--wd"], "w": "text", "placeholder": "0"},
-            {
-                "id": "ab_hypervolume_optimizer_type",
-                "cli": ["--hypervolume-optimizer-type"],
-                "w": "select",
-                "choices": ["adam"],
-            },
-            {
-                "id": "ab_pose_table_optimizer_type",
-                "cli": ["--pose-table-optimizer-type"],
-                "w": "select",
-                "choices": ["adam", "lbfgs"],
-            },
-            {
-                "id": "ab_conf_table_optimizer_type",
-                "cli": ["--conf-table-optimizer-type"],
-                "w": "select",
-                "choices": ["adam", "lbfgs"],
-            },
-            {
-                "id": "ab_conf_encoder_optimizer_type",
-                "cli": ["--conf-encoder-optimizer-type"],
-                "w": "select",
-                "choices": ["adam"],
-            },
+            _num("ab_lr", ["--lr"], "1e-4"),
+            _num("ab_lr_pose_table", ["--lr-pose-table"], "1e-3"),
+            _num("ab_lr_conf_table", ["--lr-conf-table"], "1e-2"),
+            _num("ab_lr_conf_encoder", ["--lr-conf-encoder"], "1e-4"),
+            _num("ab_wd", ["--wd"], "0"),
+            _select(
+                "ab_hypervolume_optimizer_type",
+                ["--hypervolume-optimizer-type"],
+                ["adam"],
+            ),
+            _select(
+                "ab_pose_table_optimizer_type",
+                ["--pose-table-optimizer-type"],
+                ["adam", "lbfgs"],
+            ),
+            _select(
+                "ab_conf_table_optimizer_type",
+                ["--conf-table-optimizer-type"],
+                ["adam", "lbfgs"],
+            ),
+            _select(
+                "ab_conf_encoder_optimizer_type",
+                ["--conf-encoder-optimizer-type"],
+                ["adam"],
+            ),
         ],
     ),
     _g(
         "Masking",
         [
-            {
-                "id": "ab_output_mask",
-                "cli": ["--output-mask"],
-                "w": "select",
-                "choices": ["circ", "frequency_marching"],
-            },
-            {
-                "id": "ab_add_one_frequency_every",
-                "cli": ["--add-one-frequency-every"],
-                "w": "number",
-                "placeholder": "100000",
-            },
-            {
-                "id": "ab_n_frequencies_per_epoch",
-                "cli": ["--n-frequencies-per-epoch"],
-                "w": "number",
-                "placeholder": "10",
-            },
-            {"id": "ab_max_freq", "cli": ["--max-freq"], "w": "number"},
-            {
-                "id": "ab_window_radius_gt_real",
-                "cli": ["--window-radius-gt-real"],
-                "w": "text",
-                "placeholder": "0.85",
-            },
+            _select(
+                "ab_output_mask", ["--output-mask"], ["circ", "frequency_marching"]
+            ),
+            _num("ab_add_one_frequency_every", ["--add-one-frequency-every"], "100000"),
+            _num("ab_n_frequencies_per_epoch", ["--n-frequencies-per-epoch"], "10"),
+            _num("ab_max_freq", ["--max-freq"]),
+            _num("ab_window_radius_gt_real", ["--window-radius-gt-real"], "0.85"),
         ],
     ),
     _g(
         "Losses",
         [
-            {
-                "id": "ab_beta_conf",
-                "cli": ["--beta-conf"],
-                "w": "text",
-                "placeholder": "0",
-            },
-            {
-                "id": "ab_trans_l1_regularizer",
-                "cli": ["--trans-l1-regularizer"],
-                "w": "text",
-                "placeholder": "0",
-            },
-            {
-                "id": "ab_l2_smoothness_regularizer",
-                "cli": ["--l2-smoothness-regularizer"],
-                "w": "text",
-                "placeholder": "0",
-            },
+            _num("ab_beta_conf", ["--beta-conf"], "0"),
+            _num("ab_trans_l1_regularizer", ["--trans-l1-regularizer"], "0"),
+            _num("ab_l2_smoothness_regularizer", ["--l2-smoothness-regularizer"], "0"),
         ],
     ),
     _g(
         "Z / heterogeneity",
         [
-            {
-                "id": "ab_variational_het",
-                "cli": ["--variational-het"],
-                "w": "flag_true",
-            },
-            {
-                "id": "ab_std_z_init",
-                "cli": ["--std-z-init"],
-                "w": "text",
-                "placeholder": "0.1",
-            },
-            {
-                "id": "ab_use_conf_encoder",
-                "cli": ["--use-conf-encoder"],
-                "w": "flag_true",
-            },
-            {
-                "id": "ab_depth_cnn",
-                "cli": ["--depth-cnn"],
-                "w": "number",
-                "placeholder": "5",
-            },
-            {
-                "id": "ab_channels_cnn",
-                "cli": ["--channels-cnn"],
-                "w": "number",
-                "placeholder": "32",
-            },
-            {
-                "id": "ab_kernel_size_cnn",
-                "cli": ["--kernel-size-cnn"],
-                "w": "number",
-                "placeholder": "3",
-            },
-            {
-                "id": "ab_resolution_encoder",
-                "cli": ["--resolution-encoder"],
-                "w": "number",
-            },
+            _flag("ab_variational_het", ["--variational-het"]),
+            _num("ab_std_z_init", ["--std-z-init"], "0.1"),
+            _flag("ab_use_conf_encoder", ["--use-conf-encoder"]),
+            _num("ab_depth_cnn", ["--depth-cnn"], "5"),
+            _num("ab_channels_cnn", ["--channels-cnn"], "32"),
+            _num("ab_kernel_size_cnn", ["--kernel-size-cnn"], "3"),
+            _num("ab_resolution_encoder", ["--resolution-encoder"]),
         ],
     ),
     _g(
         "Hypervolume",
         [
-            {
-                "id": "ab_explicit_volume",
-                "cli": ["--explicit-volume"],
-                "w": "flag_true",
-            },
-            {"id": "ab_layers", "cli": ["--layers"], "w": "number", "placeholder": "3"},
-            {"id": "ab_dim", "cli": ["--dim"], "w": "number", "placeholder": "256"},
-            {
-                "id": "ab_pe_type",
-                "cli": ["--pe-type"],
-                "w": "select",
-                "choices": ["gaussian"],
-            },
-            {
-                "id": "ab_pe_dim",
-                "cli": ["--pe-dim"],
-                "w": "number",
-                "placeholder": "64",
-            },
-            {
-                "id": "ab_feat_sigma",
-                "cli": ["--feat-sigma"],
-                "w": "text",
-                "placeholder": "0.5",
-            },
-            {
-                "id": "ab_hypervolume_domain",
-                "cli": ["--hypervolume-domain"],
-                "w": "select",
-                "choices": ["hartley"],
-            },
-            {
-                "id": "ab_pe_type_conf",
-                "cli": ["--pe-type-conf"],
-                "w": "select",
-                "choices": ["", "geom"],
-                "labels": ["(default None)", "geom"],
-            },
-            {"id": "ab_initial_conf", "cli": ["--initial-conf"], "w": "text"},
+            _flag("ab_explicit_volume", ["--explicit-volume"]),
+            _num("ab_layers", ["--layers"], "3"),
+            _num("ab_dim", ["--dim"], "256"),
+            _select("ab_pe_type", ["--pe-type"], ["gaussian"]),
+            _num("ab_pe_dim", ["--pe-dim"], "64"),
+            _num("ab_feat_sigma", ["--feat-sigma"], "0.5"),
+            _select("ab_hypervolume_domain", ["--hypervolume-domain"], ["hartley"]),
+            _select(
+                "ab_pe_type_conf",
+                ["--pe-type-conf"],
+                ["", "geom"],
+                labels=["(default None)", "geom"],
+            ),
+            _text("ab_initial_conf", ["--initial-conf"]),
         ],
     ),
-    _g(
-        "Pretrain",
-        [
-            {
-                "id": "ab_n_imgs_pretrain",
-                "cli": ["--n-imgs-pretrain"],
-                "w": "number",
-                "placeholder": "10000",
-            },
-        ],
-    ),
+    _g("Pretrain", [_num("ab_n_imgs_pretrain", ["--n-imgs-pretrain"], "10000")]),
     _g(
         "Pose search",
         [
-            {
-                "id": "ab_l_start",
-                "cli": ["--l-start"],
-                "w": "number",
-                "placeholder": "12",
-            },
-            {"id": "ab_l_end", "cli": ["--l-end"], "w": "number", "placeholder": "32"},
-            {"id": "ab_niter", "cli": ["--niter"], "w": "number", "placeholder": "4"},
-            {
-                "id": "ab_t_extent",
-                "cli": ["--t-extent"],
-                "w": "text",
-                "placeholder": "20.0",
-            },
-            {
-                "id": "ab_t_ngrid",
-                "cli": ["--t-ngrid"],
-                "w": "number",
-                "placeholder": "7",
-            },
-            {
-                "id": "ab_t_xshift",
-                "cli": ["--t-xshift"],
-                "w": "text",
-                "placeholder": "0.0",
-            },
-            {
-                "id": "ab_t_yshift",
-                "cli": ["--t-yshift"],
-                "w": "text",
-                "placeholder": "0.0",
-            },
-            {
-                "id": "ab_no_trans_search_at_pose_search",
-                "cli": ["--no-trans-search-at-pose-search"],
-                "w": "flag_true",
-            },
-            {
-                "id": "ab_nkeptposes",
-                "cli": ["--nkeptposes"],
-                "w": "number",
-                "placeholder": "8",
-            },
-            {
-                "id": "ab_base_healpy",
-                "cli": ["--base-healpy"],
-                "w": "number",
-                "placeholder": "2",
-            },
-            {"id": "ab_no_trans", "cli": ["--no-trans"], "w": "flag_true"},
+            _num("ab_l_start", ["--l-start"], "12"),
+            _num("ab_l_end", ["--l-end"], "32"),
+            _num("ab_niter", ["--niter"], "4"),
+            _num("ab_t_extent", ["--t-extent"], "20.0"),
+            _num("ab_t_ngrid", ["--t-ngrid"], "7"),
+            _num("ab_t_xshift", ["--t-xshift"], "0.0"),
+            _num("ab_t_yshift", ["--t-yshift"], "0.0"),
+            _flag(
+                "ab_no_trans_search_at_pose_search",
+                ["--no-trans-search-at-pose-search"],
+            ),
+            _num("ab_nkeptposes", ["--nkeptposes"], "8"),
+            _num("ab_base_healpy", ["--base-healpy"], "2"),
+            _flag("ab_no_trans", ["--no-trans"]),
         ],
     ),
     _g(
         "Normalization & analysis",
         [
             {"id": "ab_norm", "cli": ["--norm"], "w": "norm2"},
-            {"id": "ab_no_analysis", "cli": ["--no-analysis"], "w": "flag_false"},
+            _flag_false("ab_no_analysis", ["--no-analysis"]),
         ],
     ),
 ]
@@ -538,183 +416,84 @@ TRAIN_VAE_GROUPS: list[Group] = [
     _g(
         "I/O & logging",
         [
-            {"id": "vae_load", "cli": ["--load"], "w": "text"},
-            {"id": "vae_no_analysis", "cli": ["--no-analysis"], "w": "flag_false"},
-            {
-                "id": "vae_checkpoint",
-                "cli": ["--checkpoint"],
-                "w": "number",
-                "placeholder": "1",
-            },
-            {
-                "id": "vae_log_interval",
-                "cli": ["--log-interval"],
-                "w": "number",
-                "placeholder": "1000",
-            },
-            {"id": "vae_verbose", "cli": ["-v"], "w": "flag_true"},
-            {"id": "vae_seed", "cli": ["--seed"], "w": "number"},
-            {"id": "vae_shuffle_seed", "cli": ["--shuffle-seed"], "w": "number"},
+            _text("vae_load", ["--load"]),
+            _flag_false("vae_no_analysis", ["--no-analysis"]),
+            _num("vae_checkpoint", ["--checkpoint"], "1"),
+            _num("vae_log_interval", ["--log-interval"], "1000"),
+            _flag("vae_verbose", ["-v"]),
+            _num("vae_seed", ["--seed"]),
+            _num("vae_shuffle_seed", ["--shuffle-seed"]),
         ],
     ),
     _g(
         "Dataset loading",
         [
-            {"id": "vae_ind", "cli": ["--ind"], "w": "text"},
-            {"id": "vae_uninvert", "cli": ["--uninvert-data"], "w": "flag_true"},
-            {"id": "vae_window", "cli": ["--no-window"], "w": "flag_false"},
-            {
-                "id": "vae_window_r",
-                "cli": ["--window-r"],
-                "w": "text",
-                "placeholder": "0.85",
-            },
-            {"id": "vae_lazy", "cli": ["--lazy"], "w": "flag_true"},
-            {
-                "id": "vae_shuffler_size",
-                "cli": ["--shuffler-size"],
-                "w": "number",
-                "placeholder": "0",
-            },
-            {
-                "id": "vae_num_workers",
-                "cli": ["--num-workers"],
-                "w": "number",
-                "placeholder": "0",
-            },
-            {
-                "id": "vae_max_threads",
-                "cli": ["--max-threads"],
-                "w": "number",
-                "placeholder": "16",
-            },
+            _text("vae_ind", ["--ind"]),
+            _flag("vae_uninvert", ["--uninvert-data"]),
+            _flag_false("vae_window", ["--no-window"]),
+            _num("vae_window_r", ["--window-r"], "0.85"),
+            _flag("vae_lazy", ["--lazy"]),
+            _num("vae_shuffler_size", ["--shuffler-size"], "0"),
+            _num("vae_num_workers", ["--num-workers"], "0"),
+            _num("vae_max_threads", ["--max-threads"], "16"),
         ],
     ),
     _g(
         "Tilt series parameters",
         [
-            {
-                "id": "vae_ntilts",
-                "cli": ["--ntilts"],
-                "w": "number",
-                "placeholder": "10",
-            },
-            {"id": "vae_random_tilts", "cli": ["--random-tilts"], "w": "flag_true"},
-            {
-                "id": "vae_t_emb_dim",
-                "cli": ["--t-emb-dim"],
-                "w": "number",
-                "placeholder": "64",
-            },
-            {
-                "id": "vae_tlayers",
-                "cli": ["--tlayers"],
-                "w": "number",
-                "placeholder": "3",
-            },
-            {"id": "vae_tdim", "cli": ["--tdim"], "w": "number", "placeholder": "1024"},
-            {"id": "vae_dose_per_tilt", "cli": ["-d", "--dose-per-tilt"], "w": "text"},
-            {
-                "id": "vae_angle_per_tilt",
-                "cli": ["-a", "--angle-per-tilt"],
-                "w": "text",
-                "placeholder": "3",
-            },
+            _num("vae_ntilts", ["--ntilts"], "10"),
+            _flag("vae_random_tilts", ["--random-tilts"]),
+            _num("vae_t_emb_dim", ["--t-emb-dim"], "64"),
+            _num("vae_tlayers", ["--tlayers"], "3"),
+            _num("vae_tdim", ["--tdim"], "1024"),
+            _text("vae_dose_per_tilt", ["-d", "--dose-per-tilt"]),
+            _num("vae_angle_per_tilt", ["-a", "--angle-per-tilt"], "3"),
         ],
     ),
     _g(
         "Training parameters",
         [
-            {
-                "id": "vae_n",
-                "cli": ["-n", "--num-epochs"],
-                "w": "number",
-                "placeholder": "20",
-            },
-            {
-                "id": "vae_b",
-                "cli": ["-b", "--batch-size"],
-                "w": "number",
-                "placeholder": "16",
-            },
-            {"id": "vae_wd", "cli": ["--wd"], "w": "text", "placeholder": "0"},
-            {"id": "vae_lr", "cli": ["--lr"], "w": "text", "placeholder": "1e-4"},
-            {"id": "vae_beta", "cli": ["--beta"], "w": "text"},
-            {"id": "vae_beta_control", "cli": ["--beta-control"], "w": "text"},
+            _num("vae_n", ["-n", "--num-epochs"], "20"),
+            _num("vae_b", ["-b", "--batch-size"], "16"),
+            _num("vae_wd", ["--wd"], "0"),
+            _num("vae_lr", ["--lr"], "1e-4"),
+            _text("vae_beta", ["--beta"]),
+            _text("vae_beta_control", ["--beta-control"]),
             {"id": "vae_norm", "cli": ["--norm"], "w": "norm2"},
-            {"id": "vae_use_amp", "w": "no_amp"},
-            {"id": "vae_multigpu", "cli": ["--multigpu"], "w": "flag_true"},
+            _no_amp("vae_use_amp"),
+            _flag("vae_multigpu", ["--multigpu"]),
         ],
     ),
     _g(
         "Pose SGD",
         [
-            {"id": "vae_pose_sgd", "cli": ["--do-pose-sgd"], "w": "flag_true"},
-            {
-                "id": "vae_pretrain",
-                "cli": ["--pretrain"],
-                "w": "number",
-                "placeholder": "1",
-            },
-            {
-                "id": "vae_emb_type",
-                "cli": ["--emb-type"],
-                "w": "select",
-                "choices": ["s2s2", "quat"],
-            },
-            {
-                "id": "vae_pose_lr",
-                "cli": ["--pose-lr"],
-                "w": "text",
-                "placeholder": "3e-4",
-            },
+            _flag("vae_pose_sgd", ["--do-pose-sgd"]),
+            _num("vae_pretrain", ["--pretrain"], "1"),
+            _select("vae_emb_type", ["--emb-type"], ["s2s2", "quat"]),
+            _num("vae_pose_lr", ["--pose-lr"], "3e-4"),
         ],
     ),
     _g(
         "Encoder Network",
         [
-            {
-                "id": "vae_enc_layers",
-                "cli": ["--enc-layers"],
-                "w": "number",
-                "placeholder": "3",
-            },
-            {
-                "id": "vae_enc_dim",
-                "cli": ["--enc-dim"],
-                "w": "number",
-                "placeholder": "1024",
-            },
-            {
-                "id": "vae_encode_mode",
-                "cli": ["--encode-mode"],
-                "w": "select",
-                "choices": ["conv", "resid", "mlp", "tilt"],
-            },
-            {"id": "vae_enc_mask", "cli": ["--enc-mask"], "w": "number"},
-            {"id": "vae_use_real", "cli": ["--use-real"], "w": "flag_true"},
+            _num("vae_enc_layers", ["--enc-layers"], "3"),
+            _num("vae_enc_dim", ["--enc-dim"], "1024"),
+            _select(
+                "vae_encode_mode", ["--encode-mode"], ["conv", "resid", "mlp", "tilt"]
+            ),
+            _num("vae_enc_mask", ["--enc-mask"]),
+            _flag("vae_use_real", ["--use-real"]),
         ],
     ),
     _g(
         "Decoder Network",
         [
-            {
-                "id": "vae_dec_layers",
-                "cli": ["--dec-layers"],
-                "w": "number",
-                "placeholder": "3",
-            },
-            {
-                "id": "vae_dec_dim",
-                "cli": ["--dec-dim"],
-                "w": "number",
-                "placeholder": "1024",
-            },
-            {
-                "id": "vae_pe_type",
-                "cli": ["--pe-type"],
-                "w": "select",
-                "choices": [
+            _num("vae_dec_layers", ["--dec-layers"], "3"),
+            _num("vae_dec_dim", ["--dec-dim"], "1024"),
+            _select(
+                "vae_pe_type",
+                ["--pe-type"],
+                [
                     "geom_ft",
                     "geom_full",
                     "geom_lowf",
@@ -723,26 +502,11 @@ TRAIN_VAE_GROUPS: list[Group] = [
                     "gaussian",
                     "none",
                 ],
-            },
-            {
-                "id": "vae_feat_sigma",
-                "cli": ["--feat-sigma"],
-                "w": "text",
-                "placeholder": "0.5",
-            },
-            {"id": "vae_pe_dim", "cli": ["--pe-dim"], "w": "number"},
-            {
-                "id": "vae_domain",
-                "cli": ["--domain"],
-                "w": "select",
-                "choices": ["hartley", "fourier"],
-            },
-            {
-                "id": "vae_activation",
-                "cli": ["--activation"],
-                "w": "select",
-                "choices": ["relu", "leaky_relu"],
-            },
+            ),
+            _num("vae_feat_sigma", ["--feat-sigma"], "0.5"),
+            _num("vae_pe_dim", ["--pe-dim"]),
+            _select("vae_domain", ["--domain"], ["hartley", "fourier"]),
+            _select("vae_activation", ["--activation"], ["relu", "leaky_relu"]),
         ],
     ),
 ]
@@ -751,107 +515,56 @@ TRAIN_NN_GROUPS: list[Group] = [
     _g(
         "I/O & logging",
         [
-            {"id": "nn_load", "cli": ["--load"], "w": "text"},
-            {
-                "id": "nn_checkpoint",
-                "cli": ["--checkpoint"],
-                "w": "number",
-                "placeholder": "1",
-            },
-            {
-                "id": "nn_log_interval",
-                "cli": ["--log-interval"],
-                "w": "number",
-                "placeholder": "1000",
-            },
-            {"id": "nn_verbose", "cli": ["-v"], "w": "flag_true"},
-            {"id": "nn_seed", "cli": ["--seed"], "w": "number"},
-            {"id": "nn_shuffle_seed", "cli": ["--shuffle-seed"], "w": "number"},
+            _text("nn_load", ["--load"]),
+            _num("nn_checkpoint", ["--checkpoint"], "1"),
+            _num("nn_log_interval", ["--log-interval"], "1000"),
+            _flag("nn_verbose", ["-v"]),
+            _num("nn_seed", ["--seed"]),
+            _num("nn_shuffle_seed", ["--shuffle-seed"]),
         ],
     ),
     _g(
         "Dataset loading",
         [
-            {"id": "nn_uninvert", "cli": ["--uninvert-data"], "w": "flag_true"},
-            {"id": "nn_window", "cli": ["--no-window"], "w": "flag_false"},
-            {
-                "id": "nn_window_r",
-                "cli": ["--window-r"],
-                "w": "text",
-                "placeholder": "0.85",
-            },
-            {"id": "nn_ind", "cli": ["--ind"], "w": "text"},
-            {"id": "nn_lazy", "cli": ["--lazy"], "w": "flag_true"},
-            {
-                "id": "nn_shuffler_size",
-                "cli": ["--shuffler-size"],
-                "w": "number",
-                "placeholder": "0",
-            },
+            _flag("nn_uninvert", ["--uninvert-data"]),
+            _flag_false("nn_window", ["--no-window"]),
+            _num("nn_window_r", ["--window-r"], "0.85"),
+            _text("nn_ind", ["--ind"]),
+            _flag("nn_lazy", ["--lazy"]),
+            _num("nn_shuffler_size", ["--shuffler-size"], "0"),
         ],
     ),
     _g(
         "Training parameters",
         [
-            {
-                "id": "nn_n",
-                "cli": ["-n", "--num-epochs"],
-                "w": "number",
-                "placeholder": "20",
-            },
-            {
-                "id": "nn_b",
-                "cli": ["-b", "--batch-size"],
-                "w": "number",
-                "placeholder": "16",
-            },
-            {"id": "nn_wd", "cli": ["--wd"], "w": "text", "placeholder": "0"},
-            {"id": "nn_lr", "cli": ["--lr"], "w": "text", "placeholder": "1e-4"},
+            _num("nn_n", ["-n", "--num-epochs"], "20"),
+            _num("nn_b", ["-b", "--batch-size"], "16"),
+            _num("nn_wd", ["--wd"], "0"),
+            _num("nn_lr", ["--lr"], "1e-4"),
             {"id": "nn_norm", "cli": ["--norm"], "w": "norm2"},
-            {"id": "nn_use_amp", "w": "no_amp"},
-            {"id": "nn_multigpu", "cli": ["--multigpu"], "w": "flag_true"},
+            _no_amp("nn_use_amp"),
+            _flag("nn_multigpu", ["--multigpu"]),
         ],
     ),
     _g(
         "Pose SGD",
         [
-            {"id": "nn_pose_sgd", "cli": ["--do-pose-sgd"], "w": "flag_true"},
-            {
-                "id": "nn_pretrain",
-                "cli": ["--pretrain"],
-                "w": "number",
-                "placeholder": "5",
-            },
-            {
-                "id": "nn_emb_type",
-                "cli": ["--emb-type"],
-                "w": "select",
-                "choices": ["s2s2", "quat"],
-            },
-            {
-                "id": "nn_pose_lr",
-                "cli": ["--pose-lr"],
-                "w": "text",
-                "placeholder": "1e-4",
-            },
+            _flag("nn_pose_sgd", ["--do-pose-sgd"]),
+            _num("nn_pretrain", ["--pretrain"], "5"),
+            _select("nn_emb_type", ["--emb-type"], ["s2s2", "quat"]),
+            _num("nn_pose_lr", ["--pose-lr"], "1e-4"),
         ],
     ),
     _g(
         "Network Architecture",
         [
-            {"id": "nn_layers", "cli": ["--layers"], "w": "number", "placeholder": "3"},
-            {"id": "nn_dim", "cli": ["--dim"], "w": "number", "placeholder": "1024"},
-            {
-                "id": "nn_l_extent",
-                "cli": ["--l-extent"],
-                "w": "text",
-                "placeholder": "0.5",
-            },
-            {
-                "id": "nn_pe_type",
-                "cli": ["--pe-type"],
-                "w": "select",
-                "choices": [
+            _num("nn_layers", ["--layers"], "3"),
+            _num("nn_dim", ["--dim"], "1024"),
+            _num("nn_l_extent", ["--l-extent"], "0.5"),
+            _select(
+                "nn_pe_type",
+                ["--pe-type"],
+                [
                     "geom_ft",
                     "geom_full",
                     "geom_lowf",
@@ -860,26 +573,11 @@ TRAIN_NN_GROUPS: list[Group] = [
                     "gaussian",
                     "none",
                 ],
-            },
-            {"id": "nn_pe_dim", "cli": ["--pe-dim"], "w": "number"},
-            {
-                "id": "nn_domain",
-                "cli": ["--domain"],
-                "w": "select",
-                "choices": ["hartley", "fourier"],
-            },
-            {
-                "id": "nn_activation",
-                "cli": ["--activation"],
-                "w": "select",
-                "choices": ["relu", "leaky_relu"],
-            },
-            {
-                "id": "nn_feat_sigma",
-                "cli": ["--feat-sigma"],
-                "w": "text",
-                "placeholder": "0.5",
-            },
+            ),
+            _num("nn_pe_dim", ["--pe-dim"]),
+            _select("nn_domain", ["--domain"], ["hartley", "fourier"]),
+            _select("nn_activation", ["--activation"], ["relu", "leaky_relu"]),
+            _num("nn_feat_sigma", ["--feat-sigma"], "0.5"),
         ],
     ),
 ]
@@ -888,126 +586,65 @@ TRAIN_DEC_GROUPS: list[Group] = [
     _g(
         "I/O & logging",
         [
-            {"id": "dec_load", "cli": ["--load"], "w": "text"},
-            {"id": "dec_no_analysis", "cli": ["--no-analysis"], "w": "flag_false"},
-            {
-                "id": "dec_checkpoint",
-                "cli": ["--checkpoint"],
-                "w": "number",
-                "placeholder": "1",
-            },
-            {
-                "id": "dec_log_interval",
-                "cli": ["--log-interval"],
-                "w": "number",
-                "placeholder": "1000",
-            },
-            {"id": "dec_verbose", "cli": ["-v"], "w": "flag_true"},
-            {"id": "dec_seed", "cli": ["--seed"], "w": "number"},
-            {"id": "dec_shuffle_seed", "cli": ["--shuffle-seed"], "w": "number"},
+            _text("dec_load", ["--load"]),
+            _flag_false("dec_no_analysis", ["--no-analysis"]),
+            _num("dec_checkpoint", ["--checkpoint"], "1"),
+            _num("dec_log_interval", ["--log-interval"], "1000"),
+            _flag("dec_verbose", ["-v"]),
+            _num("dec_seed", ["--seed"]),
+            _num("dec_shuffle_seed", ["--shuffle-seed"]),
         ],
     ),
     _g(
         "Latent Variables",
         [
-            {"id": "dec_load_z", "cli": ["--load-z"], "w": "text"},
-            {"id": "dec_z_lr", "cli": ["--z-lr"], "w": "text", "placeholder": "1e-4"},
-            {
-                "id": "dec_pretrain_z",
-                "cli": ["--pretrain-z"],
-                "w": "number",
-                "placeholder": "0",
-            },
+            _text("dec_load_z", ["--load-z"]),
+            _num("dec_z_lr", ["--z-lr"], "1e-4"),
+            _num("dec_pretrain_z", ["--pretrain-z"], "0"),
         ],
     ),
     _g(
         "Dataset loading",
         [
-            {"id": "dec_uninvert", "cli": ["--uninvert-data"], "w": "flag_true"},
-            {"id": "dec_window", "cli": ["--no-window"], "w": "flag_false"},
-            {
-                "id": "dec_window_r",
-                "cli": ["--window-r"],
-                "w": "text",
-                "placeholder": "0.85",
-            },
-            {"id": "dec_ind", "cli": ["--ind"], "w": "text"},
-            {"id": "dec_lazy", "cli": ["--lazy"], "w": "flag_true"},
-            {
-                "id": "dec_shuffler_size",
-                "cli": ["--shuffler-size"],
-                "w": "number",
-                "placeholder": "0",
-            },
+            _flag("dec_uninvert", ["--uninvert-data"]),
+            _flag_false("dec_window", ["--no-window"]),
+            _num("dec_window_r", ["--window-r"], "0.85"),
+            _text("dec_ind", ["--ind"]),
+            _flag("dec_lazy", ["--lazy"]),
+            _num("dec_shuffler_size", ["--shuffler-size"], "0"),
         ],
     ),
     _g(
         "Training parameters",
         [
-            {
-                "id": "dec_n",
-                "cli": ["-n", "--num-epochs"],
-                "w": "number",
-                "placeholder": "20",
-            },
-            {
-                "id": "dec_b",
-                "cli": ["-b", "--batch-size"],
-                "w": "number",
-                "placeholder": "8",
-            },
-            {"id": "dec_wd", "cli": ["--wd"], "w": "text", "placeholder": "0"},
-            {"id": "dec_lr", "cli": ["--lr"], "w": "text", "placeholder": "1e-4"},
+            _num("dec_n", ["-n", "--num-epochs"], "20"),
+            _num("dec_b", ["-b", "--batch-size"], "8"),
+            _num("dec_wd", ["--wd"], "0"),
+            _num("dec_lr", ["--lr"], "1e-4"),
             {"id": "dec_norm", "cli": ["--norm"], "w": "norm2"},
-            {"id": "dec_use_amp", "w": "no_amp"},
-            {"id": "dec_multigpu", "cli": ["--multigpu"], "w": "flag_true"},
+            _no_amp("dec_use_amp"),
+            _flag("dec_multigpu", ["--multigpu"]),
         ],
     ),
     _g(
         "Pose SGD",
         [
-            {"id": "dec_pose_sgd", "cli": ["--do-pose-sgd"], "w": "flag_true"},
-            {
-                "id": "dec_pretrain_pose",
-                "cli": ["--pretrain-pose"],
-                "w": "number",
-                "placeholder": "5",
-            },
-            {
-                "id": "dec_emb_type",
-                "cli": ["--emb-type"],
-                "w": "select",
-                "choices": ["s2s2", "quat"],
-            },
-            {
-                "id": "dec_pose_lr",
-                "cli": ["--pose-lr"],
-                "w": "text",
-                "placeholder": "1e-4",
-            },
+            _flag("dec_pose_sgd", ["--do-pose-sgd"]),
+            _num("dec_pretrain_pose", ["--pretrain-pose"], "5"),
+            _select("dec_emb_type", ["--emb-type"], ["s2s2", "quat"]),
+            _num("dec_pose_lr", ["--pose-lr"], "1e-4"),
         ],
     ),
     _g(
         "Network Architecture",
         [
-            {
-                "id": "dec_layers",
-                "cli": ["--layers"],
-                "w": "number",
-                "placeholder": "3",
-            },
-            {"id": "dec_dim", "cli": ["--dim"], "w": "number", "placeholder": "1024"},
-            {
-                "id": "dec_l_extent",
-                "cli": ["--l-extent"],
-                "w": "text",
-                "placeholder": "0.5",
-            },
-            {
-                "id": "dec_pe_type",
-                "cli": ["--pe-type"],
-                "w": "select",
-                "choices": [
+            _num("dec_layers", ["--layers"], "3"),
+            _num("dec_dim", ["--dim"], "1024"),
+            _num("dec_l_extent", ["--l-extent"], "0.5"),
+            _select(
+                "dec_pe_type",
+                ["--pe-type"],
+                [
                     "geom_ft",
                     "geom_full",
                     "geom_lowf",
@@ -1016,26 +653,11 @@ TRAIN_DEC_GROUPS: list[Group] = [
                     "gaussian",
                     "none",
                 ],
-            },
-            {"id": "dec_pe_dim", "cli": ["--pe-dim"], "w": "number"},
-            {
-                "id": "dec_domain",
-                "cli": ["--domain"],
-                "w": "select",
-                "choices": ["hartley", "fourier"],
-            },
-            {
-                "id": "dec_activation",
-                "cli": ["--activation"],
-                "w": "select",
-                "choices": ["relu", "leaky_relu"],
-            },
-            {
-                "id": "dec_feat_sigma",
-                "cli": ["--feat-sigma"],
-                "w": "text",
-                "placeholder": "0.5",
-            },
+            ),
+            _num("dec_pe_dim", ["--pe-dim"]),
+            _select("dec_domain", ["--domain"], ["hartley", "fourier"]),
+            _select("dec_activation", ["--activation"], ["relu", "leaky_relu"]),
+            _num("dec_feat_sigma", ["--feat-sigma"], "0.5"),
         ],
     ),
 ]
@@ -1044,76 +666,38 @@ BACKPROJECT_VOXEL_GROUPS: list[Group] = [
     _g(
         "Dataset loading",
         [
-            {"id": "bpv_uninvert", "cli": ["--uninvert-data"], "w": "flag_true"},
-            {"id": "bpv_lazy", "cli": ["--lazy"], "w": "flag_true"},
-            {"id": "bpv_ind", "cli": ["--ind"], "w": "text"},
-            {"id": "bpv_first", "cli": ["--first"], "w": "number"},
+            _flag("bpv_uninvert", ["--uninvert-data"]),
+            _flag("bpv_lazy", ["--lazy"]),
+            _text("bpv_ind", ["--ind"]),
+            _num("bpv_first", ["--first"]),
         ],
     ),
     _g(
         "Backprojection parameters",
         [
-            {
-                "id": "bpv_half_maps",
-                "cli": ["--no-half-maps"],
-                "w": "flag_false",
-            },
-            {
-                "id": "bpv_fsc_vals",
-                "cli": ["--no-fsc-vals"],
-                "w": "flag_false",
-            },
-            {
-                "id": "bpv_batch_size",
-                "cli": ["-b", "--batch-size"],
-                "w": "number",
-                "placeholder": "1000",
-            },
-            {
-                "id": "bpv_ctf_alg",
-                "cli": ["--ctf-alg"],
-                "w": "select",
-                "choices": ["flip", "mul"],
-                "default": "mul",
-                "help": "CTF algorithm: phase flip (flip) or multiply (mul).",
-            },
-            {
-                "id": "bpv_reg_weight",
-                "cli": ["--reg-weight"],
-                "w": "text",
-                "placeholder": "1.0",
-            },
-            {
-                "id": "bpv_output_sumcount",
-                "cli": ["--output-sumcount"],
-                "w": "flag_true",
-            },
-            {
-                "id": "bpv_log_interval",
-                "cli": ["--log-interval"],
-                "w": "text",
-                "placeholder": "5000",
-            },
+            _flag_false("bpv_half_maps", ["--no-half-maps"]),
+            _flag_false("bpv_fsc_vals", ["--no-fsc-vals"]),
+            _num("bpv_batch_size", ["-b", "--batch-size"], "1000"),
+            _select(
+                "bpv_ctf_alg",
+                ["--ctf-alg"],
+                ["flip", "mul"],
+                default="mul",
+                help="CTF algorithm: phase flip (flip) or multiply (mul).",
+            ),
+            _num("bpv_reg_weight", ["--reg-weight"], "1.0"),
+            _flag("bpv_output_sumcount", ["--output-sumcount"]),
+            _num("bpv_log_interval", ["--log-interval"], "5000"),
         ],
     ),
     _g(
         "Tilt series parameters",
         [
-            {"id": "bpv_tilt", "cli": ["--tilt"], "w": "flag_true"},
-            {
-                "id": "bpv_ntilts",
-                "cli": ["--ntilts"],
-                "w": "number",
-                "placeholder": "10",
-            },
-            {"id": "bpv_force_ntilts", "cli": ["--force-ntilts"], "w": "flag_true"},
-            {"id": "bpv_dose_per_tilt", "cli": ["-d", "--dose-per-tilt"], "w": "text"},
-            {
-                "id": "bpv_angle_per_tilt",
-                "cli": ["-a", "--angle-per-tilt"],
-                "w": "text",
-                "placeholder": "3",
-            },
+            _flag("bpv_tilt", ["--tilt"]),
+            _num("bpv_ntilts", ["--ntilts"], "10"),
+            _flag("bpv_force_ntilts", ["--force-ntilts"]),
+            _text("bpv_dose_per_tilt", ["-d", "--dose-per-tilt"]),
+            _num("bpv_angle_per_tilt", ["-a", "--angle-per-tilt"], "3"),
         ],
     ),
 ]
@@ -1159,125 +743,40 @@ def _build_abinit_het_old_groups() -> list[Group]:
     pose_search = _g(
         "Pose Search parameters",
         [
-            {
-                "id": "ahet_l_start",
-                "cli": ["--l-start"],
-                "w": "number",
-                "placeholder": "12",
-            },
-            {
-                "id": "ahet_l_end",
-                "cli": ["--l-end"],
-                "w": "number",
-                "placeholder": "32",
-            },
-            {"id": "ahet_niter", "cli": ["--niter"], "w": "number", "placeholder": "4"},
-            {
-                "id": "ahet_t_extent",
-                "cli": ["--t-extent"],
-                "w": "text",
-                "placeholder": "10",
-            },
-            {
-                "id": "ahet_t_ngrid",
-                "cli": ["--t-ngrid"],
-                "w": "number",
-                "placeholder": "7",
-            },
-            {
-                "id": "ahet_t_xshift",
-                "cli": ["--t-xshift"],
-                "w": "text",
-                "placeholder": "0",
-            },
-            {
-                "id": "ahet_t_yshift",
-                "cli": ["--t-yshift"],
-                "w": "text",
-                "placeholder": "0",
-            },
-            {
-                "id": "ahet_pretrain_ps",
-                "cli": ["--pretrain"],
-                "w": "number",
-                "placeholder": "10000",
-            },
-            {
-                "id": "ahet_ps_freq",
-                "cli": ["--ps-freq"],
-                "w": "number",
-                "placeholder": "5",
-            },
-            {
-                "id": "ahet_nkeptposes",
-                "cli": ["--nkeptposes"],
-                "w": "number",
-                "placeholder": "8",
-            },
-            {
-                "id": "ahet_base_healpy",
-                "cli": ["--base-healpy"],
-                "w": "number",
-                "placeholder": "2",
-            },
-            {
-                "id": "ahet_pose_model_update_freq",
-                "cli": ["--pose-model-update-freq"],
-                "w": "number",
-            },
+            _num("ahet_l_start", ["--l-start"], "12"),
+            _num("ahet_l_end", ["--l-end"], "32"),
+            _num("ahet_niter", ["--niter"], "4"),
+            _num("ahet_t_extent", ["--t-extent"], "10"),
+            _num("ahet_t_ngrid", ["--t-ngrid"], "7"),
+            _num("ahet_t_xshift", ["--t-xshift"], "0"),
+            _num("ahet_t_yshift", ["--t-yshift"], "0"),
+            _num("ahet_pretrain_ps", ["--pretrain"], "10000"),
+            _num("ahet_ps_freq", ["--ps-freq"], "5"),
+            _num("ahet_nkeptposes", ["--nkeptposes"], "8"),
+            _num("ahet_base_healpy", ["--base-healpy"], "2"),
+            _num("ahet_pose_model_update_freq", ["--pose-model-update-freq"]),
         ],
     )
     for i, g in enumerate(groups):
         if g["title"] == "Tilt series parameters":
             g["title"] = "Tilt series"
-            g["args"].append(
-                {"id": "ahet_enc_only", "cli": ["--enc-only"], "w": "flag_true"}
-            )
+            g["args"].append(_flag("ahet_enc_only", ["--enc-only"]))
         elif g["title"] == "I/O & logging":
-            g["args"].insert(
-                1, {"id": "ahet_load_poses", "cli": ["--load-poses"], "w": "text"}
-            )
+            g["args"].insert(1, _text("ahet_load_poses", ["--load-poses"]))
         elif g["title"] == "Training parameters":
             g["args"].extend(
                 [
-                    {
-                        "id": "ahet_equivariance",
-                        "cli": ["--equivariance"],
-                        "w": "text",
-                    },
-                    {
-                        "id": "ahet_eq_start_it",
-                        "cli": ["--eq-start-it"],
-                        "w": "number",
-                    },
-                    {"id": "ahet_eq_end_it", "cli": ["--eq-end-it"], "w": "number"},
-                    {
-                        "id": "ahet_l_ramp_epochs",
-                        "cli": ["--l-ramp-epochs"],
-                        "w": "number",
-                        "placeholder": "0",
-                    },
-                    {
-                        "id": "ahet_l_ramp_model",
-                        "cli": ["--l-ramp-model"],
-                        "w": "number",
-                        "placeholder": "0",
-                    },
-                    {
-                        "id": "ahet_reset_model_every",
-                        "cli": ["--reset-model-every"],
-                        "w": "number",
-                    },
-                    {
-                        "id": "ahet_reset_optim_every",
-                        "cli": ["--reset-optim-every"],
-                        "w": "number",
-                    },
-                    {
-                        "id": "ahet_reset_optim_after_pretrain",
-                        "cli": ["--reset-optim-after-pretrain"],
-                        "w": "number",
-                    },
+                    _text("ahet_equivariance", ["--equivariance"]),
+                    _num("ahet_eq_start_it", ["--eq-start-it"]),
+                    _num("ahet_eq_end_it", ["--eq-end-it"]),
+                    _num("ahet_l_ramp_epochs", ["--l-ramp-epochs"], "0"),
+                    _num("ahet_l_ramp_model", ["--l-ramp-model"], "0"),
+                    _num("ahet_reset_model_every", ["--reset-model-every"]),
+                    _num("ahet_reset_optim_every", ["--reset-optim-every"]),
+                    _num(
+                        "ahet_reset_optim_after_pretrain",
+                        ["--reset-optim-after-pretrain"],
+                    ),
                 ]
             )
             groups.insert(i + 1, pose_search)
@@ -1293,81 +792,35 @@ def _build_abinit_homo_old_groups() -> list[Group]:
     tilt = _g(
         "Tilt series",
         [
-            {"id": "ahom_tilt", "cli": ["--tilt"], "w": "text"},
-            {
-                "id": "ahom_tilt_deg",
-                "cli": ["--tilt-deg"],
-                "w": "text",
-                "placeholder": "45",
-            },
+            _text("ahom_tilt", ["--tilt"]),
+            _num("ahom_tilt_deg", ["--tilt-deg"], "45"),
         ],
     )
     pose_search = _g(
         "Pose search parameters",
         [
-            {
-                "id": "ahom_l_start",
-                "cli": ["--l-start"],
-                "w": "number",
-                "placeholder": "12",
-            },
-            {
-                "id": "ahom_l_end",
-                "cli": ["--l-end"],
-                "w": "number",
-                "placeholder": "32",
-            },
-            {"id": "ahom_niter", "cli": ["--niter"], "w": "number", "placeholder": "4"},
-            {
-                "id": "ahom_l_ramp_epochs",
-                "cli": ["--l-ramp-epochs"],
-                "w": "number",
-                "placeholder": "25",
-            },
-            {"id": "ahom_probabilistic", "cli": ["--probabilistic"], "w": "flag_true"},
-            {
-                "id": "ahom_nkeptposes",
-                "cli": ["--nkeptposes"],
-                "w": "number",
-                "placeholder": "8",
-            },
-            {
-                "id": "ahom_base_healpy",
-                "cli": ["--base-healpy"],
-                "w": "number",
-                "placeholder": "2",
-            },
-            {
-                "id": "ahom_pose_model_update_freq",
-                "cli": ["--pose-model-update-freq"],
-                "w": "number",
-            },
+            _num("ahom_l_start", ["--l-start"], "12"),
+            _num("ahom_l_end", ["--l-end"], "32"),
+            _num("ahom_niter", ["--niter"], "4"),
+            _num("ahom_l_ramp_epochs", ["--l-ramp-epochs"], "25"),
+            _flag("ahom_probabilistic", ["--probabilistic"]),
+            _num("ahom_nkeptposes", ["--nkeptposes"], "8"),
+            _num("ahom_base_healpy", ["--base-healpy"], "2"),
+            _num("ahom_pose_model_update_freq", ["--pose-model-update-freq"]),
         ],
     )
     homo_train_extra: list[Arg] = [
-        {
-            "id": "ahom_t_extent",
-            "cli": ["--t-extent"],
-            "w": "text",
-            "placeholder": "10",
-        },
-        {"id": "ahom_t_ngrid", "cli": ["--t-ngrid"], "w": "number", "placeholder": "7"},
-        {"id": "ahom_t_xshift", "cli": ["--t-xshift"], "w": "text", "placeholder": "0"},
-        {"id": "ahom_t_yshift", "cli": ["--t-yshift"], "w": "text", "placeholder": "0"},
-        {"id": "ahom_no_trans", "cli": ["--no-trans"], "w": "flag_true"},
-        {
-            "id": "ahom_pretrain_train",
-            "cli": ["--pretrain"],
-            "w": "number",
-            "placeholder": "10000",
-        },
-        {"id": "ahom_ps_freq", "cli": ["--ps-freq"], "w": "number", "placeholder": "5"},
+        _num("ahom_t_extent", ["--t-extent"], "10"),
+        _num("ahom_t_ngrid", ["--t-ngrid"], "7"),
+        _num("ahom_t_xshift", ["--t-xshift"], "0"),
+        _num("ahom_t_yshift", ["--t-yshift"], "0"),
+        _flag("ahom_no_trans", ["--no-trans"]),
+        _num("ahom_pretrain_train", ["--pretrain"], "10000"),
+        _num("ahom_ps_freq", ["--ps-freq"], "5"),
     ]
     for i, g in enumerate(groups):
         if g["title"] == "I/O & logging":
-            g["args"].insert(
-                1, {"id": "ahom_load_poses", "cli": ["--load-poses"], "w": "text"}
-            )
+            g["args"].insert(1, _text("ahom_load_poses", ["--load-poses"]))
         elif g["title"] == "Dataset loading":
             groups.insert(i + 1, tilt)
         elif g["title"] == "Training parameters":
@@ -1385,48 +838,29 @@ ANALYZE_GROUPS: list[Group] = [
     _g(
         "Run options",
         [
-            {"id": "ana_device", "cli": ["--device"], "w": "number"},
-            {"id": "ana_skip_vol", "cli": ["--skip-vol"], "w": "flag_true"},
-            {"id": "ana_skip_umap", "cli": ["--skip-umap"], "w": "flag_true"},
+            _num("ana_device", ["--device"]),
+            _flag("ana_skip_vol", ["--skip-vol"]),
+            _flag("ana_skip_umap", ["--skip-umap"]),
         ],
     ),
     _g(
         "Volumes to generate",
         [
-            {"id": "ana_pc", "cli": ["--pc"], "w": "number", "placeholder": "2"},
-            {
-                "id": "ana_n_per_pc",
-                "cli": ["--n-per-pc"],
-                "w": "number",
-                "placeholder": "10",
-            },
-            {
-                "id": "ana_ksample",
-                "cli": ["--ksample"],
-                "w": "number",
-                "placeholder": "20",
-            },
+            _num("ana_pc", ["--pc"], "2"),
+            _num("ana_n_per_pc", ["--n-per-pc"], "10"),
+            _num("ana_ksample", ["--ksample"], "20"),
         ],
     ),
     _g(
         "Volume post-processing",
         [
-            {"id": "ana_apix", "cli": ["--Apix"], "w": "text"},
-            {"id": "ana_flip", "cli": ["--flip"], "w": "flag_true"},
-            {"id": "ana_invert", "cli": ["--invert"], "w": "flag_true"},
-            {
-                "id": "ana_downsample",
-                "cli": ["-d", "--downsample"],
-                "w": "number",
-            },
-            {"id": "ana_low_pass", "cli": ["--low-pass"], "w": "text"},
-            {"id": "ana_crop", "cli": ["--crop"], "w": "number"},
-            {
-                "id": "ana_vol_start_index",
-                "cli": ["--vol-start-index"],
-                "w": "number",
-                "placeholder": "1",
-            },
+            _text("ana_apix", ["--Apix"]),
+            _flag("ana_flip", ["--flip"]),
+            _flag("ana_invert", ["--invert"]),
+            _num("ana_downsample", ["-d", "--downsample"]),
+            _text("ana_low_pass", ["--low-pass"]),
+            _num("ana_crop", ["--crop"]),
+            _num("ana_vol_start_index", ["--vol-start-index"], "1"),
         ],
     ),
 ]
@@ -1435,94 +869,44 @@ ANALYZE_LANDSCAPE_GROUPS: list[Group] = [
     _g(
         "Run options",
         [
-            {"id": "alsc_device", "cli": ["--device"], "w": "number"},
-            {"id": "alsc_multigpu", "cli": ["--multigpu"], "w": "flag_true"},
-            {"id": "alsc_skip_umap", "cli": ["--skip-umap"], "w": "flag_true"},
-            {"id": "alsc_vol_ind", "cli": ["--vol-ind"], "w": "text"},
+            _num("alsc_device", ["--device"]),
+            _flag("alsc_multigpu", ["--multigpu"]),
+            _flag("alsc_skip_umap", ["--skip-umap"]),
+            _text("alsc_vol_ind", ["--vol-ind"]),
         ],
     ),
     _g(
         "Extra arguments for volume generation",
         [
-            {
-                "id": "alsc_sketch_size",
-                "cli": ["-N", "--sketch-size"],
-                "w": "number",
-                "placeholder": "1000",
-            },
-            {
-                "id": "alsc_apix",
-                "cli": ["--Apix"],
-                "w": "text",
-                "placeholder": "1",
-            },
-            {"id": "alsc_flip", "cli": ["--flip"], "w": "flag_true"},
-            {
-                "id": "alsc_downsample",
-                "cli": ["-d", "--downsample"],
-                "w": "number",
-                "placeholder": "128",
-            },
-            {"id": "alsc_skip_vol", "cli": ["--skip-vol"], "w": "flag_true"},
-            {
-                "id": "alsc_vol_start_index",
-                "cli": ["--vol-start-index"],
-                "w": "number",
-                "placeholder": "1",
-            },
+            _num("alsc_sketch_size", ["-N", "--sketch-size"], "1000"),
+            _num("alsc_apix", ["--Apix"], "1"),
+            _flag("alsc_flip", ["--flip"]),
+            _num("alsc_downsample", ["-d", "--downsample"], "128"),
+            _flag("alsc_skip_vol", ["--skip-vol"]),
+            _num("alsc_vol_start_index", ["--vol-start-index"], "1"),
         ],
     ),
     _g(
         "Extra arguments for mask generation",
         [
-            {"id": "alsc_thresh", "cli": ["--thresh"], "w": "text"},
-            {
-                "id": "alsc_dilate",
-                "cli": ["--dilate"],
-                "w": "number",
-                "placeholder": "5",
-            },
-            {
-                "id": "alsc_cosine_edge",
-                "cli": ["--cosine-edge"],
-                "w": "number",
-                "placeholder": "0",
-            },
-            {"id": "alsc_mask", "cli": ["--mask"], "w": "text"},
+            _text("alsc_thresh", ["--thresh"]),
+            _num("alsc_dilate", ["--dilate"], "5"),
+            _num("alsc_cosine_edge", ["--cosine-edge"], "0"),
+            _text("alsc_mask", ["--mask"]),
         ],
     ),
     _g(
         "Extra arguments for clustering",
         [
-            {
-                "id": "alsc_linkage",
-                "cli": ["--linkage"],
-                "w": "text",
-                "placeholder": "average",
-            },
-            {
-                "id": "alsc_n_clusters",
-                "cli": ["-M"],
-                "w": "number",
-                "placeholder": "10",
-            },
+            _num("alsc_linkage", ["--linkage"], "average"),
+            _num("alsc_n_clusters", ["-M"], "10"),
         ],
     ),
     _g(
         "Extra arguments for landscape visualization",
         [
-            {
-                "id": "alsc_pc_dim",
-                "cli": ["--pc-dim"],
-                "w": "number",
-                "placeholder": "20",
-            },
-            {
-                "id": "alsc_plot_dim",
-                "cli": ["--plot-dim"],
-                "w": "number",
-                "placeholder": "5",
-            },
+            _num("alsc_pc_dim", ["--pc-dim"], "20"),
+            _num("alsc_plot_dim", ["--plot-dim"], "5"),
         ],
     ),
 ]
@@ -1531,95 +915,36 @@ ANALYZE_LANDSCAPE_FULL_GROUPS: list[Group] = [
     _g(
         "Run options",
         [
-            {"id": "alfull_device", "cli": ["--device"], "w": "number"},
-            {
-                "id": "alfull_landscape_dir",
-                "cli": ["--landscape-dir"],
-                "w": "text",
-            },
-            {
-                "id": "alfull_seed",
-                "cli": ["--seed"],
-                "w": "number",
-                "placeholder": "0",
-            },
+            _num("alfull_device", ["--device"]),
+            _text("alfull_landscape_dir", ["--landscape-dir"]),
+            _num("alfull_seed", ["--seed"], "0"),
         ],
     ),
     _g(
         "Volume generation arguments",
         [
-            {
-                "id": "alfull_training_volumes",
-                "cli": ["-N", "--training-volumes"],
-                "w": "number",
-                "placeholder": "10000",
-            },
-            {"id": "alfull_flip", "cli": ["--flip"], "w": "flag_true"},
-            {
-                "id": "alfull_downsample",
-                "cli": ["-d", "--downsample"],
-                "w": "number",
-                "placeholder": "128",
-            },
-            {"id": "alfull_skip_vol", "cli": ["--skip-vol"], "w": "flag_true"},
+            _num("alfull_training_volumes", ["-N", "--training-volumes"], "10000"),
+            _flag("alfull_flip", ["--flip"]),
+            _num("alfull_downsample", ["-d", "--downsample"], "128"),
+            _flag("alfull_skip_vol", ["--skip-vol"]),
         ],
     ),
     _g(
         "Volume mapping arguments",
         [
-            {
-                "id": "alfull_batch_size",
-                "cli": ["--batch-size"],
-                "w": "number",
-                "placeholder": "64",
-            },
-            {
-                "id": "alfull_test_batch_size",
-                "cli": ["--test-batch-size"],
-                "w": "number",
-                "placeholder": "1000",
-            },
-            {
-                "id": "alfull_epochs",
-                "cli": ["--epochs"],
-                "w": "number",
-                "placeholder": "200",
-            },
-            {
-                "id": "alfull_lr",
-                "cli": ["--lr"],
-                "w": "text",
-                "placeholder": "1e-4",
-            },
-            {
-                "id": "alfull_dim",
-                "cli": ["--dim"],
-                "w": "number",
-                "placeholder": "512",
-            },
-            {
-                "id": "alfull_layers",
-                "cli": ["--layers"],
-                "w": "number",
-                "placeholder": "3",
-            },
+            _num("alfull_batch_size", ["--batch-size"], "64"),
+            _num("alfull_test_batch_size", ["--test-batch-size"], "1000"),
+            _num("alfull_epochs", ["--epochs"], "200"),
+            _num("alfull_lr", ["--lr"], "1e-4"),
+            _num("alfull_dim", ["--dim"], "512"),
+            _num("alfull_layers", ["--layers"], "3"),
         ],
     ),
     _g(
         "Volume PC clustering arguments",
         [
-            {
-                "id": "alfull_num_neighbors",
-                "cli": ["--num-neighbors"],
-                "w": "number",
-                "placeholder": "50",
-            },
-            {
-                "id": "alfull_resolution",
-                "cli": ["--resolution"],
-                "w": "text",
-                "placeholder": "1.5",
-            },
+            _num("alfull_num_neighbors", ["--num-neighbors"], "50"),
+            _num("alfull_resolution", ["--resolution"], "1.5"),
         ],
     ),
 ]
@@ -1676,6 +1001,10 @@ COMMAND_BUILDER_SCHEMA: Schema = {
     "analyze": ANALYZE_GROUPS,
     "analyze_landscape": ANALYZE_LANDSCAPE_GROUPS,
     "analyze_landscape_full": ANALYZE_LANDSCAPE_FULL_GROUPS,
+}
+
+COMMAND_BUILDER_BATCH_SIZE_ARG_IDS: dict[str, list[str]] = {
+    cmd: batch_size_arg_ids_for_command(cmd) for cmd in COMMAND_BUILDER_COMMAND_KEYS
 }
 
 _cli_help = load_cli_help_maps()

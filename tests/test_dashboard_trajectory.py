@@ -85,21 +85,36 @@ class TestParseIntFromDict:
         # matching the pre-refactor fallback behaviour.
         assert _parse_int_from_dict({"k": "oops"}, "k", default=-5, lo=0, hi=10) == -5
 
-    def test_traj_points_wrapper_clamps(self) -> None:
-        assert _parse_traj_points_value({"n_points": 1}) == 2  # lo=2
-        assert _parse_traj_points_value({"n_points": 99}) == 20  # hi=20
-        assert _parse_traj_points_value({}) == 4  # default
-
-    def test_traj_interpolation_wrapper_allows_zero(self) -> None:
-        # Interpolation range is [0, 20] (unlike anchor count which starts at 2).
-        assert _parse_traj_interpolation_value({"n_points": 0}) == 0
-        assert _parse_traj_interpolation_value({"n_points": -1}) == 0
-        assert _parse_traj_interpolation_value({"n_points": 50}) == 20
-
-    def test_traj_neighbor_wrapper_bounds(self) -> None:
-        assert _parse_traj_neighbor_value({"k": 1}, "k", default=10) == 2
-        assert _parse_traj_neighbor_value({"k": 9999}, "k", default=10) == 200
-        assert _parse_traj_neighbor_value({}, "k", default=15) == 15
+    @pytest.mark.parametrize(
+        "func,kwargs,expected",
+        [
+            # traj_points wrapper: lo=2, hi=20, default=4
+            (_parse_traj_points_value, {"data": {"n_points": 1}}, 2),
+            (_parse_traj_points_value, {"data": {"n_points": 99}}, 20),
+            (_parse_traj_points_value, {"data": {}}, 4),
+            # traj_interpolation wrapper: lo=0, hi=20, default=4
+            (_parse_traj_interpolation_value, {"data": {"n_points": 0}}, 0),
+            (_parse_traj_interpolation_value, {"data": {"n_points": -1}}, 0),
+            (_parse_traj_interpolation_value, {"data": {"n_points": 50}}, 20),
+            # traj_neighbor wrapper: lo=2, hi=200
+            (
+                _parse_traj_neighbor_value,
+                {"data": {"k": 1}, "key": "k", "default": 10},
+                2,
+            ),
+            (
+                _parse_traj_neighbor_value,
+                {"data": {"k": 9999}, "key": "k", "default": 10},
+                200,
+            ),
+            (_parse_traj_neighbor_value, {"data": {}, "key": "k", "default": 15}, 15),
+        ],
+    )
+    def test_wrapper_functions(
+        self, func: callable, kwargs: dict, expected: int
+    ) -> None:
+        """Consolidated parametrized tests for all three wrapper functions."""
+        assert func(**kwargs) == expected
 
 
 class TestTrajectoryEligibilityError:
@@ -514,35 +529,21 @@ class TestParseTrajectoryRequestBody:
         assert p["max_neighbors"] >= 2
         assert p["avg_neighbors"] >= 2
 
-    def test_anchor_bad_mode_rejected(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        with pytest.raises(ValueError, match='"direct" or "graph"'):
-            parse_trajectory_request_body(
-                dashboard_experiment,
-                {
-                    "anchor_indices": [0, 5],
-                    "mode": "spline",
-                    "x": "z0",
-                    "y": "z1",
-                },
-            )
-
-    def test_anchor_indices_not_int_rejected(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        with pytest.raises(ValueError, match="list of integers"):
-            parse_trajectory_request_body(
-                dashboard_experiment,
+    @pytest.mark.parametrize(
+        "payload,error_match",
+        [
+            # Anchor mode with invalid mode
+            (
+                {"anchor_indices": [0, 5], "mode": "spline", "x": "z0", "y": "z1"},
+                '"direct" or "graph"',
+            ),
+            # Anchor indices not integers
+            (
                 {"anchor_indices": [0, "bogus"], "x": "z0", "y": "z1"},
-            )
-
-    def test_direct_requires_z_or_pc_axes(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        with pytest.raises(ValueError, match="principal-component or z latent"):
-            parse_trajectory_request_body(
-                dashboard_experiment,
+                "list of integers",
+            ),
+            # Direct mode requires PC or z axes
+            (
                 {
                     "mode": "direct",
                     "x": "UMAP1",
@@ -551,14 +552,10 @@ class TestParseTrajectoryRequestBody:
                     "end": [1.0, 1.0],
                     "n_points": 3,
                 },
-            )
-
-    def test_bad_mode_for_non_anchor_rejected(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        with pytest.raises(ValueError, match='"direct" or "nearest"'):
-            parse_trajectory_request_body(
-                dashboard_experiment,
+                "principal-component or z latent",
+            ),
+            # Non-anchor mode with invalid mode
+            (
                 {
                     "mode": "spline",
                     "x": "z0",
@@ -566,23 +563,12 @@ class TestParseTrajectoryRequestBody:
                     "start": [0.0, 0.0],
                     "end": [1.0, 1.0],
                 },
-            )
-
-    def test_bad_start_end_rejected(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        with pytest.raises(ValueError, match="start and end"):
-            parse_trajectory_request_body(
-                dashboard_experiment,
-                {"mode": "direct", "x": "z0", "y": "z1", "start": [0.0]},
-            )
-
-    def test_non_numeric_endpoints_rejected(
-        self, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        with pytest.raises(ValueError, match="numeric"):
-            parse_trajectory_request_body(
-                dashboard_experiment,
+                '"direct" or "nearest"',
+            ),
+            # Bad start/end length
+            ({"mode": "direct", "x": "z0", "y": "z1", "start": [0.0]}, "start and end"),
+            # Non-numeric endpoints
+            (
                 {
                     "mode": "direct",
                     "x": "z0",
@@ -590,7 +576,16 @@ class TestParseTrajectoryRequestBody:
                     "start": ["a", "b"],
                     "end": [1.0, 1.0],
                 },
-            )
+                "numeric",
+            ),
+        ],
+    )
+    def test_validation_errors(
+        self, dashboard_experiment: DashboardExperiment, payload: dict, error_match: str
+    ) -> None:
+        """Consolidated parametrized tests for request validation errors."""
+        with pytest.raises(ValueError, match=error_match):
+            parse_trajectory_request_body(dashboard_experiment, payload)
 
     def test_traj_xy_custom_overrides_start_end(
         self, dashboard_experiment: DashboardExperiment

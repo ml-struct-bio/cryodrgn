@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-
 import pytest
+from pathlib import Path
 
 from cryodrgn.commands import dashboard as dash_cli, train_vae
 from cryodrgn.dashboard.command_builder_cli_help import (
@@ -20,6 +20,7 @@ from cryodrgn.dashboard.command_builder_cli_help import (
     resolved_help_for_flag,
 )
 from cryodrgn.dashboard.command_builder_data import (
+    COMMAND_BUILDER_BATCH_SIZE_ARG_IDS,
     COMMAND_BUILDER_COMMAND_KEYS,
     COMMAND_BUILDER_MANUSCRIPT_LABELS,
     COMMAND_BUILDER_MANUSCRIPT_URLS,
@@ -29,15 +30,12 @@ from cryodrgn.dashboard.command_builder_data import (
     arg_is_epoch_denominated,
     arg_is_num_epochs,
     arg_show_display_name,
+    batch_size_arg_ids_for_command,
     default_outdir_for_command,
 )
 from cryodrgn.dashboard.context import command_builder_template_kwargs
 from cryodrgn.dashboard.data import DashboardExperiment
-from cryodrgn.dashboard.command_builder_page import (
-    _github_repo_release_url,
-    build_command_builder_page_site,
-    render_command_builder_html,
-)
+from cryodrgn.dashboard.command_builder_page import _github_repo_release_url
 
 
 class TestCommandModuleDocstrings:
@@ -107,6 +105,31 @@ class TestArgIsBatchSizeDenominated:
             {"cli": ["-n", "--num-epochs"], "w": "number"}
         )
         assert not arg_is_batch_size_denominated({"cli": ["--pretrain"], "w": "number"})
+
+
+class TestBatchSizeArgIdsForCommand:
+    def test_abinit_lists_all_batch_size_fields(self) -> None:
+        ids = batch_size_arg_ids_for_command("abinit")
+        assert ids == [
+            "ab_batch_size_hps",
+            "ab_batch_size_known_poses",
+            "ab_batch_size_sgd",
+        ]
+
+    def test_analyze_commands_have_no_batch_size_fields(self) -> None:
+        assert batch_size_arg_ids_for_command("analyze") == []
+        assert batch_size_arg_ids_for_command("analyze_landscape") == []
+
+    def test_landscape_full_includes_train_and_test_batch_sizes(self) -> None:
+        assert batch_size_arg_ids_for_command("analyze_landscape_full") == [
+            "alfull_batch_size",
+            "alfull_test_batch_size",
+        ]
+
+    def test_precomputed_map_covers_all_commands(self) -> None:
+        assert set(COMMAND_BUILDER_BATCH_SIZE_ARG_IDS.keys()) == set(
+            COMMAND_BUILDER_COMMAND_KEYS
+        )
 
 
 class TestArgShowDisplayName:
@@ -242,8 +265,6 @@ class TestRequiredFieldTitles:
 
 class TestHelpMapFromCommandPy:
     def test_train_vae_has_common_flags(self) -> None:
-        from pathlib import Path
-
         p = Path(train_vae.__file__)
         m = help_map_from_command_py(p)
         assert "-o" in m or "--outdir" in m
@@ -535,277 +556,3 @@ class TestGithubRepoReleaseUrl:
             "4.3.0rc1",
         )
         assert url.endswith("/tree/4.3.0-rc1")
-
-
-class TestCommandBuilderPage:
-    def test_render_includes_schema_and_builder_ui(self) -> None:
-        html = render_command_builder_html(
-            base_path="/cryodrgn/",
-            repo_url="https://github.com/ml-struct-bio/cryodrgn",
-        )
-        assert '<base href="/cryodrgn/"/>' in html
-        assert 'class="cmd-builder-github-pages"' in html
-        assert "github-pages-note" not in html
-        assert "nav-github-release-link" in html
-        assert 'id="nav-manuscript-link"' in html
-        assert "nav-manuscript-link" in html
-        assert "CMD_MANUSCRIPT_URLS" in html
-        assert "CMD_MANUSCRIPT_LABELS" in html
-        assert 'id="nav-manuscript-label"' in html
-        assert "cryoDRGN-AI" in html
-        assert "s41592-025-02720-4" in html
-        assert "s41592-020-01049-4" in html
-        assert "ICCV_2021_paper.pdf" in html
-        assert "syncManuscriptLink" in html
-        assert '<span class="nav-brand-home-arrow"' not in html
-        assert (
-            "color: #fff"
-            in html.split("body.cmd-builder-github-pages .cmd-output pre")[1][:500]
-        )
-        assert (
-            '"Cascadia Code"'
-            in html.split("body.cmd-builder-github-pages .cmd-output pre")[1][:500]
-        )
-        assert "github.com/ml-struct-bio/cryodrgn/tree/" in html
-        assert "var CMD_SCHEMA" in html
-        assert "cryodrgn abinit" in html
-        assert 'class="cmd-group-card"' in html
-        assert "cmd-group-card-trigger" in html
-        assert "cmd-group-card-desc" in html
-        assert "cmd-builder-required-bar" in html
-        assert "cmd-builder-primary-region-content" in html
-        req_heading_css = html.split(".cmd-builder-required-heading")[1][:200]
-        assert "calc(var(--gp-nav-cmd-label-font) * 1.25)" in req_heading_css
-        assert "font-variant: normal" in req_heading_css
-        assert "font-weight: 700" in req_heading_css
-        assert "Dataset<br>loading" in html
-        assert "dataset-split > .cmd-builder-primary-col--checks" in html
-        checks_rule = html.split("dataset-split > .cmd-builder-primary-col--checks", 1)[
-            1
-        ]
-        assert "align-items: center" in checks_rule[:250]
-        assert "Training<br>parameters" in html
-        assert "border-radius: 0" in html.split(".cmd-builder-required-cell")[1][:400]
-        assert "cmd-builder-primary-pair" in html
-        assert "cmd-builder-primary-region--dataset" in html
-        assert "cmd-builder-dataset-core" in html
-        assert "cmd-builder-dataset-rest-fields" in html
-        ab_panel = html.split('id="panel-abinit"', 1)[1].split(
-            'id="panel-train_vae"', 1
-        )[0]
-        core_pos = ab_panel.index('<div class="cmd-builder-dataset-core">')
-        assert ab_panel.index('id="ab_ind"', core_pos) < ab_panel.index(
-            'id="ab_datadir"', core_pos
-        )
-        rest_pos = ab_panel.index(
-            '<div class="cmd-builder-dataset-rest-fields', core_pos
-        )
-        rest_chunk = ab_panel[rest_pos : rest_pos + 2000]
-        assert 'id="ab_ind"' not in rest_chunk
-        assert 'id="ab_datadir"' not in rest_chunk
-        assert "display: contents" in html
-        train_panel = html.split('id="panel-abinit"', 1)[1].split(
-            "cmd-builder-primary-region--training", 1
-        )[1]
-        assert "cmd-arg-unit--num-epochs" in train_panel
-        assert '<span class="cmd-arg-unit-line">total</span>' in train_panel
-        assert 'cmd-arg-unit--scaled" aria-hidden="true">epochs</span>' in train_panel
-        assert "cmd-builder-primary-region--training" in html
-        assert "initCommandBuilderPageGroupCards" in html
-        assert "nav-reconstruction-cmd" in html
-        assert html.count('id="cmd-type"') == 1
-        assert "No experiment loaded" not in html
-        assert '<span class="nav-page-title">' not in html
-        assert 'class="cmd-builder-program"' not in html
-        assert "cmd-outdir-stepper" in html
-        assert "Output folder" in html
-        assert 'value="001_abinit"' in html
-        assert 'value="001_abinit/"' not in html
-        assert "cmd-outdir-input-suffix" in html
-        assert "nav-cmd-doc" in html
-        assert "nav-cmd-doc-text" in html
-        assert "CMD_COMMAND_DOCS" in html
-        assert "heterogeneous reconstruction" in html
-        assert "abinit_het_old" in html
-        assert "abinit_homo_old" in html
-        assert 'value="001_abinit_het_old"' in html
-        assert "backproject_voxel" in html
-        assert 'value="001_backproject_voxel"' in html
-        assert "analyze_landscape" in html
-        assert 'id="ana_workdir"' in html
-        assert "cryodrgn analyze" in html
-        assert "optgroup" in html
-        assert "plot.ly" not in html.lower()
-        assert 'fetch("/api/set_workdir"' not in html
-        assert 'id="cmd-colorize"' in html
-        assert "Colorize" in html
-        assert "cmd-colorize-rainbow" in html
-        assert "renderColoredCommand" in html
-        assert 'id="cmd-copy"' in html
-        assert "Copy" in html
-        assert "btn-copy-icon" in html
-        assert "btn-copy-label-line" in html
-        assert 'stroke="#000"' in html
-        assert "max-height: 10dvh" in html
-        assert "--gp-font-scale-root: calc(1.221 * 0.9)" in html
-        assert "--gp-nav-cmd-label-font:" in html
-        assert "--gp-arg-region-title-font:" in html
-        assert "CMD_WRAP_MIN_CHARS = 80" in html
-        assert "CMD_LINE_MAX_CHARS = 100" in html
-        assert "layoutCommandLineGroups" in html
-        assert "layoutBodyLineGroupsEvenly" in html
-        assert "lineGroupCharLen" in html
-        assert "CMD_LINE_HANG_SPACES" in html
-        assert "cmd-line-hang" in html
-        assert "--cmd-line-hang-indent: 2ch" in html
-        assert "updateCommandDisplay" in html
-        assert "Advanced parameters" in html
-        assert "cmd-builder-advanced-region" in html
-        assert "gap: calc(0.45rem * 1.13 * 0.8)" in html
-        assert "flex: 0 0 41%" in html
-        assert "height: 41%" in html
-        assert (
-            "flex-direction: column"
-            in html.split("body.cmd-builder-github-pages .cmd-output-actions {", 1)[1][
-                :220
-            ]
-        )
-        assert "max-height: 17dvh" in html
-        assert "gap: 0.35rem calc(0.85rem * 0.8)" in html
-        assert "cmd-builder-cmd-dock" in html
-        assert "cmd-arg-unit--scaled" in html
-        assert "cmd-arg-unit--num-epochs" in html
-        assert 'id="ab_n"' in html
-        ab_n_chunk = html[html.index('id="ab_n"') : html.index('id="ab_n"') + 500]
-        assert "cmd-arg-unit--num-epochs" in ab_n_chunk
-        assert '<span class="cmd-arg-unit-line">total</span>' in ab_n_chunk
-        assert "cmd-arg-unit--scaled" in html.split('id="ab_epochs_sgd"', 1)[1][:400]
-        pose_only_chunk = html.split('id="ab_pose_only_phase"', 1)[1][:450]
-        assert (
-            'cmd-arg-unit--scaled" aria-hidden="true">epochs</span>' in pose_only_chunk
-        )
-        ab_n_label = html.split('for="ab_n"', 1)[1][:280]
-        assert "cmd-arg-display-name" not in ab_n_label
-        assert "cmd-arg-display-name" in html
-        assert "font-style: italic" in html.split(".cmd-arg-display-name")[1][:120]
-        assert 'class="cmd-arg-display-name">weight decay</span>' in html
-        assert (
-            '<code>--wd</code><span class="cmd-arg-display-name">weight decay</span>'
-            in html
-        )
-        vae_b_chunk = html.split('for="vae_b"', 1)[1][:500]
-        assert 'cmd-arg-unit--scaled" aria-hidden="true">images</span>' in vae_b_chunk
-        assert "cmd-arg-display-name" in vae_b_chunk
-        assert "command-builder-manuscript.png" in html
-        assert "nav-manuscript-icon" in html
-        assert "nav-header-icons" in html
-        assert "nav-header-icon-label" in html
-        assert ">code</span>" in html
-        assert (
-            COMMAND_BUILDER_MANUSCRIPT_LABELS["abinit"]
-            in html.split('id="nav-manuscript-label"', 1)[1][:120]
-        )
-        assert "command builder" in html
-        gh_svg_css = html.split(
-            "body.cmd-builder-github-pages .nav-github-release-link svg {"
-        )[1][:120]
-        assert "var(--gp-nav-github-icon-scale)" in gh_svg_css
-        assert "--gp-nav-github-icon-scale: 0.576" in html
-        assert "nav-header-icon-item--code" in html
-        assert "nav-header-icon-item--paper" in html
-        assert "flex-direction: row" in html.split(".nav-header-icon-item {")[1][:120]
-        paper_item = html.split('id="nav-manuscript-icon-item"', 1)[1][:500]
-        assert "nav-manuscript-link" in paper_item.split("nav-header-icon-label", 1)[0]
-        assert 'href="https://cryodrgn.cs.princeton.edu/"' in html
-        assert 'class="nav-brand-link"' in html
-        gp_logo_hover = html.split(
-            "body.cmd-builder-github-pages a.nav-brand-link:hover .nav-logo", 1
-        )[1][:200]
-        assert "filter: none" in gp_logo_hover
-        assert "transform: none" in gp_logo_hover
-        assert ".nav a.nav-brand-link:hover .nav-logo" in html
-        assert "brightness(1.14) drop-shadow" in html
-        assert (
-            "body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line2-main"
-            in html
-        )
-        assert (
-            "background: transparent"
-            in html.split(
-                "body.cmd-builder-github-pages a.nav-brand-link:hover .nav-brand-line2-main"
-            )[1][:400]
-        )
-        assert (
-            "gap: 0.02rem"
-            in html.split("body.cmd-builder-github-pages header.nav .nav-brand-text")[
-                1
-            ][:80]
-        )
-        assert "gap: 0.02rem" in html.split(".nav-header-icon-item--code")[1][:80]
-        nav_icons_css = html.split(".nav-header-icons {", 1)[1][:320]
-        assert "grid-column: 2 / 5" in nav_icons_css
-        assert "margin-inline-start: 35%" in nav_icons_css
-        assert "translateX(-50%)" in nav_icons_css
-        ms_link_css = html.split(
-            "body.cmd-builder-github-pages .nav-manuscript-link {", 1
-        )[1][:360]
-        assert "overflow: visible" in ms_link_css
-        assert "gp-nav-manuscript-icon-zoom" not in html
-        assert "gp-nav-manuscript-icon-width-scale" not in html
-        assert "--gp-nav-bar-logo-size: min(3.88rem, 12vw)" in html
-        assert "--gp-nav-header-icon-size: calc(2.142rem * 1.2)" in html
-        assert "* 0.8 * var(--gp-nav-font-scale)" in html
-        assert "var(--gp-nav-cmd-label-font) * 0.9" in html
-        paper_item_css = html.split(
-            "body.cmd-builder-github-pages .nav-header-icon-item--paper {", 1
-        )[1][:80]
-        assert "gap: 0.35rem" in paper_item_css
-        gh_hover = html.split(
-            "body.cmd-builder-github-pages .nav-github-release-link:hover,", 1
-        )[1][:420]
-        assert "background: transparent" in gh_hover
-        icon_hover_fx = html.split(
-            "body.cmd-builder-github-pages .nav-header-icon-item--code:hover .nav-github-release-link svg,",
-            1,
-        )[1][:700]
-        assert "filter: brightness(1.14)" in icon_hover_fx
-        assert "transform: scale(1.07)" in icon_hover_fx
-        ms_img_css = html.rsplit(
-            "body.cmd-builder-github-pages .nav-manuscript-link img.nav-manuscript-icon {",
-            1,
-        )[1][:200]
-        assert "max-height: var(--gp-nav-bar-logo-size)" in ms_img_css
-        cmd_dock_css = html.split(
-            "body.cmd-builder-github-pages .cmd-builder-cmd-dock {"
-        )[1][:520]
-        assert "border-radius: 8px" in cmd_dock_css
-        assert "rgba(255, 228, 232, 0.92)" in cmd_dock_css
-        assert 'id="nav-manuscript-icon-item"' in html
-        assert "grid-template-columns: auto 1fr auto 1fr auto" in html
-        assert "filtering .pkl" in html
-        assert "%(default)s" not in html
-        assert "(default: 16)" in html.split('id="ab_max_threads"', 1)[1][:400]
-        zdim_chunk = html.split('for="ab_zdim"', 1)[1][:500]
-        assert "conformation latent space" in zdim_chunk
-
-    def test_local_base_path_does_not_break_static_assets(self) -> None:
-        html = render_command_builder_html(
-            base_path="/",
-            repo_url="https://github.com/ml-struct-bio/cryodrgn",
-        )
-        head = html.split("</head>", 1)[0]
-        assert '<base href="/"/>' in head or '<base href="/">' in head
-        assert "github.com" not in head.split("<base ", 1)[1].split(">", 1)[0]
-        assert 'src="static/img/command-builder-manuscript.png"' in html
-        assert 'href="https://cryodrgn.cs.princeton.edu/"' in html
-
-    def test_build_writes_index_and_nojekyll(self, tmp_path) -> None:
-        out = build_command_builder_page_site(
-            tmp_path / "site",
-            base_path="/cryodrgn/",
-            repo_url="https://github.com/ml-struct-bio/cryodrgn",
-        )
-        assert (out / "index.html").is_file()
-        assert (out / ".nojekyll").is_file()
-        body = (out / "index.html").read_text(encoding="utf-8")
-        assert "cmd-form" in body

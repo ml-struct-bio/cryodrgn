@@ -2409,6 +2409,7 @@ for volume rendering</button>
 
       function fitButtonLabel(btn) {
         if (!btn || btn.nodeType !== 1) return;
+        if (btn.classList && btn.classList.contains("btn-copy")) return;
         if (btn.dataset.cryoFitButtonsBusy === "1") return;
         if (btn.hidden) return;
         if (isPlotlyButton(btn)) return;
@@ -2670,6 +2671,10 @@ for volume rendering</button>
           btn.dataset.cryoFitButtonsObserved = "1";
           return;
         }
+        if (btn.classList && btn.classList.contains("btn-copy")) {
+          btn.dataset.cryoFitButtonsObserved = "1";
+          return;
+        }
         ro.observe(btn);
         btn.dataset.cryoFitButtonsObserved = "1";
       }
@@ -2682,6 +2687,7 @@ for volume rendering</button>
           if (btn.closest && btn.closest("#cryo-chimerax-modal")) continue;
           if (btn.classList && btn.classList.contains("nav-chimerax-btn")) continue;
           if (btn.classList && btn.classList.contains("cmd-group-card-trigger")) continue;
+          if (btn.classList && btn.classList.contains("btn-copy")) continue;
           if (buttonHasVisibleText(btn)) scheduleFit(btn);
         }
       }
@@ -2701,6 +2707,7 @@ for volume rendering</button>
                 if (!(node.closest && node.closest("#cryo-chimerax-modal"))
                     && !(node.classList && node.classList.contains("nav-chimerax-btn"))
                     && !(node.classList && node.classList.contains("cmd-group-card-trigger"))
+                    && !(node.classList && node.classList.contains("btn-copy"))
                     && buttonHasVisibleText(node)) {
                   scheduleFit(node);
                 }
@@ -2712,6 +2719,7 @@ for volume rendering</button>
                   if (!(ib.closest && ib.closest("#cryo-chimerax-modal"))
                       && !(ib.classList && ib.classList.contains("nav-chimerax-btn"))
                       && !(ib.classList && ib.classList.contains("cmd-group-card-trigger"))
+                      && !(ib.classList && ib.classList.contains("btn-copy"))
                       && buttonHasVisibleText(ib)) {
                     scheduleFit(ib);
                   }

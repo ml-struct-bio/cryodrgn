@@ -11,11 +11,18 @@
   /** Match ``api_scatter`` when ``explorer_scatter=1`` (``--filter-max`` or 200k default). */
   var explorerScatterMaxPoints = {{ explorer_scatter_max_points | tojson }};
   var explorerScatterCapFromEnv = {{ explorer_scatter_cap_from_env | tojson }};
+  /** ``min(len(plot_df), scatter cap)`` from the server — stable cache-size ceiling (matches HTML ``max``). */
+  var explorerScatterPlottedN = {{ scatter_plotted_n | tojson }};
   /** While montage preload overlay is up: show this requested ``cache_size`` in the number field. */
   var preloadRequestedCacheTarget = null;
   /** Original selection-add count; frozen label on the button until that preload finishes. */
   var selectionCacheAdditionFreezeCount = null;
   var intFormatter = new Intl.NumberFormat("en-US", {maximumFractionDigits: 0});
+  var PLOTLY = CryoPlotlyArrays;
+  var customdataLength = PLOTLY.customdataLength;
+  var plotlyArrayLength = PLOTLY.length;
+  var isPlotlyArray = PLOTLY.isArray;
+  var plotlyDataRowAsArray = PLOTLY.rowAsArray;
 
   function fmtInt(value) {
     var num = Number(value);
@@ -386,8 +393,29 @@
     void btnMontageResampleCache.offsetWidth;
   }
 
+  function applyMontageResampleCacheButtonLabel(n) {
+    if (!btnMontageResampleCache) return;
+    var nStr = fmtInt(Math.max(1, Math.floor(Number(n) || 1)));
+    var label = btnMontageResampleCache.querySelector(".cryo-image-grid-resample-btn__label");
+    if (label) {
+      var lineEls = resampleCacheLabelLineEls(label);
+      if (lineEls.length >= 2) {
+        lineEls[0].textContent = "Resample " + nStr;
+        lineEls[1].textContent = "images...";
+        lineEls[1].hidden = false;
+      } else if (lineEls[0]) {
+        lineEls[0].textContent = "Resample " + nStr + " images...";
+      }
+    }
+    btnMontageResampleCache.setAttribute(
+      "aria-label",
+      "Resample " + nStr + " images from cache"
+    );
+  }
+
   function syncMontageResampleFromCacheButton() {
     if (!btnMontageResampleCache) return;
+    applyMontageResampleCacheButtonLabel(gridSize * gridSize);
     var pool = montageResampleFromCachePool();
     var poolOk = !!(pool && pool.length);
     btnMontageResampleCache.disabled = !!(gridSizeSelect && gridSizeSelect.disabled) || !poolOk;
@@ -968,7 +996,7 @@
     gridSize = parseInt(this.value) || 3;
     rebuildGrid();
     refillMontageForNewGridSize();
-    scheduleFitMontageResampleCacheButton();
+    syncMontageResampleFromCacheButton();
   });
 
   function fillSelect(sel, includeNone) {
@@ -1130,8 +1158,24 @@
   /** When set, ``saveSelectionViaBrowser`` saves these rows (single region) instead of full selection. */
   var pendingRegionSaveRows = null;
 
+  function scatterTraceCustomdata() {
+    if (!gd || !gd.data || !gd.data[0]) return null;
+    if (gd._fullData && gd._fullData[0] && gd._fullData[0].customdata) {
+      return gd._fullData[0].customdata;
+    }
+    if (gd.data[0].customdata) return gd.data[0].customdata;
+    return null;
+  }
+
   function plotHasScatterData() {
-    return !!(gd && gd.data && gd.data[0] && gd.data[0].customdata && gd.data[0].customdata.length);
+    if (!gd || !gd.data || !gd.data[0]) return false;
+    var trace = gd.data[0];
+    if (plotlyArrayLength(trace.x) > 0) return true;
+    var cd = scatterTraceCustomdata();
+    if (!cd) return false;
+    if (plotlyArrayLength(cd) > 0) return true;
+    var input = cd._inputArray;
+    return !!(input && typeof input.length === "number" && input.length > 0);
   }
 
   function shuffleInPlace(arr) {
@@ -1145,10 +1189,13 @@
   }
 
   function allPlotRowsFromTrace() {
-    var cd = gd.data[0].customdata;
+    var cd = scatterTraceCustomdata();
+    if (!cd) return [];
     var out = [];
-    for (var i = 0; i < cd.length; i++) {
-      out.push(cd[i][1]);
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var rowData = PLOTLY.rowAt(cd, i);
+      if (rowData.length > 1) out.push(rowData[1]);
     }
     return out;
   }
@@ -1160,7 +1207,25 @@
 
   /** Rows in the scatter subsample (matches server ``restrict_to_scatter_plot`` pool). */
   function scatterSubsetRowCount() {
-    if (plotHasScatterData()) return gd.data[0].customdata.length;
+    var budget = scatterPlottedRowBudget();
+    if (!gd || !gd.data || !gd.data[0]) return budget;
+    var trace = gd.data[0];
+    var nX = plotlyArrayLength(trace.x);
+    if (nX > 0) return Math.min(nX, budget);
+    var cd = scatterTraceCustomdata();
+    var nCd = customdataLength(cd);
+    if (nCd > 0) return Math.min(nCd, budget);
+    return budget;
+  }
+
+  /**
+   * Maximum cache target (first build or expand), from server ``scatter_plotted_n``.
+   * Do not use live trace length here — Plotly v6 binary arrays can mis-report ``.length``
+   * and would clamp a user-entered 5000 down to one HTTP chunk (~256 on 8 cores).
+   */
+  function scatterCacheSizeCap() {
+    var serverCap = Math.max(0, Math.floor(Number(explorerScatterPlottedN) || 0));
+    if (serverCap > 0) return serverCap;
     return scatterPlottedRowBudget();
   }
 
@@ -1175,24 +1240,75 @@
     return Math.max(1, Math.floor(step));
   }
 
+  /** 10^floor(log10(n)) — same power-of-ten scale as *n* (arrow / spinner snap lattice). */
+  function cacheSizeArrowSnapStep(n) {
+    n = Math.max(1, Math.floor(Number(n) || 1));
+    if (n <= 1) return 1;
+    return Math.pow(10, Math.floor(Math.log10(n)));
+  }
+
+  function cacheSizeArrowSnapBump(raw, direction) {
+    raw = Math.max(1, Math.floor(Number(raw) || 1));
+    var step = cacheSizeArrowSnapStep(raw);
+    if (direction > 0) {
+      if (raw % step === 0) {
+        return raw + step;
+      }
+      return Math.ceil((raw + 1) / step) * step;
+    }
+    if (raw % step === 0) {
+      return Math.max(1, raw - step);
+    }
+    var prev = Math.floor((raw - 1) / step) * step;
+    return prev < 1 ? 1 : prev;
+  }
+
+  function parseMontageCacheSizeFieldValue(el) {
+    if (!el) return NaN;
+    return parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10);
+  }
+
+  function montageCacheSizeFieldBounds() {
+    var cap = scatterCacheSizeCap();
+    if (!preloaded) return { min: 1, max: cap };
+    var have = cachedImageCount();
+    if (have >= cap) return { min: cap, max: cap };
+    return { min: Math.min(have + 1, cap), max: cap };
+  }
+
+  function clampMontageCacheSizeFieldValue(val) {
+    var b = montageCacheSizeFieldBounds();
+    if (!isFinite(val)) return b.min;
+    return Math.min(b.max, Math.max(b.min, Math.floor(Number(val))));
+  }
+
+  /** Keep step=1 so manual entry stays free; arrow/spinner snapping is handled in JS. */
+  function syncMontageCacheSizeArrowStep(el) {
+    if (!el || el.disabled) return;
+    el.setAttribute("step", "1");
+  }
+
+  function bumpMontageCacheSizeField(direction) {
+    var el = document.getElementById("montage-cache-size-input");
+    if (!el || el.disabled) return;
+    var raw = parseMontageCacheSizeFieldValue(el);
+    if (!isFinite(raw)) raw = montageCacheSizeFieldBounds().min;
+    el.value = String(clampMontageCacheSizeFieldValue(cacheSizeArrowSnapBump(raw, direction)));
+    syncMontageCacheSizeArrowStep(el);
+  }
+
   /**
-   * ``<input type="number">`` only steps correctly when (value − min) is a multiple of step.
-   * We keep min/step/value on that lattice so browser spinners use the power-of-ten step.
+   * Valid integer range for the cache size field (snap lattice step is always 1).
    */
   function montageCacheSizeStepperGrid(cap) {
     cap = Math.max(0, Math.floor(Number(cap) || 0));
     if (cap === 0) return { minG: 0, step: 1 };
-    var step = cacheSizePower10StepFromCap(cap);
     if (!preloaded) {
-      var stepUse = Math.min(step, cap);
-      return { minG: 0, step: Math.max(1, stepUse) };
+      return { minG: 1, step: 1 };
     }
     var have = cachedImageCount();
-    var floor = Math.min(have + 1, cap);
     if (have >= cap) return { minG: cap, step: 1 };
-    var minAligned = Math.ceil(floor / step) * step;
-    if (minAligned > cap) return { minG: floor, step: 1 };
-    return { minG: minAligned, step: step };
+    return { minG: Math.min(have + 1, cap), step: 1 };
   }
 
   function snapMontageCacheSizeToGridNearest(val, cap, grid) {
@@ -1212,43 +1328,36 @@
     return out;
   }
 
-  /** Largest grid-aligned montage total ≤ bound (same lattice as ``snapMontageCacheSizeToGridNearest``). */
-  function largestSnappedMontageTotalNotAbove(bound, cap, grid) {
-    cap = Math.max(0, Math.floor(Number(cap) || 0));
-    bound = Math.min(Math.floor(Number(bound) || 0), cap);
-    var minG = grid.minG;
-    var step = grid.step;
-    if (bound < minG) return null;
-    if (step <= 1) return bound;
-    var k = Math.floor((bound - minG) / step);
-    return minG + k * step;
+  /** Round to the nearest multiple of 1000 (used for expand-cache default suggestions). */
+  function nearestThousand(val) {
+    var n = Number(val);
+    if (!isFinite(n)) return 0;
+    return Math.round(n / 1000) * 1000;
   }
 
-  /** Default first-build target: step above, capped at plotted count (matches server ``preload_image_limit``). */
+  /** Default first-build target: power-of-ten step, capped at plotted count (matches server ``preload_image_limit``). */
   function firstBuildCacheSizeDefault() {
-    var cap = scatterSubsetRowCount();
+    var cap = scatterCacheSizeCap();
     if (cap === 0) return 1;
     var step = cacheSizePower10StepFromCap(cap);
     return Math.min(cap, Math.max(1, step));
   }
 
   /**
-   * Suggested new cache total when expanding: largest snap-to value strictly below 2× current cache
-   * (i.e. ≤ 2×have − 1 on the integer lattice), capped at plotted count; else minimum valid expansion.
+   * Suggested new cache total when expanding: nearest thousand to 2× the current cache,
+   * at least one image above the current total, capped at plotted count.
    */
   function defaultMontageNewCacheSizeSuggestion() {
     if (!preloaded) return firstBuildCacheSizeDefault();
     var have = cachedImageCount();
-    var cap = scatterSubsetRowCount();
+    var cap = scatterCacheSizeCap();
     if (have >= cap) return cap;
-    var grid = montageCacheSizeStepperGrid(cap);
     var floor = Math.min(have + 1, cap);
-    var bound = Math.min(cap, 2 * have - 1);
-    var cand = largestSnappedMontageTotalNotAbove(bound, cap, grid);
-    if (cand == null || cand < floor) {
-      return snapMontageCacheSizeToGridNearest(floor, cap, grid);
+    var target = nearestThousand(2 * have);
+    if (target < floor) {
+      target = Math.ceil(floor / 1000) * 1000;
     }
-    return cand;
+    return Math.min(cap, Math.max(floor, target));
   }
 
   function syncMontageCacheSizeLabelEl() {
@@ -1266,10 +1375,9 @@
   function syncMontageNewCacheSizeField() {
     var el = document.getElementById("montage-cache-size-input");
     if (!el) return;
-    var cap = scatterSubsetRowCount();
+    var cap = scatterCacheSizeCap();
     var grid = montageCacheSizeStepperGrid(cap);
     el.setAttribute("min", String(grid.minG));
-    el.setAttribute("step", String(grid.step));
     el.setAttribute("max", String(cap));
     syncMontageCacheSizeLabelEl();
     if (montagePreloadOverlayIsShown()) {
@@ -1278,6 +1386,7 @@
         var tgt = snapMontageCacheSizeToGridNearest(preloadRequestedCacheTarget, cap, grid);
         el.value = String(tgt);
       }
+      syncMontageCacheSizeArrowStep(el);
       return;
     }
     var have = cachedImageCount();
@@ -1291,26 +1400,28 @@
     el.disabled = false;
     if (!preloaded) {
       var d0 = firstBuildCacheSizeDefault();
-      var raw0 = parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10);
+      var raw0 = parseMontageCacheSizeFieldValue(el);
       if (!isFinite(raw0) || raw0 < 0 || raw0 > cap) raw0 = d0;
       var snapped0 = snapMontageCacheSizeToGridNearest(raw0, cap, grid);
       if (snapped0 < 1) snapped0 = snapMontageCacheSizeToGridNearest(d0, cap, grid);
       if (snapped0 < 1) snapped0 = 1;
       el.value = String(Math.min(cap, snapped0));
+      syncMontageCacheSizeArrowStep(el);
       return;
     }
     var suggestion = defaultMontageNewCacheSizeSuggestion();
-    var raw = parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10);
+    var raw = parseMontageCacheSizeFieldValue(el);
     var floor = Math.min(have + 1, cap);
-    if (!isFinite(raw) || raw <= have || raw > cap) raw = suggestion;
+    if (!isFinite(raw) || raw <= floor || raw > cap) raw = suggestion;
     var snapped = snapMontageCacheSizeToGridNearest(raw, cap, grid);
     if (snapped < floor) snapped = snapMontageCacheSizeToGridNearest(suggestion, cap, grid);
     el.value = String(Math.min(cap, Math.max(floor, snapped)));
+    syncMontageCacheSizeArrowStep(el);
   }
 
   /** Target cache size from field (first build: [1, cap]; expand: (have, cap]). */
   function readMontageCacheSizeInput() {
-    var cap = scatterSubsetRowCount();
+    var cap = scatterCacheSizeCap();
     var el = document.getElementById("montage-cache-size-input");
     var raw = el ? parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10) : NaN;
     var grid = montageCacheSizeStepperGrid(cap);
@@ -1322,7 +1433,7 @@
     }
     var have = cachedImageCount();
     var floor = have >= cap ? cap : have + 1;
-    if (!isFinite(raw)) raw = defaultMontageNewCacheSizeSuggestion();
+    if (!isFinite(raw) || raw <= floor) raw = defaultMontageNewCacheSizeSuggestion();
     var v2 = snapMontageCacheSizeToGridNearest(raw, cap, grid);
     return Math.min(cap, Math.max(floor, v2));
   }
@@ -1330,9 +1441,12 @@
   function rowToTraceIndex(row) {
     var want = Number(row);
     if (!isFinite(want)) return -1;
-    var cd = gd.data[0].customdata;
-    for (var i = 0; i < cd.length; i++) {
-      if (Number(cd[i][1]) === want) return i;
+    var cd = scatterTraceCustomdata();
+    if (!cd) return -1;
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var rowData = PLOTLY.rowAt(cd, i);
+      if (Number(rowData[1]) === want) return i;
     }
     return -1;
   }
@@ -1344,7 +1458,8 @@
     if (ti < 0) return null;
     var src = "";
     if (preloaded && preloaded.rowToSrc) {
-      src = preloaded.rowToSrc.get(rn) || preloaded.rowToSrc.get(r) || "";
+      // Check both numeric and string keys since row IDs may be stored as either
+      src = preloaded.rowToSrc.get(rn) || preloaded.rowToSrc.get(String(rn)) || preloaded.rowToSrc.get(r) || "";
     }
     return { ti: ti, row: rn, src: src };
   }
@@ -1418,7 +1533,7 @@
   }
 
   function allImagesCached() {
-    return cachedImageCount() >= scatterSubsetRowCount();
+    return cachedImageCount() >= scatterCacheSizeCap();
   }
 
   function syncExpandCacheButton(loading) {
@@ -1431,7 +1546,7 @@
     if (!preloaded) {
       btnExpandCache.classList.add("cryo-explorer-expand-cache-btn--compact");
       btnExpandCache.textContent = "Build new cache\nwith " + fmtInt(readMontageCacheSizeInput()) + " images";
-      var capB = scatterSubsetRowCount();
+      var capB = scatterCacheSizeCap();
       var canBuild = !!(totalParticles && plotHasScatterData() && capB > 0);
       btnExpandCache.disabled = !canBuild;
       btnExpandCache.title = !totalParticles
@@ -1448,7 +1563,7 @@
     )) + " random images";
     var have = cachedImageCount();
     var want = readMontageCacheSizeInput();
-    var cap = scatterSubsetRowCount();
+    var cap = scatterCacheSizeCap();
     var canExpand = !!(want > have && have < cap);
     btnExpandCache.disabled = !canExpand;
     if (have >= cap) {
@@ -1462,7 +1577,7 @@
   }
 
   function remainingScatterImagesToLoad() {
-    var cap = scatterSubsetRowCount();
+    var cap = scatterCacheSizeCap();
     var have = cachedImageCount();
     return Math.max(0, cap - have);
   }
@@ -1519,7 +1634,7 @@
   function syncImageCacheButton(loading) {
     if (!btnViewImages) return;
     if (!preloaded) {
-      btnViewImages.textContent = "Load all\n" + fmtInt(scatterSubsetRowCount()) + " images";
+      btnViewImages.textContent = "Load all\n" + fmtInt(scatterCacheSizeCap()) + " images";
     } else if (allImagesCached()) {
       btnViewImages.textContent = "Load remaining\n" + fmtInt(0) + " images";
     } else {
@@ -1648,6 +1763,8 @@
     if (finalTarget < 1) {
       return Promise.resolve(null);
     }
+
+    preloadRequestedCacheTarget = finalTarget;
 
     var progressStartCount = cachedImageCount();
     var progressTotal = progressStartCount > 0
@@ -1895,7 +2012,7 @@
 
   function buildInitialImageCache() {
     if (preloaded || !totalParticles || !plotHasScatterData()) return;
-    if (scatterSubsetRowCount() < 1) return;
+    if (scatterCacheSizeCap() < 1) return;
     var sz = readMontageCacheSizeInput();
     preloadImagesInChunksToTarget({
       finalTarget: sz,
@@ -1912,7 +2029,7 @@
   }
 
   function loadAllImagesInChunks() {
-    var total = scatterSubsetRowCount();
+    var total = scatterCacheSizeCap();
     return preloadImagesInChunksToTarget({
       finalTarget: total,
       scatterTotalForStepping: total,
@@ -1950,11 +2067,40 @@
 
   var montageCacheSizeInput = document.getElementById("montage-cache-size-input");
   if (montageCacheSizeInput) {
+    var montageCacheSizeInputPrev = null;
     var montageCacheOverlayBusy = function() {
       return !!(montagePreloadOverlayEl &&
         montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
     };
+    montageCacheSizeInput.addEventListener("keydown", function(ev) {
+      if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
+      if (montageCacheOverlayBusy() || montageCacheSizeInput.disabled) return;
+      ev.preventDefault();
+      bumpMontageCacheSizeField(ev.key === "ArrowUp" ? 1 : -1);
+      montageCacheSizeInputPrev = parseMontageCacheSizeFieldValue(montageCacheSizeInput);
+      syncExpandCacheButton(montageCacheOverlayBusy());
+    });
+    montageCacheSizeInput.addEventListener("focus", function() {
+      montageCacheSizeInputPrev = parseMontageCacheSizeFieldValue(montageCacheSizeInput);
+      syncMontageCacheSizeArrowStep(montageCacheSizeInput);
+    });
     montageCacheSizeInput.addEventListener("input", function() {
+      var raw = parseMontageCacheSizeFieldValue(montageCacheSizeInput);
+      if (isFinite(montageCacheSizeInputPrev) && isFinite(raw) && raw !== montageCacheSizeInputPrev) {
+        var delta = raw - montageCacheSizeInputPrev;
+        var stepPrev = cacheSizeArrowSnapStep(montageCacheSizeInputPrev);
+        if (delta === stepPrev || delta === -stepPrev || delta === 1 || delta === -1) {
+          var dir = delta > 0 ? 1 : -1;
+          var snapped = clampMontageCacheSizeFieldValue(
+            cacheSizeArrowSnapBump(montageCacheSizeInputPrev, dir)
+          );
+          if (snapped !== raw) {
+            montageCacheSizeInput.value = String(snapped);
+            raw = snapped;
+          }
+        }
+      }
+      montageCacheSizeInputPrev = raw;
       syncExpandCacheButton(montageCacheOverlayBusy());
     });
     montageCacheSizeInput.addEventListener("change", function() {
@@ -2153,7 +2299,8 @@
     var m = meta && meta.cdrgn_color_mode;
     if (m === "discrete" || m === "continuous") return m;
     var mc = gd.data && gd.data[0] && gd.data[0].marker && gd.data[0].marker.color;
-    if (Array.isArray(mc) && mc.length && typeof mc[0] === "string" && /^#/.test(String(mc[0]))) {
+    var mcLen = plotlyArrayLength(mc);
+    if (isPlotlyArray(mc) && mcLen > 0 && typeof PLOTLY.valueAt(mc, 0) === "string" && /^#/.test(String(PLOTLY.valueAt(mc, 0)))) {
       return "discrete";
     }
     return "continuous";
@@ -2169,14 +2316,18 @@
     if (!gd || !gd.data || !gd.data[0]) return null;
     var trace = gd.data[0];
     var markerColors = trace.marker ? trace.marker.color : null;
-    if (Array.isArray(markerColors)) {
-      var mv = Number(markerColors[ti]);
+    if (isPlotlyArray(markerColors)) {
+      var mv = Number(PLOTLY.valueAt(markerColors, ti));
       if (isFinite(mv)) return mv;
     }
     var cd = trace.customdata;
-    if (cd && cd[ti] && cd[ti].length > 2) {
-      var dv = Number(cd[ti][2]);
-      if (isFinite(dv)) return dv;
+    var cdLen = customdataLength(cd);
+    if (cd && ti < cdLen) {
+      var row = plotlyDataRowAsArray(PLOTLY.rowAt(cd, ti));
+      if (row.length > 2) {
+        var dv = Number(row[2]);
+        if (isFinite(dv)) return dv;
+      }
     }
     return null;
   }
@@ -2186,8 +2337,9 @@
     if (!sc.value || sc.value === "none") return [];
     var cd = gd.data[0].customdata;
     var out = [];
-    for (var i = 0; i < cd.length; i++) {
-      var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var row = PLOTLY.rowValue(cd, i, 1);
       var val = traceColorNumericValue(i);
       if (row != null && val != null) out.push({ti: i, row: row, value: val});
     }
@@ -2243,8 +2395,9 @@
   }
 
   function discreteCategoryKeyFromCustomRow(cdrow) {
-    if (!cdrow || cdrow.length < 3) return "__na__";
-    var v = cdrow[2];
+    var row = plotlyDataRowAsArray(cdrow);
+    if (row.length < 3) return "__na__";
+    var v = row[2];
     if (v == null || v === "") return "__na__";
     if (typeof v === "number" && !isFinite(v)) return "__na__";
     return String(v);
@@ -2274,11 +2427,12 @@
     var tr = gd.data[0];
     var cd = tr.customdata || [];
     var mcSrc = tr.marker && tr.marker.color ? tr.marker.color : null;
-    if (!cd.length || !Array.isArray(mcSrc) || mcSrc.length !== cd.length) return;
-    var mc = mcSrc.slice();
+    var cdLen = customdataLength(cd);
+    if (!cdLen || !isPlotlyArray(mcSrc) || plotlyArrayLength(mcSrc) !== cdLen) return;
+    var mc = PLOTLY.slice(mcSrc);
     var changed = false;
-    for (var pi = 0; pi < cd.length; pi++) {
-      var pk = discreteCategoryKeyFromCustomRow(cd[pi]);
+    for (var pi = 0; pi < cdLen; pi++) {
+      var pk = discreteCategoryKeyFromCustomRow(PLOTLY.rowAt(cd, pi));
       var cand = explorerDiscreteLabelColors[String(pk)];
       var hx =
         cand
@@ -2315,11 +2469,12 @@
       var markerColors = (gd.data[0].marker && gd.data[0].marker.color) || null;
       var colorByKey = {};
       var tracedCountByKey = {};
-      for (var i = 0; i < cd.length; i++) {
-        var fk = discreteCategoryKeyFromCustomRow(cd[i]);
+      var len = customdataLength(cd);
+      for (var i = 0; i < len; i++) {
+        var fk = discreteCategoryKeyFromCustomRow(PLOTLY.rowAt(cd, i));
         tracedCountByKey[fk] = (tracedCountByKey[fk] || 0) + 1;
-        if (!colorByKey[fk] && Array.isArray(markerColors)) {
-          var cval = markerColors[i];
+        if (!colorByKey[fk] && isPlotlyArray(markerColors)) {
+          var cval = PLOTLY.valueAt(markerColors, i);
           if (typeof cval === "string" && /^#/.test(cval)) colorByKey[fk] = cval;
         }
       }
@@ -2363,9 +2518,10 @@
     var cd = gd.data[0].customdata || [];
     var sel = new Set(saveSelectionRows || []);
     var keyToRows = new Map();
-    for (var i = 0; i < cd.length; i++) {
-      var k = discreteCategoryKeyFromCustomRow(cd[i]);
-      var row = cd[i][1];
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var k = discreteCategoryKeyFromCustomRow(PLOTLY.rowAt(cd, i));
+      var row = PLOTLY.rowValue(cd, i, 1);
       if (!keyToRows.has(k)) keyToRows.set(k, []);
       keyToRows.get(k).push(row);
     }
@@ -2391,9 +2547,10 @@
     }
     var cd = gd.data[0].customdata || [];
     var rows = [];
-    for (var i = 0; i < cd.length; i++) {
-      var k = discreteCategoryKeyFromCustomRow(cd[i]);
-      if (keySet.has(k)) rows.push(cd[i][1]);
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var k = discreteCategoryKeyFromCustomRow(PLOTLY.rowAt(cd, i));
+      if (keySet.has(k)) rows.push(PLOTLY.rowValue(cd, i, 1));
     }
     applyRowsSelection(rows, "Discrete");
     setExplorerLegendDiscreteKeysForSelection();

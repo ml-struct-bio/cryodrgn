@@ -925,6 +925,8 @@ class TestParticleExplorerTemplateRegressions:
         assert "suppressMontageUpdate: true" in body
         assert "suppressPlotGridHighlights = true" in body
         assert "IMAGE_CACHE_HTTP_CHUNK_MAX" in body
+        assert "explorerScatterPlottedN" in body
+        assert "function scatterCacheSizeCap()" in body
         assert "preloadFetchErrorMessage" in body
 
     def test_scatter_double_click_replaces_montage_slot_a_without_selection(

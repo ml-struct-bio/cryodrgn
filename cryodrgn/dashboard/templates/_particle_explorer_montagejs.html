@@ -71,11 +71,29 @@
 
 
 
+  var PLOTLY = CryoPlotlyArrays;
+  var customdataLength = PLOTLY.customdataLength;
+  var plotlyArrayLength = PLOTLY.length;
+  var isPlotlyArray = PLOTLY.isArray;
+  var plotlyDataRowAsArray = PLOTLY.rowAsArray;
+
+  function plotlyAt(arr, idx) {
+    return PLOTLY.valueAt(arr, idx);
+  }
+
+  function scatterPlotCustomdata() {
+    if (!gd || !gd.data || !gd.data[0]) return null;
+    return (gd._fullData && gd._fullData[0] && gd._fullData[0].customdata)
+      || gd.data[0].customdata
+      || null;
+  }
+
   function traceCustomdataColorDisp(ti) {
-    var cd = gd.data[0].customdata;
-    if (!cd || ti < 0 || ti >= cd.length) return null;
-    var row = cd[ti];
-    if (row && row.length > 2 && row[2] != null && row[2] !== "") return row[2];
+    var cd = scatterPlotCustomdata();
+    var len = plotlyArrayLength(cd);
+    if (!cd || ti < 0 || ti >= len) return null;
+    var row = plotlyDataRowAsArray(PLOTLY.rowAt(cd, ti));
+    if (row.length > 2 && row[2] != null && row[2] !== "") return row[2];
     return null;
   }
 
@@ -177,12 +195,13 @@
 
   /** Covariate colour for montage card border + scatter grid-letter marker outline (CSS colour string). */
   function montageCovariateBorderCss(ti, colorMode, markerColors, cmin, cmax) {
-    if (!Array.isArray(markerColors) || ti < 0 || ti >= markerColors.length) return ACCENT;
+    var mcLen = plotlyArrayLength(markerColors);
+    if (!isPlotlyArray(markerColors) || ti < 0 || ti >= mcLen) return ACCENT;
     if (colorMode === "discrete") {
-      var hx = markerColors[ti];
+      var hx = plotlyAt(markerColors, ti);
       return typeof hx === "string" && hx.charAt(0) === "#" ? hx : String(hx || ACCENT);
     }
-    var val = markerColors[ti];
+    var val = plotlyAt(markerColors, ti);
     var t = cmax > cmin && typeof val === "number" && isFinite(val)
       ? (val - cmin) / (cmax - cmin)
       : 0.5;
@@ -263,7 +282,8 @@
       return;
     }
     var tr = gd.data && gd.data[1];
-    if (!tr || !Array.isArray(tr.x) || !tr.x.length) {
+    var trXLen = plotlyArrayLength(tr && tr.x);
+    if (!tr || !isPlotlyArray(tr.x) || !trXLen) {
       gridLetterGlyphsOverlayEl.setAttribute("aria-hidden", "true");
       return;
     }
@@ -275,15 +295,18 @@
     var fontFamily = (tr.textfont && tr.textfont.family)
       ? String(tr.textfont.family)
       : "Georgia, 'Times New Roman', serif";
-    for (var gi = 0; gi < tr.x.length; gi++) {
+    for (var gi = 0; gi < trXLen; gi++) {
       var lab = "";
-      if (Array.isArray(tr.text) && tr.text[gi] != null) {
-        lab = String(tr.text[gi]);
+      if (isPlotlyArray(tr.text) && PLOTLY.valueAt(tr.text, gi) != null) {
+        lab = String(PLOTLY.valueAt(tr.text, gi));
       } else if (gi < labels.length) {
         lab = String(labels[gi]);
       }
       if (!lab) continue;
-      var pt = explorerDataToPlotStackXY(tr.x[gi], tr.y[gi]);
+      var pt = explorerDataToPlotStackXY(
+        PLOTLY.valueAt(tr.x, gi),
+        PLOTLY.valueAt(tr.y, gi)
+      );
       if (!pt) continue;
       var glyph = document.createElement("span");
       glyph.className = "cryo-explorer-grid-letter-glyph";
@@ -384,7 +407,7 @@
           textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
         }
       } else if (colorMode === "discrete") {
-        fillColors.push(inSel ? String(markerColors[tiH]) : GRID_HIGHLIGHT_CLEAR_FILL);
+        fillColors.push(inSel ? String(plotlyAt(markerColors, tiH)) : GRID_HIGHLIGHT_CLEAR_FILL);
         textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
       } else {
         fillColors.push(
@@ -424,13 +447,14 @@
     if (!items.length) return;
     var markerColors = gd.data[0].marker ? gd.data[0].marker.color : null;
     var colorCol = sc.value;
-    var hasColor = colorCol !== "none" && Array.isArray(markerColors);
+    var hasColor = colorCol !== "none" && isPlotlyArray(markerColors);
     var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
     var cmin = Infinity;
     var cmax = -Infinity;
     if (hasColor && colorMode === "continuous") {
-      for (var ci = 0; ci < markerColors.length; ci++) {
-        var vci = markerColors[ci];
+      var mcLen = plotlyArrayLength(markerColors);
+      for (var ci = 0; ci < mcLen; ci++) {
+        var vci = plotlyAt(markerColors, ci);
         if (typeof vci === "number" && isFinite(vci)) {
           if (vci < cmin) cmin = vci;
           if (vci > cmax) cmax = vci;
@@ -456,17 +480,28 @@
   }
 
   function buildTraceMap() {
-    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return;
-    var cd = gd.data[0].customdata;
+    if (!gd || !gd.data || !gd.data[0]) return;
+    var trace = gd.data[0];
+    var cd = (gd._fullData && gd._fullData[0] && gd._fullData[0].customdata)
+      || trace.customdata;
+    if (!cd) return;
     rowToTraceIndexMap = new Map();
     var tm = [];
     var hasPreloaded = !!preloaded;
-    for (var i = 0; i < cd.length; i++) {
-      var row = cd[i][1];
+    var len = plotlyArrayLength(trace.x);
+    if (!len) len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var rowData = PLOTLY.rowAt(cd, i);
+      if (!rowData.length) continue;
+      var row = rowData[1];
       var rowN = Number(row);
       if (isFinite(rowN)) rowToTraceIndexMap.set(rowN, i);
-      if (hasPreloaded && preloaded.rows.has(row)) {
-        tm.push({ti: i, src: preloaded.rowToSrc.get(row), row: row});
+      if (hasPreloaded) {
+        // Check for row in both original form and as string/number
+        var rowKey = preloaded.rows.has(row) ? row : (preloaded.rows.has(String(row)) ? String(row) : (preloaded.rows.has(rowN) ? rowN : null));
+        if (rowKey !== null) {
+          tm.push({ti: i, src: preloaded.rowToSrc.get(rowKey) || preloaded.rowToSrc.get(row) || preloaded.rowToSrc.get(String(row)) || preloaded.rowToSrc.get(rowN) || "", row: rowN});
+        }
       }
     }
     if (hasPreloaded) {
@@ -614,7 +649,7 @@
     }
     var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
     var colorCol = sc.value;
-    var hasColor = colorCol !== "none" && Array.isArray(markerColors);
+    var hasColor = colorCol !== "none" && isPlotlyArray(markerColors);
     var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
     if (hasColor && colorMode === "discrete") {
       nbs = nbs.slice().sort(function(a, b) {
@@ -639,13 +674,13 @@
       });
     } else if (hasColor) {
       nbs = nbs.slice().sort(function(a, b) {
-        return markerColors[a.ti] - markerColors[b.ti];
+        return plotlyAt(markerColors, a.ti) - plotlyAt(markerColors, b.ti);
       });
     } else {
       var xs = gd.data && gd.data[0] ? gd.data[0].x : null;
       nbs = nbs.slice().sort(function(a, b) {
-        var ax = xs ? xs[a.ti] : 0;
-        var bx = xs ? xs[b.ti] : 0;
+        var ax = xs ? (PLOTLY.valueAt(xs, a.ti) || 0) : 0;
+        var bx = xs ? (PLOTLY.valueAt(xs, b.ti) || 0) : 0;
         if (ax !== bx) return ax - bx;
         return a.row - b.row;
       });
@@ -658,13 +693,14 @@
     var colorCol = sc.value;
     var colorColLabel = covariateDisplayMap[colorCol] || colorCol;
     var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
-    var hasColor = colorCol !== "none" && Array.isArray(markerColors);
+    var hasColor = colorCol !== "none" && isPlotlyArray(markerColors);
     var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
     var cmin = Infinity;
     var cmax = -Infinity;
     if (hasColor && colorMode === "continuous") {
-      for (var ci = 0; ci < markerColors.length; ci++) {
-        var vci = markerColors[ci];
+      var mcLen = plotlyArrayLength(markerColors);
+      for (var ci = 0; ci < mcLen; ci++) {
+        var vci = plotlyAt(markerColors, ci);
         if (typeof vci === "number" && isFinite(vci)) {
           if (vci < cmin) cmin = vci;
           if (vci > cmax) cmax = vci;
@@ -724,7 +760,7 @@
       var ti = item.ti;
       var dispVal = traceCustomdataColorDisp(ti);
       if (dispVal == null && colorMode === "continuous") {
-        var vmc = markerColors[ti];
+        var vmc = plotlyAt(markerColors, ti);
         dispVal = typeof vmc === "number" && isFinite(vmc) ? vmc : vmc;
       }
       var dispStr = dispVal == null ? "—" : (
@@ -734,14 +770,14 @@
         ? ("k-means cluster = " + dispStr)
         : (colorColLabel + "=" + dispStr);
       if (colorMode === "discrete") {
-        var hexCol = markerColors[ti];
+        var hexCol = plotlyAt(markerColors, ti);
         var dStyles = discreteLabelMontageStyles(String(hexCol));
         montageCells[i].cell.style.background = dStyles.bg;
         setMontageCellSelectionBorderStyle(montageCells[i].cell, String(hexCol));
         montageCells[i].covar.style.color = dStyles.covarColor || "";
         montageCells[i].idx.style.color = dStyles.covarColor || "";
       } else {
-        var valC = markerColors[ti];
+        var valC = plotlyAt(markerColors, ti);
         var tCell = cmax > cmin && typeof valC === "number" && isFinite(valC)
           ? (valC - cmin) / (cmax - cmin)
           : 0.5;
@@ -814,8 +850,8 @@
     var nx = [], ny = [], txt = [];
     var showPlotHighlights = showGridHighlightsOnPlot();
     for (var k = 0; k < items.length; k++) {
-      nx.push(gd.data[0].x[items[k].ti]);
-      ny.push(gd.data[0].y[items[k].ti]);
+      nx.push(PLOTLY.traceValueAt(gd, 0, "x", items[k].ti));
+      ny.push(PLOTLY.traceValueAt(gd, 0, "y", items[k].ti));
       if (showPlotHighlights) txt.push(labels[k]);
     }
     var restyleData = {
@@ -913,9 +949,9 @@
     var n = lastMontageRows.length;
     if (!n) return;
     var trace = gd.data[1];
-    var oldX = Array.isArray(trace.x) ? trace.x.slice() : [];
-    var oldY = Array.isArray(trace.y) ? trace.y.slice() : [];
-    var oldText = Array.isArray(trace.text) ? trace.text.slice() : [];
+    var oldX = isPlotlyArray(trace.x) ? PLOTLY.slice(trace.x) : [];
+    var oldY = isPlotlyArray(trace.y) ? PLOTLY.slice(trace.y) : [];
+    var oldText = isPlotlyArray(trace.text) ? PLOTLY.slice(trace.text) : [];
     if (oldX.length !== n || slotIndex >= n) {
       syncHighlightTraceFromMontageItems(montageItemsFromLastRows());
       return;
@@ -933,8 +969,8 @@
       }
       items.push(keptHi);
     }
-    oldX[slotIndex] = gd.data[0].x[item.ti];
-    oldY[slotIndex] = gd.data[0].y[item.ti];
+    oldX[slotIndex] = PLOTLY.traceValueAt(gd, 0, "x", item.ti);
+    oldY[slotIndex] = PLOTLY.traceValueAt(gd, 0, "y", item.ti);
     var showPlotHighlights = showGridHighlightsOnPlot();
     var ctx = montageCellStyleContext();
     var restyleData = {
@@ -959,15 +995,16 @@
 
   function rowFromPlotlyPoint(pt) {
     if (!pt) return NaN;
-    if (pt.customdata != null && pt.customdata.length > 1) {
-      var r0 = Number(pt.customdata[1]);
+    var ptRow = plotlyDataRowAsArray(pt.customdata);
+    if (ptRow.length > 1) {
+      var r0 = Number(ptRow[1]);
       if (isFinite(r0)) return r0;
     }
     var pi = pt.pointIndex;
-    if (pi != null && gd && gd.data && gd.data[0] && gd.data[0].customdata) {
-      var cd = gd.data[0].customdata[pi];
-      if (cd && cd.length > 1) {
-        var r1 = Number(cd[1]);
+    if (pi != null && scatterPlotCustomdata()) {
+      var row = plotlyDataRowAsArray(PLOTLY.rowAt(scatterPlotCustomdata(), pi));
+      if (row.length > 1) {
+        var r1 = Number(row[1]);
         if (isFinite(r1)) return r1;
       }
     }
@@ -1541,8 +1578,8 @@
         if (!isFinite(rNum)) continue;
         var ti = traceIndexForPlotDfRow(row);
         if (ti < 0) continue;
-        var xd = gd.data[0].x[ti];
-        var yd = gd.data[0].y[ti];
+        var xd = PLOTLY.traceValueAt(gd, 0, "x", ti);
+        var yd = PLOTLY.traceValueAt(gd, 0, "y", ti);
         if (!isFinite(xd) || !isFinite(yd)) continue;
         if (scatterRawShapeContainsDataXY(raw, xd, yd)) {
           buckets[ri].push(rNum);
@@ -2059,7 +2096,7 @@
     }
     lassoSelectedRowSet = new Set();
     for (var si = 0; si < selected.length; si++) {
-      var r = cd[selected[si]][1];
+      var r = PLOTLY.rowValue(cd, selected[si], 1);
       lassoSelectedRowSet.add(r);
     }
     nudgeHighlightTraceAfterScatterglSelectRestyle();
@@ -2263,6 +2300,21 @@
               var montageOverlayBusy = montagePreloadOverlayEl
                 && montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show");
               if (!montageOverlayBusy) syncImageCacheButton(false);
+              // Re-check button state with retries to handle race condition
+              // where plot data isn't fully populated when finishScatterDraw runs.
+              // Plotly may use TypedArrays instead of regular JS arrays.
+              var retries = 0;
+              function retrySyncCacheButton() {
+                if (montageOverlayBusy || retries >= 10) return;
+                retries++;
+                var hasData = plotHasScatterData();
+                if (!hasData) {
+                  setTimeout(retrySyncCacheButton, 200);
+                } else {
+                  syncImageCacheButton(false);
+                }
+              }
+              setTimeout(retrySyncCacheButton, 100);
               syncScatterControlsAlignment();
               requestAnimationFrame(function() {
                 try { Plotly.Plots.resize(gd); } catch (e) {}
@@ -2338,8 +2390,9 @@
       for (var i = 0; i < ev.points.length; i++) {
         var p = ev.points[i];
         if (p.curveNumber !== 0) continue;
-        if (p.customdata != null && p.customdata.length > 1) {
-          var rSnap = Number(p.customdata[1]);
+        var snapRow = plotlyDataRowAsArray(p.customdata);
+        if (snapRow.length > 1) {
+          var rSnap = Number(snapRow[1]);
           if (isFinite(rSnap)) set.add(rSnap);
         }
       }
@@ -2371,9 +2424,11 @@
       if (isFinite(rtv)) rowSet.add(rtv);
     }
     var selected = [];
-    var cd = gd.data[0].customdata;
-    for (var i = 0; i < cd.length; i++) {
-      var row = cd[i] && cd[i].length > 1 ? cd[i][1] : null;
+    var cd = scatterPlotCustomdata();
+    if (!cd) return [];
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var row = PLOTLY.rowValue(cd, i, 1);
       var rowN = row == null ? NaN : Number(row);
       if (isFinite(rowN) && rowSet.has(rowN)) selected.push(i);
     }
@@ -2626,11 +2681,11 @@
       ? preloaded.traceMap
       : (activePool || []);
     if (!items.length) return [];
-    var xs = gd.data[0].x, ys = gd.data[0].y;
     var best = [];
     for (var j = 0; j < items.length; j++) {
       var ti = items[j].ti;
-      var ddx = xs[ti] - px, ddy = ys[ti] - py;
+      var ddx = PLOTLY.traceValueAt(gd, 0, "x", ti) - px;
+      var ddy = PLOTLY.traceValueAt(gd, 0, "y", ti) - py;
       var d2 = ddx * ddx + ddy * ddy;
       if (best.length < k) {
         best.push({j: j, d: d2});

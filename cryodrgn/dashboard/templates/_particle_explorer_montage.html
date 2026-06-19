@@ -86,8 +86,8 @@
               type="number"
               id="montage-cache-size-input"
               name="montage_cache_size"
-              min="0"
-              step="{{ preload_cache_step }}"
+              min="1"
+              step="1"
               inputmode="numeric"
               value="{{ preload_image_limit }}"
               max="{{ scatter_plotted_n }}"
@@ -170,10 +170,10 @@
                     </select>
                   </label>
                   <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
-                    aria-label="Resample images from cache" disabled>
+                    aria-label="Resample 9 images from cache" disabled>
                     <span class="cryo-image-grid-resample-btn__label">
-                      <span class="cryo-image-grid-resample-btn__line">Resample images</span>
-                      <span class="cryo-image-grid-resample-btn__line">from cache</span>
+                      <span class="cryo-image-grid-resample-btn__line">Resample 9</span>
+                      <span class="cryo-image-grid-resample-btn__line">images...</span>
                     </span>
                   </button>
                 </div>

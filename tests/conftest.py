@@ -4,6 +4,11 @@ import pytest
 import os
 import argparse
 import shutil
+import tempfile
+import threading
+import time
+import numpy as np
+from contextlib import contextmanager, nullcontext
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Generator, Optional, Union
@@ -478,6 +483,23 @@ def abinit_dir(request, tmpdir_factory) -> AbInitioDir:
 
 DASHBOARD_TRAIN_EPOCHS = 3
 DASHBOARD_ANALYZE_EPOCH = 2
+_DASHBOARD_DEFAULT_TEST_CACHE = os.path.join(
+    tempfile.gettempdir(), "cryodrgn_smoke_cache"
+)
+_DASHBOARD_FIXTURE_SUBDIR = "pytest_dashboard_fixture"
+
+_EXPLORER_ELIGIBLE_PATCH_TARGETS = (
+    "cryodrgn.dashboard.routes_analysis.explorer_volumes_eligible",
+    "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
+    "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
+)
+
+
+def _monkeypatch_explorer_volumes_eligible(
+    monkeypatch: pytest.MonkeyPatch, *, eligible: bool
+) -> None:
+    for target in _EXPLORER_ELIGIBLE_PATCH_TARGETS:
+        monkeypatch.setattr(target, lambda _e, eligible=eligible: eligible)
 
 
 def _dashboard_data_dir() -> str:
@@ -494,65 +516,329 @@ def _dashboard_is_usable_workdir(workdir: str) -> bool:
     return all(os.path.exists(p) for p in required)
 
 
+@lru_cache(maxsize=1)
+def _dashboard_torch_cuda_kernel_usable() -> bool:
+    """True when PyTorch can run kernels on the visible CUDA device.
+
+    ``torch.cuda.is_available()`` alone is insufficient: e.g. an H100 (sm_90)
+    with an older PyTorch wheel reports CUDA available but kernel launch fails.
+    """
+    try:
+        import torch
+    except ImportError:
+        return False
+    if not torch.cuda.is_available():
+        return False
+    try:
+        probe = torch.zeros(1, device="cuda")
+        del probe
+        torch.cuda.synchronize()
+        return True
+    except RuntimeError:
+        return False
+
+
+@contextmanager
+def _dashboard_hide_cuda_devices():
+    """Hide GPUs from cryoDRGN CLI entry points that auto-select CUDA."""
+    prev = os.environ.get("CUDA_VISIBLE_DEVICES")
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = prev
+
+
+def _dashboard_train_device_context():
+    """Use CPU for fixture training when the local GPU is incompatible with torch."""
+    if torch_cuda_reports_available_but_broken():
+        return _dashboard_hide_cuda_devices()
+    return nullcontext()
+
+
+def torch_cuda_reports_available_but_broken() -> bool:
+    """CUDA visible to PyTorch but kernel launch is known to fail on this device."""
+    try:
+        import torch
+    except ImportError:
+        return False
+    return torch.cuda.is_available() and not _dashboard_torch_cuda_kernel_usable()
+
+
+def _dashboard_resolve_fixture_workdir(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[str, bool]:
+    """Pick workdir for ``dashboard_workdir`` and whether it is a shared cache path.
+
+    Order: ``CRYODRGN_DASHBOARD_TEST_OUTDIR`` → complete default cache → fresh tmp.
+    """
+    cache_root = os.environ.get("CRYODRGN_DASHBOARD_TEST_OUTDIR")
+    if cache_root:
+        workdir = os.path.join(cache_root, _DASHBOARD_FIXTURE_SUBDIR)
+        os.makedirs(workdir, exist_ok=True)
+        return workdir, True
+
+    default_workdir = os.path.join(
+        _DASHBOARD_DEFAULT_TEST_CACHE, _DASHBOARD_FIXTURE_SUBDIR
+    )
+    if _dashboard_is_usable_workdir(default_workdir):
+        return default_workdir, True
+
+    return str(tmp_path_factory.mktemp("dashboard_vae")), False
+
+
 def _dashboard_run_train_and_analyze(workdir: str) -> None:
     data_dir = _dashboard_data_dir()
-    parser = argparse.ArgumentParser()
-    train_vae.add_args(parser)
-    train_args = parser.parse_args(
-        [
-            os.path.join(data_dir, "hand.mrcs"),
-            "-o",
-            workdir,
-            "--poses",
-            os.path.join(data_dir, "hand_rot_trans.pkl"),
-            "--ctf",
-            os.path.join(data_dir, "test_ctf.100.pkl"),
-            "-b",
-            "8",
-            "--no-amp",
-            "-n",
-            str(DASHBOARD_TRAIN_EPOCHS),
-            "--zdim",
-            "4",
-            "--tdim",
-            "16",
-            "--tlayers",
-            "1",
-            "--seed",
-            "0",
-            "--no-analysis",
-        ]
-    )
-    train_vae.main(train_args)
+    with _dashboard_train_device_context():
+        parser = argparse.ArgumentParser()
+        train_vae.add_args(parser)
+        train_args = parser.parse_args(
+            [
+                os.path.join(data_dir, "hand.mrcs"),
+                "-o",
+                workdir,
+                "--poses",
+                os.path.join(data_dir, "hand_rot_trans.pkl"),
+                "--ctf",
+                os.path.join(data_dir, "test_ctf.100.pkl"),
+                "-b",
+                "8",
+                "--no-amp",
+                "-n",
+                str(DASHBOARD_TRAIN_EPOCHS),
+                "--zdim",
+                "4",
+                "--tdim",
+                "16",
+                "--tlayers",
+                "1",
+                "--seed",
+                "0",
+                "--no-analysis",
+            ]
+        )
+        train_vae.main(train_args)
 
-    parser = argparse.ArgumentParser()
-    analyze.add_args(parser)
-    analyze_args = parser.parse_args(
-        [workdir, str(DASHBOARD_ANALYZE_EPOCH), "--ksample", "5", "--pc", "2"]
-    )
-    analyze.main(analyze_args)
+        parser = argparse.ArgumentParser()
+        analyze.add_args(parser)
+        analyze_args = parser.parse_args(
+            [workdir, str(DASHBOARD_ANALYZE_EPOCH), "--ksample", "5", "--pc", "2"]
+        )
+        analyze.main(analyze_args)
 
 
 @pytest.fixture(scope="session")
 def dashboard_workdir(tmp_path_factory: pytest.TempPathFactory) -> str:
-    cache = os.environ.get("CRYODRGN_DASHBOARD_TEST_OUTDIR")
-    if cache:
-        workdir = os.path.join(cache, "pytest_dashboard_fixture")
-        os.makedirs(workdir, exist_ok=True)
-    else:
-        workdir = str(tmp_path_factory.mktemp("dashboard_vae"))
-
-    if not _dashboard_is_usable_workdir(workdir):
-        _dashboard_run_train_and_analyze(workdir)
-        assert _dashboard_is_usable_workdir(
-            workdir
-        ), f"Dashboard fixture incomplete at {workdir!r}"
+    workdir, _shared = _dashboard_resolve_fixture_workdir(tmp_path_factory)
+    if _dashboard_is_usable_workdir(workdir):
+        return workdir
+    _dashboard_run_train_and_analyze(workdir)
+    assert _dashboard_is_usable_workdir(
+        workdir
+    ), f"Dashboard fixture incomplete at {workdir!r}"
     return workdir
 
 
 @pytest.fixture(scope="session")
 def dashboard_experiment(dashboard_workdir: str) -> DashboardExperiment:
     return load_experiment(dashboard_workdir)
+
+
+def _dashboard_copy_workdir(
+    dashboard_workdir: str,
+    tmp_path_factory: pytest.TempPathFactory,
+    parent_name: str,
+) -> str:
+    """Copy session workdir into ``parent_name/cryo_out`` (writable per xdist worker)."""
+    parent = tmp_path_factory.mktemp(parent_name)
+    dst = Path(parent) / "cryo_out"
+    shutil.copytree(dashboard_workdir, dst)
+    return str(dst)
+
+
+def _dashboard_strip_landscape_dirs(workdir: str) -> None:
+    """Remove ``landscape.N`` trees so copies can add minimal analyze_landscape outputs."""
+    for name in list(os.listdir(workdir)):
+        if name.startswith("landscape.") and os.path.isdir(os.path.join(workdir, name)):
+            shutil.rmtree(os.path.join(workdir, name), ignore_errors=True)
+
+
+def _dashboard_write_minimal_landscape_volpca(
+    workdir: str,
+    *,
+    epoch: int = DASHBOARD_ANALYZE_EPOCH,
+    k: int = 3,
+) -> str:
+    """``landscape.{epoch}/vol_pca_K.pkl`` + ``kmeansK/`` sketch files for vol PCA UI."""
+    from cryodrgn import utils
+
+    land = os.path.join(workdir, f"landscape.{epoch}")
+    km = os.path.join(land, f"kmeans{k}")
+    os.makedirs(km, exist_ok=True)
+    pc = np.array(
+        [[0.0, 0.1], [1.0, -0.5], [0.2, 0.3]],
+        dtype=np.float64,
+    )
+    utils.save_pkl(pc, os.path.join(land, f"vol_pca_{k}.pkl"))
+    for i in range(1, k + 1):
+        p = os.path.join(km, f"vol_{i:03d}.mrc")
+        with open(p, "wb"):
+            pass
+    centers_path = os.path.join(km, "centers_ind.txt")
+    with open(centers_path, "w", encoding="utf-8") as fh:
+        for row in range(k):
+            fh.write(f"{row}\n")
+    umap_full = np.array(
+        [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0], [6.0, 7.0], [8.0, 9.0]],
+        dtype=np.float64,
+    )
+    utils.save_pkl(umap_full, os.path.join(land, "umap.pkl"))
+    return land
+
+
+def _dashboard_write_minimal_landscape_full(
+    workdir: str,
+    *,
+    epoch: int = DASHBOARD_ANALYZE_EPOCH,
+    n_sampled: int = 25,
+) -> str:
+    """``landscape.{epoch}/landscape_full`` outputs for ``analyze_landscape_full`` UI."""
+    from cryodrgn import utils
+
+    z_path = os.path.join(workdir, f"z.{epoch}.pkl")
+    z_all = np.asarray(utils.load_pkl(z_path), dtype=np.float64)
+    if z_all.ndim != 2:
+        raise ValueError(f"expected 2-D z array at {z_path}")
+    n_particles = int(z_all.shape[0])
+    outdir = os.path.join(workdir, f"landscape.{epoch}", "landscape_full")
+    os.makedirs(outdir, exist_ok=True)
+    n_take = min(int(n_sampled), n_particles)
+    ind = np.linspace(0, n_particles - 1, num=n_take, dtype=np.int64)
+    z_s = z_all[ind]
+    utils.save_pkl(ind, os.path.join(outdir, "ind.sampled.pkl"))
+    utils.save_pkl(z_s, os.path.join(outdir, "z.sampled.pkl"))
+    rng = np.random.default_rng(0)
+    vol_pca = rng.standard_normal((n_particles, 5), dtype=np.float64)
+    utils.save_pkl(vol_pca, os.path.join(outdir, "vol_pca_all.pkl"))
+    return outdir
+
+
+@pytest.fixture(scope="module")
+def dashboard_workdir_with_landscape_volpca(
+    dashboard_workdir: str,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> str:
+    """Copy shared output and add minimal ``analyze_landscape`` sketch files."""
+    d = _dashboard_copy_workdir(
+        dashboard_workdir, tmp_path_factory, "workdir_landscape"
+    )
+    _dashboard_strip_landscape_dirs(d)
+    _dashboard_write_minimal_landscape_volpca(d)
+    return d
+
+
+@pytest.fixture(scope="module")
+def dashboard_workdir_plain_copy(
+    dashboard_workdir: str,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> str:
+    """Writable copy with no ``landscape.*`` trees."""
+    d = _dashboard_copy_workdir(
+        dashboard_workdir, tmp_path_factory, "wd_plain_no_landscape"
+    )
+    _dashboard_strip_landscape_dirs(d)
+    return d
+
+
+@pytest.fixture(scope="module")
+def dashboard_workdir_with_landscape_full(
+    dashboard_workdir: str,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> str:
+    """Dashboard tree with mocked ``analyze_landscape`` + ``analyze_landscape_full`` outputs."""
+    d = _dashboard_copy_workdir(
+        dashboard_workdir, tmp_path_factory, "workdir_landscape_full"
+    )
+    _dashboard_strip_landscape_dirs(d)
+    _dashboard_write_minimal_landscape_volpca(d)
+    _dashboard_write_minimal_landscape_full(d)
+    return d
+
+
+@contextmanager
+def _patch_explorer_volumes_eligible(eligible: bool = True):
+    """Force trajectory / volume-explorer eligibility (no CUDA required in tests)."""
+    from unittest.mock import patch
+
+    target = lambda _e, eligible=eligible: eligible  # noqa: E731
+    patches = [patch(t, target) for t in _EXPLORER_ELIGIBLE_PATCH_TARGETS]
+    for p in patches:
+        p.start()
+    try:
+        yield
+    finally:
+        for p in patches:
+            p.stop()
+
+
+@pytest.fixture(scope="module")
+def dashboard_landscape_volpca_live_url(dashboard_workdir_with_landscape_volpca: str):
+    with dashboard_live_server(dashboard_workdir_with_landscape_volpca) as url:
+        yield url
+
+
+@pytest.fixture(scope="module")
+def dashboard_landscape_full_live_url(dashboard_workdir_with_landscape_full: str):
+    with dashboard_live_server(dashboard_workdir_with_landscape_full) as url:
+        yield url
+
+
+@pytest.fixture(scope="module")
+def dashboard_volumes_eligible_live_url(dashboard_workdir: str):
+    with _patch_explorer_volumes_eligible(True):
+        with dashboard_live_server(dashboard_workdir) as url:
+            yield url
+
+
+@pytest.fixture(scope="module")
+def dashboard_volumes_ineligible_live_url(dashboard_workdir: str):
+    with _patch_explorer_volumes_eligible(False):
+        with dashboard_live_server(dashboard_workdir) as url:
+            yield url
+
+
+@pytest.fixture
+def flask_client_landscape_full(dashboard_workdir_with_landscape_full: str):
+    app = dash_app.create_app(workdir=dashboard_workdir_with_landscape_full)
+    with app.test_client() as client:
+        yield client
+
+
+@pytest.fixture
+def flask_client_landscape(dashboard_workdir_with_landscape_volpca: str):
+    app = dash_app.create_app(workdir=dashboard_workdir_with_landscape_volpca)
+    with app.test_client() as client:
+        yield client
+
+
+@pytest.fixture
+def flask_client_no_landscape(dashboard_workdir_plain_copy: str):
+    app = dash_app.create_app(workdir=dashboard_workdir_plain_copy)
+    with app.test_client() as client:
+        yield client
+
+
+@pytest.fixture
+def flask_client_volumes_eligible(
+    dashboard_workdir: str, monkeypatch: pytest.MonkeyPatch
+) -> Generator:
+    _monkeypatch_explorer_volumes_eligible(monkeypatch, eligible=True)
+    app = dash_app.create_app(workdir=dashboard_workdir)
+    with app.test_client() as client:
+        yield client
 
 
 @pytest.fixture(scope="function")
@@ -651,3 +937,1092 @@ def read_latent_3d_html() -> str:
 def js_function_body(source: str, fn_marker: str, until_marker: str) -> str:
     """Slice a JS source string from ``fn_marker`` up to (but not including) ``until_marker``."""
     return source.split(fn_marker, 1)[1].split(until_marker, 1)[0]
+
+
+# ---------------------------------------------------------------------------
+# Dashboard Plotly browser smoke (Playwright; optional ``dev`` extra)
+# ---------------------------------------------------------------------------
+
+DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS = 120_000
+DASHBOARD_BROWSER_SMOKE_CACHE_SIZE = 25
+
+
+@contextmanager
+def dashboard_live_server(workdir: str) -> Generator[str, None, None]:
+    """Threaded Werkzeug server for headless browser tests against a real workdir."""
+    from werkzeug.serving import make_server
+
+    app = dash_app.create_app(workdir=workdir)
+    server = make_server("127.0.0.1", 0, app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=10)
+
+
+@pytest.fixture(scope="module")
+def dashboard_live_url(dashboard_workdir: str) -> Generator[str, None, None]:
+    with dashboard_live_server(dashboard_workdir) as url:
+        yield url
+
+
+@pytest.fixture(scope="module")
+def dashboard_plain_live_url(dashboard_workdir_plain_copy: str):
+    with dashboard_live_server(dashboard_workdir_plain_copy) as url:
+        yield url
+
+
+@pytest.fixture(scope="module")
+def playwright_browser():
+    pytest.importorskip("playwright")
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = _launch_playwright_chromium(p)
+        yield browser
+        browser.close()
+
+
+@pytest.fixture(scope="module")
+def playwright_page(playwright_browser):
+    context = playwright_browser.new_context(viewport={"width": 1400, "height": 900})
+    page = context.new_page()
+    yield page
+    context.close()
+
+
+def _playwright_chromium_launch_kwargs() -> dict:
+    return {"headless": True, "args": ["--enable-unsafe-swiftshader"]}
+
+
+def _launch_playwright_chromium(playwright):
+    """Launch headless Chromium; SwiftShader helps WebGL on GPU-less CI nodes."""
+    from playwright.sync_api import Error as PlaywrightError
+
+    try:
+        return playwright.chromium.launch(**_playwright_chromium_launch_kwargs())
+    except PlaywrightError as exc:
+        pytest.skip(
+            f"Playwright Chromium not installed ({exc}). "
+            "Run: playwright install chromium"
+        )
+
+
+def _dashboard_smoke_scene_camera(page, plot_id: str) -> dict | None:
+    return page.evaluate(
+        """(plotId) => {
+          var gd = document.getElementById(plotId);
+          var P3S = window.CryoPlotlyScatter3dScene;
+          var snap = gd && P3S && P3S.snapshot(gd);
+          if (!snap || !snap.camera) return null;
+          var cam = snap.camera;
+          function vec(v) { return v ? [v.x, v.y, v.z] : null; }
+          return { eye: vec(cam.eye), center: vec(cam.center), up: vec(cam.up) };
+        }""",
+        plot_id,
+    )
+
+
+def _dashboard_smoke_wait_scene_camera(page, plot_id: str, *, timeout_ms: int) -> dict:
+    page.wait_for_function(
+        """(plotId) => {
+          var gd = document.getElementById(plotId);
+          var P3S = window.CryoPlotlyScatter3dScene;
+          var snap = gd && P3S && P3S.snapshot(gd);
+          return !!(snap && snap.camera && snap.camera.eye);
+        }""",
+        arg=plot_id,
+        timeout=timeout_ms,
+    )
+    cam = _dashboard_smoke_scene_camera(page, plot_id)
+    if not cam or not cam.get("eye"):
+        raise RuntimeError(f"plot #{plot_id} camera missing after wait: {cam!r}")
+    return cam
+
+
+def _dashboard_smoke_cameras_match(
+    a: dict | None, b: dict | None, *, tol: float = 1e-4
+) -> bool:
+    if not a or not b:
+        return False
+    for key in ("eye", "center", "up"):
+        va, vb = a.get(key), b.get(key)
+        if not va or not vb or len(va) != 3 or len(vb) != 3:
+            return False
+        if any(abs(x - y) > tol for x, y in zip(va, vb)):
+            return False
+    return True
+
+
+def _dashboard_smoke_wait_latent3d_overlay_hidden(page, *, timeout_ms: int) -> None:
+    page.wait_for_function(
+        """() => {
+          var ov = document.getElementById('latent3d-rendering-overlay');
+          if (!ov) return true;
+          var st = window.getComputedStyle(ov);
+          return st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0';
+        }""",
+        timeout=timeout_ms,
+    )
+
+
+def _dashboard_smoke_set_select_value(page, select_id: str, value: str) -> None:
+    """Set a native ``<select>`` and fire ``change`` (works when options are CSS-hidden)."""
+    page.evaluate(
+        """([id, val]) => {
+          var el = document.getElementById(id);
+          if (!el) throw new Error('missing select #' + id);
+          el.value = val;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }""",
+        [select_id, value],
+    )
+
+
+def _dashboard_smoke_wait_plot_ready(page, plot_id: str, *, timeout_ms: int) -> dict:
+    page.wait_for_selector(
+        f"#{plot_id} .js-plotly-plot, #{plot_id} .main-svg, #{plot_id} .gl-canvas",
+        timeout=timeout_ms,
+    )
+    deadline = time.time() + timeout_ms / 1000.0
+    last: dict = {}
+    while time.time() < deadline:
+        last = page.evaluate(
+            """(plotId) => {
+              var gd = document.getElementById(plotId);
+              var P = window.CryoPlotlyArrays;
+              if (!gd || !P) return { ok: false, reason: 'missing gd or CryoPlotlyArrays' };
+              if (!gd.data || !gd.data[0]) return { ok: false, reason: 'no trace yet' };
+              var tr = gd.data[0];
+              var n = P.length(tr.x);
+              return { ok: n > 0, n: n, type: tr.type || '' };
+            }""",
+            plot_id,
+        )
+        if last.get("ok"):
+            return last
+        page.wait_for_timeout(250)
+    raise RuntimeError(f"plot #{plot_id} not ready: {last!r}")
+
+
+def _dashboard_smoke_preload_overlay_hidden(
+    page, *, timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS
+) -> None:
+    """Wait until the montage preload overlay is dismissed (class + aria-hidden)."""
+    page.wait_for_function(
+        """() => {
+          var ov = document.getElementById('montage-preload-overlay');
+          if (!ov) return true;
+          return ov.getAttribute('aria-hidden') === 'true'
+            && !ov.classList.contains('cryo-plot-rendering-overlay--show');
+        }""",
+        timeout=timeout_ms,
+    )
+
+
+def _dashboard_smoke_invalidate_server_preload_cache(page) -> None:
+    """Drop Flask ``PRELOAD_CACHE`` for this browser session (survives ``page.goto``)."""
+    page.evaluate(
+        """() => fetch('/api/preload_images', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({invalidate_cache: true})
+        }).then(function(r) { return r.json(); })"""
+    )
+
+
+def _dashboard_smoke_clear_explorer_cache_if_any(page, *, timeout_ms: int) -> None:
+    """Drop explorer preload state (server + any client UI cache)."""
+    _dashboard_smoke_invalidate_server_preload_cache(page)
+    _dashboard_smoke_ensure_panel_open(page, "cache-panel-toggle")
+    has_cache = page.evaluate(
+        """() => {
+          var st = document.getElementById('preload-status');
+          return !!(st && /\\bcached\\b/i.test(st.textContent || ''));
+        }"""
+    )
+    if not has_cache:
+        return
+    clear_btn = page.locator("#btn-clear-image-cache")
+    clear_btn.wait_for(state="visible", timeout=timeout_ms)
+    if clear_btn.is_disabled():
+        _dashboard_smoke_preload_overlay_hidden(page, timeout_ms=timeout_ms)
+        if clear_btn.is_disabled():
+            return
+    clear_btn.click()
+    page.wait_for_function(
+        """() => {
+          var st = document.getElementById('preload-status');
+          var txt = st ? st.textContent || '' : '';
+          return !/\\bcached\\b/i.test(txt);
+        }""",
+        timeout=timeout_ms,
+    )
+
+
+def _dashboard_smoke_ensure_panel_open(page, toggle_id: str) -> None:
+    expanded = page.evaluate(
+        """(id) => {
+          var b = document.getElementById(id);
+          return b && b.getAttribute('aria-expanded') === 'true';
+        }""",
+        toggle_id,
+    )
+    if not expanded:
+        page.click(f"#{toggle_id}")
+
+
+def dashboard_smoke_particle_explorer(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+    cache_size: int | None = DASHBOARD_BROWSER_SMOKE_CACHE_SIZE,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/explorer", wait_until="domcontentloaded", timeout=timeout_ms)
+    info = _dashboard_smoke_wait_plot_ready(page, "scatter", timeout_ms=timeout_ms)
+
+    _dashboard_smoke_clear_explorer_cache_if_any(page, timeout_ms=timeout_ms)
+    _dashboard_smoke_ensure_panel_open(page, "cache-panel-toggle")
+    if cache_size is not None:
+        page.fill("#montage-cache-size-input", str(cache_size))
+    btn = page.locator("#btn-expand-cache")
+    btn.wait_for(state="visible", timeout=30_000)
+    if btn.is_disabled():
+        meta = page.evaluate(
+            """() => {
+              var b = document.getElementById('btn-expand-cache');
+              return { title: b && b.title, text: b && b.textContent };
+            }"""
+        )
+        raise RuntimeError(f"Build cache disabled: {meta!r}")
+
+    btn.click()
+    _dashboard_smoke_preload_overlay_hidden(page, timeout_ms=timeout_ms)
+    page.wait_for_function(
+        """() => {
+          var st = document.getElementById('preload-status');
+          return st && /\\bcached\\b/i.test(st.textContent || '');
+        }""",
+        timeout=timeout_ms,
+    )
+
+    preload = page.evaluate(
+        """() => {
+          var st = document.getElementById('preload-status');
+          var txt = st ? st.textContent.trim() : '';
+          var m = txt.match(/([\\d,]+)\\s+images\\s+cached/i);
+          return { status: txt, cached: m ? parseInt(m[1].replace(/,/g, ''), 10) : 0 };
+        }"""
+    )
+    if not preload.get("cached"):
+        raise RuntimeError(f"cache not populated: {preload!r}")
+
+    _dashboard_smoke_ensure_panel_open(page, "image-grid-menu-toggle")
+    view_btn = page.locator("#btn-view-images")
+    if view_btn.is_disabled():
+        raise RuntimeError("Load all images button still disabled after cache build")
+    view_btn.click()
+
+    page.wait_for_selector("#montage-grid img[src]:not([src=''])", timeout=timeout_ms)
+    img_count = page.locator("#montage-grid img[src]:not([src=''])").count()
+
+    resample = page.locator("#btn-montage-resample-cache")
+    if resample.count() and not resample.is_disabled():
+        resample.click()
+        page.wait_for_function(
+            """() => {
+              var gd = document.getElementById('scatter');
+              return gd && gd.data && gd.data.length > 1 && gd.data[1] && gd.data[1].x;
+            }""",
+            timeout=30_000,
+        )
+
+    letters = page.evaluate(
+        """() => {
+          var glyphs = document.querySelectorAll('.cryo-explorer-grid-letter-glyph');
+          var sample = Array.from(glyphs).slice(0, 5).map(function(el) { return el.textContent; });
+          return { count: glyphs.length, sample: sample.join('') };
+        }"""
+    )
+    return {
+        "scatter_points": info.get("n"),
+        "cached_images": preload.get("cached"),
+        "grid_images": img_count,
+        "scatter_letters": letters,
+    }
+
+
+def dashboard_smoke_landscape_volpca(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict | None:
+    base = base_url.rstrip("/")
+    page.goto(
+        f"{base}/landscape-volpca", wait_until="domcontentloaded", timeout=timeout_ms
+    )
+    if page.locator("#volsketch").count() == 0:
+        body = page.inner_text("body")
+        if "landscape" in body.lower() or "analyze_landscape" in body:
+            return None
+        raise RuntimeError("landscape-volpca page missing #volsketch")
+    info = _dashboard_smoke_wait_plot_ready(page, "volsketch", timeout_ms=timeout_ms)
+
+    page.wait_for_function(
+        """() => {
+          var b = document.getElementById('volsketch-random-sel');
+          return b && !b.disabled;
+        }""",
+        timeout=timeout_ms,
+    )
+    page.click("#volsketch-random-sel")
+    page.wait_for_function(
+        """() => {
+          var gd = document.getElementById('volsketch');
+          if (!gd || !gd.data) return false;
+          for (var i = 0; i < gd.data.length; i++) {
+            if (gd.data[i] && gd.data[i].name === 'cdrgnVolSelectionOverlay') return true;
+          }
+          return false;
+        }""",
+        timeout=30_000,
+    )
+
+    overlay = page.evaluate(
+        """() => {
+          var gd = document.getElementById('volsketch');
+          var P = window.CryoPlotlyArrays;
+          if (!gd || !P || !gd.data) return { traces: 0 };
+          var overlayIdx = -1;
+          for (var i = 0; i < gd.data.length; i++) {
+            if (gd.data[i] && gd.data[i].name === 'cdrgnVolSelectionOverlay') overlayIdx = i;
+          }
+          var tr = overlayIdx >= 0 ? gd.data[overlayIdx] : null;
+          var texts = tr && tr.text ? P.length(tr.text) : 0;
+          return { overlayIdx: overlayIdx, overlayTexts: texts };
+        }"""
+    )
+    if overlay.get("overlayIdx", -1) < 0 or overlay.get("overlayTexts", 0) < 1:
+        raise RuntimeError(f"vol selection overlay missing letters: {overlay!r}")
+    return {"scatter_points": info.get("n"), **overlay}
+
+
+def dashboard_smoke_landscape_full_3d(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict | None:
+    base = base_url.rstrip("/")
+    page.goto(
+        f"{base}/landscape-full-3d", wait_until="domcontentloaded", timeout=timeout_ms
+    )
+    if page.locator("#latent3d").count() == 0:
+        body = page.inner_text("body")
+        if "analyze_landscape_full" in body or "need" in body.lower():
+            return None
+        raise RuntimeError("unexpected landscape-full-3d page without #latent3d")
+
+    info = _dashboard_smoke_wait_plot_ready(page, "latent3d", timeout_ms=timeout_ms)
+    page.wait_for_function(
+        """() => {
+          var b = document.getElementById('l3dva-random-sel');
+          return b && !b.disabled;
+        }""",
+        timeout=timeout_ms,
+    )
+    page.click("#l3dva-random-sel")
+    page.wait_for_function(
+        """() => {
+          var gd = document.getElementById('latent3d');
+          var anns = gd && gd.layout && gd.layout.scene && gd.layout.scene.annotations;
+          return anns && anns.length > 0;
+        }""",
+        timeout=timeout_ms,
+    )
+    ann = page.evaluate(
+        """() => {
+          var gd = document.getElementById('latent3d');
+          var anns = (gd && gd.layout && gd.layout.scene && gd.layout.scene.annotations) || [];
+          return {
+            count: anns.length,
+            sample: anns.slice(0, 3).map(function(a) { return String(a.text || ''); }),
+          };
+        }"""
+    )
+    if ann.get("count", 0) < 1:
+        raise RuntimeError(f"no scene annotations after random vol selection: {ann!r}")
+    return {"scatter_points": info.get("n"), **ann}
+
+
+def _dashboard_smoke_eval_plot(page, plot_id: str) -> dict:
+    return page.evaluate(
+        """(plotId) => {
+          var gd = document.getElementById(plotId);
+          var P = window.CryoPlotlyArrays;
+          if (!gd || !P || !gd.data || !gd.data[0]) {
+            return { traces: 0, points: 0, trace0type: '' };
+          }
+          return {
+            traces: gd.data.length,
+            points: P.length(gd.data[0].x),
+            trace0type: String(gd.data[0].type || ''),
+          };
+        }""",
+        plot_id,
+    )
+
+
+def _dashboard_smoke_wait_pairplot_image(page, *, timeout_ms: int) -> str:
+    page.wait_for_function(
+        """() => {
+          var img = document.getElementById('pairplot');
+          var vp = document.getElementById('pairplot-viewport');
+          return img && img.src && img.src.length > 32
+            && vp && vp.getAttribute('aria-busy') === 'false';
+        }""",
+        timeout=timeout_ms,
+    )
+    src = page.evaluate(
+        """() => {
+      var img = document.getElementById('pairplot');
+      return img ? String(img.src || '') : '';
+    }"""
+    )
+    if not src:
+        raise RuntimeError("pairplot image missing src")
+    return src
+
+
+def dashboard_smoke_index(
+    page, base_url: str, *, timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/", wait_until="domcontentloaded", timeout=timeout_ms)
+    page.wait_for_selector(".landing-cards", timeout=timeout_ms)
+    links = page.evaluate(
+        """() => Array.from(document.querySelectorAll('a.landing-card-link'))
+          .map(function(a) { return a.getAttribute('href') || ''; })"""
+    )
+    required_cards = {"/explorer", "/pairplot", "/latent-3d", "/command-builder"}
+    missing_cards = sorted(required_cards - set(links))
+    if missing_cards:
+        raise RuntimeError(f"landing page missing card links: {missing_cards}")
+    body_text = page.inner_text("body")
+    for link in required_cards:
+        if link not in body_text and link not in links:
+            raise RuntimeError(f"landing page missing reference to {link!r}")
+    return {
+        "landing_links": len(links),
+        "card_links": links,
+        "has_trajectory": "/trajectory" in links,
+        "has_landscape_volpca": "/landscape-volpca" in links,
+        "mentions_volume_landscapes": "3D volume landscapes" in body_text,
+        "trajectory_ineligible_note": "CUDA-enabled machine" in body_text,
+    }
+
+
+def dashboard_smoke_index_no_landscape(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    out = dashboard_smoke_index(page, base_url, timeout_ms=timeout_ms)
+    if out["has_landscape_volpca"]:
+        raise RuntimeError(
+            "expected inactive landscape card without analyze_landscape outputs"
+        )
+    body_text = page.inner_text("body")
+    if "Volume sketched landscape explorer" not in body_text:
+        raise RuntimeError("missing inactive landscape card title")
+    if "analyze_landscape" not in body_text:
+        raise RuntimeError("missing analyze_landscape hint on inactive landscape card")
+    return out
+
+
+def dashboard_smoke_latent_3d_camera_on_covariate_change(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    """Discrete colour-covariate reload must not reset the latent-3d orbit."""
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/latent-3d", wait_until="domcontentloaded", timeout=timeout_ms)
+    _dashboard_smoke_wait_plot_ready(page, "latent3d", timeout_ms=timeout_ms)
+    _dashboard_smoke_wait_latent3d_overlay_hidden(page, timeout_ms=timeout_ms)
+    cam_before = _dashboard_smoke_wait_scene_camera(
+        page, "latent3d", timeout_ms=timeout_ms
+    )
+
+    page.wait_for_function(
+        """() => {
+          var el = document.getElementById('sc');
+          return el && el.options && el.options.length > 1;
+        }""",
+        timeout=timeout_ms,
+    )
+    _dashboard_smoke_set_select_value(page, "sc", "labels")
+    page.wait_for_function(
+        """() => {
+          var switches = document.getElementById('latent3d-color-discrete-switches');
+          return switches && switches.querySelectorAll('button, label, input').length > 0;
+        }""",
+        timeout=timeout_ms,
+    )
+    _dashboard_smoke_wait_latent3d_overlay_hidden(page, timeout_ms=timeout_ms)
+    cam_after = _dashboard_smoke_wait_scene_camera(
+        page, "latent3d", timeout_ms=timeout_ms
+    )
+    stable = _dashboard_smoke_cameras_match(cam_before, cam_after)
+    if not stable:
+        raise RuntimeError(
+            f"latent3d camera changed after covariate switch: {cam_before!r} -> {cam_after!r}"
+        )
+    return {
+        "camera_stable": stable,
+        "eye_before": cam_before["eye"],
+        "eye_after": cam_after["eye"],
+    }
+
+
+def dashboard_smoke_latent_3d(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/latent-3d", wait_until="domcontentloaded", timeout=timeout_ms)
+    info = _dashboard_smoke_wait_plot_ready(page, "latent3d", timeout_ms=timeout_ms)
+    plot0 = _dashboard_smoke_eval_plot(page, "latent3d")
+    if plot0.get("trace0type") != "scatter3d":
+        raise RuntimeError(f"expected scatter3d trace, got {plot0!r}")
+
+    page.wait_for_function(
+        """() => {
+          var el = document.getElementById('sc');
+          return el && el.options && el.options.length > 1;
+        }""",
+        timeout=timeout_ms,
+    )
+    _dashboard_smoke_set_select_value(page, "sc", "labels")
+    page.wait_for_function(
+        """() => {
+          var switches = document.getElementById('latent3d-color-discrete-switches');
+          return switches && switches.querySelectorAll('button, label, input').length > 0;
+        }""",
+        timeout=timeout_ms,
+    )
+    discrete_n = page.locator(
+        "#latent3d-color-discrete-switches button, #latent3d-color-discrete-switches label"
+    ).count()
+    return {
+        "scatter_points": info.get("n"),
+        "discrete_legend_toggles": discrete_n,
+        **plot0,
+    }
+
+
+def dashboard_smoke_pairplot(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/pairplot", wait_until="domcontentloaded", timeout=timeout_ms)
+    src0 = _dashboard_smoke_wait_pairplot_image(page, timeout_ms=timeout_ms)
+    page.click('input[name="upper_style"][value="hex"]')
+    page.wait_for_function(
+        """(prev) => {
+          var img = document.getElementById('pairplot');
+          return img && img.src && img.src !== prev;
+        }""",
+        arg=src0,
+        timeout=timeout_ms,
+    )
+    src1 = page.evaluate("() => document.getElementById('pairplot').src")
+    return {
+        "initial_src_len": len(src0),
+        "hex_src_len": len(src1),
+        "src_changed": src1 != src0,
+    }
+
+
+def dashboard_smoke_trajectory(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict | None:
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/trajectory", wait_until="domcontentloaded", timeout=timeout_ms)
+    if page.locator("#scatter").count() == 0:
+        body = page.inner_text("body")
+        if "CUDA" in body or "GPU" in body or "weights" in body.lower():
+            return None
+        raise RuntimeError(
+            "trajectory page missing #scatter without known ineligible message"
+        )
+    info = _dashboard_smoke_wait_plot_ready(page, "scatter", timeout_ms=timeout_ms)
+    page.wait_for_function(
+        """() => {
+          var gd = document.getElementById('scatter');
+          return gd && gd.data && gd.data.length >= 2;
+        }""",
+        timeout=timeout_ms,
+    )
+    before = _dashboard_smoke_eval_plot(page, "scatter")
+    page.click("#btn-anchor-random")
+    page.wait_for_function(
+        """() => {
+          var st = document.getElementById('traj-status');
+          var txt = st ? st.textContent || '' : '';
+          return /latent z|index trajectory ready/i.test(txt);
+        }""",
+        timeout=timeout_ms,
+    )
+    after = _dashboard_smoke_eval_plot(page, "scatter")
+    return {
+        "scatter_points": info.get("n"),
+        "traces_before_anchor": before.get("traces"),
+        "traces_after_anchor": after.get("traces"),
+    }
+
+
+def dashboard_smoke_particle_explorer_panels(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    """Verify volume-explorer panel chrome is present (needs mocked eligibility)."""
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/explorer", wait_until="domcontentloaded", timeout=timeout_ms)
+    _dashboard_smoke_wait_plot_ready(page, "scatter", timeout_ms=timeout_ms)
+    panel_ids = [
+        "cache-panel-toggle",
+        "image-grid-menu-toggle",
+        "color-selection-panel-toggle",
+        "volumes-panel-toggle",
+        "btn-expand-cache",
+        "montage-cache-size-input",
+        "image-cache-progress",
+        "cryo-explorer-cache-panel-body",
+        "color-selection-panel-body",
+        "volumes-panel-body",
+        "color-discrete-switches",
+        "image-grid-panel-shell",
+    ]
+    for pid in panel_ids:
+        page.wait_for_selector(f"#{pid}", state="attached", timeout=timeout_ms)
+    checks = page.evaluate(
+        """() => ({
+          progressbar: !!document.querySelector('#image-cache-progress[role="progressbar"]'),
+          legendPrimitives: !!document.querySelector('script[src*="cryo_cc_legend_primitives"]'),
+          legendModule: !!document.querySelector('script[src*="color_covariate_legend"]'),
+        })"""
+    )
+    if not checks.get("progressbar"):
+        raise RuntimeError("image-cache-progress missing progressbar role")
+    if not checks.get("legendPrimitives") or not checks.get("legendModule"):
+        raise RuntimeError(f"explorer legend scripts missing: {checks!r}")
+    return {"panels": len(panel_ids), "volumes_panel": True, **checks}
+
+
+def dashboard_smoke_particle_explorer_no_volumes_panel(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/explorer", wait_until="domcontentloaded", timeout=timeout_ms)
+    _dashboard_smoke_wait_plot_ready(page, "scatter", timeout_ms=timeout_ms)
+    has_volumes = page.locator("#volumes-panel-toggle").count() > 0
+    if has_volumes:
+        raise RuntimeError("volumes panel present on ineligible explorer page")
+    return {"volumes_panel": False}
+
+
+def dashboard_smoke_command_builder(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(
+        f"{base}/command-builder", wait_until="domcontentloaded", timeout=timeout_ms
+    )
+    # ``#cmd-out`` lives in a max-height dock and is often clipped (not "visible").
+    page.wait_for_selector("#cmd-form", state="attached", timeout=timeout_ms)
+    page.wait_for_selector("#cmd-out", state="attached", timeout=timeout_ms)
+    out0 = page.evaluate(
+        """() => {
+          var el = document.getElementById('cmd-out');
+          return el ? (el.textContent || '') : '';
+        }"""
+    )
+    if "cryodrgn" not in out0:
+        raise RuntimeError(f"cmd-out missing cryodrgn prefix: {out0[:80]!r}")
+    _dashboard_smoke_set_select_value(page, "cmd-type", "train_vae")
+    page.wait_for_function(
+        """() => {
+          var out = document.getElementById('cmd-out');
+          return out && /train_vae/.test(out.textContent || '');
+        }""",
+        timeout=timeout_ms,
+    )
+    out1 = page.evaluate(
+        """() => {
+          var el = document.getElementById('cmd-out');
+          return el ? (el.textContent || '') : '';
+        }"""
+    )
+    return {
+        "initial_has_abinit": "abinit" in out0,
+        "switched_to_train_vae": "train_vae" in out1,
+    }
+
+
+def dashboard_smoke_particle_explorer_color_covariate(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/explorer", wait_until="domcontentloaded", timeout=timeout_ms)
+    info = _dashboard_smoke_wait_plot_ready(page, "scatter", timeout_ms=timeout_ms)
+    page.wait_for_function(
+        """() => {
+          var el = document.getElementById('sc');
+          return el && el.options && el.options.length > 1;
+        }""",
+        timeout=timeout_ms,
+    )
+    _dashboard_smoke_set_select_value(page, "sc", "labels")
+    page.wait_for_function(
+        """() => {
+          var t = document.getElementById('color-selection-panel-toggle');
+          return t && t.getAttribute('aria-disabled') === 'false';
+        }""",
+        timeout=timeout_ms,
+    )
+    _dashboard_smoke_ensure_panel_open(page, "color-selection-panel-toggle")
+    page.wait_for_function(
+        """() => {
+          var switches = document.getElementById('color-discrete-switches');
+          return switches && switches.querySelectorAll('button, label, input').length > 0;
+        }""",
+        timeout=timeout_ms,
+    )
+    toggles = page.locator(
+        "#color-discrete-switches button, #color-discrete-switches label"
+    ).count()
+    plot = _dashboard_smoke_eval_plot(page, "scatter")
+    return {
+        "scatter_points": info.get("n"),
+        "discrete_toggles": toggles,
+        "points_after_color": plot.get("points"),
+    }
+
+
+def dashboard_smoke_particle_explorer_cache_expand(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+    initial_size: int = 10,
+    expanded_size: int = 20,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/explorer", wait_until="domcontentloaded", timeout=timeout_ms)
+    _dashboard_smoke_wait_plot_ready(page, "scatter", timeout_ms=timeout_ms)
+    _dashboard_smoke_clear_explorer_cache_if_any(page, timeout_ms=timeout_ms)
+    _dashboard_smoke_ensure_panel_open(page, "cache-panel-toggle")
+    page.fill("#montage-cache-size-input", str(initial_size))
+    expand = page.locator("#btn-expand-cache")
+    expand.wait_for(state="visible", timeout=timeout_ms)
+    if expand.is_disabled():
+        raise RuntimeError(
+            f"expand cache disabled before initial build (size={initial_size})"
+        )
+    expand.click()
+    _dashboard_smoke_preload_overlay_hidden(page, timeout_ms=timeout_ms)
+    page.wait_for_function(
+        """(minN) => {
+          var st = document.getElementById('preload-status');
+          if (!st) return false;
+          var m = (st.textContent || '').match(/([\\d,]+)\\s+images\\s+cached/i);
+          return m && parseInt(m[1].replace(/,/g, ''), 10) >= minN;
+        }""",
+        arg=initial_size,
+        timeout=timeout_ms,
+    )
+    have0 = page.evaluate(
+        """() => {
+          var st = document.getElementById('preload-status');
+          var m = (st && st.textContent || '').match(/([\\d,]+)\\s+images\\s+cached/i);
+          return m ? parseInt(m[1].replace(/,/g, ''), 10) : 0;
+        }"""
+    )
+    page.fill("#montage-cache-size-input", str(expanded_size))
+    expand.click()
+    _dashboard_smoke_preload_overlay_hidden(page, timeout_ms=timeout_ms)
+    page.wait_for_function(
+        """(minN) => {
+          var st = document.getElementById('preload-status');
+          if (!st) return false;
+          var m = (st.textContent || '').match(/([\\d,]+)\\s+images\\s+cached/i);
+          return m && parseInt(m[1].replace(/,/g, ''), 10) >= minN;
+        }""",
+        arg=expanded_size,
+        timeout=timeout_ms,
+    )
+    have1 = page.evaluate(
+        """() => {
+          var st = document.getElementById('preload-status');
+          var m = (st && st.textContent || '').match(/([\\d,]+)\\s+images\\s+cached/i);
+          return m ? parseInt(m[1].replace(/,/g, ''), 10) : 0;
+        }"""
+    )
+    if have1 <= have0:
+        raise RuntimeError(f"cache did not expand: {have0} -> {have1}")
+    return {"initial_cached": have0, "expanded_cached": have1}
+
+
+def dashboard_smoke_landscape_volpca_clear_selection(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(
+        f"{base}/landscape-volpca", wait_until="domcontentloaded", timeout=timeout_ms
+    )
+    _dashboard_smoke_wait_plot_ready(page, "volsketch", timeout_ms=timeout_ms)
+    page.click("#volsketch-random-sel")
+    page.wait_for_function(
+        """() => {
+          var gd = document.getElementById('volsketch');
+          if (!gd || !gd.data) return false;
+          for (var i = 0; i < gd.data.length; i++) {
+            if (gd.data[i] && gd.data[i].name === 'cdrgnVolSelectionOverlay') return true;
+          }
+          return false;
+        }""",
+        timeout=30_000,
+    )
+    page.click("#volsketch-clear-sel")
+    page.wait_for_function(
+        """() => {
+          var summary = document.getElementById('volsketch-sel-summary');
+          var txt = summary ? summary.textContent || '' : '';
+          return /0\\/\\d+ sketched|No sketched volumes selected/i.test(txt);
+        }""",
+        timeout=timeout_ms,
+    )
+    return {"overlay_cleared": True}
+
+
+def dashboard_smoke_landscape_volpca_axis_reload(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict:
+    base = base_url.rstrip("/")
+    page.goto(
+        f"{base}/landscape-volpca", wait_until="domcontentloaded", timeout=timeout_ms
+    )
+    info = _dashboard_smoke_wait_plot_ready(page, "volsketch", timeout_ms=timeout_ms)
+    before = _dashboard_smoke_eval_plot(page, "volsketch")
+    options = page.evaluate(
+        """() => Array.from(document.querySelectorAll('#volsketch-pcx option'))
+          .map(function(o) { return o.value; })
+          .filter(Boolean)"""
+    )
+    if len(options) < 2:
+        raise RuntimeError(f"need >=2 vol PCA axis options, got {options!r}")
+    alt = options[1] if options[0] == page.input_value("#volsketch-pcx") else options[0]
+    page.select_option("#volsketch-pcx", alt)
+    page.wait_for_function(
+        """(prev) => {
+          var gd = document.getElementById('volsketch');
+          var P = window.CryoPlotlyArrays;
+          if (!gd || !P || !gd.data || !gd.data[0]) return false;
+          var pts = P.length(gd.data[0].x);
+          return pts > 0 && pts === prev;
+        }""",
+        arg=before.get("points"),
+        timeout=timeout_ms,
+    )
+    after = _dashboard_smoke_eval_plot(page, "volsketch")
+    return {"scatter_points": info.get("n"), "axis": alt, **after}
+
+
+def dashboard_smoke_landscape_full_3d_clear_selection(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict | None:
+    base = base_url.rstrip("/")
+    page.goto(
+        f"{base}/landscape-full-3d", wait_until="domcontentloaded", timeout=timeout_ms
+    )
+    if page.locator("#latent3d").count() == 0:
+        body = page.inner_text("body")
+        if "analyze_landscape_full" in body or "need" in body.lower():
+            return None
+        raise RuntimeError("unexpected landscape-full-3d page without #latent3d")
+    _dashboard_smoke_wait_plot_ready(page, "latent3d", timeout_ms=timeout_ms)
+    page.click("#l3dva-random-sel")
+    page.wait_for_function(
+        """() => {
+          var gd = document.getElementById('latent3d');
+          var anns = gd && gd.layout && gd.layout.scene && gd.layout.scene.annotations;
+          return anns && anns.length > 0;
+        }""",
+        timeout=timeout_ms,
+    )
+    page.click("#l3dva-clear-sel")
+    page.wait_for_function(
+        """() => {
+          var gd = document.getElementById('latent3d');
+          var anns = gd && gd.layout && gd.layout.scene && gd.layout.scene.annotations;
+          return !anns || anns.length === 0;
+        }""",
+        timeout=timeout_ms,
+    )
+    return {"annotations_cleared": True}
+
+
+def run_dashboard_plotly_smoke(
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+    cache_size: int | None = None,
+) -> int:
+    """Run all dashboard browser smoke steps (for ``scripts/dashboard_plotly_smoke.py``)."""
+    import json
+    import sys
+
+    pytest.importorskip("playwright")
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+    from playwright.sync_api import sync_playwright
+
+    results: dict[str, object] = {}
+    errors: list[str] = []
+    skipped: list[str] = []
+
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(**_playwright_chromium_launch_kwargs())
+        except PlaywrightError as exc:
+            print(
+                f"Playwright Chromium not installed ({exc}). "
+                "Run: playwright install chromium",
+                file=sys.stderr,
+            )
+            return 1
+        context = browser.new_context(viewport={"width": 1400, "height": 900})
+        page = context.new_page()
+
+        steps = [
+            (
+                "index",
+                lambda: dashboard_smoke_index(page, base_url, timeout_ms=timeout_ms),
+            ),
+            (
+                "command_builder",
+                lambda: dashboard_smoke_command_builder(
+                    page, base_url, timeout_ms=timeout_ms
+                ),
+            ),
+            (
+                "latent_3d",
+                lambda: dashboard_smoke_latent_3d(
+                    page, base_url, timeout_ms=timeout_ms
+                ),
+            ),
+            (
+                "pairplot",
+                lambda: dashboard_smoke_pairplot(page, base_url, timeout_ms=timeout_ms),
+            ),
+            (
+                "trajectory",
+                lambda: dashboard_smoke_trajectory(
+                    page, base_url, timeout_ms=timeout_ms
+                ),
+            ),
+            (
+                "particle_explorer",
+                lambda: dashboard_smoke_particle_explorer(
+                    page, base_url, timeout_ms=timeout_ms, cache_size=cache_size
+                ),
+            ),
+            (
+                "landscape_volpca",
+                lambda: dashboard_smoke_landscape_volpca(
+                    page, base_url, timeout_ms=timeout_ms
+                ),
+            ),
+        ]
+        page.goto(
+            f"{base_url.rstrip('/')}/landscape-full-3d",
+            wait_until="domcontentloaded",
+            timeout=60_000,
+        )
+        if page.locator("#latent3d").count():
+            steps.append(
+                (
+                    "landscape_full_3d",
+                    lambda: dashboard_smoke_landscape_full_3d(
+                        page, base_url, timeout_ms=timeout_ms
+                    ),
+                )
+            )
+        else:
+            skipped.append("landscape_full_3d (no analyze_landscape_full outputs)")
+
+        skip_labels = {
+            "trajectory": "trajectory (no CUDA GPU / weights)",
+            "landscape_volpca": "landscape_volpca (no analyze_landscape outputs)",
+            "landscape_full_3d": "landscape_full_3d (no analyze_landscape_full outputs)",
+        }
+
+        for name, fn in steps:
+            try:
+                result = fn()
+                if result is None:
+                    skipped.append(skip_labels.get(name, f"{name} (skipped)"))
+                    continue
+                results[name] = result
+                print(f"PASS {name}: {json.dumps(results[name], sort_keys=True)}")
+            except (RuntimeError, PlaywrightTimeout) as exc:
+                errors.append(f"{name}: {exc}")
+                print(f"FAIL {name}: {exc}", file=sys.stderr)
+            page.wait_for_timeout(500)
+
+        browser.close()
+
+    for s in skipped:
+        print(f"SKIP {s}")
+    if errors:
+        print("\nSmoke test FAILED:", "; ".join(errors), file=sys.stderr)
+        return 1
+    print("\nSmoke test PASSED (dashboard browser smoke)")
+    return 0

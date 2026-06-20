@@ -49,10 +49,11 @@ jobs:
       - name: Install cryoDRGN with pytest dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install ".[dev]"
           # Pin torch for this matrix cell without uninstall/cache churn (cleaner than
           # uninstall + cache purge + reinstall, which can exacerbate flaky loads).
           python3 -m pip install --force-reinstall --no-cache-dir "torch==${{ matrix.torch }}"
+          python3 -m pip install ".[dev]"
+          python -m playwright install chromium
 
       - name: Pytest
         run: |

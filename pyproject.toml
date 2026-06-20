@@ -41,11 +41,12 @@ dependencies = [
 dev = [
     "build",
     "myst-parser",
+    "playwright>=1.40",
     "pre-commit",
     "pyright==1.1.300",
     "pytest>=6",
     "pytest-xdist",
-    "twine"
+    "twine",
 ]
 
 [project.scripts]

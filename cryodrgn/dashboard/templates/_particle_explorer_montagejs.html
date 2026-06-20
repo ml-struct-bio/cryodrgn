@@ -1652,7 +1652,7 @@
 
   /**
    * Plotly.js can leave stale SVG shape nodes if ``shapes`` is only patched in place.
-   * Clear the array first, then apply the intended ``layout`` patch (Plotly 2.35.x CDN).
+   * Clear the array first, then apply the intended ``layout`` patch.
    */
   function plotlyRelayoutShapesHardReplaceThenPatch(layoutPatch) {
     if (!gd || !layoutPatch) return;

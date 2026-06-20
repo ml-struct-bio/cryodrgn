@@ -15,7 +15,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
     rel="stylesheet"/>
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <script src="{{ url_for('bundled_plotly_js') }}" charset="utf-8"></script>
   <script src="{{ url_for('static', filename='js/plotly_array_utils.js') }}"></script>
   <style>
     :root {

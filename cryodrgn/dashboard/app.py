@@ -12,6 +12,7 @@ import uuid
 
 from flask import Flask
 
+from cryodrgn.dashboard.bundled_plotly import bundled_plotly_js
 from cryodrgn.dashboard.command_builder_cli_help import jinja_arg_display_name
 from cryodrgn.dashboard.command_builder_data import (
     arg_is_batch_size_denominated,
@@ -62,6 +63,7 @@ _STATIC_DIR = os.path.join(_THIS_DIR, "static")
 # Route table: (path, view_func, methods)
 # Single-method routes use GET/POST directly instead of tuple for brevity
 _ROUTES = (
+    ("/vendor/plotly.min.js", bundled_plotly_js, "GET"),
     ("/api/set_epoch", api_set_epoch, "POST"),
     ("/api/set_workdir", api_set_workdir, "POST"),
     ("/api/set_chimerax_path", api_set_chimerax_path, "POST"),

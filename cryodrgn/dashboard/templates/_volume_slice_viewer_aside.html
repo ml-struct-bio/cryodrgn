@@ -1,0 +1,62 @@
+{# Volume slice viewer right column: interactive slice canvas + volume navigation. #}
+<aside class="cryo-dash-montage cryo-dash-montage--volume-slices" aria-label="Volume slice viewer">
+<div class="cryo-explorer-menu-scroll">
+<div class="cryo-dash-montage-scroll">
+<div id="montage-actions" class="cryo-explorer-montage-actions">
+  <section class="cryo-explorer-panel-section cryo-vslice-panel-section" aria-labelledby="vslice-panel-heading">
+    <div class="cryo-explorer-panel-shell">
+      <div class="cryo-explorer-panel-header">
+        <h3 id="vslice-panel-heading" class="cryo-vslice-panel-heading">Volume slice viewer</h3>
+        <p id="vslice-status" class="cryo-dash-legend-note cryo-vslice-status" aria-live="polite">
+          Loading analyze volumes…
+        </p>
+        <div class="cryo-vslice-cycle-row">
+          <span id="vslice-cycle-label" class="cryo-vslice-cycle-label">—</span>
+          <button type="button" class="btn btn-secondary cryo-vslice-nav-btn" id="btn-vslice-prev"
+            disabled aria-label="Previous volume">◀ Prev</button>
+          <button type="button" class="btn btn-secondary cryo-vslice-nav-btn" id="btn-vslice-next"
+            disabled aria-label="Next volume">Next ▶</button>
+        </div>
+      </div>
+      <div class="cryo-vslice-viewport" id="vslice-viewport" hidden>
+        <canvas id="vslice-canvas" class="cryo-vslice-canvas" aria-label="Volume slice"></canvas>
+        <p id="vslice-hint" class="cryo-vslice-hint cryo-dash-legend-note">
+          Left-drag: rotate · Right-drag: pan · Wheel: zoom · Double-click: reset
+        </p>
+      </div>
+      <div id="vslice-progress" class="cryo-plot-rendering-overlay__track cryo-vslice-progress" role="progressbar"
+        aria-valuetext="Loading volume" hidden>
+        <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+      </div>
+      <p id="vslice-meta" class="cryo-vslice-meta cryo-dash-legend-note" hidden></p>
+    </div>
+  </section>
+</div>
+</div>
+</div>
+
+{# Hidden stubs required by shared particle-explorer scatter scripts. #}
+<div class="cryo-vslice-dom-stubs" hidden aria-hidden="true">
+  <button type="button" id="color-selection-panel-toggle" aria-expanded="true"></button>
+  <div id="color-selection-panel-body"></div>
+  <div id="color-hist-panel" hidden></div>
+  <div id="color-continuous-hist-wrap"></div>
+  <div id="color-discrete-wrap"></div>
+  <div id="color-hist"></div>
+  <div id="color-discrete-switches"></div>
+  <button type="button" id="btn-discrete-invert-selection"></button>
+  <p id="color-selection-inactive-note"></p>
+  <button type="button" id="btn-view-images"></button>
+  <button type="button" id="btn-expand-cache"></button>
+  <button type="button" id="btn-clear-image-cache"></button>
+  <button type="button" id="btn-cache-selection-uncached"></button>
+  <button type="button" id="btn-montage-resample-cache"></button>
+  <input type="number" id="montage-cache-size-input" value="1"/>
+  <select id="grid-size"><option value="3" selected>3</option></select>
+  <input type="checkbox" id="image-grid-invert-check"/>
+  <div id="montage-grid"></div>
+  <p id="preload-status"></p>
+  <div id="montage-preload-overlay"></div>
+  <span id="montage-preload-overlay-label"></span>
+</div>
+</aside>

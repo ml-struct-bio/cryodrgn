@@ -1,0 +1,598 @@
+// Volume slice viewer: parallel analyze preload + scatter volume markers.
+  var vsliceAnalyzeEpoch = {{ exp_epoch | tojson }};
+  var vslicePrefetchCpus = {{ preload_cpus | tojson }};
+  var vsliceStatusEl = document.getElementById("vslice-status");
+  var vsliceViewportEl = document.getElementById("vslice-viewport");
+  var vsliceCanvasEl = document.getElementById("vslice-canvas");
+  var vsliceHintEl = document.getElementById("vslice-hint");
+  var vsliceProgressEl = document.getElementById("vslice-progress");
+  var vsliceMetaEl = document.getElementById("vslice-meta");
+  var btnVslicePrev = document.getElementById("btn-vslice-prev");
+  var btnVsliceNext = document.getElementById("btn-vslice-next");
+  var vsliceCycleLabelEl = document.getElementById("vslice-cycle-label");
+
+  var vsliceViewer = null;
+  var vsliceCatalog = [];
+  var vsliceParticleCatalog = [];
+  var vsliceCatalogById = {};
+  var vsliceVolumeData = {};
+  var vsliceMarkers = [];
+  var vsliceMarkersByVolId = {};
+  var vsliceCycleIds = [];
+  var vsliceCycleIndex = 0;
+  var vsliceDecodeGeneration = 0;
+  var vsliceLoadGeneration = 0;
+  var vsliceVolumeFetchById = {};
+  var vsliceScatterClickTimer = null;
+  var vsliceScatterClickLastRow = null;
+  var vsliceMarkerTraceIndex = null;
+  var vsliceVisibleMarkerVolIds = [];
+  var vsliceMarkerRestyleGuard = false;
+
+  if (vsliceCanvasEl && window.CryoVolumeSliceCanvas) {
+    vsliceViewer = new CryoVolumeSliceCanvas({
+      canvas: vsliceCanvasEl,
+      hintEl: vsliceHintEl
+    });
+  }
+
+  function setVsliceStatus(msg, busy) {
+    if (vsliceStatusEl) vsliceStatusEl.textContent = msg || "";
+    if (vsliceProgressEl) vsliceProgressEl.hidden = !busy;
+  }
+
+  function vsliceCatalogTitle(volId) {
+    var entry = vsliceCatalogById[volId];
+    return entry && entry.title ? entry.title : volId;
+  }
+
+  function vsliceSyncNavButtons() {
+    if (btnVslicePrev) btnVslicePrev.disabled = vsliceCycleIds.length <= 1;
+    if (btnVsliceNext) btnVsliceNext.disabled = vsliceCycleIds.length <= 1;
+  }
+
+  function vsliceRebuildCycleIds() {
+    vsliceCycleIds = [];
+    for (var i = 0; i < vsliceCatalog.length; i++) {
+      vsliceCycleIds.push(vsliceCatalog[i].id);
+    }
+    for (var j = 0; j < vsliceParticleCatalog.length; j++) {
+      vsliceCycleIds.push(vsliceParticleCatalog[j].id);
+    }
+    if (!vsliceCycleIds.length) {
+      vsliceCycleIndex = 0;
+      vsliceSyncNavButtons();
+      if (vsliceCycleLabelEl) vsliceCycleLabelEl.textContent = "No volumes loaded";
+      return;
+    }
+    vsliceCycleIndex = Math.min(vsliceCycleIndex, vsliceCycleIds.length - 1);
+    vsliceSyncNavButtons();
+  }
+
+  function vsliceUpdateVolumeLabels(volId) {
+    if (vsliceMetaEl) {
+      vsliceMetaEl.hidden = false;
+      var pos = vsliceCycleIds.length ? (vsliceCycleIndex + 1) + "/" + vsliceCycleIds.length : "";
+      vsliceMetaEl.textContent = (pos ? pos + " · " : "") + vsliceCatalogTitle(volId);
+    }
+    if (vsliceCycleLabelEl && vsliceCycleIds.length) {
+      vsliceCycleLabelEl.textContent =
+        (vsliceCycleIndex + 1) + "/" + vsliceCycleIds.length + " · " + vsliceCatalogTitle(volId);
+    }
+  }
+
+  function vsliceRenderVolume(volId) {
+    var blob = vsliceVolumeData[volId];
+    if (!blob || !blob.volume_b64 || !blob.D) return;
+    if (vsliceViewportEl) vsliceViewportEl.hidden = false;
+    if (vsliceViewer) {
+      vsliceViewer.loadVolume(blob.volume_b64, Number(blob.D));
+    }
+    vsliceUpdateVolumeLabels(volId);
+    vsliceSyncMarkerOverlay();
+  }
+
+  function vsliceStoreVolumePayload(volId, payload) {
+    if (!payload || !payload.volume_b64 || !payload.D) return;
+    vsliceVolumeData[volId] = {
+      D: Number(payload.D),
+      volume_b64: payload.volume_b64
+    };
+    if (payload.meta && payload.meta.title) {
+      vsliceCatalogById[volId] = payload.meta;
+    }
+  }
+
+  function vsliceStoreBatchVolumes(volumes) {
+    if (!volumes) return;
+    Object.keys(volumes).forEach(function(vid) {
+      var blob = volumes[vid];
+      vsliceStoreVolumePayload(vid, Object.assign({id: vid}, blob));
+    });
+  }
+
+  function vsliceAnalyzeVolIds() {
+    return vsliceCatalog.map(function(entry) { return entry.id; });
+  }
+
+  function vsliceFetchVolume(volId) {
+    if (vsliceVolumeData[volId] && vsliceVolumeData[volId].volume_b64) {
+      return Promise.resolve(vsliceVolumeData[volId]);
+    }
+    if (vsliceVolumeFetchById[volId]) {
+      return vsliceVolumeFetchById[volId];
+    }
+    var url = "{{ url_for('api_volume_slice_viewer_analyze_volume') }}"
+      + "?id=" + encodeURIComponent(String(volId));
+    var promise = fetch(url)
+      .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, j: j}; }); })
+      .then(function(res) {
+        delete vsliceVolumeFetchById[volId];
+        if (!res.ok) {
+          throw new Error(res.j.error || "Failed to load volume.");
+        }
+        vsliceStoreVolumePayload(volId, res.j);
+        return vsliceVolumeData[volId];
+      })
+      .catch(function(err) {
+        delete vsliceVolumeFetchById[volId];
+        throw err;
+      });
+    vsliceVolumeFetchById[volId] = promise;
+    return promise;
+  }
+
+  function vsliceLoadAnalyzeMarkers(myGen) {
+    return fetch("{{ url_for('api_volume_slice_viewer_analyze_markers') }}")
+      .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, j: j}; }); })
+      .then(function(res) {
+        if (myGen !== vsliceLoadGeneration) return;
+        if (!res.ok) return;
+        vsliceMarkers = res.j.markers || [];
+        vsliceMarkersByVolId = {};
+        for (var mi = 0; mi < vsliceMarkers.length; mi++) {
+          vsliceMarkersByVolId[vsliceMarkers[mi].vol_id] = vsliceMarkers[mi];
+        }
+        vsliceWhenScatterReady(function() {
+          if (myGen === vsliceLoadGeneration) vsliceSyncMarkerOverlay();
+        });
+      })
+      .catch(function() {});
+  }
+
+  function vsliceShowVolumeId(volId) {
+    if (String(volId).indexOf("particle:") === 0) {
+      if (!vsliceVolumeData[volId]) return Promise.resolve();
+      vsliceRenderVolume(volId);
+      return Promise.resolve();
+    }
+    if (vsliceVolumeData[volId] && vsliceVolumeData[volId].volume_b64) {
+      vsliceRenderVolume(volId);
+      return Promise.resolve();
+    }
+    setVsliceStatus("Still loading " + vsliceCatalogTitle(volId) + "…", true);
+    return vsliceFetchVolume(volId)
+      .then(function() {
+        setVsliceStatus("", false);
+        vsliceRenderVolume(volId);
+      })
+      .catch(function(err) {
+        setVsliceStatus(err.message || "Failed to load volume.", false);
+      });
+  }
+
+  function vsliceWhenScatterReady(fn, attempt) {
+    attempt = attempt || 0;
+    if (gd && typeof plotHasScatterData === "function" && plotHasScatterData()) {
+      if (typeof buildTraceMap === "function") buildTraceMap();
+      fn();
+      return;
+    }
+    if (attempt < 120) {
+      window.setTimeout(function() {
+        vsliceWhenScatterReady(fn, attempt + 1);
+      }, 100);
+    }
+  }
+
+  function vslicePlotRowToScatterXY(row) {
+    row = Number(row);
+    if (!isFinite(row) || !gd || !gd.data || !gd.data[0]) return null;
+    var ti = null;
+    if (typeof traceIndexForPlotDfRow === "function") {
+      var mapped = traceIndexForPlotDfRow(row);
+      if (mapped >= 0) ti = mapped;
+    }
+    if (ti == null && typeof rowToTraceIndexMap !== "undefined" && rowToTraceIndexMap && rowToTraceIndexMap.has(row)) {
+      ti = rowToTraceIndexMap.get(row);
+    }
+    if (ti == null) {
+      var cd = gd.data[0].customdata;
+      if (!cd) return null;
+      var n = customdataLength(cd);
+      for (var i = 0; i < n; i++) {
+        var rd = plotlyDataRowAsArray(plotlyAt(cd, i));
+        var plotRow = rd.length > 1 ? Number(rd[1]) : Number(rd[0]);
+        if (isFinite(plotRow) && plotRow === row) {
+          ti = i;
+          break;
+        }
+      }
+    }
+    if (ti == null) return null;
+    var tr = gd.data[0];
+    var x = plotlyAt(tr.x, ti);
+    var y = plotlyAt(tr.y, ti);
+    if (!isFinite(Number(x)) || !isFinite(Number(y))) return null;
+    return {x: Number(x), y: Number(y)};
+  }
+
+  function vsliceFindMarkerTraceIndex() {
+    if (!gd || !gd.data) return null;
+    for (var i = 0; i < gd.data.length; i++) {
+      var meta = gd.data[i].meta;
+      if (meta && meta.cdrgnVsliceMarker) return i;
+    }
+    return null;
+  }
+
+  function vsliceEnsureMarkerTrace() {
+    if (!gd || !window.Plotly) return;
+    var existing = vsliceFindMarkerTraceIndex();
+    if (existing != null) {
+      vsliceMarkerTraceIndex = existing;
+      return;
+    }
+    vsliceMarkerTraceIndex = gd.data ? gd.data.length : 0;
+    Plotly.addTraces(gd, [{
+      type: "scattergl",
+      x: [],
+      y: [],
+      mode: "markers+text",
+      text: [],
+      textposition: "top center",
+      textfont: {size: 11, color: "#243b53", family: "Barlow, sans-serif"},
+      marker: {
+        size: 13,
+        color: "rgba(196, 112, 58, 0.22)",
+        line: {width: 1.5, color: "#c4703a"},
+        opacity: 1
+      },
+      hoverinfo: "text",
+      showlegend: false,
+      meta: {cdrgnVsliceMarker: true}
+    }]);
+  }
+
+  function vsliceSyncMarkerOverlay() {
+    if (vsliceMarkerRestyleGuard) return;
+    if (!vsliceMarkers.length || !gd || !plotHasScatterData || !plotHasScatterData()) return;
+    if (typeof buildTraceMap === "function") buildTraceMap();
+    vsliceEnsureMarkerTrace();
+    if (vsliceMarkerTraceIndex == null) return;
+    var activeId = vsliceCycleIds[vsliceCycleIndex] || "";
+    var xs = [];
+    var ys = [];
+    var texts = [];
+    var sizes = [];
+    var fills = [];
+    var lineWidths = [];
+    vsliceVisibleMarkerVolIds = [];
+    for (var i = 0; i < vsliceMarkers.length; i++) {
+      var m = vsliceMarkers[i];
+      if (m.plot_row == null) continue;
+      var xy = vslicePlotRowToScatterXY(m.plot_row);
+      if (!xy) continue;
+      var isActive = m.vol_id === activeId;
+      vsliceVisibleMarkerVolIds.push(m.vol_id);
+      xs.push(xy.x);
+      ys.push(xy.y);
+      texts.push(m.label || "");
+      sizes.push(isActive ? 18 : 13);
+      fills.push(isActive ? "rgba(196, 112, 58, 0.55)" : "rgba(196, 112, 58, 0.22)");
+      lineWidths.push(isActive ? 2.5 : 1.5);
+    }
+    try {
+      vsliceMarkerRestyleGuard = true;
+      if (!xs.length) {
+        Plotly.restyle(gd, {x: [[]], y: [[]], text: [[]]}, [vsliceMarkerTraceIndex]);
+        return;
+      }
+      Plotly.restyle(gd, {
+        x: [xs],
+        y: [ys],
+        text: [texts],
+        "marker.size": [sizes],
+        "marker.color": [fills],
+        "marker.line.width": [lineWidths]
+      }, [vsliceMarkerTraceIndex]);
+    } catch (err) {
+      vsliceMarkerTraceIndex = null;
+    } finally {
+      window.setTimeout(function() { vsliceMarkerRestyleGuard = false; }, 0);
+    }
+  }
+
+  function vsliceVolIdForMarkerIndex(idx) {
+    return vsliceVisibleMarkerVolIds[idx] || null;
+  }
+
+  function vsliceAddDecodedParticle(payload) {
+    if (!payload || !payload.volume_b64 || !payload.D) return;
+    var row = Number(payload.row);
+    if (!isFinite(row)) return;
+    var volId = "particle:" + String(row);
+    var title = "Decoded particle · row " + String(row);
+    if (payload.dataset_index != null) {
+      title += " · dataset " + String(payload.dataset_index);
+    }
+    var entry = {
+      id: volId,
+      kind: "particle",
+      title: title,
+      row: row,
+      dataset_index: payload.dataset_index != null ? payload.dataset_index : null
+    };
+    vsliceCatalogById[volId] = entry;
+    vsliceVolumeData[volId] = {
+      D: Number(payload.D),
+      volume_b64: payload.volume_b64
+    };
+    var alreadyListed = false;
+    for (var i = 0; i < vsliceParticleCatalog.length; i++) {
+      if (vsliceParticleCatalog[i].id === volId) {
+        alreadyListed = true;
+        break;
+      }
+    }
+    if (!alreadyListed) {
+      vsliceParticleCatalog.push(entry);
+      vsliceRebuildCycleIds();
+    }
+    vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
+    if (vsliceCycleIndex < 0) {
+      vsliceRebuildCycleIds();
+      vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
+    }
+    vsliceSyncNavButtons();
+    vsliceRenderVolume(volId);
+  }
+
+  function decodeVsliceParticleForRow(row) {
+    row = Number(row);
+    if (!isFinite(row)) return;
+    var volId = "particle:" + String(row);
+    if (vsliceVolumeData[volId] && vsliceVolumeData[volId].volume_b64) {
+      vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
+      if (vsliceCycleIndex < 0) {
+        vsliceAddDecodedParticle({
+          row: row,
+          D: vsliceVolumeData[volId].D,
+          volume_b64: vsliceVolumeData[volId].volume_b64,
+          dataset_index: vsliceCatalogById[volId] && vsliceCatalogById[volId].dataset_index
+        });
+      } else {
+        vsliceRenderVolume(volId);
+      }
+      return;
+    }
+    var myGen = ++vsliceDecodeGeneration;
+    setVsliceStatus("Decoding volume on GPU…", true);
+    fetch("{{ url_for('api_volume_slice_viewer_decode') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({row: row})
+    })
+      .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, j: j}; }); })
+      .then(function(res) {
+        if (myGen !== vsliceDecodeGeneration) return;
+        setVsliceStatus("", false);
+        if (!res.ok) {
+          setVsliceStatus(res.j.error || "Decode failed.", false);
+          return;
+        }
+        vsliceAddDecodedParticle(res.j);
+        setVsliceStatus("Added to volume list — use Prev / Next to browse.", false);
+      })
+      .catch(function() {
+        if (myGen === vsliceDecodeGeneration) {
+          setVsliceStatus("Decode request failed.", false);
+        }
+      });
+  }
+
+  function vsliceRowFromPlotlyPoint(pt) {
+    if (typeof rowFromPlotlyPoint === "function") {
+      return rowFromPlotlyPoint(pt);
+    }
+    if (!pt || pt.customdata == null) return NaN;
+    var row = plotlyDataRowAsArray(pt.customdata);
+    return row.length ? Number(row[0]) : NaN;
+  }
+
+  function wireVslicePlotlyEvents() {
+    if (plotlyEventsWired || !gd) return;
+    plotlyEventsWired = true;
+    if (window.Plotly) {
+      Plotly.relayout(gd, { dragmode: "pan", selections: [] });
+    }
+    gd.on("plotly_click", function(ev) {
+      if (!ev.points || !ev.points.length) return;
+      var pt = ev.points[0];
+      if (vsliceMarkerTraceIndex != null && pt.curveNumber === vsliceMarkerTraceIndex) {
+        var volId = vsliceVolIdForMarkerIndex(pt.pointIndex);
+        if (volId) {
+          vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
+          if (vsliceCycleIndex < 0) vsliceCycleIndex = 0;
+          vsliceShowVolumeId(volId);
+        }
+        return;
+      }
+      if (pt.curveNumber !== 0) return;
+      var row = vsliceRowFromPlotlyPoint(pt);
+      if (!isFinite(row)) return;
+      if (vsliceScatterClickTimer !== null && vsliceScatterClickLastRow === row) {
+        clearTimeout(vsliceScatterClickTimer);
+        vsliceScatterClickTimer = null;
+        vsliceScatterClickLastRow = null;
+        decodeVsliceParticleForRow(row);
+        return;
+      }
+      vsliceScatterClickLastRow = row;
+      if (vsliceScatterClickTimer) clearTimeout(vsliceScatterClickTimer);
+      vsliceScatterClickTimer = setTimeout(function() {
+        vsliceScatterClickTimer = null;
+        vsliceScatterClickLastRow = null;
+      }, 320);
+    });
+    gd.on("plotly_doubleclick", function() {
+      if (window.Plotly && gd) {
+        Plotly.relayout(gd, { dragmode: "pan", selections: [] });
+      }
+    });
+    gd.on("plotly_afterplot", function() {
+      if (vsliceMarkerRestyleGuard) return;
+      if (!vsliceMarkers.length) return;
+      if (vsliceFindMarkerTraceIndex() != null) return;
+      vsliceMarkerTraceIndex = null;
+      vsliceSyncMarkerOverlay();
+    });
+    vsliceWhenScatterReady(function() {
+      vsliceSyncMarkerOverlay();
+    });
+  }
+
+  function loadAnalyzeVolumes() {
+    var myGen = ++vsliceLoadGeneration;
+    setVsliceStatus("Loading analyze volume catalog…", true);
+    fetch("{{ url_for('api_volume_slice_viewer_analyze_volumes') }}?include_markers=0")
+      .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, j: j}; }); })
+      .then(function(res) {
+        if (myGen !== vsliceLoadGeneration) return;
+        if (!res.ok) {
+          setVsliceStatus(res.j.error || "Failed to load analyze volumes.", false);
+          return;
+        }
+        var j = res.j;
+        vsliceCatalog = j.catalog || [];
+        vsliceMarkers = [];
+        vsliceMarkersByVolId = {};
+        vsliceCatalogById = {};
+        for (var i = 0; i < vsliceCatalog.length; i++) {
+          vsliceCatalogById[vsliceCatalog[i].id] = vsliceCatalog[i];
+        }
+        vsliceRebuildCycleIds();
+        if (!vsliceCycleIds.length) {
+          setVsliceStatus(
+            "No k-means or PC volumes under analyze." + String(vsliceAnalyzeEpoch)
+            + ". Double-click a point to decode a particle.",
+            false
+          );
+          return;
+        }
+        vsliceCycleIndex = 0;
+        var firstVolId = vsliceCycleIds[0];
+        setVsliceStatus("Loading " + vsliceCatalogTitle(firstVolId) + "…", true);
+        return vsliceFetchVolume(firstVolId).then(function() {
+          if (myGen !== vsliceLoadGeneration) return;
+          setVsliceStatus("", false);
+          vsliceRenderVolume(firstVolId);
+          vsliceWhenScatterReady(function() {
+            if (myGen === vsliceLoadGeneration) vsliceSyncMarkerOverlay();
+          });
+          vsliceLoadAnalyzeMarkers(myGen);
+          setVsliceStatus(
+            "Use Prev / Next or click a plot label to browse volumes.",
+            false
+          );
+        });
+      })
+      .catch(function(err) {
+        if (myGen === vsliceLoadGeneration) {
+          setVsliceStatus(err.message || "Failed to load analyze volumes.", false);
+        }
+      });
+  }
+
+  function vsliceStepCycle(delta) {
+    if (!vsliceCycleIds.length) return;
+    vsliceCycleIndex = (vsliceCycleIndex + delta + vsliceCycleIds.length) % vsliceCycleIds.length;
+    vsliceShowVolumeId(vsliceCycleIds[vsliceCycleIndex]);
+  }
+
+  if (btnVslicePrev) {
+    btnVslicePrev.addEventListener("click", function() { vsliceStepCycle(-1); });
+  }
+  if (btnVsliceNext) {
+    btnVsliceNext.addEventListener("click", function() { vsliceStepCycle(1); });
+  }
+
+  if (vsliceCanvasEl && window.CryoResizeObserverUtils) {
+    window.CryoResizeObserverUtils.observeResize([vsliceCanvasEl], function() {
+      if (vsliceViewer && vsliceViewer.vol) vsliceViewer.draw();
+    });
+  } else if (vsliceCanvasEl) {
+    window.addEventListener("resize", function() {
+      if (vsliceViewer && vsliceViewer.vol) vsliceViewer.draw();
+    });
+  }
+
+  /* View-only scatter: pan only, no lasso/box/threshold selection. */
+  saveSelectionRows = [];
+  committedScatterRegions = [];
+  selectionTooltipText = "";
+
+  if (typeof applyRowsSelection === "function") {
+    applyRowsSelection = function() {};
+  }
+  if (typeof handleExplorerLegendFilter === "function") {
+    handleExplorerLegendFilter = function() {};
+  }
+  if (typeof updateParticleSelFieldset === "function") {
+    updateParticleSelFieldset = function() {};
+  }
+
+  var _origFetch = window.fetch;
+  window.fetch = function(input, init) {
+    var url = typeof input === "string" ? input : (input && input.url ? input.url : "");
+    var promise = _origFetch.call(this, input, init);
+    if (url.indexOf("/api/scatter") === -1) return promise;
+    return promise.then(function(response) {
+      return response.text().then(function(text) {
+        var payload;
+        try {
+          payload = JSON.parse(text);
+        } catch (err) {
+          return new Response(text, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers
+          });
+        }
+        if (payload && payload.layout) {
+          payload.layout.dragmode = "pan";
+          payload.layout.selections = [];
+        }
+        return new Response(JSON.stringify(payload), {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers
+        });
+      });
+    });
+  };
+
+  if (typeof loadPlot === "function") {
+    var _origLoadPlot = loadPlot;
+    loadPlot = function(axesChanged) {
+      vsliceMarkerTraceIndex = null;
+      _origLoadPlot(axesChanged);
+      vsliceWhenScatterReady(function() {
+        vsliceSyncMarkerOverlay();
+      });
+    };
+  }
+
+  wireUpPlotlyEvents = wireVslicePlotlyEvents;
+
+  loadAnalyzeVolumes();

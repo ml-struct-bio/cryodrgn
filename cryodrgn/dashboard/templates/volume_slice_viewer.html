@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Volume slice viewer · cryoDRGN{% endblock %}
+{% from "_macros.html" import nav_page_title_span %}
+{% from "_palette_options.html" import continuous_palette_options %}
+{% block nav_page_title %}{{ nav_page_title_span("Volume slice viewer") }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/cryo_cc_legend_palette_menu.css') }}"/>
+<style>
+  .cryo-dash-page--volume-slice-viewer {
+    --cryo-dash-below-nav-tall: 9.5rem;
+    --cryo-vslice-side-w: min(196px, 14vw);
+    --cryo-vslice-aside-w: min(30rem, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 0.5rem));
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-dash-row--volume-slice {
+    display: grid;
+    grid-template-columns: var(--cryo-vslice-side-w) minmax(0, 1fr) var(--cryo-vslice-aside-w);
+    align-items: stretch;
+    gap: 1rem;
+    height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
+    min-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
+    max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-dash-side {
+    grid-column: 1;
+    width: auto;
+    min-width: 130px;
+    max-width: none;
+    flex: unset;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-dash-viewport--plotly {
+    grid-column: 2;
+    flex: unset;
+    width: auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 0.75rem;
+    container-type: size;
+    container-name: cryo-vslice-plot;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-plotly-stack {
+    flex: 0 1 auto;
+    align-self: center;
+    width: min(100cqw, calc(100cqh - 2.35rem));
+    max-width: 100%;
+    max-height: calc(100cqh - 2.35rem);
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    min-width: 0;
+    height: auto;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices {
+    grid-column: 3;
+    flex: unset;
+    width: 100%;
+    min-width: min(14rem, 100%);
+    max-width: var(--cryo-vslice-aside-w);
+    align-self: flex-start;
+    max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .cryo-vslice-color-section .cryo-vslice-color-body {
+    padding: 0;
+  }
+  .cryo-vslice-panel-heading {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-vslice-status {
+    margin: 0 0 0.5rem;
+  }
+  .cryo-vslice-cycle-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+    gap: 0.55rem;
+    margin: 0 0 0.65rem;
+  }
+  .cryo-vslice-nav-btn {
+    width: 100%;
+    min-height: 3.25rem;
+    font-size: 1.12rem;
+    font-weight: 700;
+    padding: 0.75rem 0.85rem;
+    letter-spacing: 0.02em;
+  }
+  .cryo-vslice-cycle-label {
+    grid-column: 1 / -1;
+    font-size: 0.88rem;
+    line-height: 1.3;
+    text-align: center;
+    color: var(--muted, #5c6b7a);
+    min-width: 0;
+    margin: 0 0 0.15rem;
+  }
+  .cryo-vslice-viewport {
+    position: relative;
+    width: 100%;
+    margin: 0.35rem 0 0.45rem;
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 4px;
+    background: #e8ecf1;
+    overflow: hidden;
+  }
+  .cryo-vslice-canvas {
+    display: block;
+    width: 100%;
+    height: min(22rem, 42vw);
+    min-height: 12rem;
+    cursor: grab;
+    touch-action: none;
+  }
+  .cryo-vslice-canvas:active {
+    cursor: grabbing;
+  }
+  .cryo-vslice-hint {
+    margin: 0;
+    padding: 0.35rem 0.45rem 0.45rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    text-align: center;
+    border-top: 1px solid rgba(36, 59, 83, 0.1);
+    background: rgba(250, 248, 244, 0.9);
+  }
+  .cryo-vslice-progress {
+    margin: 0.35rem 0;
+    height: 4px;
+  }
+  .cryo-vslice-meta {
+    margin: 0.45rem 0 0;
+    font-size: 0.78rem;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-color-hist-panel {
+    margin-top: 0.25rem;
+  }
+  .cryo-dash-page--volume-slice-viewer #scatter-controls-card fieldset legend {
+    font-size: 0.88rem;
+  }
+  .cryo-dash-page--volume-slice-viewer #scatter-region-chips-overlay,
+  .cryo-dash-page--volume-slice-viewer #box-select-tooltip {
+    display: none !important;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="cryo-dash-page cryo-dash-page--image-viewer cryo-dash-page--particle-explorer cryo-dash-page--volume-slice-viewer">
+<div class="cryo-dash-row cryo-dash-row--volume-slice">
+  {% include "_volume_slice_scatter.html" %}
+  {% include "_volume_slice_viewer_aside.html" %}
+</div>
+</div>
+
+<script src="{{ url_for('static', filename='js/cryo_cc_legend_primitives.js') }}"></script>
+<script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+<script src="{{ url_for('static', filename='js/volume_slice_canvas.js') }}"></script>
+<script>
+(function() {
+{% include "_particle_explorer_scatterjs.html" %}
+{% include "_particle_explorer_montagejs.html" %}
+{% include "_volume_slice_viewer_js.html" %}
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+{# Volume slice viewer scatter region: axes / colour controls + Plotly (view only). #}
+<div class="cryo-dash-side">
+  <div class="cryo-explorer-menu-scroll">
+    <div class="cryo-dash-lead">
+      K-means and PC volumes from <code>analyze</code> load in parallel on startup.
+      Labelled markers on the scatterplot show each volume — click a marker or use
+      <strong>Prev</strong> / <strong>Next</strong> to browse.
+      <strong>Double-click</strong> a scatter point to GPU-decode that particle and add it to the list.
+      Choose axes and a colour covariate below to explore the latent landscape.
+      <p>Drag on the slice to rotate, right-drag to pan, and scroll to zoom.</p>
+    </div>
+    <div class="card cryo-dash-controls" id="scatter-controls-card">
+      <fieldset>
+        <legend>Choose axes<br/>and point colour scale</legend>
+        <label class="cryo-select-line" for="sx">Horizontal (X)</label>
+        <select id="sx"></select>
+        <label class="cryo-select-line" for="sy">Vertical (Y)</label>
+        <select id="sy"></select>
+        <label class="cryo-select-line" for="sc">Colour by</label>
+        <select id="sc"><option value="none">None</option></select>
+      </fieldset>
+    </div>
+  </div>
+  <div class="cryo-explorer-menu-fade cryo-explorer-menu-fade--cream" aria-hidden="true"></div>
+</div>
+
+<div class="cryo-dash-viewport--plotly">
+  <p id="scatter-plot-status" class="cryo-dash-legend-note cryo-particle-explorer-plot-status"
+    style="color:var(--accent,#c4703a);"></p>
+  <div class="cryo-plotly-stack" id="scatter-plot-stack">
+    <div id="scatter" class="cryo-plotly-graph-host"></div>
+    <div id="scatter-region-chips-overlay" class="cryo-scatter-region-chips-overlay" aria-hidden="true"></div>
+    <div id="box-select-tooltip" class="cryo-box-select-tooltip" hidden></div>
+    <div id="scatter-rendering-overlay"
+      class="cryo-plot-rendering-overlay cryo-plot-rendering-overlay--show"
+      aria-hidden="false">
+      <div class="cryo-plot-rendering-overlay__inner">
+        <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+        <div class="cryo-plot-rendering-overlay__track" role="progressbar" aria-valuetext="Loading plot">
+          <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Hidden stubs required by shared particle-explorer scripts (no selection UI). #}
+<div class="cryo-vslice-dom-stubs" hidden aria-hidden="true">
+  <div id="sel-count-row"><p id="sel-count"></p><p id="sel-count-footnote" hidden></p>
+    <div id="sel-pie"></div><p id="sel-pie-pct"></p></div>
+  <button type="button" id="clear-explorer-selection"></button>
+  <fieldset id="particle-sel-fieldset" disabled></fieldset>
+  <button type="button" id="save-indices-pkl"></button>
+  <button type="button" id="save-indices-custom"></button>
+  <input type="checkbox" id="save-inverse"/>
+  <p id="save-status"></p>
+</div>

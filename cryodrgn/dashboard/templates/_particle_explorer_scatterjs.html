@@ -74,6 +74,7 @@
   var imageGridPanelShell = document.getElementById("image-grid-panel-shell");
   var imageGridMenuToggle = document.getElementById("image-grid-menu-toggle");
   var imageGridToolbarControls = document.getElementById("image-grid-toolbar-controls");
+  var imageGridInvertCheck = document.getElementById("image-grid-invert-check");
   var btnMontageResampleCache = document.getElementById("btn-montage-resample-cache");
   var montageResampleFitTimer = null;
   var imageGridMenuBody = document.getElementById("image-grid-menu-body");
@@ -822,6 +823,12 @@
 
   /* ---------- montage grid DOM ---------- */
   var gridEl = document.getElementById("montage-grid");
+  var montageImageInvert = false;
+
+  function applyMontageImageInvert() {
+    if (!gridEl) return;
+    gridEl.classList.toggle("cryo-montage-grid--invert-particles", montageImageInvert);
+  }
   var montageCells = [];  /* [{img, idx, covar, cell}] */
 
   function rebuildGrid() {
@@ -998,6 +1005,13 @@
     refillMontageForNewGridSize();
     syncMontageResampleFromCacheButton();
   });
+
+  if (imageGridInvertCheck) {
+    imageGridInvertCheck.addEventListener("change", function() {
+      montageImageInvert = !!this.checked;
+      applyMontageImageInvert();
+    });
+  }
 
   function fillSelect(sel, includeNone) {
     sel.innerHTML = "";

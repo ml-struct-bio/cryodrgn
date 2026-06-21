@@ -169,6 +169,43 @@
                       <option value="8">8 × 8</option>
                     </select>
                   </label>
+                  <div id="image-grid-contrast-switch" class="cryo-image-grid-contrast-switch" role="group"
+                    aria-label="Image contrast">
+                    <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--lod">
+                      <span class="cryo-image-grid-contrast-label" aria-hidden="true">
+                        <span class="cryo-image-grid-contrast-label__line">Light</span>
+                        <span class="cryo-image-grid-contrast-label__line">on</span>
+                        <span class="cryo-image-grid-contrast-label__line">dark</span>
+                      </span>
+                      <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="Light on dark">
+                        <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
+                          <rect width="16" height="16" fill="#243b53"/>
+                          <circle cx="8" cy="8" r="3.4" fill="#eef2f7"/>
+                        </svg>
+                      </span>
+                    </span>
+                    <label id="image-grid-invert-wrap" class="cryo-image-grid-invert-switch"
+                      for="image-grid-invert-check">
+                      <input type="checkbox" id="image-grid-invert-check" role="switch"
+                        aria-label="Dark on light contrast"/>
+                      <span class="cryo-image-grid-invert-switch__track" aria-hidden="true">
+                        <span class="cryo-image-grid-invert-switch__thumb"></span>
+                      </span>
+                    </label>
+                    <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--dol">
+                      <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="Dark on light">
+                        <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
+                          <rect width="16" height="16" fill="#e8ecf1"/>
+                          <circle cx="8" cy="8" r="3.4" fill="#3d5a80"/>
+                        </svg>
+                      </span>
+                      <span class="cryo-image-grid-contrast-label" aria-hidden="true">
+                        <span class="cryo-image-grid-contrast-label__line">Dark</span>
+                        <span class="cryo-image-grid-contrast-label__line">on</span>
+                        <span class="cryo-image-grid-contrast-label__line">light</span>
+                      </span>
+                    </span>
+                  </div>
                   <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
                     aria-label="Resample 9 images from cache" disabled>
                     <span class="cryo-image-grid-resample-btn__label">

@@ -840,3 +840,50 @@ class TestSaveZPath:
             json={"z_path_txt": 12345, "out_path": "x.txt"},
         )
         assert r.status_code == 400
+
+
+class TestTrajectoryPlotlyBrowserSmoke:
+    """Headless Chromium: default trajectory overlay and random anchor coords."""
+
+    def test_default_trajectory_and_random_anchors(
+        self, playwright_page, dashboard_volumes_eligible_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_trajectory
+
+        out = dashboard_smoke_trajectory(
+            playwright_page, dashboard_volumes_eligible_live_url
+        )
+        assert out is not None
+        assert out["traces_before_anchor"] >= 2
+        assert out["traces_after_anchor"] >= 2
+
+
+class TestTrajectoryPageWithMockEligibility:
+    """Trajectory shell renders without CUDA when eligibility is mocked."""
+
+    def test_trajectory_page_renders_scatter(
+        self, flask_client_volumes_eligible
+    ) -> None:
+        r = flask_client_volumes_eligible.get("/trajectory")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert 'id="scatter"' in body
+        assert "CUDA GPU" not in body
+
+    def test_trajectory_coords_direct_mode(self, flask_client_volumes_eligible) -> None:
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_coords",
+            json={
+                "mode": "direct",
+                "x": "z0",
+                "y": "z1",
+                "start": [0.0, 0.0],
+                "end": [1.0, 1.0],
+                "n_points": 3,
+            },
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:500]
+        js = r.get_json()
+        assert len(js["z_traj"]) >= 2
+        assert all(len(z) == 4 for z in js["z_traj"])
+        assert js["mode"] == "direct"

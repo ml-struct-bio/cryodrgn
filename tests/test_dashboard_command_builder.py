@@ -556,3 +556,28 @@ class TestGithubRepoReleaseUrl:
             "4.3.0rc1",
         )
         assert url.endswith("/tree/4.3.0-rc1")
+
+
+class TestCommandBuilderStaticSite:
+    """GitHub Pages bundle omits Plotly (command builder does not use charts)."""
+
+    def test_rendered_html_has_no_plotly_script(self) -> None:
+        from cryodrgn.dashboard.command_builder_page import render_command_builder_html
+
+        html = render_command_builder_html()
+        assert "cdn.plot.ly" not in html
+        assert "/vendor/plotly.min.js" not in html
+        assert "plotly.min.js" not in html
+
+
+class TestCommandBuilderBrowserSmoke:
+    """Headless Chromium: command line preview updates when command type changes."""
+
+    def test_cmd_type_switch_updates_preview(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_command_builder
+
+        out = dashboard_smoke_command_builder(playwright_page, dashboard_live_url)
+        assert out["initial_has_abinit"]
+        assert out["switched_to_train_vae"]

@@ -23,14 +23,9 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-from pathlib import Path
 
 import numpy as np
 import pytest
-
-from cryodrgn import utils
-from cryodrgn.dashboard import app as dash_app
 from cryodrgn.dashboard.data import DashboardExperiment, load_experiment
 from cryodrgn.dashboard.landscape_volpca import (
     _sketch_continuous_covariate_per_volume_values,
@@ -42,93 +37,20 @@ from cryodrgn.dashboard.landscape_volpca import (
     meta_for_api,
     sketch_vol_marker_hex_by_vol_index,
 )
-from tests.conftest import decode_plotly_figure, plotly_trace_array
+from tests.conftest import (
+    DASHBOARD_ANALYZE_EPOCH as _ANALYZE_EPOCH,
+    decode_plotly_figure,
+    plotly_trace_array,
+)
 
-# Must match ``DASHBOARD_ANALYZE_EPOCH`` in ``tests/conftest.py``.
-_ANALYZE_EPOCH = 2
 _LANDSCAPE_K = 3
-
-
-def _strip_landscape_dirs(workdir: str) -> None:
-    """Remove ``landscape.N`` trees so copies match a run without analyze_landscape."""
-    for name in list(os.listdir(workdir)):
-        if name.startswith("landscape.") and os.path.isdir(os.path.join(workdir, name)):
-            shutil.rmtree(os.path.join(workdir, name), ignore_errors=True)
-
-
-def _copy_dashboard_workdir(
-    dashboard_workdir: str,
-    tmp_path_factory: pytest.TempPathFactory,
-    parent_name: str,
-) -> str:
-    """Copy into ``parent_name/cryo_out`` (``mktemp`` only creates the parent — *not* the leaf)."""
-    parent = tmp_path_factory.mktemp(parent_name)
-    dst = Path(parent) / "cryo_out"
-    shutil.copytree(dashboard_workdir, dst)
-    return str(dst)
-
-
-def _write_minimal_landscape(workdir: str, epoch: int = _ANALYZE_EPOCH) -> str:
-    """Create ``landscape.{epoch}/vol_pca_K.pkl`` + ``kmeansK/`` sketch files.
-
-    Returns the absolute ``landscape_dir`` path.
-    """
-    land = os.path.join(workdir, f"landscape.{epoch}")
-    km = os.path.join(land, f"kmeans{_LANDSCAPE_K}")
-    os.makedirs(km, exist_ok=True)
-    pc = np.array(
-        [[0.0, 0.1], [1.0, -0.5], [0.2, 0.3]],
-        dtype=np.float64,
-    )
-    utils.save_pkl(pc, os.path.join(land, f"vol_pca_{_LANDSCAPE_K}.pkl"))
-    for i in range(1, _LANDSCAPE_K + 1):
-        p = os.path.join(km, f"vol_{i:03d}.mrc")
-        with open(p, "wb"):
-            pass
-    centers_path = os.path.join(km, "centers_ind.txt")
-    with open(centers_path, "w", encoding="utf-8") as fh:
-        for row in range(_LANDSCAPE_K):
-            fh.write(f"{row}\n")
-    umap_full = np.array(
-        [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0], [6.0, 7.0], [8.0, 9.0]],
-        dtype=np.float64,
-    )
-    utils.save_pkl(umap_full, os.path.join(land, "umap.pkl"))
-    return land
-
-
-@pytest.fixture(scope="module")
-def dashboard_workdir_with_landscape(
-    dashboard_workdir: str,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> str:
-    """Copy the shared dashboard output once per module (per xdist worker)."""
-    d = _copy_dashboard_workdir(
-        dashboard_workdir, tmp_path_factory, "workdir_landscape"
-    )
-    _strip_landscape_dirs(d)
-    _write_minimal_landscape(d)
-    return d
-
-
-@pytest.fixture(scope="module")
-def dashboard_workdir_plain_copy(
-    dashboard_workdir: str,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> str:
-    """Like the session workdir but never includes ``landscape.*`` (golden tree may)."""
-    d = _copy_dashboard_workdir(
-        dashboard_workdir, tmp_path_factory, "wd_plain_no_landscape"
-    )
-    _strip_landscape_dirs(d)
-    return d
 
 
 @pytest.fixture(scope="module")
 def experiment_landscape(
-    dashboard_workdir_with_landscape: str,
+    dashboard_workdir_with_landscape_volpca: str,
 ) -> DashboardExperiment:
-    return load_experiment(dashboard_workdir_with_landscape)
+    return load_experiment(dashboard_workdir_with_landscape_volpca)
 
 
 @pytest.fixture(scope="module")
@@ -136,22 +58,6 @@ def experiment_plain_no_landscape(
     dashboard_workdir_plain_copy: str,
 ) -> DashboardExperiment:
     return load_experiment(dashboard_workdir_plain_copy)
-
-
-@pytest.fixture
-def flask_client_landscape(dashboard_workdir_with_landscape: str):
-    """New Flask client per test (avoid shared cookie/session state)."""
-    app = dash_app.create_app(workdir=dashboard_workdir_with_landscape)
-    with app.test_client() as client:
-        yield client
-
-
-@pytest.fixture
-def flask_client_no_landscape(dashboard_workdir_plain_copy: str):
-    """App bound to a tree with no ``landscape.N`` (not the session golden path)."""
-    app = dash_app.create_app(workdir=dashboard_workdir_plain_copy)
-    with app.test_client() as client:
-        yield client
 
 
 class TestLandscapeVolpcaKmeansHelpers:
@@ -171,24 +77,26 @@ class TestLandscapeVolpcaFilesystemHelpers:
         assert list_landscape_epochs(str(tmp_path)) == []
 
     def test_list_landscape_epochs_finds_folder(
-        self, dashboard_workdir_with_landscape: str
+        self, dashboard_workdir_with_landscape_volpca: str
     ) -> None:
-        assert list_landscape_epochs(dashboard_workdir_with_landscape) == [
+        assert list_landscape_epochs(dashboard_workdir_with_landscape_volpca) == [
             _ANALYZE_EPOCH
         ]
 
     def test_landscape_analysis_ready(
-        self, dashboard_workdir_with_landscape: str
+        self, dashboard_workdir_with_landscape_volpca: str
     ) -> None:
         assert landscape_analysis_ready(
-            dashboard_workdir_with_landscape,
+            dashboard_workdir_with_landscape_volpca,
             _ANALYZE_EPOCH,
         )
 
     def test_landscape_dir_for_epoch(
-        self, dashboard_workdir_with_landscape: str
+        self, dashboard_workdir_with_landscape_volpca: str
     ) -> None:
-        d = landscape_dir_for_epoch(dashboard_workdir_with_landscape, _ANALYZE_EPOCH)
+        d = landscape_dir_for_epoch(
+            dashboard_workdir_with_landscape_volpca, _ANALYZE_EPOCH
+        )
         assert d.endswith(f"landscape.{_ANALYZE_EPOCH}")
         assert os.path.isdir(d)
 
@@ -448,3 +356,43 @@ class TestLandscapeVolpcaFlaskRoutes:
             json={"token": "nope", "out_dir": 123},
         )
         assert r.status_code == 400
+
+
+@pytest.fixture(scope="module")
+def dashboard_landscape_live_url(dashboard_landscape_volpca_live_url: str):
+    """Alias kept for this module's browser smoke tests."""
+    return dashboard_landscape_volpca_live_url
+
+
+class TestLandscapeVolpcaPlotlyBrowserSmoke:
+    """Headless Chromium: vol PCA random selection overlay letters."""
+
+    def test_random_selection_overlay_letters(
+        self, playwright_page, dashboard_landscape_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_landscape_volpca
+
+        out = dashboard_smoke_landscape_volpca(
+            playwright_page, dashboard_landscape_live_url
+        )
+        assert out["overlayTexts"] >= 1
+
+    def test_clear_selection_removes_overlay(
+        self, playwright_page, dashboard_landscape_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_landscape_volpca_clear_selection
+
+        out = dashboard_smoke_landscape_volpca_clear_selection(
+            playwright_page, dashboard_landscape_live_url
+        )
+        assert out["overlay_cleared"]
+
+    def test_axis_change_reloads_scatter(
+        self, playwright_page, dashboard_landscape_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_landscape_volpca_axis_reload
+
+        out = dashboard_smoke_landscape_volpca_axis_reload(
+            playwright_page, dashboard_landscape_live_url
+        )
+        assert out["points"] >= 1

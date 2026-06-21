@@ -42,6 +42,7 @@ from cryodrgn.dashboard.plots_scatter import (
 )
 from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from tests.conftest import (
+    DASHBOARD_ANALYZE_EPOCH,
     decode_plotly_figure,
     decode_plotly_value,
     js_function_body,
@@ -180,6 +181,33 @@ class TestScatter3dApiEndpoints:
             or "landscape" in err.lower()
             or "three" in err.lower()
         )
+
+    def test_api_scatter3d_z_landscape_full_with_mock_outputs(
+        self,
+        flask_client_landscape_full,
+        dashboard_workdir_with_landscape_full: str,
+    ) -> None:
+        from cryodrgn.dashboard.landscape_full_3d import landscape_full_3d_ready
+
+        assert landscape_full_3d_ready(
+            dashboard_workdir_with_landscape_full, DASHBOARD_ANALYZE_EPOCH
+        )
+        r = flask_client_landscape_full.get(
+            "/api/scatter3d_z_landscape_full"
+            "?x=landscape_vol_PC1&y=landscape_vol_PC2&z=landscape_vol_PC3&color=none"
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:500]
+        assert r.get_json()["data"]
+
+    def test_landscape_full_3d_page_renders_with_mock_outputs(
+        self, flask_client_landscape_full
+    ) -> None:
+        r = flask_client_landscape_full.get("/landscape-full-3d")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert 'id="latent3d"' in body
+        assert "/vendor/plotly.min.js" in body
+        assert "analyze_landscape_full" not in body.lower()
 
     def test_api_latent3d_landscape_full_discrete_gif_without_outputs_is_400(
         self, flask_client
@@ -914,45 +942,6 @@ class TestScatter3dLatent3dCameraSnapBack:
         idx_overlay_off = tail.index("setRendering(false)")
         assert idx_refresh < idx_overlay_off
 
-    def test_same_axes_marker_restyle_preserves_camera(self) -> None:
-        text = read_latent_3d_html()
-        fn = text.split("function latent3dApplyFigurePreservingScene", 1)[1]
-        body = fn.split("function latent3dStabilizeSceneAfterOverlay", 1)[0]
-        assert "traceMarkerRestylePreservingCamera(fig, gd, viewPin)" in body
-        assert "prepareFigureSceneForPinnedViewRedraw(fig, gd, pin)" in body
-        assert "relayoutPreserveViewPatch(viewPin)" in body
-
-    def test_same_axes_filter_restyle_does_not_apply_server_axis_ranges(self) -> None:
-        text = read_latent_3d_html()
-        fn = text.split("function latent3dApplyFigurePreservingScene", 1)[1]
-        body = fn.split("function latent3dStabilizeSceneAfterOverlay", 1)[0]
-        assert "relayoutCameraAndAxisPatch(pin, fig.layout, true)" not in body
-
-    def test_legend_colour_filter_preserves_user_3d_axis_limits_regression(
-        self, plotly_scatter3d_scene_js: str
-    ) -> None:
-        """Client-side freeze on ``latent_3d.html`` (server contract: ``TestScatter3dLegendFilterAxisStability``)."""
-        html = read_latent_3d_html()
-        scene_js = plotly_scatter3d_scene_js
-        apply_body = html.split("function latent3dApplyFigurePreservingScene", 1)[
-            1
-        ].split("function latent3dStabilizeSceneAfterOverlay", 1)[0]
-        assert "prepareFigureSceneForPinnedViewRedraw(fig, gd, pin)" in apply_body
-        assert "relayoutPreserveViewPatch(viewPin)" in apply_body
-        assert "relayoutCameraAndAxisPatch(pin, fig.layout, true)" not in apply_body
-        marker_fn = scene_js.split("function traceMarkerRestylePreservingCamera", 1)[1]
-        assert (
-            "snapHasAxisRanges(pinSnap)"
-            in marker_fn.split("function traceCoordsRestyleFromFigure", 1)[0]
-        )
-        prep_fn = scene_js.split("function prepareFigureSceneForPinnedViewRedraw", 1)[1]
-        prep_body = prep_fn.split("function restorePinnedView", 1)[0]
-        assert "stripSceneAxisRangesFromFigureLayout(fig)" in prep_body
-        assert "effectiveViewSnapForRedraw(gd, pin)" in prep_body
-        enforce_fn = scene_js.split("function scheduleEnforceCamera", 1)[1]
-        enforce_body = enforce_fn.split("function markerRestyleUpdateFromFigure", 1)[0]
-        assert "restorePinnedView(gd, pin)" in enforce_body
-
     def test_rendering_overlay_is_not_stacked_over_webgl_plot(self) -> None:
         text = read_latent_3d_html()
         assert "latent3d-rendering-overlay" in text
@@ -1060,3 +1049,56 @@ class TestLatent3dVolAnimScatter3dCameraPreserve:
         assert "VOL_MONTAGE_PLOT_LETTER_PX * 0.8" in text
         assert "resolvePlotPalette()" in text
         assert "refreshPreviewOverlayLetterColors" in text
+
+
+class TestLandscapeFull3dPlotlyBrowserSmoke:
+    """Headless Chromium: 3-D landscape vol scene annotations (mocked landscape_full)."""
+
+    def test_random_selection_scene_annotations(
+        self, playwright_page, dashboard_landscape_full_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_landscape_full_3d
+
+        out = dashboard_smoke_landscape_full_3d(
+            playwright_page, dashboard_landscape_full_live_url
+        )
+        assert out is not None
+        assert out["count"] >= 1
+
+
+class TestLatent3dPlotlyBrowserSmoke:
+    """Headless Chromium: latent 3-D scatter and discrete colour legend."""
+
+    def test_scatter3d_and_discrete_legend(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_latent_3d
+
+        out = dashboard_smoke_latent_3d(playwright_page, dashboard_live_url)
+        assert out["trace0type"] == "scatter3d"
+        assert out["discrete_legend_toggles"] >= 1
+
+    def test_camera_stable_on_discrete_covariate_change(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_latent_3d_camera_on_covariate_change
+
+        out = dashboard_smoke_latent_3d_camera_on_covariate_change(
+            playwright_page, dashboard_live_url
+        )
+        assert out["camera_stable"]
+
+
+class TestLandscapeFull3dPlotlyBrowserSmokeExtra:
+    """Extra landscape-full-3d browser flows (annotation clear)."""
+
+    def test_clear_selection_removes_scene_annotations(
+        self, playwright_page, dashboard_landscape_full_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_landscape_full_3d_clear_selection
+
+        out = dashboard_smoke_landscape_full_3d_clear_selection(
+            playwright_page, dashboard_landscape_full_live_url
+        )
+        assert out is not None
+        assert out["annotations_cleared"]

@@ -5,8 +5,6 @@ from __future__ import annotations
 import base64
 import os
 import pickle
-import re
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -760,76 +758,6 @@ class TestApiPreloadImages:
 
 
 class TestParticleExplorerTemplateRegressions:
-    def test_particle_page_exposes_cache_progress_and_image_grid_shell(
-        self, flask_client, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Volumes markup is wrapped in ``{% if show_volume_explorer %}``, which follows
-        # ``explorer_volumes_eligible`` (CUDA + weights). GitHub Actions has no GPU,
-        # so pin eligibility here to lock template structure on every runner.
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
-            lambda _e: True,
-        )
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
-        assert 'id="image-cache-progress"' in body
-        assert 'role="progressbar"' in body
-        assert 'id="image-grid-menu-toggle"' in body
-        assert 'id="cache-panel-toggle"' in body
-        assert 'id="color-selection-panel-toggle"' in body
-        assert 'id="volumes-panel-toggle"' in body
-        assert "wireExplorerPanelToggle" in body
-        assert "Image grid" in body
-        assert re.search(
-            r"Load\s+particle\s+images\s+into\s+cache\s+to\s+display\s+in\s+grid",
-            body,
-        )
-        assert "Choose a color scale to select by color levels" in body
-        assert "Build image cache and choose images first" in body
-        assert 'id="cryo-explorer-cache-panel-body"' in body
-        assert 'id="color-selection-panel-body"' in body
-        assert 'id="color-selection-inactive-note"' in body
-        assert 'id="volumes-panel-body"' in body
-        assert 'id="volumes-inactive-note"' in body
-        assert "syncExplorerMontagePanelReadiness" in body
-        assert "colorSelectionPanelActivated" in body
-        assert "cryo-explorer-panel-shell--inactive" in body
-        assert 'id="image-grid-panel-shell"' in body
-        assert "syncExplorerPanelInactiveNote" in body
-        assert "cryo-explorer-panel-inactive-note" in body
-        assert 'id="cryo-explorer-image-cache-fieldset"' in body
-        assert 'id="cryo-explorer-cache-load-body"' in body
-        assert 'id="cryo-explorer-cache-load-progress-wrap"' in body
-        assert "Loading particle images into cache" in body
-        assert 'id="btn-expand-cache"' in body
-        assert "Build new" in body
-        assert 'id="btn-clear-image-cache"' in body
-        assert 'id="montage-cache-size-label-text"' in body
-        assert 'id="btn-cache-selection-uncached"' in body
-        assert "Add 0<br/>selection images to cache" in body
-        assert 'id="color-discrete-switches"' in body
-        assert "js/cryo_cc_legend_primitives.js" in body
-        assert "js/color_covariate_legend.js" in body
-        p_idx = body.find("js/cryo_cc_legend_primitives.js")
-        c_idx = body.find("js/color_covariate_legend.js")
-        assert p_idx != -1 and c_idx != -1 and p_idx < c_idx
-        assert "new CryoColorCovariateLegend" in body
-        assert "function showGridHighlightsEnabled()" in body
-
-    def test_particle_page_omits_volumes_panel_when_ineligible(
-        self, flask_client, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
-            lambda _e: False,
-        )
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
-        assert 'id="volumes-panel-toggle"' not in body
-        assert "var showVolumeExplorer = false" in body
-
     def test_explorer_legend_static_assets_served_by_flask(self, flask_client) -> None:
         """Wheel/sdist must ship nested ``static/js/*`` (``static/*`` alone omits them)."""
         r_prim = flask_client.get("/static/js/cryo_cc_legend_primitives.js")
@@ -1427,3 +1355,63 @@ class TestPreloadDeltaResponses:
             json={"x": "UMAP1", "y": "UMAP2", "cache_size": bad_cache_size},
         )
         assert r.status_code == 400
+
+
+class TestParticleExplorerPlotlyBrowserSmoke:
+    """Headless Chromium: cache build, montage grid, and grid-letter overlays."""
+
+    def test_cache_build_montage_and_scatter_letters(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_particle_explorer
+
+        out = dashboard_smoke_particle_explorer(playwright_page, dashboard_live_url)
+        assert out["cached_images"] >= 1
+        assert out["grid_images"] >= 1
+        assert out["scatter_letters"]["count"] >= 1
+
+    def test_discrete_color_legend_after_labels_covariate(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_particle_explorer_color_covariate
+
+        out = dashboard_smoke_particle_explorer_color_covariate(
+            playwright_page, dashboard_live_url
+        )
+        assert out["discrete_toggles"] >= 1
+        assert out["points_after_color"] == out["scatter_points"]
+
+    def test_cache_expand_after_initial_build(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_particle_explorer_cache_expand
+
+        out = dashboard_smoke_particle_explorer_cache_expand(
+            playwright_page, dashboard_live_url
+        )
+        assert out["expanded_cached"] > out["initial_cached"]
+
+
+class TestParticleExplorerBrowserPanels:
+    """Playwright checks for explorer panel DOM (replaces static HTML grep for shell IDs)."""
+
+    def test_volume_explorer_panels_attached(
+        self, playwright_page, dashboard_volumes_eligible_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_particle_explorer_panels
+
+        out = dashboard_smoke_particle_explorer_panels(
+            playwright_page, dashboard_volumes_eligible_live_url
+        )
+        assert out["panels"] >= 12
+        assert out["volumes_panel"]
+
+    def test_volumes_panel_omitted_when_ineligible(
+        self, playwright_page, dashboard_volumes_ineligible_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_particle_explorer_no_volumes_panel
+
+        out = dashboard_smoke_particle_explorer_no_volumes_panel(
+            playwright_page, dashboard_volumes_ineligible_live_url
+        )
+        assert not out["volumes_panel"]

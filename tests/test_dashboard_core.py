@@ -32,17 +32,42 @@ from cryodrgn.dashboard.context import (
     resolve_epoch,
 )
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
-from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
 from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
 from tests.conftest import (
+    _DASHBOARD_DEFAULT_TEST_CACHE,
+    _DASHBOARD_FIXTURE_SUBDIR,
+    _dashboard_is_usable_workdir,
+    _dashboard_resolve_fixture_workdir,
     decode_plotly_figure,
     decode_plotly_value,
     read_dashboard_static_css,
     read_dashboard_static_js,
     read_dashboard_template,
+    torch_cuda_reports_available_but_broken,
 )
 
 ANALYZE_EPOCH = 2
+
+
+class TestDashboardFixtureCache:
+    def test_session_workdir_is_usable(self, dashboard_workdir: str) -> None:
+        assert _dashboard_is_usable_workdir(dashboard_workdir)
+
+    def test_complete_default_cache_skips_tmp_build(
+        self, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("CRYODRGN_DASHBOARD_TEST_OUTDIR", raising=False)
+        default = os.path.join(_DASHBOARD_DEFAULT_TEST_CACHE, _DASHBOARD_FIXTURE_SUBDIR)
+        workdir, shared = _dashboard_resolve_fixture_workdir(tmp_path_factory)
+        if _dashboard_is_usable_workdir(default):
+            assert workdir == default
+            assert shared is True
+        else:
+            assert shared is False
+            assert workdir != default
+
+    def test_torch_cuda_broken_gpu_probe_returns_bool(self) -> None:
+        assert isinstance(torch_cuda_reports_available_but_broken(), bool)
 
 
 class TestDashboardExperiment:
@@ -846,31 +871,10 @@ class TestRoutesTableIntegrity:
 
 
 class TestIndexTemplateNavLinks:
-    def test_index_has_expected_nav_links(
-        self, flask_client, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        r = flask_client.get("/")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
-        for link in (
-            "/explorer",
-            "/pairplot",
-            "/latent-3d",
-            "/command-builder",
-        ):
-            assert link in body, f"nav link {link!r} missing from /"
-        assert "3D volume landscapes" in body
-        if explorer_volumes_eligible(dashboard_experiment):
-            assert "/trajectory" in body, "nav link '/trajectory' missing from /"
-        else:
-            assert "CUDA-enabled machine" in body
-            assert "Trajectory creator" in body
-            assert "/trajectory" not in body
-
     def test_index_landscape_is_inactive_without_analyze_landscape(
-        self, flask_client
+        self, flask_client_no_landscape
     ) -> None:
-        r = flask_client.get("/")
+        r = flask_client_no_landscape.get("/")
         assert r.status_code == 200
         body = r.get_data(as_text=True)
         assert "/landscape-volpca" not in body
@@ -1209,3 +1213,88 @@ class TestDashboardModules:
         assert VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in cols
         assert VOL_LANDSCAPE_IS_SKETCH_CENTROID not in cols
         assert VOL_LANDSCAPE_3D_PLOT_DF_ROW not in cols
+
+
+class TestBundledPlotlyJs:
+    """Plotly.js is served from the installed Python package (not a CDN)."""
+
+    def test_vendor_route_returns_js(self) -> None:
+        from cryodrgn.dashboard.bundled_plotly import bundled_plotly_js_version
+
+        app = dash_app.create_app(workdir=None)
+        with app.test_client() as client:
+            r = client.get("/vendor/plotly.min.js")
+        assert r.status_code == 200
+        assert "javascript" in (r.content_type or "")
+        assert len(r.data) > 1_000_000
+        assert b"Plotly" in r.data
+        assert r.headers.get("X-Plotly-Version") == bundled_plotly_js_version()
+
+    def test_command_builder_page_references_vendor_plotly(self) -> None:
+        app = dash_app.create_app(workdir=None)
+        with app.test_client() as client:
+            r = client.get("/command-builder")
+        assert r.status_code == 200
+        html = r.data.decode("utf-8", errors="replace")
+        assert "cdn.plot.ly" not in html
+        assert "/vendor/plotly.min.js" in html
+
+    @pytest.mark.parametrize("path", ["/explorer", "/latent-3d"])
+    def test_dashboard_pages_reference_vendor_plotly(
+        self, flask_client, path: str
+    ) -> None:
+        r = flask_client.get(path)
+        assert r.status_code == 200
+        html = r.data.decode("utf-8", errors="replace")
+        assert "cdn.plot.ly" not in html
+        assert "/vendor/plotly.min.js" in html
+
+
+class TestDashboardIndexBrowserSmoke:
+    """Landing page navigation cards."""
+
+    def test_landing_cards_and_nav_link_to_core_interfaces(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_index
+
+        out = dashboard_smoke_index(playwright_page, dashboard_live_url)
+        assert out["landing_links"] >= 4
+        assert out["mentions_volume_landscapes"]
+
+    def test_landing_trajectory_gated_without_gpu(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_index
+
+        out = dashboard_smoke_index(playwright_page, dashboard_live_url)
+        if out["has_trajectory"]:
+            pytest.skip("trajectory card active on this runner (GPU + weights present)")
+        assert out["trajectory_ineligible_note"]
+
+    def test_landing_includes_trajectory_when_volumes_eligible(
+        self, playwright_page, dashboard_volumes_eligible_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_index
+
+        out = dashboard_smoke_index(
+            playwright_page, dashboard_volumes_eligible_live_url
+        )
+        assert out["has_trajectory"]
+
+    def test_landing_landscape_inactive_without_analyze_landscape(
+        self, playwright_page, dashboard_plain_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_index_no_landscape
+
+        dashboard_smoke_index_no_landscape(playwright_page, dashboard_plain_live_url)
+
+    def test_landing_includes_landscape_volpca_when_outputs_present(
+        self, playwright_page, dashboard_landscape_volpca_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_index
+
+        out = dashboard_smoke_index(
+            playwright_page, dashboard_landscape_volpca_live_url
+        )
+        assert out["has_landscape_volpca"]

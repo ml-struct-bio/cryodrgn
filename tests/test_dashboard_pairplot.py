@@ -204,3 +204,15 @@ class TestSavePairPlotPng:
         assert os.path.isfile(js["path"])
         with open(js["path"], "rb") as fh:
             assert fh.read(8) == b"\x89PNG\r\n\x1a\n"
+
+
+class TestPairplotBrowserSmoke:
+    """Headless Chromium: pair-grid PNG refresh and upper-triangle style toggle."""
+
+    def test_pairplot_image_loads_and_hex_style_redraws(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_pairplot
+
+        out = dashboard_smoke_pairplot(playwright_page, dashboard_live_url)
+        assert out["src_changed"]

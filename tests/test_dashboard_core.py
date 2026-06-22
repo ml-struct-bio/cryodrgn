@@ -167,7 +167,7 @@ class TestDashboardScatterApis:
         meta = (js.get("layout") or {}).get("meta") or {}
         pre_trace_idx = meta.get("cdrgn_preselected")
         assert pre_trace_idx is not None and len(pre_trace_idx) == 3
-        cd = js["data"][0]["customdata"]
+        cd = decode_plotly_value(js["data"][0]["customdata"])
         rows_highlighted = {int(cd[int(i)][1]) for i in pre_trace_idx}
         assert rows_highlighted == {3, 7, 11}
 
@@ -1213,6 +1213,20 @@ class TestDashboardModules:
         assert VOL_LANDSCAPE_NEAREST_SKETCH_VOL not in cols
         assert VOL_LANDSCAPE_IS_SKETCH_CENTROID not in cols
         assert VOL_LANDSCAPE_3D_PLOT_DF_ROW not in cols
+
+
+class TestDecodePlotlyTypedArrays:
+    """``decode_plotly_value`` matches Plotly 6 binary trace blobs in tests."""
+
+    def test_decode_plotly_value_accepts_string_and_list_shape(self) -> None:
+        import base64
+
+        arr = np.array([[1, 2], [3, 4]], dtype=np.int32)
+        b64 = base64.standard_b64encode(arr.tobytes()).decode("ascii")
+        blob_str = {"dtype": "i4", "bdata": b64, "shape": "2,2"}
+        blob_list = {"dtype": "i4", "bdata": b64, "shape": [2, 2]}
+        assert decode_plotly_value(blob_str) == [[1, 2], [3, 4]]
+        assert decode_plotly_value(blob_list) == [[1, 2], [3, 4]]
 
 
 class TestBundledPlotlyJs:

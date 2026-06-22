@@ -2,8 +2,8 @@
   var PLOTLY = window.CryoPlotlyArrays;
 
   function plotlyTraceLength(trace, key) {
-    if (!trace || !trace[key]) return 0;
-    return PLOTLY ? PLOTLY.length(trace[key]) : (trace[key].length || 0);
+    if (!trace || !trace[key] || !PLOTLY) return 0;
+    return PLOTLY.length(trace[key]);
   }
 
   var gd = document.getElementById("volsketch");

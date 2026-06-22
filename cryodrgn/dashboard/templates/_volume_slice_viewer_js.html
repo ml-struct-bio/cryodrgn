@@ -565,8 +565,11 @@
       return;
     }
     var tr = gd.data[trIdx];
-    var xs = tr.x || [];
-    var n = xs.length;
+    if (!PLOTLY) {
+      vsliceMarkerGlyphsOverlayEl.setAttribute("aria-hidden", "true");
+      return;
+    }
+    var n = PLOTLY.length(tr.x);
     if (!n) {
       vsliceMarkerGlyphsOverlayEl.setAttribute("aria-hidden", "true");
       return;
@@ -578,9 +581,10 @@
     }
     for (var gi = 0; gi < n; gi++) {
       var lab = "";
-      if (tr.text && tr.text[gi] != null) lab = String(tr.text[gi]);
+      var textVal = PLOTLY.valueAt(tr.text, gi);
+      if (textVal != null) lab = String(textVal);
       if (!lab) continue;
-      var pt = vsliceDataToPlotStackXY(xs[gi], tr.y[gi]);
+      var pt = vsliceDataToPlotStackXY(PLOTLY.valueAt(tr.x, gi), PLOTLY.valueAt(tr.y, gi));
       if (!pt) continue;
       var volId = vsliceVisibleMarkerVolIds[gi] || "";
       var marker = volId ? vsliceMarkersByVolId[volId] : null;

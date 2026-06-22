@@ -240,7 +240,7 @@
     return undefined;
   }
 
-  /** Prefer decoded ``_fullData`` arrays, then ``data`` trace arrays. */
+  /** Prefer decoded ``_fullData`` arrays, then ``data`` trace arrays. Numeric coords only. */
   function traceValueAt(gd, traceIndex, key, pointIndex) {
     var sources = [];
     if (gd && gd._fullData && gd._fullData[traceIndex]) {

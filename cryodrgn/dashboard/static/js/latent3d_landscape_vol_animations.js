@@ -21,12 +21,13 @@
   }
 
   function customDataRowAsArray(row) {
-    return PLOTLY ? PLOTLY.rowAsArray(row) : (Array.isArray(row) ? row : []);
+    if (!PLOTLY) return Array.isArray(row) ? row : [];
+    return PLOTLY.rowAsArray(row);
   }
 
   function plotlyTraceLength(trace, key) {
-    if (!trace || !trace[key]) return 0;
-    return PLOTLY ? PLOTLY.length(trace[key]) : (trace[key].length || 0);
+    if (!trace || !trace[key] || !PLOTLY) return 0;
+    return PLOTLY.length(trace[key]);
   }
 
   function layoutHasVolAnim(gd) {

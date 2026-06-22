@@ -338,6 +338,9 @@
     if (!fig || !fig.data || !fig.data[0] || !gd || !gd.data || !gd.data[0]) {
       return false;
     }
+    if (!PLOTLY || typeof PLOTLY.rowsEqualLength !== "function") {
+      return false;
+    }
     var tr = fig.data[0];
     var live = gd.data[0];
     return !!(tr.x && live.x && PLOTLY.rowsEqualLength(tr.x, live.x));

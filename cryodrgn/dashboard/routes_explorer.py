@@ -75,7 +75,17 @@ from cryodrgn.dashboard.preload import (
     format_preload_cache_time_hint,
     load_plot_df_rows_from_plot_inds_file,
     montage_bytes,
+    preload_response_with_polarity,
+    record_polarity_samples,
     sample_plot_df_rows_for_preload,
+)
+from cryodrgn.dashboard.volume_slice_viewer import (
+    analyze_volume_by_id_payload,
+    analyze_volume_markers_payload,
+    analyze_volumes_batch_payload,
+    analyze_volumes_catalog_payload,
+    decode_and_initial_slices,
+    slices_from_cache_payload,
 )
 from cryodrgn.dashboard.route_helpers import (
     _EXPLORER_VOLUMES_INELIGIBLE_MSG,
@@ -140,6 +150,7 @@ def index():
             can_images=False,
             zdim=0,
             show_trajectory_creator=False,
+            show_volume_slice_viewer=False,
             landscape_volpca_active=False,
             landscape_full_3d_active=False,
             exp_epoch=0,
@@ -153,6 +164,7 @@ def index():
         can_images=e.can_preview_particles,
         zdim=zdim,
         show_trajectory_creator=explorer_volumes_eligible(e),
+        show_volume_slice_viewer=explorer_volumes_eligible(e),
         landscape_volpca_active=landscape_analysis_ready(e.workdir, e.epoch),
         landscape_full_3d_active=landscape_full_3d_active,
         exp_epoch=int(e.epoch),
@@ -386,6 +398,45 @@ def explorer():
     )
 
 
+def volume_slice_viewer_page():
+    """Scatter covariate explorer with orthogonal decoded-volume slice previews."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return (
+            render_template(
+                "no_images.html",
+                reason=(
+                    "Volume slice viewer needs a CUDA GPU and model weights for the "
+                    "current epoch."
+                ),
+            ),
+            200,
+        )
+    cols = e.numeric_columns
+    dx, dy = _default_xy_cols(cols)
+    initial_rows = load_plot_df_rows_from_plot_inds_file(
+        e, current_app.config.get("FILTER_PLOT_INDS")
+    )
+    scatter_cap = _particle_explorer_scatter_max_points()
+    scatter_plotted_n = min(int(len(e.plot_df)), scatter_cap)
+    pc = int(current_app.config["PRELOAD_CPUS"])
+    return render_template(
+        "volume_slice_viewer.html",
+        numeric_cols=cols,
+        covariate_display_map=_covariate_display_map(cols),
+        default_x=dx,
+        default_y=dy,
+        initial_rows=initial_rows,
+        total_particles=int(len(e.all_indices)),
+        workdir=e.workdir,
+        preload_cpus=pc,
+        explorer_scatter_max_points=_particle_explorer_scatter_max_points(),
+        explorer_scatter_cap_from_env=_particle_explorer_scatter_cap_from_env(),
+        scatter_plotted_n=scatter_plotted_n,
+        exp_epoch=int(e.epoch),
+    )
+
+
 def api_explorer_volume_media():
     """Decode montage cells to PNG or per-cell rotating GIF (ChimeraX).
 
@@ -463,6 +514,143 @@ def api_explorer_volume_media():
         return jsonify(error=str(err)), 400
     except Exception as err:
         logger.exception("explorer volume media failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_slice_viewer_analyze_volumes():
+    """Catalog of ``analyze.{epoch}/kmeans*`` and ``pc*`` volumes (arrays load on demand)."""
+    e: DashboardExperiment = g.dashboard_exp
+    include_markers = request.args.get("include_markers", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+    try:
+        payload = analyze_volumes_catalog_payload(e, include_markers=include_markers)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume catalog failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_slice_viewer_analyze_markers():
+    """Scatterplot markers for analyze k-means / PC volumes."""
+    e: DashboardExperiment = g.dashboard_exp
+    try:
+        payload = analyze_volume_markers_payload(e)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume markers failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_slice_viewer_analyze_volume():
+    """Load one analyze volume by catalog id."""
+    e: DashboardExperiment = g.dashboard_exp
+    vol_id = request.args.get("id", "").strip()
+    if not vol_id:
+        return jsonify(error="Query parameter id is required."), 400
+    try:
+        payload = analyze_volume_by_id_payload(e, vol_id)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume load failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_slice_viewer_analyze_volumes_batch():
+    """Load several analyze volumes in parallel (background prefetch)."""
+    e: DashboardExperiment = g.dashboard_exp
+    cpus = int(current_app.config.get("PRELOAD_CPUS") or 1)
+    data = _request_json_dict()
+    raw_ids = data.get("ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify(error="ids must be a non-empty list of volume ids."), 400
+    vol_ids = [str(v) for v in raw_ids]
+    try:
+        payload = analyze_volumes_batch_payload(e, vol_ids, n_cpus=cpus)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume batch load failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_slice_viewer_decode():
+    """Decode one particle volume and return default orthogonal slice PNGs."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return jsonify(error=_EXPLORER_VOLUMES_INELIGIBLE_MSG), 400
+    data = _request_json_dict()
+    raw_row = data.get("row")
+    try:
+        row = int(raw_row)
+    except (TypeError, ValueError):
+        return jsonify(error="row must be an integer plot_df index."), 400
+    try:
+        payload = decode_and_initial_slices(e, row)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("volume slice decode failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_slice_viewer_slices():
+    """Re-render orthogonal slices for a cached volume (rotation / slice index)."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return jsonify(error=_EXPLORER_VOLUMES_INELIGIBLE_MSG), 400
+    data = _request_json_dict()
+    cache_id = data.get("volume_cache_id")
+    if not cache_id or not isinstance(cache_id, str):
+        return jsonify(error="volume_cache_id is required."), 400
+    raw_row = data.get("row")
+    try:
+        row = int(raw_row)
+    except (TypeError, ValueError):
+        return jsonify(error="row must be an integer plot_df index."), 400
+
+    def _optional_int(key: str) -> int | None:
+        if key not in data or data.get(key) is None:
+            return None
+        try:
+            return int(data[key])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{key} must be an integer.") from exc
+
+    def _optional_float(key: str, default: float = 0.0) -> float:
+        if key not in data or data.get(key) is None:
+            return default
+        try:
+            return float(data[key])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{key} must be a number.") from exc
+
+    try:
+        payload = slices_from_cache_payload(
+            cache_id,
+            row,
+            rot_x_deg=_optional_float("rot_x_deg"),
+            rot_y_deg=_optional_float("rot_y_deg"),
+            rot_z_deg=_optional_float("rot_z_deg"),
+            slice_ix=_optional_int("slice_ix"),
+            slice_iy=_optional_int("slice_iy"),
+            slice_iz=_optional_int("slice_iz"),
+        )
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("volume slice render failed")
         return jsonify(error=str(err)), 500
 
 
@@ -1222,8 +1410,12 @@ def api_preload_images():
     key = (e.epoch, e.kmeans_folder_id, xcol, ycol, _preload_restriction_key())
     cpus = int(current_app.config.get("PRELOAD_CPUS") or 4)
 
+    def _preload_json(**payload):
+        return jsonify(preload_response_with_polarity(e, payload))
+
     def _encode_indices(global_indices: list[int]) -> list[str]:
         parallel_threshold = max(128, cpus * 32)
+        polarity_scores: list[float] = []
         if cpus > 1 and len(global_indices) >= parallel_threshold:
             from concurrent.futures import ProcessPoolExecutor
 
@@ -1235,15 +1427,31 @@ def api_preload_images():
             with ProcessPoolExecutor(max_workers=len(chunks)) as pool:
                 futures = [
                     pool.submit(
-                        encode_particle_batch, e.particles_path, e.datadir, ch, 96
+                        encode_particle_batch,
+                        e.particles_path,
+                        e.datadir,
+                        ch,
+                        96,
+                        polarity_sample=(i == 0),
                     )
-                    for ch in chunks
+                    for i, ch in enumerate(chunks)
                 ]
                 imgs: list[str] = []
                 for f in futures:
-                    imgs.extend(f.result())
+                    batch_imgs, batch_scores = f.result()
+                    imgs.extend(batch_imgs)
+                    polarity_scores.extend(batch_scores)
+                record_polarity_samples(e, polarity_scores)
                 return imgs
-        return encode_particle_batch(e.particles_path, e.datadir, global_indices, 96)
+        imgs, polarity_scores = encode_particle_batch(
+            e.particles_path,
+            e.datadir,
+            global_indices,
+            96,
+            polarity_sample=True,
+        )
+        record_polarity_samples(e, polarity_scores)
+        return imgs
 
     cached = PRELOAD_CACHE.get(key)
     if cached:
@@ -1257,7 +1465,7 @@ def api_preload_images():
                     total_cached=len(cached_rows),
                     batch_elapsed=0.0,
                 )
-            return jsonify(
+            return _preload_json(
                 rows=cached_rows[:max_images],
                 images=cached_imgs[:max_images],
                 elapsed=cached_elapsed,
@@ -1285,7 +1493,9 @@ def api_preload_images():
                     total_cached=len(cached_rows),
                     batch_elapsed=0.0,
                 )
-            return jsonify(rows=cached_rows, images=cached_imgs, elapsed=cached_elapsed)
+            return _preload_json(
+                rows=cached_rows, images=cached_imgs, elapsed=cached_elapsed
+            )
         add_imgs = _encode_indices(add_global_indices)
         rows = cached_rows + add_rows
         imgs = cached_imgs + add_imgs
@@ -1293,14 +1503,14 @@ def api_preload_images():
         elapsed = round(cached_elapsed + batch_elapsed, 1)
         PRELOAD_CACHE[key] = (rows, imgs, elapsed)
         if delta_response:
-            return jsonify(
+            return _preload_json(
                 rows=add_rows,
                 images=add_imgs,
                 elapsed=elapsed,
                 total_cached=len(rows),
                 batch_elapsed=batch_elapsed,
             )
-        return jsonify(rows=rows, images=imgs, elapsed=elapsed)
+        return _preload_json(rows=rows, images=imgs, elapsed=elapsed)
 
     t0 = time.monotonic()
     rows, global_indices = sample_plot_df_rows_for_preload(
@@ -1317,4 +1527,6 @@ def api_preload_images():
 
     elapsed = round(time.monotonic() - t0, 1)
     PRELOAD_CACHE[key] = (rows, imgs, elapsed)
-    return jsonify(rows=rows, images=imgs, elapsed=elapsed, total_cached=len(rows))
+    return _preload_json(
+        rows=rows, images=imgs, elapsed=elapsed, total_cached=len(rows)
+    )

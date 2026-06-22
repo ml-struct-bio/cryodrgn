@@ -5,14 +5,10 @@
   var vsliceViewportEl = document.getElementById("vslice-viewport");
   var vsliceCanvasEl = document.getElementById("vslice-canvas");
   var vsliceProgressEl = document.getElementById("vslice-progress");
-  var vsliceSliceInfoVolumeEl = document.getElementById("vslice-slice-info-volume");
-  var vsliceSliceInfoViewEl = document.getElementById("vslice-slice-info-view");
   var vsliceControlsEl = document.getElementById("vslice-controls");
   var vsliceControlsDockEl = document.getElementById("vslice-controls-dock");
   var vsliceVolumePickerEl = document.getElementById("vslice-volume-picker");
-  var vsliceVolBtnsKmeansEl = document.getElementById("vslice-vol-btns-kmeans");
-  var vsliceVolBtnsPcEl = document.getElementById("vslice-vol-btns-pc");
-  var vsliceVolBtnsManualEl = document.getElementById("vslice-vol-btns-manual");
+  var vsliceVolumePickerRowsEl = document.getElementById("vslice-volume-picker-rows");
   var btnVslicePanUp = document.getElementById("btn-vslice-pan-up");
   var btnVslicePanDown = document.getElementById("btn-vslice-pan-down");
   var btnVslicePanLeft = document.getElementById("btn-vslice-pan-left");
@@ -39,8 +35,8 @@
   var vsliceVolumeData = {};
   var vsliceAnalyzeMarkers = [];
   var vsliceMarkersByVolId = {};
+  var vsliceSelectedVolIds = [];
   var vsliceCycleIds = [];
-  var vsliceCycleIndex = 0;
   var vsliceDecodeGeneration = 0;
   var vsliceLoadGeneration = 0;
   var vsliceVolumeFetchById = {};
@@ -52,44 +48,12 @@
 
   if (vsliceCanvasEl && window.CryoVolumeSliceCanvas) {
     vsliceViewer = new CryoVolumeSliceCanvas({
-      canvas: vsliceCanvasEl,
-      onViewChange: function() { vsliceUpdateSliceInfo(); }
+      canvas: vsliceCanvasEl
     });
   }
 
-  function vsliceFormatSliceArrayInfo(info) {
-    if (!info || !info.d) return "—";
-    var centre = "[" + info.ix + ", " + info.iy + ", " + info.iz + "]";
-    var base = String(info.d) + "³ array · centre " + centre;
-    if (info.orthogonal) {
-      return base
-        + " · " + info.orthogonal.label
-        + " · " + info.orthogonal.fixedAxis + "=" + info.orthogonal.fixedIndex
-        + " · " + info.span + " vox span";
-    }
-    var n = info.normal || [0, 0, 0];
-    return base
-      + " · normal [" + n[0] + ", " + n[1] + ", " + n[2] + "]"
-      + " · " + info.span + " vox span";
-  }
-
-  function vsliceUpdateSliceInfo() {
-    var volId = vsliceCycleIds[vsliceCycleIndex] || "";
-    if (vsliceSliceInfoVolumeEl) {
-      if (!volId) {
-        vsliceSliceInfoVolumeEl.textContent = "No volume loaded";
-      } else {
-        vsliceSliceInfoVolumeEl.textContent = vsliceCatalogTitle(volId);
-      }
-    }
-    if (vsliceSliceInfoViewEl) {
-      if (!vsliceViewer || !vsliceViewer.vol) {
-        vsliceSliceInfoViewEl.textContent = "—";
-        return;
-      }
-      var info = vsliceViewer.getViewInfo();
-      vsliceSliceInfoViewEl.textContent = vsliceFormatSliceArrayInfo(info);
-    }
+  function vsliceIsVolumeSelected(volId) {
+    return vsliceSelectedVolIds.indexOf(String(volId)) >= 0;
   }
 
   function setVsliceStatus(msg, busy) {
@@ -159,25 +123,112 @@
     }
   }
 
-  function vsliceFillVolumeButtonColumn(colEl, colWrap, entries, activeId) {
-    if (!colEl) return;
-    colEl.innerHTML = "";
-    if (colWrap) colWrap.setAttribute("data-empty", entries.length ? "false" : "true");
+  function vsliceSplitKmeansRows(entries, numRows) {
+    if (!entries.length) return [];
+    numRows = Math.max(1, numRows || 1);
+    if (numRows === 1) return [entries.slice()];
+    var mid = Math.ceil(entries.length / numRows);
+    var rows = [];
+    for (var r = 0; r < numRows; r++) {
+      var chunk = entries.slice(r * mid, (r + 1) * mid);
+      if (chunk.length) rows.push(chunk);
+    }
+    return rows;
+  }
+
+  function vsliceGroupPcEntries(pcEntries) {
+    var byPc = {};
+    for (var i = 0; i < pcEntries.length; i++) {
+      var e = pcEntries[i];
+      var pcNum = String(e.pc);
+      if (!byPc[pcNum]) byPc[pcNum] = [];
+      byPc[pcNum].push(e);
+    }
+    return Object.keys(byPc).sort(function(a, b) {
+      return Number(a) - Number(b);
+    }).map(function(pcNum) {
+      var entries = byPc[pcNum].slice().sort(function(a, b) {
+        return Number(a.sample_index) - Number(b.sample_index);
+      });
+      return {pc: Number(pcNum), entries: entries};
+    });
+  }
+
+  function vsliceFillVolumeButtonRow(btnWrap, entries, selectedIds) {
+    if (!btnWrap) return;
+    btnWrap.innerHTML = "";
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i];
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn btn-secondary cryo-vslice-vol-btn";
-      if (entry.id === activeId) btn.classList.add("cryo-vslice-vol-btn--active");
+      if (selectedIds.indexOf(entry.id) >= 0) btn.classList.add("cryo-vslice-vol-btn--active");
       btn.textContent = vsliceVolButtonLabel(entry);
       btn.title = vsliceCatalogTitle(entry.id);
       btn.setAttribute("data-vol-id", entry.id);
-      btn.setAttribute("aria-pressed", entry.id === activeId ? "true" : "false");
+      btn.setAttribute("aria-pressed", selectedIds.indexOf(entry.id) >= 0 ? "true" : "false");
       btn.addEventListener("click", function() {
-        vsliceSelectVolume(this.getAttribute("data-vol-id"));
+        vsliceToggleVolumeSelection(this.getAttribute("data-vol-id"));
       });
-      colEl.appendChild(btn);
+      btnWrap.appendChild(btn);
     }
+  }
+
+  function vsliceBuildVolumePickerRow(spec, selectedIds) {
+    var row = document.createElement("div");
+    row.className = "cryo-vslice-volume-row";
+    row.setAttribute("data-provenance", spec.provenance || "");
+    var entries = spec.entries || [];
+    var isManual = spec.provenance === "manual";
+    if (!entries.length && !isManual) {
+      row.setAttribute("data-empty", "true");
+      return row;
+    }
+    row.setAttribute("data-empty", entries.length ? "false" : "true");
+    var head = document.createElement("div");
+    head.className = "cryo-vslice-volume-row-head";
+    if (spec.headSpacer) head.classList.add("cryo-vslice-volume-row-head--spacer");
+    head.textContent = spec.head || "";
+    var btns = document.createElement("div");
+    btns.className = "cryo-vslice-volume-row-btns";
+    vsliceFillVolumeButtonRow(btns, entries, selectedIds);
+    row.appendChild(head);
+    row.appendChild(btns);
+    return row;
+  }
+
+  function vsliceVolumePickerRowSpecs(km, pc, manual) {
+    var specs = [];
+    if (km.length) {
+      var kmRows = vsliceSplitKmeansRows(km, 2);
+      specs.push({
+        head: "k-means",
+        entries: kmRows[0],
+        provenance: "kmeans"
+      });
+      if (kmRows.length > 1) {
+        specs.push({
+          head: "",
+          headSpacer: true,
+          entries: kmRows[1],
+          provenance: "kmeans"
+        });
+      }
+    }
+    var pcGroups = vsliceGroupPcEntries(pc);
+    for (var gi = 0; gi < pcGroups.length; gi++) {
+      specs.push({
+        head: "PC" + String(pcGroups[gi].pc),
+        entries: pcGroups[gi].entries,
+        provenance: "pc"
+      });
+    }
+    specs.push({
+      head: "Manual",
+      entries: manual,
+      provenance: "manual"
+    });
+    return specs;
   }
 
   function vsliceSyncVolumePicker() {
@@ -189,41 +240,96 @@
       if (entry.kind === "kmeans") km.push(entry);
       else if (entry.kind === "pc") pc.push(entry);
     }
-    var activeId = vsliceCycleIds[vsliceCycleIndex] || "";
-    vsliceFillVolumeButtonColumn(
-      vsliceVolBtnsKmeansEl,
-      vsliceVolBtnsKmeansEl && vsliceVolBtnsKmeansEl.parentElement,
-      km,
-      activeId
-    );
-    vsliceFillVolumeButtonColumn(
-      vsliceVolBtnsPcEl,
-      vsliceVolBtnsPcEl && vsliceVolBtnsPcEl.parentElement,
-      pc,
-      activeId
-    );
-    vsliceFillVolumeButtonColumn(
-      vsliceVolBtnsManualEl,
-      vsliceVolBtnsManualEl && vsliceVolBtnsManualEl.parentElement,
-      manual,
-      activeId
-    );
+    var selectedIds = vsliceSelectedVolIds.slice();
+    var specs = vsliceVolumePickerRowSpecs(km, pc, manual);
+    if (vsliceVolumePickerRowsEl) {
+      vsliceVolumePickerRowsEl.innerHTML = "";
+      for (var si = 0; si < specs.length; si++) {
+        vsliceVolumePickerRowsEl.appendChild(vsliceBuildVolumePickerRow(specs[si], selectedIds));
+      }
+    }
     if (vsliceVolumePickerEl) {
-      vsliceVolumePickerEl.hidden = !(km.length || pc.length || manual.length);
+      vsliceVolumePickerEl.hidden = specs.length === 0;
     }
   }
 
-  function vsliceSelectVolume(volId) {
+  function vsliceEnsureVolumesLoaded(volIds, cb) {
+    var missing = [];
+    for (var i = 0; i < volIds.length; i++) {
+      var id = volIds[i];
+      if (!vsliceVolumeData[id] || !vsliceVolumeData[id].volume_b64) missing.push(id);
+    }
+    if (!missing.length) {
+      cb(null);
+      return;
+    }
+    Promise.all(missing.map(function(id) { return vsliceFetchVolume(id); }))
+      .then(function() { cb(null); })
+      .catch(function(err) { cb(err); });
+  }
+
+  function vsliceRenderSelectedVolumes() {
+    if (!vsliceSelectedVolIds.length) {
+      if (vsliceViewportEl) vsliceViewportEl.hidden = true;
+      vsliceShowSliceControls(false);
+      if (vsliceViewer) vsliceViewer.setVolumes([], false);
+      return;
+    }
+    vsliceEnsureVolumesLoaded(vsliceSelectedVolIds, function(err) {
+      if (err) {
+        setVsliceStatus(err.message || "Failed to load volume.", false);
+        return;
+      }
+      var layers = [];
+      for (var i = 0; i < vsliceSelectedVolIds.length; i++) {
+        var id = vsliceSelectedVolIds[i];
+        var blob = vsliceVolumeData[id];
+        if (blob && blob.volume_b64) {
+          var entry = vsliceCatalogById[id] || { id: id };
+          layers.push({
+            id: id,
+            b64: blob.volume_b64,
+            d: blob.D,
+            label: vsliceVolButtonLabel(entry),
+            manual: entry.kind === "particle"
+          });
+        }
+      }
+      if (!layers.length) return;
+      if (vsliceViewportEl) vsliceViewportEl.hidden = false;
+      vsliceShowSliceControls(true);
+      if (vsliceViewer) {
+        var hadLayers = vsliceViewer.layers && vsliceViewer.layers.length > 0;
+        vsliceViewer.setVolumes(layers, !hadLayers);
+      }
+      vsliceSyncMarkerOverlay();
+    });
+  }
+
+  function vsliceToggleVolumeSelection(volId) {
     volId = String(volId || "");
     if (!volId) return;
-    vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
-    if (vsliceCycleIndex < 0) {
-      vsliceRebuildCycleIds();
-      vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
+    var idx = vsliceSelectedVolIds.indexOf(volId);
+    if (idx >= 0) {
+      vsliceSelectedVolIds.splice(idx, 1);
+      vsliceSyncVolumePicker();
+      vsliceRenderSelectedVolumes();
+      return;
     }
-    if (vsliceCycleIndex < 0) return;
-    vsliceShowVolumeId(volId);
-    vsliceSyncVolumePicker();
+    vsliceSelectedVolIds.push(volId);
+    setVsliceStatus("Loading " + vsliceCatalogTitle(volId) + "…", true);
+    vsliceEnsureVolumesLoaded([volId], function(err) {
+      setVsliceStatus("", false);
+      if (err) {
+        var rm = vsliceSelectedVolIds.indexOf(volId);
+        if (rm >= 0) vsliceSelectedVolIds.splice(rm, 1);
+        setVsliceStatus(err.message || "Failed to load volume.", false);
+        vsliceSyncVolumePicker();
+        return;
+      }
+      vsliceSyncVolumePicker();
+      vsliceRenderSelectedVolumes();
+    });
   }
 
   function vsliceRebuildCycleIds() {
@@ -235,34 +341,19 @@
       vsliceCycleIds.push(vsliceParticleCatalog[j].id);
     }
     if (!vsliceCycleIds.length) {
-      vsliceCycleIndex = 0;
+      vsliceSelectedVolIds = [];
       vsliceSyncVolumePicker();
       return;
     }
-    vsliceCycleIndex = Math.min(vsliceCycleIndex, vsliceCycleIds.length - 1);
-    vsliceSyncVolumePicker();
-  }
-
-  function vsliceUpdateVolumeLabels(volId) {
-    vsliceUpdateSliceInfo();
+    vsliceSelectedVolIds = vsliceSelectedVolIds.filter(function(id) {
+      return vsliceCycleIds.indexOf(id) >= 0;
+    });
     vsliceSyncVolumePicker();
   }
 
   function vsliceShowSliceControls(show) {
     if (vsliceControlsDockEl) vsliceControlsDockEl.hidden = !show;
     if (vsliceControlsEl) vsliceControlsEl.hidden = false;
-  }
-
-  function vsliceRenderVolume(volId) {
-    var blob = vsliceVolumeData[volId];
-    if (!blob || !blob.volume_b64 || !blob.D) return;
-    if (vsliceViewportEl) vsliceViewportEl.hidden = false;
-    vsliceShowSliceControls(true);
-    if (vsliceViewer) {
-      vsliceViewer.loadVolume(blob.volume_b64, Number(blob.D));
-    }
-    vsliceUpdateVolumeLabels(volId);
-    vsliceSyncMarkerOverlay();
   }
 
   function vsliceStoreVolumePayload(volId, payload) {
@@ -329,27 +420,6 @@
         });
       })
       .catch(function() {});
-  }
-
-  function vsliceShowVolumeId(volId) {
-    if (String(volId).indexOf("particle:") === 0) {
-      if (!vsliceVolumeData[volId]) return Promise.resolve();
-      vsliceRenderVolume(volId);
-      return Promise.resolve();
-    }
-    if (vsliceVolumeData[volId] && vsliceVolumeData[volId].volume_b64) {
-      vsliceRenderVolume(volId);
-      return Promise.resolve();
-    }
-    setVsliceStatus("Still loading " + vsliceCatalogTitle(volId) + "…", true);
-    return vsliceFetchVolume(volId)
-      .then(function() {
-        setVsliceStatus("", false);
-        vsliceRenderVolume(volId);
-      })
-      .catch(function(err) {
-        setVsliceStatus(err.message || "Failed to load volume.", false);
-      });
   }
 
   function vsliceWhenScatterReady(fn, attempt) {
@@ -525,7 +595,6 @@
     if (typeof buildTraceMap === "function") buildTraceMap();
     vsliceEnsureMarkerTrace();
     if (vsliceMarkerTraceIndex == null) return;
-    var activeId = vsliceCycleIds[vsliceCycleIndex] || "";
     var xs = [];
     var ys = [];
     var texts = [];
@@ -538,7 +607,7 @@
       if (m.plot_row == null) continue;
       var xy = vslicePlotRowToScatterXY(m.plot_row);
       if (!xy) continue;
-      var isActive = m.vol_id === activeId;
+      var isActive = vsliceIsVolumeSelected(m.vol_id);
       vsliceVisibleMarkerVolIds.push(m.vol_id);
       xs.push(xy.x);
       ys.push(xy.y);
@@ -610,17 +679,15 @@
       vsliceParticleCatalog.push(entry);
       vsliceRebuildCycleIds();
     }
-    vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
-    if (vsliceCycleIndex < 0) {
-      vsliceRebuildCycleIds();
-      vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
-    }
     vsliceRefreshMarkersByVolId();
+    if (vsliceSelectedVolIds.indexOf(volId) < 0) {
+      vsliceSelectedVolIds.push(volId);
+    }
     vsliceSyncVolumePicker();
     vsliceWhenScatterReady(function() {
       vsliceSyncMarkerOverlay();
     });
-    vsliceRenderVolume(volId);
+    vsliceRenderSelectedVolumes();
   }
 
   function decodeVsliceParticleForRow(row) {
@@ -628,16 +695,17 @@
     if (!isFinite(row)) return;
     var volId = "particle:" + String(row);
     if (vsliceVolumeData[volId] && vsliceVolumeData[volId].volume_b64) {
-      vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
-      if (vsliceCycleIndex < 0) {
+      if (vsliceCycleIds.indexOf(volId) < 0) {
         vsliceAddDecodedParticle({
           row: row,
           D: vsliceVolumeData[volId].D,
           volume_b64: vsliceVolumeData[volId].volume_b64,
           dataset_index: vsliceCatalogById[volId] && vsliceCatalogById[volId].dataset_index
         });
-      } else {
-        vsliceRenderVolume(volId);
+      } else if (vsliceSelectedVolIds.indexOf(volId) < 0) {
+        vsliceSelectedVolIds.push(volId);
+        vsliceSyncVolumePicker();
+        vsliceRenderSelectedVolumes();
       }
       return;
     }
@@ -687,7 +755,7 @@
       if (vsliceMarkerTraceIndex != null && pt.curveNumber === vsliceMarkerTraceIndex) {
         var volId = vsliceVolIdForMarkerIndex(pt.pointIndex);
         if (volId) {
-          vsliceSelectVolume(volId);
+          vsliceToggleVolumeSelection(volId);
         }
         return;
       }
@@ -748,7 +816,9 @@
         }
         vsliceRebuildCycleIds();
         vsliceRefreshMarkersByVolId();
+        vsliceSyncVolumePicker();
         if (!vsliceCycleIds.length) {
+          vsliceSyncVolumePicker();
           setVsliceStatus(
             "No k-means or PC volumes under analyze." + String(vsliceAnalyzeEpoch)
             + ". Double-click a point to decode a particle.",
@@ -756,13 +826,13 @@
           );
           return;
         }
-        vsliceCycleIndex = 0;
         var firstVolId = vsliceCycleIds[0];
+        vsliceSelectedVolIds = [firstVolId];
         setVsliceStatus("Loading " + vsliceCatalogTitle(firstVolId) + "…", true);
         return vsliceFetchVolume(firstVolId).then(function() {
           if (myGen !== vsliceLoadGeneration) return;
           setVsliceStatus("", false);
-          vsliceRenderVolume(firstVolId);
+          vsliceRenderSelectedVolumes();
           vsliceWhenScatterReady(function() {
             if (myGen === vsliceLoadGeneration) vsliceSyncMarkerOverlay();
           });
@@ -793,7 +863,7 @@
   function vsliceWirePadButton(btn, action) {
     if (!btn || !vsliceViewer) return;
     btn.addEventListener("click", function() {
-      if (!vsliceViewer.vol) return;
+      if (!vsliceViewer.layers || !vsliceViewer.layers.length) return;
       action();
     });
   }
@@ -806,19 +876,23 @@
   vsliceWirePadButton(btnVsliceZoomOut, function() { vsliceViewer.zoomOut(); });
   if (btnVsliceResetView) {
     btnVsliceResetView.addEventListener("click", function() {
-      if (vsliceViewer && vsliceViewer.vol) vsliceViewer.resetView();
+      if (vsliceViewer && vsliceViewer.layers && vsliceViewer.layers.length) {
+        vsliceViewer.resetView();
+      }
     });
   }
 
-  vsliceUpdateSliceInfo();
-
   if (vsliceCanvasEl && window.CryoResizeObserverUtils) {
     window.CryoResizeObserverUtils.observeResize([vsliceCanvasEl], function() {
-      if (vsliceViewer && vsliceViewer.vol) vsliceViewer.draw();
+      if (vsliceViewer && vsliceViewer.layers && vsliceViewer.layers.length) {
+        vsliceViewer.draw();
+      }
     });
   } else if (vsliceCanvasEl) {
     window.addEventListener("resize", function() {
-      if (vsliceViewer && vsliceViewer.vol) vsliceViewer.draw();
+      if (vsliceViewer && vsliceViewer.layers && vsliceViewer.layers.length) {
+        vsliceViewer.draw();
+      }
     });
   }
 

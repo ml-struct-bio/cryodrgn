@@ -179,7 +179,7 @@ class TestVolumeSliceViewerRoutes:
         assert "btn-vslice-zoom-in" in body
         assert "vslice-slice-contrast" in body
         assert "vslice-marker-glyphs-overlay" in body
-        assert "vslice-slice-info" in body
+        assert "vslice-status-slot" in body
         assert "vslice-controls-dock" in body
         assert "volume_slice_canvas.js" in body
         assert "/api/volume_slice_viewer/analyze_volumes" in body

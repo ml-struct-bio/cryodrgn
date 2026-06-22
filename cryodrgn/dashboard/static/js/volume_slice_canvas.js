@@ -68,10 +68,21 @@
     return new Float32Array(bytes.buffer);
   }
 
+  /** Match particle explorer image grid meta band (see _particle_explorer_scatterjs.html). */
+  var VSLICE_META_TOP_FRAC = 0.19;
+  var VSLICE_META_IMG_GAP = 1;
+  var VSLICE_CELL_PAD_Y = 2;
+  var VSLICE_LABEL_META_HEIGHT_FRAC = 0.7885;
+  var VSLICE_GEORGIA_CAP_HEIGHT_EM = 0.715;
+  var VSLICE_MONTAGE_PAPER = "#faf8f4";
+  var VSLICE_MONTAGE_LABEL_COLOR = "#243b53";
+
   function VolumeSliceCanvas(opts) {
     this.canvas = opts.canvas;
     this.onViewChange = opts.onViewChange || null;
     this.ctx = this.canvas.getContext("2d");
+    /** @type {Array<{id:string,d:number,vol:Float32Array,sliceData:Float32Array|null,sliceMin:number,sliceMax:number}>} */
+    this.layers = [];
     this.vol = null;
     this.d = 0;
     this.sliceData = null;
@@ -101,9 +112,127 @@
     this.sliceZoom = 1;
   };
 
-  VolumeSliceCanvas.prototype._planeGeometry = function () {
-    if (!this.vol || !this.d) return null;
-    var d = this.d;
+  VolumeSliceCanvas.prototype._syncPrimaryLayer = function () {
+    if (this.layers.length) {
+      var primary = this.layers[0];
+      this.vol = primary.vol;
+      this.d = primary.d;
+      this.sliceData = primary.sliceData;
+      this.sliceMin = primary.sliceMin;
+      this.sliceMax = primary.sliceMax;
+    } else {
+      this.vol = null;
+      this.d = 0;
+      this.sliceData = null;
+      this.sliceMin = 0;
+      this.sliceMax = 1;
+    }
+  };
+
+  VolumeSliceCanvas.prototype._gridLayout = function (layerCount) {
+    var n = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, layerCount))));
+    return { cols: n, rows: n, n: n, slots: n * n };
+  };
+
+  /** Height / width of one montage-style slice card (meta band + square image). */
+  VolumeSliceCanvas.prototype._cardBlockHeight = function (cellW) {
+    var metaH = cellW * VSLICE_META_TOP_FRAC;
+    return metaH + VSLICE_META_IMG_GAP + cellW + VSLICE_CELL_PAD_Y;
+  };
+
+  VolumeSliceCanvas.prototype.cardAspectRatio = function () {
+    return this._cardBlockHeight(1) / 1;
+  };
+
+  VolumeSliceCanvas.prototype._gridGap = function () {
+    return 6;
+  };
+
+  VolumeSliceCanvas.prototype._metaRowExtra = function () {
+    return VSLICE_CELL_PAD_Y + VSLICE_META_IMG_GAP;
+  };
+
+  /** n×n grid of slice cards; slots may exceed layerCount for empty cells. */
+  VolumeSliceCanvas.prototype._computeGridCells = function (cw, ch, layerCount) {
+    var grid = this._gridLayout(layerCount);
+    var n = grid.n;
+    var gap = this._gridGap();
+    var cellW = (cw - gap * (n + 1)) / n;
+    var rowExtra = this._metaRowExtra();
+    var blockAspect = 1 + VSLICE_META_TOP_FRAC;
+    var cellWFromH = (ch - gap * (n + 1) - n * rowExtra) / (n * blockAspect);
+    cellW = Math.min(cellW, cellWFromH);
+    if (!isFinite(cellW) || cellW <= 0) cellW = Math.max(1, Math.min(cw, ch) / n);
+
+    var metaH = cellW * VSLICE_META_TOP_FRAC;
+    var imgSize = cellW;
+    var blockH = this._cardBlockHeight(cellW);
+    var cells = [];
+    for (var slot = 0; slot < grid.slots; slot++) {
+      var col = slot % n;
+      var row = Math.floor(slot / n);
+      var x0 = gap + col * (cellW + gap);
+      var y0 = gap + row * (blockH + gap);
+      cells.push({
+        slot: slot,
+        layerIndex: slot < layerCount ? slot : -1,
+        x0: x0,
+        y0: y0,
+        cellW: cellW,
+        metaH: metaH,
+        imgX: x0,
+        imgY: y0 + metaH + VSLICE_META_IMG_GAP,
+        imgSize: imgSize,
+        blockH: blockH,
+      });
+    }
+    return { grid: grid, gap: gap, cellW: cellW, cells: cells };
+  };
+
+  VolumeSliceCanvas.prototype._drawCellChrome = function (ctx, cell, layer) {
+    ctx.fillStyle = VSLICE_MONTAGE_PAPER;
+    ctx.fillRect(cell.x0, cell.y0, cell.cellW, cell.blockH);
+    ctx.fillStyle = "#e8ecf1";
+    ctx.fillRect(cell.imgX, cell.imgY, cell.imgSize, cell.imgSize);
+    if (layer) {
+      this._drawMontageLabel(
+        ctx,
+        cell.x0,
+        cell.y0,
+        cell.cellW,
+        cell.metaH,
+        layer.label,
+        layer.manual
+      );
+      if (layer.sliceData) {
+        var off = this._drawLayerImage(layer);
+        ctx.drawImage(off, cell.imgX, cell.imgY, cell.imgSize, cell.imgSize);
+      }
+    }
+  };
+
+  VolumeSliceCanvas.prototype._drawMontageLabel = function (ctx, x, y, cellW, metaH, label, manual) {
+    var labStr = String(label || "");
+    if (!labStr) return;
+    var letterBandPx = metaH * VSLICE_LABEL_META_HEIGHT_FRAC;
+    var letterFontPx = letterBandPx / VSLICE_GEORGIA_CAP_HEIGHT_EM;
+    if (labStr.length > 1) {
+      letterFontPx *= Math.min(0.92, 1.22 / labStr.length);
+    }
+    var fontFamily = manual
+      ? 'Palatino, "Palatino Linotype", "Book Antiqua", serif'
+      : 'Georgia, "Times New Roman", serif';
+    var fontStyle = manual ? "italic " : "";
+    ctx.font = fontStyle + "bold " + letterFontPx.toFixed(2) + "px " + fontFamily;
+    ctx.fillStyle = VSLICE_MONTAGE_LABEL_COLOR;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.fillText(labStr, x + letterFontPx * 0.11, y + metaH * 0.5);
+  };
+
+  VolumeSliceCanvas.prototype._planeGeometry = function (layerD) {
+    var d = Number(layerD) || (this.layers.length ? this.layers[0].d : 0);
+    if (!d || !this.layers.length) return null;
     var center = (d - 1) / 2;
     var R = rotationMatrix(this.yaw, this.pitch);
     var t0x = R[0][0];
@@ -191,7 +320,7 @@
 
   /** Pan the cutting plane within the volume (plane-local u/v in voxels). */
   VolumeSliceCanvas.prototype.panBy = function (du, dv) {
-    if (!this.vol) return;
+    if (!this.layers.length) return;
     this.slicePanU += Number(du) || 0;
     this.slicePanV += Number(dv) || 0;
     this.scheduleRecompute();
@@ -199,7 +328,7 @@
 
   /** Zoom the cutting plane within the volume. */
   VolumeSliceCanvas.prototype.zoomBy = function (factor) {
-    if (!this.vol) return;
+    if (!this.layers.length) return;
     this.sliceZoom = clamp(this.sliceZoom * factor, 0.35, 12);
     this.scheduleRecompute();
   };
@@ -213,9 +342,29 @@
   };
 
   VolumeSliceCanvas.prototype.loadVolume = function (b64, d) {
-    this.d = d;
-    this.vol = decodeFloat32Volume(b64, d);
-    this._resetSliceView();
+    this.setVolumes([{ b64: b64, d: d, id: "" }], true);
+  };
+
+  VolumeSliceCanvas.prototype.setVolumes = function (volumeSpecs, resetView) {
+    var specs = volumeSpecs || [];
+    var newLayers = [];
+    for (var i = 0; i < specs.length; i++) {
+      var spec = specs[i];
+      var d = Number(spec.d);
+      if (!spec.b64 || !isFinite(d) || d < 1) continue;
+      newLayers.push({
+        id: String(spec.id || ""),
+        label: String(spec.label || ""),
+        manual: !!spec.manual,
+        d: d,
+        vol: decodeFloat32Volume(spec.b64, d),
+        sliceData: null,
+        sliceMin: 0,
+        sliceMax: 1,
+      });
+    }
+    this.layers = newLayers;
+    if (resetView !== false) this._resetSliceView();
     var self = this;
     window.requestAnimationFrame(function () {
       self.recomputeSlice();
@@ -243,62 +392,57 @@
   };
 
   VolumeSliceCanvas.prototype.recomputeSlice = function () {
-    if (!this.vol || !this.d) return;
-    var geom = this._planeGeometry();
-    if (!geom) return;
-    var d = geom.d;
-    var center = geom.center;
-    var scale = center;
-    var R = geom.R;
-    var invZoom = geom.invZoom;
-    var offX = geom.offX;
-    var offY = geom.offY;
-    var offZ = geom.offZ;
-    if (!this.sliceData || this.sliceData.length !== d * d) {
-      this.sliceData = new Float32Array(d * d);
-    }
-    var minV = Infinity;
-    var maxV = -Infinity;
-    for (var j = 0; j < d; j++) {
-      for (var i = 0; i < d; i++) {
-        var u = ((i - center) / scale) * invZoom;
-        var v = ((j - center) / scale) * invZoom;
-        var px = center + offX + scale * (R[0][0] * u + R[0][1] * v);
-        var py = center + offY + scale * (R[1][0] * u + R[1][1] * v);
-        var pz = center + offZ + scale * (R[2][0] * u + R[2][1] * v);
-        var val = trilinearSample(this.vol, d, px, py, pz);
-        var idx = j * d + i;
-        this.sliceData[idx] = val;
-        if (val < minV) minV = val;
-        if (val > maxV) maxV = val;
+    if (!this.layers.length) return;
+    for (var li = 0; li < this.layers.length; li++) {
+      var layer = this.layers[li];
+      var geom = this._planeGeometry(layer.d);
+      if (!geom) continue;
+      var d = geom.d;
+      var center = geom.center;
+      var scale = center;
+      var R = geom.R;
+      var invZoom = geom.invZoom;
+      var offX = geom.offX;
+      var offY = geom.offY;
+      var offZ = geom.offZ;
+      if (!layer.sliceData || layer.sliceData.length !== d * d) {
+        layer.sliceData = new Float32Array(d * d);
       }
+      var minV = Infinity;
+      var maxV = -Infinity;
+      for (var j = 0; j < d; j++) {
+        for (var i = 0; i < d; i++) {
+          var u = ((i - center) / scale) * invZoom;
+          var v = ((j - center) / scale) * invZoom;
+          var px = center + offX + scale * (R[0][0] * u + R[0][1] * v);
+          var py = center + offY + scale * (R[1][0] * u + R[1][1] * v);
+          var pz = center + offZ + scale * (R[2][0] * u + R[2][1] * v);
+          var val = trilinearSample(layer.vol, d, px, py, pz);
+          var idx = j * d + i;
+          layer.sliceData[idx] = val;
+          if (val < minV) minV = val;
+          if (val > maxV) maxV = val;
+        }
+      }
+      if (maxV <= minV) {
+        minV = 0;
+        maxV = 1;
+      }
+      layer.sliceMin = minV;
+      layer.sliceMax = maxV;
     }
-    if (maxV <= minV) {
-      minV = 0;
-      maxV = 1;
-    }
-    this.sliceMin = minV;
-    this.sliceMax = maxV;
+    this._syncPrimaryLayer();
   };
 
-  VolumeSliceCanvas.prototype.draw = function () {
-    if (!this.sliceData || !this.d) return;
-    var d = this.d;
-    var canvas = this.canvas;
-    var ctx = this.ctx;
-    var cw = canvas.clientWidth || d;
-    var ch = canvas.clientHeight || d;
-    if (canvas.width !== cw || canvas.height !== ch) {
-      canvas.width = cw;
-      canvas.height = ch;
-    }
-    var img = ctx.createImageData(d, d);
-    var span = this.sliceMax - this.sliceMin;
+  VolumeSliceCanvas.prototype._drawLayerImage = function (layer) {
+    var d = layer.d;
+    var img = this.ctx.createImageData(d, d);
+    var span = layer.sliceMax - layer.sliceMin;
     var data = img.data;
     var factor = this._contrastFactor();
     var mid = 0.5;
     for (var k = 0; k < d * d; k++) {
-      var norm = span > 0 ? (this.sliceData[k] - this.sliceMin) / span : 0;
+      var norm = span > 0 ? (layer.sliceData[k] - layer.sliceMin) / span : 0;
       norm = clamp(mid + (norm - mid) * factor, 0, 1);
       var g = Math.round(norm * 255);
       var p = k * 4;
@@ -311,12 +455,31 @@
     off.width = d;
     off.height = d;
     off.getContext("2d").putImageData(img, 0, 0);
+    return off;
+  };
 
+  VolumeSliceCanvas.prototype.draw = function () {
+    if (!this.layers.length) return;
+    var canvas = this.canvas;
+    var ctx = this.ctx;
+    var cw = canvas.clientWidth || 256;
+    var ch = canvas.clientHeight || 256;
+    if (canvas.width !== cw || canvas.height !== ch) {
+      canvas.width = cw;
+      canvas.height = ch;
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = "#243b53";
-    ctx.fillRect(0, 0, cw, ch);
-    var drawW = Math.min(cw, ch) * 0.92;
-    ctx.drawImage(off, (cw - drawW) / 2, (ch - drawW) / 2, drawW, drawW);
+    ctx.clearRect(0, 0, cw, ch);
+
+    var layerCount = this.layers.length;
+    var layout = this._computeGridCells(cw, ch, layerCount);
+
+    for (var si = 0; si < layout.cells.length; si++) {
+      var cell = layout.cells[si];
+      var layer = cell.layerIndex >= 0 ? this.layers[cell.layerIndex] : null;
+      this._drawCellChrome(ctx, cell, layer);
+    }
+    this._syncPrimaryLayer();
   };
 
   VolumeSliceCanvas.prototype.scheduleRecompute = function () {
@@ -325,7 +488,7 @@
     this.recomputePending = true;
     window.requestAnimationFrame(function () {
       self.recomputePending = false;
-      if (!self.vol) return;
+      if (!self.layers.length) return;
       self.recomputeSlice();
       self.draw();
       self._notifyViewChange();
@@ -341,7 +504,7 @@
     });
 
     canvas.addEventListener("pointerdown", function (e) {
-      if (!self.vol) return;
+      if (!self.layers.length) return;
       if (e.button !== 0) return;
       canvas.setPointerCapture(e.pointerId);
       self.lastX = e.clientX;
@@ -351,7 +514,7 @@
     });
 
     canvas.addEventListener("pointermove", function (e) {
-      if (self.dragMode !== "rotate" || !self.vol) return;
+      if (self.dragMode !== "rotate" || !self.layers.length) return;
       var dx = e.clientX - self.lastX;
       var dy = e.clientY - self.lastY;
       self.lastX = e.clientX;
@@ -373,7 +536,7 @@
     canvas.addEventListener("pointercancel", endDrag);
 
     canvas.addEventListener("dblclick", function () {
-      if (!self.vol) return;
+      if (!self.layers.length) return;
       self.resetView();
     });
   };

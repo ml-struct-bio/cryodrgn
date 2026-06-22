@@ -3,6 +3,7 @@
 import pytest
 import os
 import argparse
+import resource
 import shutil
 import tempfile
 import threading
@@ -25,6 +26,12 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "tests", "data")
 
 def pytest_configure():
     pytest.DATADIR = DATA_DIR
+    # Playwright's headless Chromium (WebGL/SwiftShader) can segfault on teardown
+    # and leave multi-hundred-MB core.* files in the pytest cwd. Tests still pass.
+    try:
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    except (ValueError, OSError):
+        pass
 
 
 def get_testing_datasets(dataset_lbl: str) -> tuple[str, str]:
@@ -632,6 +639,11 @@ def _dashboard_run_train_and_analyze(workdir: str) -> None:
 
 @pytest.fixture(scope="session")
 def dashboard_workdir(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """Trained VAE + analyze outputs for dashboard tests.
+
+      Set ``CRYODRGN_DASHBOARD_TEST_OUTDIR`` to a persistent directory to reuse the
+    cached ``pytest_dashboard_fixture`` tree and skip re-training between runs.
+    """
     workdir, _shared = _dashboard_resolve_fixture_workdir(tmp_path_factory)
     if _dashboard_is_usable_workdir(workdir):
         return workdir

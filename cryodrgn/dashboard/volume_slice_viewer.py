@@ -11,7 +11,6 @@ import base64
 import io
 import os
 import re
-import secrets
 import shutil
 import tempfile
 import threading
@@ -154,20 +153,6 @@ def _decode_volume_array(exp: DashboardExperiment, row: int) -> np.ndarray:
         shutil.rmtree(mrc_dir, ignore_errors=True)
 
 
-def decode_volume_to_cache(exp: DashboardExperiment, row: int) -> tuple[str, int]:
-    """Decode one particle volume and register it in the in-memory slice cache."""
-    vol = _decode_volume_array(exp, row)
-    with _SLICE_CACHE_LOCK:
-        _slice_cache_prune_unlocked()
-        token = secrets.token_urlsafe(24)
-        _SLICE_CACHE[token] = {
-            "vol": vol,
-            "row": int(row),
-            "t0": time.monotonic(),
-        }
-        return token, int(vol.shape[0])
-
-
 def slices_from_cache_payload(
     token: str,
     row_expected: int,
@@ -239,11 +224,6 @@ def decode_volume_payload(exp: DashboardExperiment, row: int) -> dict:
         "dataset_index": ds_idx,
         "default_slice_z": d // 2,
     }
-
-
-def decode_and_initial_slices(exp: DashboardExperiment, row: int) -> dict:
-    """Decode a volume for the interactive slice canvas (legacy name)."""
-    return decode_volume_payload(exp, row)
 
 
 _ANALYZE_VOL_CACHE: dict[tuple[str, int, int, int], dict] = {}
@@ -356,14 +336,6 @@ def _pc_trajectory_plot_rows_with_pca(
     z_pc = cryo_analysis.get_pc_traj(pca, z.shape[1], n_samples, pc_num, lo, hi)
     _, pc_ind = cryo_analysis.get_nearest_point(z, z_pc)
     return [int(x) for x in np.atleast_1d(pc_ind).tolist()]
-
-
-def _pc_trajectory_plot_rows(
-    exp: DashboardExperiment, pc_num: int, n_samples: int
-) -> list[int]:
-    z = np.asarray(exp.z, dtype=np.float32)
-    _, pca = cryo_analysis.run_pca(z)
-    return _pc_trajectory_plot_rows_with_pca(exp, pca, pc_num, n_samples)
 
 
 def _load_kmeans_center_plot_rows(km_dir: str) -> list[int] | None:
@@ -533,18 +505,6 @@ def analyze_volumes_batch_payload(
             entries.append(entry)
     volumes = _load_catalog_volumes_parallel(entries, n_cpus=n_cpus)
     return {"ok": True, "volumes": volumes}
-
-
-def analyze_volumes_payload(
-    exp: DashboardExperiment,
-    *,
-    n_cpus: int = 1,
-) -> dict:
-    """Backward-compatible alias: catalog only (volumes load on demand)."""
-    del n_cpus
-    payload = analyze_volumes_catalog_payload(exp)
-    payload["volumes"] = {}
-    return payload
 
 
 def _load_catalog_volume(entry: dict) -> tuple[str, dict]:

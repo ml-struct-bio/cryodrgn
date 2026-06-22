@@ -35,7 +35,20 @@ from cryodrgn.dashboard.command_builder_data import (
 )
 from cryodrgn.dashboard.context import command_builder_template_kwargs
 from cryodrgn.dashboard.data import DashboardExperiment
-from cryodrgn.dashboard.command_builder_page import _github_repo_release_url
+from cryodrgn.dashboard.command_builder_page import (
+    _abbrev_middle,
+    _adapt_html_for_command_builder_page,
+    _command_builder_page_base_path,
+    _command_builder_template_kwargs,
+    _cryodrgn_version_context,
+    _github_repo_release_url,
+    _nav_interface_title,
+    _rewrite_root_paths,
+    _version_to_github_tree_tag,
+    build_command_builder_page_site,
+    main as build_command_builder_page_main,
+    render_command_builder_html,
+)
 
 
 class TestCommandModuleDocstrings:
@@ -562,12 +575,139 @@ class TestCommandBuilderStaticSite:
     """GitHub Pages bundle omits Plotly (command builder does not use charts)."""
 
     def test_rendered_html_has_no_plotly_script(self) -> None:
-        from cryodrgn.dashboard.command_builder_page import render_command_builder_html
-
         html = render_command_builder_html()
         assert "cdn.plot.ly" not in html
         assert "/vendor/plotly.min.js" not in html
         assert "plotly.min.js" not in html
+
+    def test_abbrev_middle_short_and_long(self) -> None:
+        assert _abbrev_middle("short") == "short"
+        long = "a" * 40
+        out = _abbrev_middle(long, maxlen=20)
+        assert "…" in out
+        assert len(out) == 20
+
+    def test_nav_interface_title_uses_wider_maxlen(self) -> None:
+        assert _nav_interface_title("x" * 20) == "x" * 20
+        assert "…" in _nav_interface_title("y" * 50)
+
+    def test_version_to_github_tree_tag_empty(self) -> None:
+        assert _version_to_github_tree_tag("") == ""
+        assert _version_to_github_tree_tag("   ") == ""
+
+    def test_github_repo_release_url_unknown_version_returns_base(self) -> None:
+        base = "https://github.com/ml-struct-bio/cryodrgn"
+        assert _github_repo_release_url(base, "unknown") == base
+        assert _github_repo_release_url(base, "") == base
+
+    def test_cryodrgn_version_context_from_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CRYODRGN_VERSION", "4.3.0a8+local")
+        ctx = _cryodrgn_version_context()
+        assert ctx["cryodrgn_version"] == "4.3.0a8+local"
+        assert ctx["cryodrgn_version_short"] == "4.3.0a8"
+
+    def test_cryodrgn_version_context_import_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import builtins
+
+        monkeypatch.delenv("CRYODRGN_VERSION", raising=False)
+        real_import = builtins.__import__
+
+        def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "cryodrgn" and fromlist and "__version__" in fromlist:
+                raise ImportError("blocked")
+            return real_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+        ctx = _cryodrgn_version_context()
+        assert ctx["cryodrgn_version"] == "unknown"
+
+    def test_command_builder_page_base_path(self) -> None:
+        assert _command_builder_page_base_path("org/cryodrgn") == "/cryodrgn/"
+        assert _command_builder_page_base_path().startswith("/")
+
+    def test_rewrite_root_paths_branches(self) -> None:
+        base = "/cryodrgn/"
+        html = (
+            '<a href="/">home</a>'
+            '<link href="//cdn.example/x">'
+            '<script src="/static/js/app.js"></script>'
+            '<form action="/api/set_workdir">'
+            '<a href="/command-builder">cb</a>'
+            '<a href="/cryodrgn/extra/page">nested</a>'
+            '<a href="/other">keep</a>'
+        )
+        out = _rewrite_root_paths(html, base)
+        assert 'href="/cryodrgn/"' in out or 'href="."' in out
+        assert 'href="//cdn.example/x"' in out
+        assert 'src="static/js/app.js"' in out
+        assert 'action="#"' in out
+        assert 'href="extra/page"' in out
+        assert 'href="/other"' in out
+
+    def test_adapt_html_injects_base_and_disables_dashboard_fetch(self) -> None:
+        raw = (
+            "<head><title>x</title></head>"
+            '<body><script>fetch("/api/set_workdir"</script>'
+            '<script src="/vendor/plotly.min.js"></script></body>'
+        )
+        out = _adapt_html_for_command_builder_page(
+            raw, "/cryodrgn/", "https://github.com/org/repo"
+        )
+        assert '<base href="/cryodrgn/"/>' in out
+        assert 'fetch("#"' in out
+        assert "plotly.min.js" not in out
+
+    def test_render_command_builder_html_custom_base_and_repo(self) -> None:
+        html = render_command_builder_html(
+            base_path="/myrepo/",
+            repo_url="https://github.com/example/myrepo",
+        )
+        assert '<base href="/myrepo/"/>' in html
+        assert "command_builder_schema" not in html
+        assert "cmd-type" in html
+
+    def test_command_builder_template_kwargs_has_schema(self) -> None:
+        kw = _command_builder_template_kwargs()
+        assert kw["command_builder_schema"] is COMMAND_BUILDER_SCHEMA
+        assert kw["default_outdir_train_vae"] == default_outdir_for_command("train_vae")
+
+    def test_build_command_builder_page_site_writes_bundle(
+        self, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "site"
+        (out / "old").mkdir(parents=True)
+        (out / "old" / "stale.txt").write_text("x", encoding="utf-8")
+        root = build_command_builder_page_site(
+            out,
+            base_path="/cryodrgn/",
+            repo_url="https://github.com/ml-struct-bio/cryodrgn",
+        )
+        assert root == out
+        assert (out / "index.html").is_file()
+        assert (out / ".nojekyll").is_file()
+        assert (out / "static").is_dir()
+        assert not (out / "old").exists()
+        html = (out / "index.html").read_text(encoding="utf-8")
+        assert "cmd-type" in html
+
+    def test_build_command_builder_page_main_cli(self, tmp_path: Path) -> None:
+        out = tmp_path / "pages"
+        rc = build_command_builder_page_main(
+            [
+                "-o",
+                str(out),
+                "--base-path",
+                "/cryodrgn/",
+                "--repo-url",
+                "https://github.com/ml-struct-bio/cryodrgn",
+            ]
+        )
+        assert rc == 0
+        assert (out / "index.html").is_file()
 
 
 class TestCommandBuilderBrowserSmoke:

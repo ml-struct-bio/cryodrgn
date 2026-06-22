@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import os
 import pickle
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -14,14 +16,23 @@ from cryodrgn.dashboard import app as dash_app
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import (
     _chimerax_render_cmds,
-    chimerax_view_matrix_camera_arg,
-    format_chimerax_view_matrix_display,
     _config_yaml_path,
+    _decode_z_values_to_vol_paths,
     _is_drgnai_config,
     _mpl_retrim_png,
+    _register_vol_mrc_cache,
     _sorted_vol_mrc_paths,
+    _VOL_CACHE_LOCK,
+    _VOL_MRC_CACHE,
+    chimerax_view_matrix_camera_arg,
     explorer_volumes_eligible,
+    format_chimerax_view_matrix_display,
+    generate_montage_volume_pngs,
+    generate_trajectory_volume_pngs,
     montage_cell_label,
+    save_cached_volumes_to_dir,
+    torch_cuda_available,
+    volume_cell_gif_from_cache,
 )
 from tests.conftest import read_dashboard_static_js
 from cryodrgn.dashboard.preload import (
@@ -486,6 +497,272 @@ class TestMontageCellLabel:
         assert montage_cell_label(22) == "Z"
         assert montage_cell_label(23) == "AA"
         assert montage_cell_label(24) == "AB"
+
+    def test_rejects_negative_index(self) -> None:
+        with pytest.raises(ValueError, match="non-negative"):
+            montage_cell_label(-1)
+
+
+class TestTorchCudaAvailable:
+    def test_import_error_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import builtins
+
+        real_import = builtins.__import__
+
+        def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "torch":
+                raise ImportError("no torch")
+            return real_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+        assert torch_cuda_available() is False
+
+
+class TestExplorerVolumesEligibleExtra:
+    def test_false_when_tilt_enc_mode(
+        self, dashboard_experiment: DashboardExperiment, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from dataclasses import replace
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.torch_cuda_available", lambda: True
+        )
+        exp = replace(dashboard_experiment, enc_mode="tilt")
+        assert not explorer_volumes_eligible(exp)
+
+
+@pytest.fixture(autouse=True)
+def _clear_particle_explorer_vol_cache() -> None:
+    from cryodrgn.dashboard.particle_explorer import _vol_cache_evict_unlocked
+
+    with _VOL_CACHE_LOCK:
+        for tok in list(_VOL_MRC_CACHE):
+            _vol_cache_evict_unlocked(tok)
+    yield
+    with _VOL_CACHE_LOCK:
+        for tok in list(_VOL_MRC_CACHE):
+            _vol_cache_evict_unlocked(tok)
+
+
+class TestParticleExplorerVolumeCache:
+    def _fake_parallel_pngs(self, tasks, chimerax_cpus=1):
+        from PIL import Image
+
+        paths = []
+        for _idx, _mrc, png, _dpi in tasks:
+            Image.new("RGB", (6, 6), color=(1, 2, 3)).save(png)
+            paths.append(png)
+        return paths
+
+    def test_generate_montage_and_gif_from_cache(
+        self,
+        dashboard_experiment: DashboardExperiment,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _fake_decode(
+            exp: DashboardExperiment, z_values: np.ndarray, mrc_dir: str
+        ) -> list[str]:
+            os.makedirs(mrc_dir, exist_ok=True)
+            paths: list[str] = []
+            for i in range(len(z_values)):
+                p = os.path.join(mrc_dir, f"vol_{i + 1:03d}.mrc")
+                Path(p).write_bytes(b"\x00")
+                paths.append(p)
+            return paths
+
+        def _fake_gif(mrc_path: str, out_gif: str, **kwargs) -> None:
+            Path(out_gif).write_bytes(b"GIF89a")
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer._decode_z_values_to_vol_paths",
+            _fake_decode,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.parallel_chimerax_static_pngs",
+            self._fake_parallel_pngs,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.cx.render_rotating_gif",
+            _fake_gif,
+        )
+        pngs, token = generate_montage_volume_pngs(
+            dashboard_experiment, [0, 1], chimerax_cpus=2
+        )
+        assert len(pngs) == 2
+        assert pngs[0][:8] == b"\x89PNG\r\n\x1a\n"
+        gif = volume_cell_gif_from_cache(
+            token, 0, rows_expected=(0, 1), gif_frames=6, chimerax_cpus=2
+        )
+        assert gif.startswith(b"GIF89a")
+
+    def test_save_cached_volumes_to_dir(
+        self,
+        dashboard_experiment: DashboardExperiment,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        mrc_dir = tmp_path / "mrcs"
+        mrc_dir.mkdir()
+        vols = [mrc_dir / "vol_001.mrc", mrc_dir / "vol_002.mrc"]
+        for p in vols:
+            p.write_bytes(b"\x00")
+        token = _register_vol_mrc_cache(str(mrc_dir), [str(p) for p in vols], (0, 1))
+        out = tmp_path / "saved"
+        saved = save_cached_volumes_to_dir(token, str(out), filename_prefix="cell")
+        assert len(saved) == 2
+        assert all(os.path.isfile(p) for p in saved)
+        assert saved[0].endswith("cell_001.mrc")
+
+    def test_volume_cache_validation_errors(self, tmp_path: Path) -> None:
+        mrc_dir = tmp_path / "one"
+        mrc_dir.mkdir()
+        vol = mrc_dir / "vol_001.mrc"
+        vol.write_bytes(b"\x00")
+        token = _register_vol_mrc_cache(str(mrc_dir), [str(vol)], (0,))
+        with pytest.raises(ValueError, match="Unknown or expired"):
+            volume_cell_gif_from_cache("bad-token", 0, rows_expected=(0,))
+        with pytest.raises(ValueError, match="do not match"):
+            volume_cell_gif_from_cache(token, 0, rows_expected=(1,))
+        with pytest.raises(ValueError, match="out of range"):
+            volume_cell_gif_from_cache(token, 3, rows_expected=(0,))
+        with pytest.raises(ValueError, match="Choose an output folder"):
+            save_cached_volumes_to_dir(token, "")
+
+    def test_cache_expiry_evicts_entry(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mrc_dir = tmp_path / "mrcs"
+        mrc_dir.mkdir()
+        vol = mrc_dir / "vol_001.mrc"
+        vol.write_bytes(b"\x00")
+        token = _register_vol_mrc_cache(str(mrc_dir), [str(vol)], (0,))
+        with _VOL_CACHE_LOCK:
+            _VOL_MRC_CACHE[token]["t0"] = 0.0
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.time.monotonic",
+            lambda: 8000.0,
+        )
+        with pytest.raises(ValueError, match="expired"):
+            volume_cell_gif_from_cache(token, 0, rows_expected=(0,))
+
+    def test_cache_prunes_when_max_entries_exceeded(self, tmp_path: Path) -> None:
+        from cryodrgn.dashboard.particle_explorer import _VOL_CACHE_MAX_ENTRIES
+
+        tokens: list[str] = []
+        for i in range(_VOL_CACHE_MAX_ENTRIES + 1):
+            d = tmp_path / f"mrc_{i}"
+            d.mkdir()
+            p = d / "vol_001.mrc"
+            p.write_bytes(b"\x00")
+            tokens.append(_register_vol_mrc_cache(str(d), [str(p)], (i,)))
+        assert len(_VOL_MRC_CACHE) <= _VOL_CACHE_MAX_ENTRIES
+        assert tokens[0] not in _VOL_MRC_CACHE
+
+
+class TestParticleExplorerVolumeGeneration:
+    def test_generate_trajectory_volume_pngs_mocked(
+        self,
+        dashboard_experiment: DashboardExperiment,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        zdim = dashboard_experiment.z.shape[1]
+        z_traj = dashboard_experiment.z[:3]
+
+        def _fake_decode(
+            exp: DashboardExperiment, z_values: np.ndarray, mrc_dir: str
+        ) -> list[str]:
+            os.makedirs(mrc_dir, exist_ok=True)
+            paths: list[str] = []
+            for i in range(len(z_values)):
+                p = os.path.join(mrc_dir, f"vol_{i + 1:03d}.mrc")
+                Path(p).write_bytes(b"\x00")
+                paths.append(p)
+            return paths
+
+        def _fake_parallel(tasks, chimerax_cpus=1):
+            from PIL import Image
+
+            return [
+                (lambda png: (Image.new("RGB", (4, 4)).save(png), png)[1])(t[2])
+                for t in tasks
+            ]
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer._decode_z_values_to_vol_paths",
+            _fake_decode,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.parallel_chimerax_static_pngs",
+            _fake_parallel,
+        )
+        pngs, token = generate_trajectory_volume_pngs(
+            dashboard_experiment, z_traj, chimerax_cpus=2
+        )
+        assert len(pngs) == 3
+        assert token
+        with pytest.raises(ValueError, match="must be"):
+            generate_trajectory_volume_pngs(
+                dashboard_experiment, np.zeros((2, zdim + 1))
+            )
+
+    def test_generate_montage_rejects_invalid_rows(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        with pytest.raises(ValueError, match="Invalid plot row"):
+            generate_montage_volume_pngs(dashboard_experiment, [-1])
+        with pytest.raises(ValueError, match="Invalid plot row"):
+            generate_montage_volume_pngs(dashboard_experiment, [])
+
+    def test_decode_z_values_to_vol_paths_classic_branch(
+        self,
+        dashboard_experiment: DashboardExperiment,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        z = dashboard_experiment.z[:2]
+        mrc_dir = tmp_path / "decode"
+        called: list[str] = []
+
+        def _fake_classic(
+            exp: DashboardExperiment,
+            z_values: np.ndarray,
+            out_dir: str,
+            device: int = 0,
+        ) -> None:
+            called.append(out_dir)
+            os.makedirs(out_dir, exist_ok=True)
+            for i in range(len(z_values)):
+                Path(out_dir, f"vol_{i + 1:03d}.mrc").write_bytes(b"\x00")
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer._decode_z_values_classic",
+            _fake_classic,
+        )
+        paths = _decode_z_values_to_vol_paths(dashboard_experiment, z, str(mrc_dir))
+        assert called == [str(mrc_dir)]
+        assert len(paths) == 2
+
+    def test_sorted_vol_mrc_paths_skips_subdirs(self, tmp_path: Path) -> None:
+        (tmp_path / "vol_001.mrc").write_bytes(b"\x00")
+        (tmp_path / "vol_002.mrc").write_bytes(b"\x00")
+        (tmp_path / "subdir").mkdir()
+        out = _sorted_vol_mrc_paths(str(tmp_path), 2)
+        assert len(out) == 2
+
+    def test_generate_montage_cleanup_on_decode_failure(
+        self,
+        dashboard_experiment: DashboardExperiment,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _boom(*_a, **_k):
+            raise RuntimeError("decode failed")
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer._decode_z_values_to_vol_paths",
+            _boom,
+        )
+        with pytest.raises(RuntimeError, match="decode failed"):
+            generate_montage_volume_pngs(dashboard_experiment, [0])
 
 
 class TestMplRetrimPng:

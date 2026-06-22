@@ -1253,7 +1253,7 @@ class TestBundledPlotlyJs:
 class TestDashboardIndexBrowserSmoke:
     """Landing page navigation cards."""
 
-    def test_landing_cards_and_nav_link_to_core_interfaces(
+    def test_landing_cards_nav_and_trajectory_gating(
         self, playwright_page, dashboard_live_url
     ) -> None:
         from tests.conftest import dashboard_smoke_index
@@ -1261,13 +1261,6 @@ class TestDashboardIndexBrowserSmoke:
         out = dashboard_smoke_index(playwright_page, dashboard_live_url)
         assert out["landing_links"] >= 4
         assert out["mentions_volume_landscapes"]
-
-    def test_landing_trajectory_gated_without_gpu(
-        self, playwright_page, dashboard_live_url
-    ) -> None:
-        from tests.conftest import dashboard_smoke_index
-
-        out = dashboard_smoke_index(playwright_page, dashboard_live_url)
         if out["has_trajectory"]:
             pytest.skip("trajectory card active on this runner (GPU + weights present)")
         assert out["trajectory_ineligible_note"]

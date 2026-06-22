@@ -25,15 +25,19 @@ from cryodrgn.dashboard.particle_explorer import (
 from tests.conftest import read_dashboard_static_js
 from cryodrgn.dashboard.preload import (
     DEFAULT_PRELOAD_IMAGE_LIMIT,
+    PARTICLE_POLARITY_LIGHT_ON_DARK,
     _hybrid_random_knn_spaced_local_indices,
     _preload_cache_time_estimate_bounds,
     encode_particle_batch,
     explorer_cache_size_power10_step,
     explorer_initial_preload_image_limit,
     format_preload_cache_time_hint,
+    infer_particle_display_polarity,
     load_plot_df_rows_from_plot_inds_file,
     montage_bytes,
+    particle_contrast_polarity_score,
     particle_thumbnail_b64_from_row,
+    record_polarity_samples,
     sample_plot_df_rows_for_preload,
 )
 
@@ -278,11 +282,82 @@ class TestEncodeParticleBatch:
     ) -> None:
         e = dashboard_experiment
         global_idx = [int(e.all_indices[i]) for i in (0, 1, 2)]
-        jpegs = encode_particle_batch(e.particles_path, e.datadir, global_idx, 48)
+        jpegs, scores = encode_particle_batch(
+            e.particles_path, e.datadir, global_idx, 48, polarity_sample=True
+        )
         assert len(jpegs) == 3
+        assert len(scores) == 3
         for b64 in jpegs:
             raw = base64.standard_b64decode(b64)
             assert raw[:3] == b"\xff\xd8\xff"
+
+
+class TestParticleDisplayPolarity:
+    def test_toy_fixture_is_light_on_dark(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        from cryodrgn.source import ImageSource
+
+        src = ImageSource.from_file(
+            dashboard_experiment.particles_path,
+            lazy=True,
+            datadir=dashboard_experiment.datadir or "",
+        )
+        gidx = int(dashboard_experiment.all_indices[0])
+        score = particle_contrast_polarity_score(src.images(gidx, as_numpy=True))
+        assert score > 0.02
+        assert infer_particle_display_polarity(dashboard_experiment) == (
+            PARTICLE_POLARITY_LIGHT_ON_DARK
+        )
+
+    def test_encode_batch_records_polarity_without_extra_reads(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        from cryodrgn.dashboard.preload import (
+            clear_particle_polarity_cache_for_experiment,
+            get_particle_display_polarity,
+        )
+
+        clear_particle_polarity_cache_for_experiment(dashboard_experiment)
+        e = dashboard_experiment
+        global_idx = [int(e.all_indices[i]) for i in (0, 1, 2)]
+        _jpegs, scores = encode_particle_batch(
+            e.particles_path, e.datadir, global_idx, 48, polarity_sample=True
+        )
+        assert len(scores) == 3
+        record_polarity_samples(e, scores)
+        assert get_particle_display_polarity(e) == PARTICLE_POLARITY_LIGHT_ON_DARK
+
+    def test_explorer_page_hides_dataset_marker_until_cache(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        resp = flask_client.get("/explorer")
+        assert resp.status_code == 200
+        body = resp.get_data(as_text=True)
+        assert "image-grid-dataset-badge-lod" in body
+        assert "image-grid-dataset-badge-dol" in body
+        assert 'id="image-grid-dataset-badge-lod"' in body and " hidden" in body
+        assert (
+            "cryo-image-grid-contrast-side--lod cryo-image-grid-contrast-side--dataset"
+            not in body
+        )
+        assert (
+            "cryo-image-grid-contrast-side--dol cryo-image-grid-contrast-side--dataset"
+            not in body
+        )
+
+    def test_preload_images_includes_dataset_polarity(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        polarity = infer_particle_display_polarity(dashboard_experiment)
+        resp = flask_client.post(
+            "/api/preload_images",
+            json={"x": "UMAP1", "y": "UMAP2", "cache_size": 3},
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["particle_dataset_polarity"] == polarity
+        assert len(data.get("images") or []) > 0
 
 
 class TestLoadPlotDfRowsFromPlotIndsFile:

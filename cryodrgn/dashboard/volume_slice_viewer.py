@@ -289,11 +289,12 @@ def discover_analyze_volume_catalog(exp: DashboardExperiment) -> list[dict]:
     km_dir = os.path.join(anlz, f"kmeans{int(exp.kmeans_folder_id)}")
     for vol_index, path in _sorted_vol_mrc_paths(km_dir):
         cluster_label = vol_index - 1
+        display_cluster = cluster_label + 1
         catalog.append(
             {
                 "id": f"kmeans:{cluster_label}",
                 "kind": "kmeans",
-                "title": f"k-means cluster {cluster_label}",
+                "title": f"k-means cluster {display_cluster}",
                 "cluster_label": int(cluster_label),
                 "vol_index": int(vol_index),
                 "path": path,
@@ -411,7 +412,7 @@ def discover_analyze_volume_markers(
         label = vol_id
         if kind == "kmeans":
             cl = int(entry["cluster_label"])
-            label = f"K{cl}"
+            label = f"K{cl + 1}"
             if km_rows is not None and 0 <= cl < len(km_rows):
                 plot_row = int(km_rows[cl])
         elif kind == "pc":

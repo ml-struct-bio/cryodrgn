@@ -11,11 +11,15 @@
     --cryo-vslice-side-w: min(196px, 14vw);
     --cryo-vslice-aside-w: min(30rem, calc(100svh - var(--cryo-dash-below-nav, 9.5rem) - 0.5rem));
   }
+  main:has(.cryo-dash-page--volume-slice-viewer) {
+    padding-top: 0.2rem;
+    padding-bottom: 0.35rem;
+  }
   .cryo-dash-page--volume-slice-viewer .cryo-dash-row--volume-slice {
     display: grid;
     grid-template-columns: var(--cryo-vslice-side-w) minmax(0, 1fr) var(--cryo-vslice-aside-w);
     align-items: stretch;
-    gap: 1rem;
+    gap: 0.65rem;
     height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
     min-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
     max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
@@ -32,24 +36,34 @@
     flex: unset;
     width: auto;
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding-top: 0.75rem;
+    align-self: stretch;
+    padding-top: 0;
     container-type: size;
     container-name: cryo-vslice-plot;
   }
+  .cryo-dash-page--volume-slice-viewer .cryo-particle-explorer-plot-status {
+    margin: 0 0 0.05rem !important;
+    min-height: 1em;
+    line-height: 1.2;
+    font-size: 0.78rem;
+  }
   .cryo-dash-page--volume-slice-viewer .cryo-plotly-stack {
+    position: relative;
     flex: 0 1 auto;
-    align-self: center;
-    width: min(100cqw, calc(100cqh - 2.35rem));
+    align-self: flex-start;
+    width: min(100cqw, 100cqh);
     max-width: 100%;
-    max-height: calc(100cqh - 2.35rem);
+    max-height: 100cqh;
     aspect-ratio: 1 / 1;
     min-height: 0;
     min-width: 0;
     height: auto;
+    margin-top: 0;
   }
   .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices {
     grid-column: 3;
@@ -57,83 +71,363 @@
     width: 100%;
     min-width: min(14rem, 100%);
     max-width: var(--cryo-vslice-aside-w);
-    align-self: flex-start;
-    max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
+    align-self: stretch;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
     overflow: hidden;
     display: flex;
     flex-direction: column;
   }
+  .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices .cryo-explorer-menu-scroll,
+  .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices .cryo-dash-montage-scroll,
+  .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices #montage-actions {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .cryo-vslice-panel-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .cryo-vslice-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .cryo-vslice-controls-dock {
+    flex: 0 0 auto;
+    width: 100%;
+    padding: 0.4rem 0 0.15rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.12);
+    background: var(--paper, #fff);
+  }
+  .cryo-vslice-controls-dock[hidden] {
+    display: none !important;
+  }
   .cryo-vslice-color-section .cryo-vslice-color-body {
     padding: 0;
   }
+  .cryo-vslice-panel-top {
+    flex: 0 0 auto;
+  }
   .cryo-vslice-panel-heading {
-    margin: 0 0 0.35rem;
+    margin: 0 0 0.3rem;
     font-size: 1rem;
     color: var(--nav-bg, #243b53);
   }
-  .cryo-vslice-status {
-    margin: 0 0 0.5rem;
+  .cryo-vslice-volume-picker {
+    --cryo-vslice-vol-btn-h: 1.28rem;
+    --cryo-vslice-vol-btn-gap: 0.18rem;
+    --cryo-vslice-vol-visible-btns: 4.5;
+    --cryo-vslice-vol-col-head-h: calc(0.62rem * 1.1 + 0.15rem);
+    --cryo-vslice-vol-scroll-pad: 0.28rem;
+    --cryo-vslice-vol-btns-view-h: calc(
+      var(--cryo-vslice-vol-visible-btns) * (var(--cryo-vslice-vol-btn-h) + var(--cryo-vslice-vol-btn-gap))
+      - 0.5 * var(--cryo-vslice-vol-btn-gap)
+    );
+    --cryo-vslice-vol-menu-h: calc(
+      2 * var(--cryo-vslice-vol-scroll-pad)
+      + var(--cryo-vslice-vol-col-head-h)
+      + var(--cryo-vslice-vol-btns-view-h)
+    );
+    max-height: 13%;
+    min-height: 0;
+    margin: 0 0 0.3rem;
   }
-  .cryo-vslice-cycle-row {
+  .cryo-vslice-volume-picker-scroll {
+    height: var(--cryo-vslice-vol-menu-h);
+    max-height: min(100%, var(--cryo-vslice-vol-menu-h));
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.65);
+    padding: var(--cryo-vslice-vol-scroll-pad) 0.32rem;
+  }
+  .cryo-vslice-volume-picker-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    align-items: stretch;
-    gap: 0.55rem;
-    margin: 0 0 0.65rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.3rem 0.8rem;
+    align-items: start;
   }
-  .cryo-vslice-nav-btn {
-    width: 100%;
-    min-height: 3.25rem;
-    font-size: 1.12rem;
+  .cryo-vslice-volume-col-head {
+    font-size: 0.62rem;
     font-weight: 700;
-    padding: 0.75rem 0.85rem;
-    letter-spacing: 0.02em;
-  }
-  .cryo-vslice-cycle-label {
-    grid-column: 1 / -1;
-    font-size: 0.88rem;
-    line-height: 1.3;
-    text-align: center;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     color: var(--muted, #5c6b7a);
-    min-width: 0;
+    text-align: center;
     margin: 0 0 0.15rem;
+    line-height: 1.1;
+  }
+  .cryo-vslice-volume-col-btns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--cryo-vslice-vol-btn-gap);
+    align-content: start;
+  }
+  .cryo-vslice-volume-col[data-empty="true"] .cryo-vslice-volume-col-head {
+    opacity: 0.45;
+  }
+  .cryo-vslice-vol-btn {
+    min-height: var(--cryo-vslice-vol-btn-h);
+    padding: 0.12rem 0.2rem;
+    font-size: 0.64rem;
+    font-weight: 600;
+    line-height: 1.1;
+    border-radius: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cryo-vslice-vol-btn--active {
+    background: var(--accent, #c4703a);
+    border-color: var(--accent, #c4703a);
+    color: #fff;
+  }
+  .cryo-vslice-status {
+    margin: 0 0 0.35rem;
   }
   .cryo-vslice-viewport {
     position: relative;
     width: 100%;
-    margin: 0.35rem 0 0.45rem;
+    margin: 0.25rem 0 0.35rem;
     border: 1px solid rgba(36, 59, 83, 0.18);
     border-radius: 4px;
     background: #e8ecf1;
     overflow: hidden;
+    min-height: 9rem;
+    height: min(18rem, 34vh);
   }
   .cryo-vslice-canvas {
     display: block;
     width: 100%;
-    height: min(22rem, 42vw);
-    min-height: 12rem;
+    height: 100%;
+    min-height: 9rem;
     cursor: grab;
     touch-action: none;
   }
   .cryo-vslice-canvas:active {
     cursor: grabbing;
   }
-  .cryo-vslice-hint {
-    margin: 0;
-    padding: 0.35rem 0.45rem 0.45rem;
-    font-size: 0.72rem;
-    line-height: 1.25;
+  .cryo-vslice-slice-info {
+    margin: 0 0 0.45rem;
+    padding: 0.45rem 0.5rem;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.95);
+    min-height: 2.75rem;
+  }
+  .cryo-vslice-slice-info-volume {
+    margin: 0 0 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--nav-bg, #243b53);
     text-align: center;
-    border-top: 1px solid rgba(36, 59, 83, 0.1);
-    background: rgba(250, 248, 244, 0.9);
+  }
+  .cryo-vslice-slice-info-view {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--muted, #5c6b7a);
+    text-align: center;
+  }
+  .cryo-vslice-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    margin: 0;
+    width: 100%;
+  }
+  .cryo-vslice-controls-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    max-width: 100%;
+  }
+  .cryo-vslice-pad {
+    --cryo-vslice-pad-h: 5.75rem;
+    width: calc(2.3 * var(--cryo-vslice-pad-h));
+    height: var(--cryo-vslice-pad-h);
+    aspect-ratio: 2.3 / 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 0.3rem;
+    justify-content: center;
+    align-items: stretch;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  .cryo-vslice-pad-btn {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .cryo-vslice-pad-btn--zoom {
+    font-size: 0.95rem;
+  }
+  #btn-vslice-pan-up { grid-column: 2; grid-row: 1; }
+  #btn-vslice-pan-left { grid-column: 1; grid-row: 2; }
+  .cryo-vslice-pad-center {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+  #btn-vslice-pan-right { grid-column: 3; grid-row: 2; }
+  #btn-vslice-pan-down { grid-column: 2; grid-row: 3; }
+  .cryo-vslice-slice-contrast-stack {
+    --cryo-vslice-slider-w: calc(2.1rem * 2.3);
+    --cryo-vslice-slider-h: 1.18rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.22rem;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  .cryo-vslice-contrast-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: var(--cryo-vslice-slider-w);
+    height: var(--cryo-vslice-slider-h);
+    margin: 0;
+    padding: 0;
+    border: 1px solid rgba(36, 59, 83, 0.25);
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      #8a9bab 0%,
+      #d8e0e8 50%,
+      #f4f7fb 100%
+    );
+    box-sizing: border-box;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .cryo-vslice-contrast-slider:focus {
+    outline: none;
+  }
+  .cryo-vslice-contrast-slider:focus-visible {
+    outline: 2px solid var(--nav-bg, #243b53);
+    outline-offset: 2px;
+  }
+  .cryo-vslice-contrast-slider::-webkit-slider-runnable-track {
+    height: calc(var(--cryo-vslice-slider-h) - 2px);
+    border-radius: 999px;
+    background: transparent;
+  }
+  .cryo-vslice-contrast-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 0.92rem;
+    height: 0.92rem;
+    margin-top: calc((var(--cryo-vslice-slider-h) - 2px - 0.92rem) / 2);
+    border-radius: 50%;
+    border: 1px solid rgba(36, 59, 83, 0.2);
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    cursor: grab;
+  }
+  .cryo-vslice-contrast-slider:active::-webkit-slider-thumb {
+    cursor: grabbing;
+  }
+  .cryo-vslice-contrast-slider::-moz-range-track {
+    height: calc(var(--cryo-vslice-slider-h) - 2px);
+    border-radius: 999px;
+    background: transparent;
+    border: none;
+  }
+  .cryo-vslice-contrast-slider::-moz-range-thumb {
+    width: 0.92rem;
+    height: 0.92rem;
+    border-radius: 50%;
+    border: 1px solid rgba(36, 59, 83, 0.2);
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    cursor: grab;
+  }
+  .cryo-vslice-reset-btn {
+    width: calc(var(--cryo-vslice-slider-w) * 0.71);
+    min-height: calc(var(--cryo-vslice-slider-h) * 0.61);
+    padding: 0.08rem 0.12rem;
+    font-size: 0.56rem;
+    font-weight: 700;
+    line-height: 1.05;
+    text-align: center;
+    align-self: center;
+  }
+  .cryo-vslice-reset-btn__label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.02rem;
+  }
+  .cryo-vslice-reset-btn__line {
+    display: block;
+    white-space: nowrap;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-vslice-analyze-volume-glyph {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 500;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-vslice-manual-volume-glyph {
+    font-family: "Palatino Linotype", Palatino, "Book Antiqua", serif;
+    font-weight: 600;
+    font-style: italic;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-explorer-grid-letter-glyphs-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-explorer-grid-letter-glyph {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    color: #ffffff;
+    font-weight: 500;
+    font-family: Georgia, "Times New Roman", serif;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    paint-order: stroke fill;
+    -webkit-text-stroke: 0.9px #000000;
+    text-shadow:
+      0 0 1px #000000,
+      -1px 0 0 #000000,
+      1px 0 0 #000000,
+      0 -1px 0 #000000,
+      0 1px 0 #000000;
   }
   .cryo-vslice-progress {
     margin: 0.35rem 0;
     height: 4px;
-  }
-  .cryo-vslice-meta {
-    margin: 0.45rem 0 0;
-    font-size: 0.78rem;
   }
   .cryo-dash-page--volume-slice-viewer .cryo-color-hist-panel {
     margin-top: 0.25rem;

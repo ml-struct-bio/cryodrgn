@@ -4,19 +4,40 @@
   var vsliceStatusEl = document.getElementById("vslice-status");
   var vsliceViewportEl = document.getElementById("vslice-viewport");
   var vsliceCanvasEl = document.getElementById("vslice-canvas");
-  var vsliceHintEl = document.getElementById("vslice-hint");
   var vsliceProgressEl = document.getElementById("vslice-progress");
-  var vsliceMetaEl = document.getElementById("vslice-meta");
-  var btnVslicePrev = document.getElementById("btn-vslice-prev");
-  var btnVsliceNext = document.getElementById("btn-vslice-next");
-  var vsliceCycleLabelEl = document.getElementById("vslice-cycle-label");
+  var vsliceSliceInfoVolumeEl = document.getElementById("vslice-slice-info-volume");
+  var vsliceSliceInfoViewEl = document.getElementById("vslice-slice-info-view");
+  var vsliceControlsEl = document.getElementById("vslice-controls");
+  var vsliceControlsDockEl = document.getElementById("vslice-controls-dock");
+  var vsliceVolumePickerEl = document.getElementById("vslice-volume-picker");
+  var vsliceVolBtnsKmeansEl = document.getElementById("vslice-vol-btns-kmeans");
+  var vsliceVolBtnsPcEl = document.getElementById("vslice-vol-btns-pc");
+  var vsliceVolBtnsManualEl = document.getElementById("vslice-vol-btns-manual");
+  var btnVslicePanUp = document.getElementById("btn-vslice-pan-up");
+  var btnVslicePanDown = document.getElementById("btn-vslice-pan-down");
+  var btnVslicePanLeft = document.getElementById("btn-vslice-pan-left");
+  var btnVslicePanRight = document.getElementById("btn-vslice-pan-right");
+  var btnVsliceZoomIn = document.getElementById("btn-vslice-zoom-in");
+  var btnVsliceZoomOut = document.getElementById("btn-vslice-zoom-out");
+  var btnVsliceResetView = document.getElementById("btn-vslice-reset-view");
+  var vsliceSliceContrastSlider = document.getElementById("vslice-slice-contrast");
+  var vsliceMarkerGlyphsOverlayEl = document.getElementById("vslice-marker-glyphs-overlay");
+  var VSLICE_PAN_STEP = 3;
+  var VSLICE_MARKER_ACCENT = "#c4703a";
+  var VSLICE_MARKER_GLYPH_SIZE = 15;
+  var VSLICE_MARKER_SIZE = 22;
+  var VSLICE_MARKER_SIZE_ACTIVE = 26;
+  var VSLICE_MARKER_OPACITY = 0.53;
+  var VSLICE_MARKER_LINE_WIDTH = 2.5;
+  var VSLICE_MARKER_LINE_COLOR = "#ffffff";
+  var vsliceMarkerGlyphHookWired = false;
 
   var vsliceViewer = null;
   var vsliceCatalog = [];
   var vsliceParticleCatalog = [];
   var vsliceCatalogById = {};
   var vsliceVolumeData = {};
-  var vsliceMarkers = [];
+  var vsliceAnalyzeMarkers = [];
   var vsliceMarkersByVolId = {};
   var vsliceCycleIds = [];
   var vsliceCycleIndex = 0;
@@ -32,8 +53,43 @@
   if (vsliceCanvasEl && window.CryoVolumeSliceCanvas) {
     vsliceViewer = new CryoVolumeSliceCanvas({
       canvas: vsliceCanvasEl,
-      hintEl: vsliceHintEl
+      onViewChange: function() { vsliceUpdateSliceInfo(); }
     });
+  }
+
+  function vsliceFormatSliceArrayInfo(info) {
+    if (!info || !info.d) return "—";
+    var centre = "[" + info.ix + ", " + info.iy + ", " + info.iz + "]";
+    var base = String(info.d) + "³ array · centre " + centre;
+    if (info.orthogonal) {
+      return base
+        + " · " + info.orthogonal.label
+        + " · " + info.orthogonal.fixedAxis + "=" + info.orthogonal.fixedIndex
+        + " · " + info.span + " vox span";
+    }
+    var n = info.normal || [0, 0, 0];
+    return base
+      + " · normal [" + n[0] + ", " + n[1] + ", " + n[2] + "]"
+      + " · " + info.span + " vox span";
+  }
+
+  function vsliceUpdateSliceInfo() {
+    var volId = vsliceCycleIds[vsliceCycleIndex] || "";
+    if (vsliceSliceInfoVolumeEl) {
+      if (!volId) {
+        vsliceSliceInfoVolumeEl.textContent = "No volume loaded";
+      } else {
+        vsliceSliceInfoVolumeEl.textContent = vsliceCatalogTitle(volId);
+      }
+    }
+    if (vsliceSliceInfoViewEl) {
+      if (!vsliceViewer || !vsliceViewer.vol) {
+        vsliceSliceInfoViewEl.textContent = "—";
+        return;
+      }
+      var info = vsliceViewer.getViewInfo();
+      vsliceSliceInfoViewEl.textContent = vsliceFormatSliceArrayInfo(info);
+    }
   }
 
   function setVsliceStatus(msg, busy) {
@@ -46,9 +102,128 @@
     return entry && entry.title ? entry.title : volId;
   }
 
-  function vsliceSyncNavButtons() {
-    if (btnVslicePrev) btnVslicePrev.disabled = vsliceCycleIds.length <= 1;
-    if (btnVsliceNext) btnVsliceNext.disabled = vsliceCycleIds.length <= 1;
+  function vsliceVolButtonLabel(entry) {
+    if (!entry) return "";
+    var marker = vsliceMarkersByVolId[entry.id];
+    if (marker && marker.label) return marker.label;
+    if (entry.kind === "kmeans") return "K" + String(Number(entry.cluster_label) + 1);
+    if (entry.kind === "pc") {
+      return "PC" + String(entry.pc) + "·" + String(Number(entry.sample_index) + 1);
+    }
+    if (entry.kind === "particle") {
+      for (var pi = 0; pi < vsliceParticleCatalog.length; pi++) {
+        if (vsliceParticleCatalog[pi].id === entry.id) {
+          return vsliceManualVolumeLetter(pi);
+        }
+      }
+    }
+    return entry.id;
+  }
+
+  function vsliceManualVolumeLetter(index) {
+    var n = Number(index) + 1;
+    if (!isFinite(n) || n < 1) return "A";
+    var s = "";
+    while (n > 0) {
+      var rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  function vsliceParticleMarkers() {
+    var markers = [];
+    for (var i = 0; i < vsliceParticleCatalog.length; i++) {
+      var entry = vsliceParticleCatalog[i];
+      if (entry.row == null || !isFinite(Number(entry.row))) continue;
+      markers.push({
+        vol_id: entry.id,
+        plot_row: Number(entry.row),
+        label: vsliceManualVolumeLetter(i),
+        kind: "particle"
+      });
+    }
+    return markers;
+  }
+
+  function vsliceAllMarkers() {
+    return vsliceAnalyzeMarkers.concat(vsliceParticleMarkers());
+  }
+
+  function vsliceRefreshMarkersByVolId() {
+    vsliceMarkersByVolId = {};
+    var all = vsliceAllMarkers();
+    for (var i = 0; i < all.length; i++) {
+      vsliceMarkersByVolId[all[i].vol_id] = all[i];
+    }
+  }
+
+  function vsliceFillVolumeButtonColumn(colEl, colWrap, entries, activeId) {
+    if (!colEl) return;
+    colEl.innerHTML = "";
+    if (colWrap) colWrap.setAttribute("data-empty", entries.length ? "false" : "true");
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-secondary cryo-vslice-vol-btn";
+      if (entry.id === activeId) btn.classList.add("cryo-vslice-vol-btn--active");
+      btn.textContent = vsliceVolButtonLabel(entry);
+      btn.title = vsliceCatalogTitle(entry.id);
+      btn.setAttribute("data-vol-id", entry.id);
+      btn.setAttribute("aria-pressed", entry.id === activeId ? "true" : "false");
+      btn.addEventListener("click", function() {
+        vsliceSelectVolume(this.getAttribute("data-vol-id"));
+      });
+      colEl.appendChild(btn);
+    }
+  }
+
+  function vsliceSyncVolumePicker() {
+    var km = [];
+    var pc = [];
+    var manual = vsliceParticleCatalog.slice();
+    for (var i = 0; i < vsliceCatalog.length; i++) {
+      var entry = vsliceCatalog[i];
+      if (entry.kind === "kmeans") km.push(entry);
+      else if (entry.kind === "pc") pc.push(entry);
+    }
+    var activeId = vsliceCycleIds[vsliceCycleIndex] || "";
+    vsliceFillVolumeButtonColumn(
+      vsliceVolBtnsKmeansEl,
+      vsliceVolBtnsKmeansEl && vsliceVolBtnsKmeansEl.parentElement,
+      km,
+      activeId
+    );
+    vsliceFillVolumeButtonColumn(
+      vsliceVolBtnsPcEl,
+      vsliceVolBtnsPcEl && vsliceVolBtnsPcEl.parentElement,
+      pc,
+      activeId
+    );
+    vsliceFillVolumeButtonColumn(
+      vsliceVolBtnsManualEl,
+      vsliceVolBtnsManualEl && vsliceVolBtnsManualEl.parentElement,
+      manual,
+      activeId
+    );
+    if (vsliceVolumePickerEl) {
+      vsliceVolumePickerEl.hidden = !(km.length || pc.length || manual.length);
+    }
+  }
+
+  function vsliceSelectVolume(volId) {
+    volId = String(volId || "");
+    if (!volId) return;
+    vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
+    if (vsliceCycleIndex < 0) {
+      vsliceRebuildCycleIds();
+      vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
+    }
+    if (vsliceCycleIndex < 0) return;
+    vsliceShowVolumeId(volId);
+    vsliceSyncVolumePicker();
   }
 
   function vsliceRebuildCycleIds() {
@@ -61,30 +236,28 @@
     }
     if (!vsliceCycleIds.length) {
       vsliceCycleIndex = 0;
-      vsliceSyncNavButtons();
-      if (vsliceCycleLabelEl) vsliceCycleLabelEl.textContent = "No volumes loaded";
+      vsliceSyncVolumePicker();
       return;
     }
     vsliceCycleIndex = Math.min(vsliceCycleIndex, vsliceCycleIds.length - 1);
-    vsliceSyncNavButtons();
+    vsliceSyncVolumePicker();
   }
 
   function vsliceUpdateVolumeLabels(volId) {
-    if (vsliceMetaEl) {
-      vsliceMetaEl.hidden = false;
-      var pos = vsliceCycleIds.length ? (vsliceCycleIndex + 1) + "/" + vsliceCycleIds.length : "";
-      vsliceMetaEl.textContent = (pos ? pos + " · " : "") + vsliceCatalogTitle(volId);
-    }
-    if (vsliceCycleLabelEl && vsliceCycleIds.length) {
-      vsliceCycleLabelEl.textContent =
-        (vsliceCycleIndex + 1) + "/" + vsliceCycleIds.length + " · " + vsliceCatalogTitle(volId);
-    }
+    vsliceUpdateSliceInfo();
+    vsliceSyncVolumePicker();
+  }
+
+  function vsliceShowSliceControls(show) {
+    if (vsliceControlsDockEl) vsliceControlsDockEl.hidden = !show;
+    if (vsliceControlsEl) vsliceControlsEl.hidden = false;
   }
 
   function vsliceRenderVolume(volId) {
     var blob = vsliceVolumeData[volId];
     if (!blob || !blob.volume_b64 || !blob.D) return;
     if (vsliceViewportEl) vsliceViewportEl.hidden = false;
+    vsliceShowSliceControls(true);
     if (vsliceViewer) {
       vsliceViewer.loadVolume(blob.volume_b64, Number(blob.D));
     }
@@ -148,11 +321,9 @@
       .then(function(res) {
         if (myGen !== vsliceLoadGeneration) return;
         if (!res.ok) return;
-        vsliceMarkers = res.j.markers || [];
-        vsliceMarkersByVolId = {};
-        for (var mi = 0; mi < vsliceMarkers.length; mi++) {
-          vsliceMarkersByVolId[vsliceMarkers[mi].vol_id] = vsliceMarkers[mi];
-        }
+        vsliceAnalyzeMarkers = res.j.markers || [];
+        vsliceRefreshMarkersByVolId();
+        vsliceSyncVolumePicker();
         vsliceWhenScatterReady(function() {
           if (myGen === vsliceLoadGeneration) vsliceSyncMarkerOverlay();
         });
@@ -227,6 +398,82 @@
     return {x: Number(x), y: Number(y)};
   }
 
+  function vsliceDataToPlotStackXY(dataX, dataY) {
+    var fl = gd && gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.yaxis || !vsliceMarkerGlyphsOverlayEl || !gd) return null;
+    var plotArea = gd.querySelector(".nsewdrag");
+    if (!plotArea) return null;
+    var plotRect = plotArea.getBoundingClientRect();
+    var stackEl = vsliceMarkerGlyphsOverlayEl.parentElement;
+    if (!stackEl) return null;
+    var stackRect = stackEl.getBoundingClientRect();
+    var xr = fl.xaxis.range;
+    var yr = fl.yaxis.range;
+    if (!xr || xr.length < 2 || !yr || yr.length < 2) return null;
+    if (xr[1] === xr[0] || yr[1] === yr[0]) return null;
+    var fracX = (dataX - xr[0]) / (xr[1] - xr[0]);
+    var fracY = (yr[1] - dataY) / (yr[1] - yr[0]);
+    return [
+      plotRect.left - stackRect.left + fracX * plotRect.width,
+      plotRect.top - stackRect.top + fracY * plotRect.height
+    ];
+  }
+
+  function vsliceClearMarkerGlyphOverlay() {
+    if (vsliceMarkerGlyphsOverlayEl) vsliceMarkerGlyphsOverlayEl.innerHTML = "";
+  }
+
+  function vsliceSyncMarkerGlyphOverlay() {
+    vsliceClearMarkerGlyphOverlay();
+    if (!vsliceMarkerGlyphsOverlayEl || !gd || !gd._fullLayout) return;
+    var trIdx = vsliceFindMarkerTraceIndex();
+    if (trIdx == null || !gd.data || !gd.data[trIdx]) {
+      vsliceMarkerGlyphsOverlayEl.setAttribute("aria-hidden", "true");
+      return;
+    }
+    var tr = gd.data[trIdx];
+    var xs = tr.x || [];
+    var n = xs.length;
+    if (!n) {
+      vsliceMarkerGlyphsOverlayEl.setAttribute("aria-hidden", "true");
+      return;
+    }
+    vsliceMarkerGlyphsOverlayEl.setAttribute("aria-hidden", "false");
+    var fontSize = VSLICE_MARKER_GLYPH_SIZE;
+    if (tr.textfont && typeof tr.textfont.size === "number" && isFinite(tr.textfont.size)) {
+      fontSize = tr.textfont.size;
+    }
+    for (var gi = 0; gi < n; gi++) {
+      var lab = "";
+      if (tr.text && tr.text[gi] != null) lab = String(tr.text[gi]);
+      if (!lab) continue;
+      var pt = vsliceDataToPlotStackXY(xs[gi], tr.y[gi]);
+      if (!pt) continue;
+      var volId = vsliceVisibleMarkerVolIds[gi] || "";
+      var marker = volId ? vsliceMarkersByVolId[volId] : null;
+      var isManual = marker && marker.kind === "particle";
+      var glyph = document.createElement("span");
+      glyph.className = "cryo-explorer-grid-letter-glyph "
+        + (isManual ? "cryo-vslice-manual-volume-glyph" : "cryo-vslice-analyze-volume-glyph");
+      glyph.style.left = pt[0].toFixed(2) + "px";
+      glyph.style.top = pt[1].toFixed(2) + "px";
+      glyph.style.fontSize = fontSize + "px";
+      glyph.style.color = "#ffffff";
+      glyph.textContent = lab;
+      vsliceMarkerGlyphsOverlayEl.appendChild(glyph);
+    }
+  }
+
+  function vsliceWireMarkerGlyphOverlayHook() {
+    if (vsliceMarkerGlyphHookWired || !gd) return;
+    vsliceMarkerGlyphHookWired = true;
+    gd.on("plotly_afterplot", function() {
+      if (vsliceMarkerRestyleGuard) return;
+      vsliceSyncMarkerGlyphOverlay();
+    });
+    gd.on("plotly_relayout", vsliceSyncMarkerGlyphOverlay);
+  }
+
   function vsliceFindMarkerTraceIndex() {
     if (!gd || !gd.data) return null;
     for (var i = 0; i < gd.data.length; i++) {
@@ -241,32 +488,40 @@
     var existing = vsliceFindMarkerTraceIndex();
     if (existing != null) {
       vsliceMarkerTraceIndex = existing;
+      vsliceWireMarkerGlyphOverlayHook();
       return;
     }
     vsliceMarkerTraceIndex = gd.data ? gd.data.length : 0;
     Plotly.addTraces(gd, [{
-      type: "scattergl",
+      type: "scatter",
       x: [],
       y: [],
-      mode: "markers+text",
+      mode: "markers",
       text: [],
-      textposition: "top center",
-      textfont: {size: 11, color: "#243b53", family: "Barlow, sans-serif"},
+      textfont: {
+        size: VSLICE_MARKER_GLYPH_SIZE,
+        color: "#ffffff",
+        family: "Georgia, 'Times New Roman', serif"
+      },
+      selectedpoints: null,
+      unselected: { marker: { opacity: 1 }, textfont: { opacity: 1 } },
       marker: {
-        size: 13,
-        color: "rgba(196, 112, 58, 0.22)",
-        line: {width: 1.5, color: "#c4703a"},
-        opacity: 1
+        size: VSLICE_MARKER_SIZE,
+        opacity: VSLICE_MARKER_OPACITY,
+        color: VSLICE_MARKER_ACCENT,
+        line: { width: VSLICE_MARKER_LINE_WIDTH, color: VSLICE_MARKER_LINE_COLOR }
       },
       hoverinfo: "text",
       showlegend: false,
       meta: {cdrgnVsliceMarker: true}
     }]);
+    vsliceWireMarkerGlyphOverlayHook();
   }
 
   function vsliceSyncMarkerOverlay() {
     if (vsliceMarkerRestyleGuard) return;
-    if (!vsliceMarkers.length || !gd || !plotHasScatterData || !plotHasScatterData()) return;
+    var markers = vsliceAllMarkers();
+    if (!markers.length || !gd || !plotHasScatterData || !plotHasScatterData()) return;
     if (typeof buildTraceMap === "function") buildTraceMap();
     vsliceEnsureMarkerTrace();
     if (vsliceMarkerTraceIndex == null) return;
@@ -276,10 +531,10 @@
     var texts = [];
     var sizes = [];
     var fills = [];
-    var lineWidths = [];
+    var opacities = [];
     vsliceVisibleMarkerVolIds = [];
-    for (var i = 0; i < vsliceMarkers.length; i++) {
-      var m = vsliceMarkers[i];
+    for (var i = 0; i < markers.length; i++) {
+      var m = markers[i];
       if (m.plot_row == null) continue;
       var xy = vslicePlotRowToScatterXY(m.plot_row);
       if (!xy) continue;
@@ -288,14 +543,15 @@
       xs.push(xy.x);
       ys.push(xy.y);
       texts.push(m.label || "");
-      sizes.push(isActive ? 18 : 13);
-      fills.push(isActive ? "rgba(196, 112, 58, 0.55)" : "rgba(196, 112, 58, 0.22)");
-      lineWidths.push(isActive ? 2.5 : 1.5);
+      sizes.push(isActive ? VSLICE_MARKER_SIZE_ACTIVE : VSLICE_MARKER_SIZE);
+      fills.push(isActive ? VSLICE_MARKER_ACCENT : "rgba(0,0,0,0)");
+      opacities.push(isActive ? 0.88 : VSLICE_MARKER_OPACITY);
     }
     try {
       vsliceMarkerRestyleGuard = true;
       if (!xs.length) {
         Plotly.restyle(gd, {x: [[]], y: [[]], text: [[]]}, [vsliceMarkerTraceIndex]);
+        vsliceSyncMarkerGlyphOverlay();
         return;
       }
       Plotly.restyle(gd, {
@@ -304,8 +560,13 @@
         text: [texts],
         "marker.size": [sizes],
         "marker.color": [fills],
-        "marker.line.width": [lineWidths]
+        "marker.opacity": [opacities],
+        "marker.line.width": [VSLICE_MARKER_LINE_WIDTH],
+        "marker.line.color": [VSLICE_MARKER_LINE_COLOR],
+        selectedpoints: [null],
+        "unselected.marker.opacity": [1]
       }, [vsliceMarkerTraceIndex]);
+      vsliceSyncMarkerGlyphOverlay();
     } catch (err) {
       vsliceMarkerTraceIndex = null;
     } finally {
@@ -354,7 +615,11 @@
       vsliceRebuildCycleIds();
       vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
     }
-    vsliceSyncNavButtons();
+    vsliceRefreshMarkersByVolId();
+    vsliceSyncVolumePicker();
+    vsliceWhenScatterReady(function() {
+      vsliceSyncMarkerOverlay();
+    });
     vsliceRenderVolume(volId);
   }
 
@@ -392,7 +657,7 @@
           return;
         }
         vsliceAddDecodedParticle(res.j);
-        setVsliceStatus("Added to volume list — use Prev / Next to browse.", false);
+        setVsliceStatus("Added to volume list — select it in the Manual column.", false);
       })
       .catch(function() {
         if (myGen === vsliceDecodeGeneration) {
@@ -422,9 +687,7 @@
       if (vsliceMarkerTraceIndex != null && pt.curveNumber === vsliceMarkerTraceIndex) {
         var volId = vsliceVolIdForMarkerIndex(pt.pointIndex);
         if (volId) {
-          vsliceCycleIndex = vsliceCycleIds.indexOf(volId);
-          if (vsliceCycleIndex < 0) vsliceCycleIndex = 0;
-          vsliceShowVolumeId(volId);
+          vsliceSelectVolume(volId);
         }
         return;
       }
@@ -452,8 +715,11 @@
     });
     gd.on("plotly_afterplot", function() {
       if (vsliceMarkerRestyleGuard) return;
-      if (!vsliceMarkers.length) return;
-      if (vsliceFindMarkerTraceIndex() != null) return;
+      if (!vsliceAllMarkers().length) return;
+      if (vsliceFindMarkerTraceIndex() != null) {
+        vsliceSyncMarkerGlyphOverlay();
+        return;
+      }
       vsliceMarkerTraceIndex = null;
       vsliceSyncMarkerOverlay();
     });
@@ -475,13 +741,13 @@
         }
         var j = res.j;
         vsliceCatalog = j.catalog || [];
-        vsliceMarkers = [];
-        vsliceMarkersByVolId = {};
+        vsliceAnalyzeMarkers = [];
         vsliceCatalogById = {};
         for (var i = 0; i < vsliceCatalog.length; i++) {
           vsliceCatalogById[vsliceCatalog[i].id] = vsliceCatalog[i];
         }
         vsliceRebuildCycleIds();
+        vsliceRefreshMarkersByVolId();
         if (!vsliceCycleIds.length) {
           setVsliceStatus(
             "No k-means or PC volumes under analyze." + String(vsliceAnalyzeEpoch)
@@ -502,7 +768,7 @@
           });
           vsliceLoadAnalyzeMarkers(myGen);
           setVsliceStatus(
-            "Use Prev / Next or click a plot label to browse volumes.",
+            "Click a volume button or a plot label to browse.",
             false
           );
         });
@@ -514,18 +780,37 @@
       });
   }
 
-  function vsliceStepCycle(delta) {
-    if (!vsliceCycleIds.length) return;
-    vsliceCycleIndex = (vsliceCycleIndex + delta + vsliceCycleIds.length) % vsliceCycleIds.length;
-    vsliceShowVolumeId(vsliceCycleIds[vsliceCycleIndex]);
+  function vsliceSyncSliceContrastFromSlider() {
+    if (!vsliceViewer || !vsliceSliceContrastSlider) return;
+    vsliceViewer.setContrastLevel(Number(vsliceSliceContrastSlider.value));
   }
 
-  if (btnVslicePrev) {
-    btnVslicePrev.addEventListener("click", function() { vsliceStepCycle(-1); });
+  if (vsliceSliceContrastSlider) {
+    vsliceSliceContrastSlider.addEventListener("input", vsliceSyncSliceContrastFromSlider);
+    vsliceSyncSliceContrastFromSlider();
   }
-  if (btnVsliceNext) {
-    btnVsliceNext.addEventListener("click", function() { vsliceStepCycle(1); });
+
+  function vsliceWirePadButton(btn, action) {
+    if (!btn || !vsliceViewer) return;
+    btn.addEventListener("click", function() {
+      if (!vsliceViewer.vol) return;
+      action();
+    });
   }
+
+  vsliceWirePadButton(btnVslicePanUp, function() { vsliceViewer.panBy(0, VSLICE_PAN_STEP); });
+  vsliceWirePadButton(btnVslicePanDown, function() { vsliceViewer.panBy(0, -VSLICE_PAN_STEP); });
+  vsliceWirePadButton(btnVslicePanLeft, function() { vsliceViewer.panBy(VSLICE_PAN_STEP, 0); });
+  vsliceWirePadButton(btnVslicePanRight, function() { vsliceViewer.panBy(-VSLICE_PAN_STEP, 0); });
+  vsliceWirePadButton(btnVsliceZoomIn, function() { vsliceViewer.zoomIn(); });
+  vsliceWirePadButton(btnVsliceZoomOut, function() { vsliceViewer.zoomOut(); });
+  if (btnVsliceResetView) {
+    btnVsliceResetView.addEventListener("click", function() {
+      if (vsliceViewer && vsliceViewer.vol) vsliceViewer.resetView();
+    });
+  }
+
+  vsliceUpdateSliceInfo();
 
   if (vsliceCanvasEl && window.CryoResizeObserverUtils) {
     window.CryoResizeObserverUtils.observeResize([vsliceCanvasEl], function() {

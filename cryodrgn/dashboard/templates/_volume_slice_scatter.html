@@ -3,11 +3,12 @@
   <div class="cryo-explorer-menu-scroll">
     <div class="cryo-dash-lead">
       K-means and PC volumes from <code>analyze</code> load in parallel on startup.
-      Labelled markers on the scatterplot show each volume — click a marker or use
-      <strong>Prev</strong> / <strong>Next</strong> to browse.
+      Labelled markers on the scatterplot show each volume — click a marker or a
+      volume button in the right panel to browse.
       <strong>Double-click</strong> a scatter point to GPU-decode that particle and add it to the list.
       Choose axes and a colour covariate below to explore the latent landscape.
-      <p>Drag on the slice to rotate, right-drag to pan, and scroll to zoom.</p>
+      Drag on the slice to rotate the cutting plane. Use the arrow pad below the
+      slice to move the plane within the volume; centre buttons zoom the slice field.
     </div>
     <div class="card cryo-dash-controls" id="scatter-controls-card">
       <fieldset>
@@ -29,6 +30,8 @@
     style="color:var(--accent,#c4703a);"></p>
   <div class="cryo-plotly-stack" id="scatter-plot-stack">
     <div id="scatter" class="cryo-plotly-graph-host"></div>
+    <div id="vslice-marker-glyphs-overlay"
+      class="cryo-explorer-grid-letter-glyphs-overlay" aria-hidden="true"></div>
     <div id="scatter-region-chips-overlay" class="cryo-scatter-region-chips-overlay" aria-hidden="true"></div>
     <div id="box-select-tooltip" class="cryo-box-select-tooltip" hidden></div>
     <div id="scatter-rendering-overlay"

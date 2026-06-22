@@ -4,31 +4,77 @@
 <div class="cryo-dash-montage-scroll">
 <div id="montage-actions" class="cryo-explorer-montage-actions">
   <section class="cryo-explorer-panel-section cryo-vslice-panel-section" aria-labelledby="vslice-panel-heading">
-    <div class="cryo-explorer-panel-shell">
-      <div class="cryo-explorer-panel-header">
+      <div class="cryo-explorer-panel-shell cryo-vslice-panel-shell">
+      <div class="cryo-vslice-panel-top">
         <h3 id="vslice-panel-heading" class="cryo-vslice-panel-heading">Volume slice viewer</h3>
+        <div id="vslice-volume-picker" class="cryo-vslice-volume-picker" hidden>
+          <div class="cryo-vslice-volume-picker-scroll" id="vslice-volume-picker-scroll">
+            <div class="cryo-vslice-volume-picker-grid" role="group" aria-label="Available volumes">
+              <div class="cryo-vslice-volume-col" data-provenance="kmeans">
+                <div class="cryo-vslice-volume-col-head">k-means</div>
+                <div class="cryo-vslice-volume-col-btns" id="vslice-vol-btns-kmeans"></div>
+              </div>
+              <div class="cryo-vslice-volume-col" data-provenance="pc">
+                <div class="cryo-vslice-volume-col-head">PC</div>
+                <div class="cryo-vslice-volume-col-btns" id="vslice-vol-btns-pc"></div>
+              </div>
+              <div class="cryo-vslice-volume-col" data-provenance="manual">
+                <div class="cryo-vslice-volume-col-head">Manual</div>
+                <div class="cryo-vslice-volume-col-btns" id="vslice-vol-btns-manual"></div>
+              </div>
+            </div>
+          </div>
+        </div>
         <p id="vslice-status" class="cryo-dash-legend-note cryo-vslice-status" aria-live="polite">
           Loading analyze volumes…
         </p>
-        <div class="cryo-vslice-cycle-row">
-          <span id="vslice-cycle-label" class="cryo-vslice-cycle-label">—</span>
-          <button type="button" class="btn btn-secondary cryo-vslice-nav-btn" id="btn-vslice-prev"
-            disabled aria-label="Previous volume">◀ Prev</button>
-          <button type="button" class="btn btn-secondary cryo-vslice-nav-btn" id="btn-vslice-next"
-            disabled aria-label="Next volume">Next ▶</button>
-        </div>
       </div>
+      <div class="cryo-vslice-scroll">
       <div class="cryo-vslice-viewport" id="vslice-viewport" hidden>
         <canvas id="vslice-canvas" class="cryo-vslice-canvas" aria-label="Volume slice"></canvas>
-        <p id="vslice-hint" class="cryo-vslice-hint cryo-dash-legend-note">
-          Left-drag: rotate · Right-drag: pan · Wheel: zoom · Double-click: reset
-        </p>
+      </div>
+      <div id="vslice-slice-info" class="cryo-vslice-slice-info" aria-live="polite">
+        <p id="vslice-slice-info-volume" class="cryo-vslice-slice-info-volume">No volume loaded</p>
+        <p id="vslice-slice-info-view" class="cryo-vslice-slice-info-view">—</p>
       </div>
       <div id="vslice-progress" class="cryo-plot-rendering-overlay__track cryo-vslice-progress" role="progressbar"
         aria-valuetext="Loading volume" hidden>
         <div class="cryo-plot-rendering-overlay__indeterminate"></div>
       </div>
-      <p id="vslice-meta" class="cryo-vslice-meta cryo-dash-legend-note" hidden></p>
+      </div>
+      <div class="cryo-vslice-controls-dock" id="vslice-controls-dock" hidden>
+        <div class="cryo-vslice-controls" id="vslice-controls">
+          <div class="cryo-vslice-controls-row">
+            <div class="cryo-vslice-pad" role="group" aria-label="Slice pan and zoom">
+              <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-up"
+                aria-label="Pan up">▲</button>
+              <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-left"
+                aria-label="Pan left">◀</button>
+              <div class="cryo-vslice-pad-center">
+                <button type="button" class="btn btn-secondary cryo-vslice-pad-btn cryo-vslice-pad-btn--zoom"
+                  id="btn-vslice-zoom-in" aria-label="Zoom in">+</button>
+                <button type="button" class="btn btn-secondary cryo-vslice-pad-btn cryo-vslice-pad-btn--zoom"
+                  id="btn-vslice-zoom-out" aria-label="Zoom out">−</button>
+              </div>
+              <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-right"
+                aria-label="Pan right">▶</button>
+              <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-down"
+                aria-label="Pan down">▼</button>
+            </div>
+            <div class="cryo-vslice-slice-contrast-stack">
+              <button type="button" class="btn btn-secondary cryo-vslice-reset-btn" id="btn-vslice-reset-view"
+                aria-label="Reset slice in volume">
+                <span class="cryo-vslice-reset-btn__label">
+                  <span class="cryo-vslice-reset-btn__line">Reset</span>
+                  <span class="cryo-vslice-reset-btn__line">slice</span>
+                </span>
+              </button>
+              <input type="range" id="vslice-slice-contrast" class="cryo-vslice-contrast-slider"
+                min="0" max="100" value="50" step="1" aria-label="Slice contrast"/>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 </div>

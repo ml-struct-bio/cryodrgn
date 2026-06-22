@@ -1,8 +1,8 @@
 /**
  * Interactive single-slice viewer for decoded cryoDRGN volumes.
  *
- * Left-drag rotates the cutting plane. Pan/zoom buttons translate and magnify
- * the slice within the volume cube (not the 2-D canvas viewport).
+ * Left-drag rotates the cutting plane. Pan translates within the plane.
+ * Zoom (+/−) steps the plane along its normal through the volume.
  */
 (function (global) {
   "use strict";
@@ -41,7 +41,6 @@
     return c0 * (1 - zd) + c1 * zd;
   }
 
-  /** 3×3 rotation: Ry(yaw) then Rx(pitch). */
   function rotationMatrix(yaw, pitch) {
     var cy = Math.cos(yaw);
     var sy = Math.sin(yaw);
@@ -76,6 +75,7 @@
   var VSLICE_GEORGIA_CAP_HEIGHT_EM = 0.715;
   var VSLICE_MONTAGE_PAPER = "#faf8f4";
   var VSLICE_MONTAGE_LABEL_COLOR = "#243b53";
+  var VSLICE_DEPTH_STEP = 3;
 
   function VolumeSliceCanvas(opts) {
     this.canvas = opts.canvas;
@@ -93,8 +93,8 @@
     /** In-plane translation of the cutting plane (voxel units, plane-local axes). */
     this.slicePanU = 0;
     this.slicePanV = 0;
-    /** Magnification within the cutting plane (>1 zooms into the volume). */
-    this.sliceZoom = 1;
+    /** Offset of the slice centre along the plane normal (voxel units). */
+    this.sliceDepth = 0;
     this.dragMode = null;
     this.lastX = 0;
     this.lastY = 0;
@@ -109,7 +109,7 @@
     this.pitch = 0;
     this.slicePanU = 0;
     this.slicePanV = 0;
-    this.sliceZoom = 1;
+    this.sliceDepth = 0;
   };
 
   VolumeSliceCanvas.prototype._syncPrimaryLayer = function () {
@@ -190,8 +190,13 @@
   };
 
   VolumeSliceCanvas.prototype._drawCellChrome = function (ctx, cell, layer) {
-    ctx.fillStyle = VSLICE_MONTAGE_PAPER;
+    ctx.fillStyle = layer && layer.cellBg ? layer.cellBg : VSLICE_MONTAGE_PAPER;
     ctx.fillRect(cell.x0, cell.y0, cell.cellW, cell.blockH);
+    if (layer && layer.cellBorder) {
+      ctx.strokeStyle = layer.cellBorder;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cell.x0 + 1, cell.y0 + 1, cell.cellW - 2, cell.blockH - 2);
+    }
     ctx.fillStyle = "#e8ecf1";
     ctx.fillRect(cell.imgX, cell.imgY, cell.imgSize, cell.imgSize);
     if (layer) {
@@ -244,9 +249,6 @@
     var offX = this.slicePanU * t0x + this.slicePanV * t1x;
     var offY = this.slicePanU * t0y + this.slicePanV * t1y;
     var offZ = this.slicePanU * t0z + this.slicePanV * t1z;
-    var cx = center + offX;
-    var cy = center + offY;
-    var cz = center + offZ;
     var nx = R[0][2];
     var ny = R[1][2];
     var nz = R[2][2];
@@ -254,6 +256,9 @@
     nx /= nlen;
     ny /= nlen;
     nz /= nlen;
+    var cx = center + offX + this.sliceDepth * nx;
+    var cy = center + offY + this.sliceDepth * ny;
+    var cz = center + offZ + this.sliceDepth * nz;
     var ix = Math.round(cx);
     var iy = Math.round(cy);
     var iz = Math.round(cz);
@@ -281,14 +286,43 @@
       nx: nx,
       ny: ny,
       nz: nz,
-      span: Math.max(1, Math.round((2 * center) / this.sliceZoom)),
+      span: Math.max(1, Math.round(2 * center)),
       orthogonal: orth,
       R: R,
-      invZoom: 1 / this.sliceZoom,
       offX: offX,
       offY: offY,
       offZ: offZ,
     };
+  };
+
+  VolumeSliceCanvas.prototype._clampSliceDepth = function () {
+    if (!this.layers.length) return;
+    var d = this.layers[0].d;
+    var center = (d - 1) / 2;
+    var R = rotationMatrix(this.yaw, this.pitch);
+    var offX = this.slicePanU * R[0][0] + this.slicePanV * R[0][1];
+    var offY = this.slicePanU * R[1][0] + this.slicePanV * R[1][1];
+    var offZ = this.slicePanU * R[2][0] + this.slicePanV * R[2][1];
+    var nx = R[0][2];
+    var ny = R[1][2];
+    var nz = R[2][2];
+    var lo = -Infinity;
+    var hi = Infinity;
+    function axisInterval(off, n) {
+      if (Math.abs(n) < 1e-8) return;
+      var dLo = (0 - center - off) / n;
+      var dHi = ((d - 1) - center - off) / n;
+      lo = Math.max(lo, Math.min(dLo, dHi));
+      hi = Math.min(hi, Math.max(dLo, dHi));
+    }
+    axisInterval(offX, nx);
+    axisInterval(offY, ny);
+    axisInterval(offZ, nz);
+    if (!isFinite(lo) || !isFinite(hi) || lo > hi) {
+      this.sliceDepth = 0;
+      return;
+    }
+    this.sliceDepth = clamp(this.sliceDepth, lo, hi);
   };
 
   VolumeSliceCanvas.prototype.getViewInfo = function () {
@@ -326,10 +360,14 @@
     this.scheduleRecompute();
   };
 
-  /** Zoom the cutting plane within the volume. */
+  /** Step the cutting plane along its normal (+factor moves forward). */
   VolumeSliceCanvas.prototype.zoomBy = function (factor) {
     if (!this.layers.length) return;
-    this.sliceZoom = clamp(this.sliceZoom * factor, 0.35, 12);
+    var f = Number(factor);
+    if (!isFinite(f) || f === 0) return;
+    var sign = f >= 1 ? 1 : -1;
+    this.sliceDepth += sign * VSLICE_DEPTH_STEP;
+    this._clampSliceDepth();
     this.scheduleRecompute();
   };
 
@@ -356,6 +394,8 @@
         id: String(spec.id || ""),
         label: String(spec.label || ""),
         manual: !!spec.manual,
+        cellBg: spec.cellBg || null,
+        cellBorder: spec.cellBorder || null,
         d: d,
         vol: decodeFloat32Volume(spec.b64, d),
         sliceData: null,
@@ -401,10 +441,9 @@
       var center = geom.center;
       var scale = center;
       var R = geom.R;
-      var invZoom = geom.invZoom;
-      var offX = geom.offX;
-      var offY = geom.offY;
-      var offZ = geom.offZ;
+      var cx = geom.cx;
+      var cy = geom.cy;
+      var cz = geom.cz;
       if (!layer.sliceData || layer.sliceData.length !== d * d) {
         layer.sliceData = new Float32Array(d * d);
       }
@@ -412,11 +451,11 @@
       var maxV = -Infinity;
       for (var j = 0; j < d; j++) {
         for (var i = 0; i < d; i++) {
-          var u = ((i - center) / scale) * invZoom;
-          var v = ((j - center) / scale) * invZoom;
-          var px = center + offX + scale * (R[0][0] * u + R[0][1] * v);
-          var py = center + offY + scale * (R[1][0] * u + R[1][1] * v);
-          var pz = center + offZ + scale * (R[2][0] * u + R[2][1] * v);
+          var u = (i - center) / scale;
+          var v = (j - center) / scale;
+          var px = cx + scale * (R[0][0] * u + R[0][1] * v);
+          var py = cy + scale * (R[1][0] * u + R[1][1] * v);
+          var pz = cz + scale * (R[2][0] * u + R[2][1] * v);
           var val = trilinearSample(layer.vol, d, px, py, pz);
           var idx = j * d + i;
           layer.sliceData[idx] = val;

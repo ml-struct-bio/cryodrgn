@@ -104,6 +104,11 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    margin-top: 0;
+    gap: 0;
+  }
+  .cryo-dash-page--volume-slice-viewer .cryo-vslice-panel-section {
+    margin-bottom: 0;
   }
   .cryo-dash-page--volume-slice-viewer .cryo-vslice-panel-section,
   .cryo-dash-page--volume-slice-viewer .cryo-vslice-panel-section .cryo-explorer-panel-shell {
@@ -155,13 +160,16 @@
     min-width: 0;
     box-sizing: border-box;
     grid-row: 1;
+    margin: 0;
+    padding: 0;
+    align-self: start;
   }
   .cryo-vslice-status-slot {
     flex: 0 0 auto;
     height: 2.75rem;
     min-height: 2.75rem;
     max-height: 2.75rem;
-    margin: 0 0 0.3rem;
+    margin: 0.3rem 0 0;
     display: flex;
     align-items: flex-end;
     box-sizing: border-box;
@@ -181,9 +189,8 @@
     --cryo-vslice-vol-row-gap: 0.14rem;
     --cryo-vslice-vol-scroll-pad: 0.28rem;
     --cryo-vslice-vol-row-h: calc(var(--cryo-vslice-vol-btn-h) + 0.04rem);
-    max-height: 13%;
     min-height: 0;
-    margin: 0 0 0.3rem;
+    margin: 0;
     max-width: 100%;
     box-sizing: border-box;
   }
@@ -295,17 +302,18 @@
   }
   .cryo-vslice-controls-row {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
+    justify-content: space-between;
+    gap: 0.35rem;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
   }
   .cryo-vslice-pad {
-    width: 100%;
-    max-width: calc(2.3 * 5.75rem);
+    flex: 0 0 60%;
+    width: 60%;
+    max-width: 60%;
     aspect-ratio: 2.3 / 1;
     height: auto;
     display: grid;
@@ -314,8 +322,8 @@
     gap: 0.3rem;
     justify-content: center;
     align-items: stretch;
-    flex-shrink: 0;
     align-self: center;
+    box-sizing: border-box;
   }
   .cryo-vslice-pad-btn {
     width: 100%;
@@ -335,7 +343,7 @@
     grid-column: 2;
     grid-row: 2;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.18rem;
     width: 100%;
     height: 100%;
@@ -344,25 +352,24 @@
   #btn-vslice-pan-right { grid-column: 3; grid-row: 2; }
   #btn-vslice-pan-down { grid-column: 2; grid-row: 3; }
   .cryo-vslice-slice-contrast-stack {
-    --cryo-vslice-slider-w: calc(2.1rem * 2.3 * 1.5);
     --cryo-vslice-slider-h: calc(1.18rem * 1.5);
     --cryo-vslice-slider-thumb: calc(0.92rem * 1.5);
+    flex: 0 0 30%;
+    width: 30%;
+    max-width: 30%;
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
     gap: 0.22rem;
-    flex-shrink: 0;
     align-self: center;
-    width: min(100%, var(--cryo-vslice-slider-w));
-    max-width: 100%;
     box-sizing: border-box;
   }
   .cryo-vslice-contrast-slider {
     -webkit-appearance: none;
     appearance: none;
     width: 100%;
-    max-width: var(--cryo-vslice-slider-w);
+    max-width: none;
     height: var(--cryo-vslice-slider-h);
     margin: 0;
     padding: 0;
@@ -422,7 +429,7 @@
   }
   .cryo-vslice-reset-btn {
     width: 100%;
-    max-width: var(--cryo-vslice-slider-w);
+    max-width: none;
     min-height: calc(var(--cryo-vslice-slider-h) * 0.61);
     padding: 0.1rem 0.2rem;
     font-size: 0.72rem;
@@ -431,6 +438,15 @@
     text-align: center;
     align-self: center;
     white-space: nowrap;
+  }
+  .cryo-vslice-contrast-label {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: center;
+    color: #243b53;
+    cursor: pointer;
   }
   .cryo-dash-page--volume-slice-viewer .cryo-vslice-analyze-volume-glyph {
     font-family: Georgia, "Times New Roman", serif;

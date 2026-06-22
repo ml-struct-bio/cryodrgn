@@ -21,6 +21,7 @@
   var VSLICE_PAN_STEP = 3;
   var VSLICE_MARKER_ACCENT = "#c4703a";
   var VSLICE_MARKER_GLYPH_SIZE = 15;
+  var VSLICE_MARKER_GLYPH_SIZE_INACTIVE = VSLICE_MARKER_GLYPH_SIZE * 0.7;
   var VSLICE_MARKER_SIZE = 22;
   var VSLICE_MARKER_SIZE_ACTIVE = 26;
   var VSLICE_MARKER_OPACITY = 0.53;
@@ -286,13 +287,13 @@
         var blob = vsliceVolumeData[id];
         if (blob && blob.volume_b64) {
           var entry = vsliceCatalogById[id] || { id: id };
-          layers.push({
+          layers.push(Object.assign({
             id: id,
             b64: blob.volume_b64,
             d: blob.D,
             label: vsliceVolButtonLabel(entry),
             manual: entry.kind === "particle"
-          });
+          }, vsliceCovariateChromeLayerFields(id)));
         }
       }
       if (!layers.length) return;
@@ -436,7 +437,7 @@
     }
   }
 
-  function vslicePlotRowToScatterXY(row) {
+  function vslicePlotRowToTraceIndex(row) {
     row = Number(row);
     if (!isFinite(row) || !gd || !gd.data || !gd.data[0]) return null;
     var ti = null;
@@ -460,6 +461,68 @@
         }
       }
     }
+    return ti;
+  }
+
+  function vslicePlotRowForVolId(volId) {
+    var marker = vsliceMarkersByVolId[volId];
+    if (marker && marker.plot_row != null && isFinite(Number(marker.plot_row))) {
+      return Number(marker.plot_row);
+    }
+    var entry = vsliceCatalogById[volId];
+    if (entry && entry.row != null && isFinite(Number(entry.row))) {
+      return Number(entry.row);
+    }
+    return null;
+  }
+
+  function vsliceCovariateCellChromeForVolId(volId) {
+    if (typeof montageCellStyleContext !== "function") return null;
+    var plotRow = vslicePlotRowForVolId(volId);
+    if (plotRow == null) return null;
+    var ctx = montageCellStyleContext();
+    if (!ctx.hasColor) return null;
+    var ti = vslicePlotRowToTraceIndex(plotRow);
+    if (ti == null) return null;
+    var markerColors = ctx.markerColors;
+    if (ctx.colorMode === "discrete") {
+      var hexCol = plotlyAt(markerColors, ti);
+      var dStyles = discreteLabelMontageStyles(String(hexCol));
+      if (!dStyles.bg) return null;
+      return { bg: dStyles.bg, border: String(hexCol) };
+    }
+    var valC = plotlyAt(markerColors, ti);
+    var tCell = ctx.cmax > ctx.cmin && typeof valC === "number" && isFinite(valC)
+      ? (valC - ctx.cmin) / (ctx.cmax - ctx.cmin)
+      : 0.5;
+    var cStyles = continuousMontageStylesFromT(tCell);
+    if (!cStyles.bg) return null;
+    return {
+      bg: cStyles.bg,
+      border: cStyles.borderCss || cStyles.bg
+    };
+  }
+
+  function vsliceCovariateChromeLayerFields(volId) {
+    var chrome = vsliceCovariateCellChromeForVolId(volId);
+    if (!chrome) return {};
+    return { cellBg: chrome.bg, cellBorder: chrome.border };
+  }
+
+  function vsliceRefreshCellCovariateColors() {
+    if (!vsliceViewer || !vsliceViewer.layers || !vsliceViewer.layers.length) return;
+    for (var i = 0; i < vsliceViewer.layers.length; i++) {
+      var layer = vsliceViewer.layers[i];
+      var chrome = vsliceCovariateCellChromeForVolId(layer.id);
+      layer.cellBg = chrome ? chrome.bg : null;
+      layer.cellBorder = chrome ? chrome.border : null;
+    }
+    vsliceViewer.draw();
+  }
+
+  function vslicePlotRowToScatterXY(row) {
+    row = Number(row);
+    var ti = vslicePlotRowToTraceIndex(row);
     if (ti == null) return null;
     var tr = gd.data[0];
     var x = plotlyAt(tr.x, ti);
@@ -522,12 +585,14 @@
       var volId = vsliceVisibleMarkerVolIds[gi] || "";
       var marker = volId ? vsliceMarkersByVolId[volId] : null;
       var isManual = marker && marker.kind === "particle";
+      var isActive = volId && vsliceIsVolumeSelected(volId);
       var glyph = document.createElement("span");
       glyph.className = "cryo-explorer-grid-letter-glyph "
-        + (isManual ? "cryo-vslice-manual-volume-glyph" : "cryo-vslice-analyze-volume-glyph");
+        + (isManual ? "cryo-vslice-manual-volume-glyph" : "cryo-vslice-analyze-volume-glyph")
+        + (isActive ? "" : " cryo-vslice-volume-glyph--inactive");
       glyph.style.left = pt[0].toFixed(2) + "px";
       glyph.style.top = pt[1].toFixed(2) + "px";
-      glyph.style.fontSize = fontSize + "px";
+      glyph.style.fontSize = (isActive ? fontSize : VSLICE_MARKER_GLYPH_SIZE_INACTIVE) + "px";
       glyph.style.color = "#ffffff";
       glyph.textContent = lab;
       vsliceMarkerGlyphsOverlayEl.appendChild(glyph);
@@ -783,6 +848,7 @@
     });
     gd.on("plotly_afterplot", function() {
       if (vsliceMarkerRestyleGuard) return;
+      vsliceRefreshCellCovariateColors();
       if (!vsliceAllMarkers().length) return;
       if (vsliceFindMarkerTraceIndex() != null) {
         vsliceSyncMarkerGlyphOverlay();
@@ -793,6 +859,7 @@
     });
     vsliceWhenScatterReady(function() {
       vsliceSyncMarkerOverlay();
+      vsliceRefreshCellCovariateColors();
     });
   }
 
@@ -948,6 +1015,7 @@
       _origLoadPlot(axesChanged);
       vsliceWhenScatterReady(function() {
         vsliceSyncMarkerOverlay();
+        vsliceRefreshCellCovariateColors();
       });
     };
   }

@@ -85,7 +85,6 @@ from cryodrgn.dashboard.volume_slice_viewer import (
     analyze_volumes_batch_payload,
     analyze_volumes_catalog_payload,
     decode_volume_payload,
-    slices_from_cache_payload,
 )
 from cryodrgn.dashboard.route_helpers import (
     _EXPLORER_VOLUMES_INELIGIBLE_MSG,
@@ -601,56 +600,6 @@ def api_volume_slice_viewer_decode():
         return jsonify(error=str(err)), 400
     except Exception as err:
         logger.exception("volume slice decode failed")
-        return jsonify(error=str(err)), 500
-
-
-def api_volume_slice_viewer_slices():
-    """Re-render orthogonal slices for a cached volume (rotation / slice index)."""
-    e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return jsonify(error=_EXPLORER_VOLUMES_INELIGIBLE_MSG), 400
-    data = _request_json_dict()
-    cache_id = data.get("volume_cache_id")
-    if not cache_id or not isinstance(cache_id, str):
-        return jsonify(error="volume_cache_id is required."), 400
-    raw_row = data.get("row")
-    try:
-        row = int(raw_row)
-    except (TypeError, ValueError):
-        return jsonify(error="row must be an integer plot_df index."), 400
-
-    def _optional_int(key: str) -> int | None:
-        if key not in data or data.get(key) is None:
-            return None
-        try:
-            return int(data[key])
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{key} must be an integer.") from exc
-
-    def _optional_float(key: str, default: float = 0.0) -> float:
-        if key not in data or data.get(key) is None:
-            return default
-        try:
-            return float(data[key])
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{key} must be a number.") from exc
-
-    try:
-        payload = slices_from_cache_payload(
-            cache_id,
-            row,
-            rot_x_deg=_optional_float("rot_x_deg"),
-            rot_y_deg=_optional_float("rot_y_deg"),
-            rot_z_deg=_optional_float("rot_z_deg"),
-            slice_ix=_optional_int("slice_ix"),
-            slice_iy=_optional_int("slice_iy"),
-            slice_iz=_optional_int("slice_iz"),
-        )
-        return jsonify(payload)
-    except ValueError as err:
-        return jsonify(error=str(err)), 400
-    except Exception as err:
-        logger.exception("volume slice render failed")
         return jsonify(error=str(err)), 500
 
 

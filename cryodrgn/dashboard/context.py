@@ -167,7 +167,6 @@ EXP_REQUIRED_ENDPOINTS = frozenset(
         "api_volume_slice_viewer_analyze_volume",
         "api_volume_slice_viewer_analyze_volumes_batch",
         "api_volume_slice_viewer_decode",
-        "api_volume_slice_viewer_slices",
         "api_scatter",
         "latent_3d_page",
         "landscape_full_3d_page",

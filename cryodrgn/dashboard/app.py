@@ -98,7 +98,6 @@ _ROUTES = (
         "POST",
     ),
     ("/api/volume_slice_viewer/decode", re.api_volume_slice_viewer_decode, "POST"),
-    ("/api/volume_slice_viewer/slices", re.api_volume_slice_viewer_slices, "POST"),
     ("/api/scatter", re.api_scatter, "GET"),
     ("/latent-3d", re.latent_3d_page, "GET"),
     ("/landscape-full-3d", re.landscape_full_3d_page, "GET"),

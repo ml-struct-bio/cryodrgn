@@ -11,51 +11,17 @@ from cryodrgn.dashboard.volume_slice_viewer import (
     analyze_volumes_catalog_payload,
     discover_analyze_volume_catalog,
     discover_analyze_volume_markers,
-    orthogonal_slice_png_b64_list,
-    rotate_volume_array,
-    slices_from_cache_payload,
     volume_array_b64,
 )
 
 
 class TestVolumeSliceViewerPure:
-    def test_rotate_volume_preserves_shape(self) -> None:
-        vol = np.random.randn(16, 16, 16).astype(np.float32)
-        out = rotate_volume_array(vol, 30.0, -15.0, 45.0)
-        assert out.shape == vol.shape
-        assert out.dtype == np.float32
-
-    def test_orthogonal_slices_returns_three_pngs(self) -> None:
-        vol = np.zeros((12, 12, 12), dtype=np.float32)
-        vol[6, 6, 6] = 1.0
-        imgs = orthogonal_slice_png_b64_list(vol)
-        assert len(imgs) == 3
-        for b64 in imgs:
-            assert len(base64.standard_b64decode(b64)) > 100
-
     def test_volume_array_b64_roundtrip(self) -> None:
         vol = np.arange(8, dtype=np.float32).reshape(2, 2, 2)
         b64 = volume_array_b64(vol)
         raw = base64.standard_b64decode(b64)
         back = np.frombuffer(raw, dtype=np.float32).reshape(2, 2, 2)
         np.testing.assert_array_equal(back, vol)
-
-    def test_slices_from_cache_rotation(self) -> None:
-        from cryodrgn.dashboard import volume_slice_viewer as vsv
-
-        vol = np.zeros((10, 10, 10), dtype=np.float32)
-        vol[5, :, 5] = 1.0
-        token = "test-token"
-        vsv._SLICE_CACHE[token] = {"vol": vol, "row": 3, "t0": vsv.time.monotonic()}
-        try:
-            payload = slices_from_cache_payload(
-                token, 3, rot_y_deg=90.0, slice_ix=5, slice_iy=5, slice_iz=5
-            )
-            assert payload["ok"] is True
-            assert len(payload["images"]) == 3
-            assert payload["row"] == 3
-        finally:
-            vsv._SLICE_CACHE.pop(token, None)
 
 
 class TestVolumeSliceViewerRoutes:
@@ -198,14 +164,6 @@ class TestVolumeSliceViewerRoutes:
         )
         assert r.status_code == 400
         assert "row" in r.get_json().get("error", "").lower()
-
-    def test_slices_api_requires_cache_id(self, flask_client_volumes_eligible) -> None:
-        r = flask_client_volumes_eligible.post(
-            "/api/volume_slice_viewer/slices",
-            json={"row": 0},
-        )
-        assert r.status_code == 400
-        assert "volume_cache_id" in r.get_json().get("error", "").lower()
 
     def test_landing_lists_volume_slice_viewer(
         self, flask_client_volumes_eligible

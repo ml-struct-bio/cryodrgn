@@ -738,15 +738,15 @@
   }
   .cryo-image-grid-contrast-switch {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 0.28rem;
     flex-shrink: 0;
     margin: 0;
   }
   .cryo-image-grid-contrast-side {
     display: inline-flex;
-    align-items: center;
-    gap: 0.18rem;
+    align-items: flex-end;
+    gap: 0.306rem;
     flex-shrink: 0;
     opacity: 0.42;
     transition: opacity 0.15s ease;
@@ -770,18 +770,67 @@
     display: block;
     white-space: nowrap;
   }
+  .cryo-image-grid-contrast-picto-col {
+    position: relative;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 1rem;
+    min-height: 1.55rem;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
   .cryo-image-grid-contrast-picto {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 1rem;
     height: 1rem;
     flex-shrink: 0;
+    box-sizing: border-box;
+    border-radius: 2px;
+    overflow: hidden;
   }
   .cryo-image-grid-contrast-picto svg {
     display: block;
     width: 100%;
     height: 100%;
+  }
+  .cryo-image-grid-contrast-side--dataset .cryo-image-grid-contrast-picto::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1.21px solid #9a5b28;
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+  .cryo-image-grid-contrast-dataset-badge {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    display: block;
+    margin: 0;
+    color: #9a5b28;
+    font-size: 0.42rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: 0.01em;
+    text-align: center;
+    user-select: none;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .cryo-image-grid-contrast-dataset-badge[hidden] {
+    display: none !important;
+  }
+  .cryo-image-grid-contrast-side--dataset .cryo-image-grid-contrast-label {
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-image-grid-contrast-side--dataset {
+    opacity: 0.72;
   }
   .cryo-image-grid-contrast-switch:has(#image-grid-invert-check:not(:checked))
     .cryo-image-grid-contrast-side--lod {
@@ -802,7 +851,8 @@
   .cryo-image-grid-invert-switch {
     position: relative;
     display: inline-flex;
-    align-items: center;
+    align-items: flex-end;
+    align-self: flex-end;
     margin: 0;
     cursor: pointer;
     flex-shrink: 0;

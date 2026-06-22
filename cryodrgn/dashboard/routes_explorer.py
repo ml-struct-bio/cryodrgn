@@ -84,7 +84,7 @@ from cryodrgn.dashboard.volume_slice_viewer import (
     analyze_volume_markers_payload,
     analyze_volumes_batch_payload,
     analyze_volumes_catalog_payload,
-    decode_and_initial_slices,
+    decode_volume_payload,
     slices_from_cache_payload,
 )
 from cryodrgn.dashboard.route_helpers import (
@@ -595,7 +595,7 @@ def api_volume_slice_viewer_decode():
     except (TypeError, ValueError):
         return jsonify(error="row must be an integer plot_df index."), 400
     try:
-        payload = decode_and_initial_slices(e, row)
+        payload = decode_volume_payload(e, row)
         return jsonify(payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400

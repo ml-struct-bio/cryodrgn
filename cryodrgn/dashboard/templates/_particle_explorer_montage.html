@@ -177,11 +177,15 @@
                         <span class="cryo-image-grid-contrast-label__line">on</span>
                         <span class="cryo-image-grid-contrast-label__line">dark</span>
                       </span>
-                      <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="Light on dark">
-                        <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
-                          <rect width="16" height="16" fill="#243b53"/>
-                          <circle cx="8" cy="8" r="3.4" fill="#eef2f7"/>
-                        </svg>
+                      <span class="cryo-image-grid-contrast-picto-col">
+                        <span id="image-grid-dataset-badge-lod" class="cryo-image-grid-contrast-dataset-badge"
+                          hidden aria-hidden="true">In data</span>
+                        <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="Light on dark">
+                          <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
+                            <rect width="16" height="16" fill="#243b53"/>
+                            <circle cx="8" cy="8" r="3.4" fill="#eef2f7"/>
+                          </svg>
+                        </span>
                       </span>
                     </span>
                     <label id="image-grid-invert-wrap" class="cryo-image-grid-invert-switch"
@@ -193,11 +197,15 @@
                       </span>
                     </label>
                     <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--dol">
-                      <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="Dark on light">
-                        <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
-                          <rect width="16" height="16" fill="#e8ecf1"/>
-                          <circle cx="8" cy="8" r="3.4" fill="#3d5a80"/>
-                        </svg>
+                      <span class="cryo-image-grid-contrast-picto-col">
+                        <span id="image-grid-dataset-badge-dol" class="cryo-image-grid-contrast-dataset-badge"
+                          hidden aria-hidden="true">In data</span>
+                        <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="Dark on light">
+                          <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
+                            <rect width="16" height="16" fill="#e8ecf1"/>
+                            <circle cx="8" cy="8" r="3.4" fill="#3d5a80"/>
+                          </svg>
+                        </span>
                       </span>
                       <span class="cryo-image-grid-contrast-label" aria-hidden="true">
                         <span class="cryo-image-grid-contrast-label__line">Dark</span>
@@ -207,10 +215,10 @@
                     </span>
                   </div>
                   <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
-                    aria-label="Resample 9 images from cache" disabled>
+                    aria-label="Randomly reselect 9 grid images" disabled>
                     <span class="cryo-image-grid-resample-btn__label">
-                      <span class="cryo-image-grid-resample-btn__line">Resample 9</span>
-                      <span class="cryo-image-grid-resample-btn__line">images...</span>
+                      <span class="cryo-image-grid-resample-btn__line">Randomly reselect</span>
+                      <span class="cryo-image-grid-resample-btn__line">9 grid images</span>
                     </span>
                   </button>
                 </div>

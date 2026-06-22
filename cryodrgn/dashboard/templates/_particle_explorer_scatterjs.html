@@ -75,6 +75,10 @@
   var imageGridMenuToggle = document.getElementById("image-grid-menu-toggle");
   var imageGridToolbarControls = document.getElementById("image-grid-toolbar-controls");
   var imageGridInvertCheck = document.getElementById("image-grid-invert-check");
+  var imageGridContrastSideLod = document.querySelector(".cryo-image-grid-contrast-side--lod");
+  var imageGridContrastSideDol = document.querySelector(".cryo-image-grid-contrast-side--dol");
+  var imageGridDatasetBadgeLod = document.getElementById("image-grid-dataset-badge-lod");
+  var imageGridDatasetBadgeDol = document.getElementById("image-grid-dataset-badge-dol");
   var btnMontageResampleCache = document.getElementById("btn-montage-resample-cache");
   var montageResampleFitTimer = null;
   var imageGridMenuBody = document.getElementById("image-grid-menu-body");
@@ -401,16 +405,16 @@
     if (label) {
       var lineEls = resampleCacheLabelLineEls(label);
       if (lineEls.length >= 2) {
-        lineEls[0].textContent = "Resample " + nStr;
-        lineEls[1].textContent = "images...";
+        lineEls[0].textContent = "Randomly reselect";
+        lineEls[1].textContent = nStr + " grid images";
         lineEls[1].hidden = false;
       } else if (lineEls[0]) {
-        lineEls[0].textContent = "Resample " + nStr + " images...";
+        lineEls[0].textContent = "Randomly reselect " + nStr + " grid images";
       }
     }
     btnMontageResampleCache.setAttribute(
       "aria-label",
-      "Resample " + nStr + " images from cache"
+      "Randomly reselect " + nStr + " grid images"
     );
   }
 
@@ -824,10 +828,79 @@
   /* ---------- montage grid DOM ---------- */
   var gridEl = document.getElementById("montage-grid");
   var montageImageInvert = false;
+  var particleDatasetPolarity = null;
 
   function applyMontageImageInvert() {
     if (!gridEl) return;
     gridEl.classList.toggle("cryo-montage-grid--invert-particles", montageImageInvert);
+  }
+
+  function montageInvertForDisplayMode(mode) {
+    if (!particleDatasetPolarity) {
+      return mode === "dark_on_light";
+    }
+    return mode !== particleDatasetPolarity;
+  }
+
+  function syncMontageInvertFromToggle() {
+    if (!imageGridInvertCheck) return;
+    var mode = imageGridInvertCheck.checked ? "dark_on_light" : "light_on_dark";
+    montageImageInvert = montageInvertForDisplayMode(mode);
+    applyMontageImageInvert();
+  }
+
+  function clearParticleDatasetPolarity() {
+    particleDatasetPolarity = null;
+    if (imageGridContrastSideLod) {
+      imageGridContrastSideLod.classList.remove("cryo-image-grid-contrast-side--dataset");
+    }
+    if (imageGridContrastSideDol) {
+      imageGridContrastSideDol.classList.remove("cryo-image-grid-contrast-side--dataset");
+    }
+    if (imageGridDatasetBadgeLod) {
+      imageGridDatasetBadgeLod.hidden = true;
+      imageGridDatasetBadgeLod.setAttribute("aria-hidden", "true");
+    }
+    if (imageGridDatasetBadgeDol) {
+      imageGridDatasetBadgeDol.hidden = true;
+      imageGridDatasetBadgeDol.setAttribute("aria-hidden", "true");
+    }
+    if (imageGridInvertCheck) {
+      imageGridInvertCheck.checked = false;
+    }
+    montageImageInvert = false;
+    applyMontageImageInvert();
+  }
+
+  function applyParticleDatasetPolarity(polarity) {
+    if (!polarity) return;
+    particleDatasetPolarity = polarity;
+    if (imageGridContrastSideLod) {
+      imageGridContrastSideLod.classList.toggle(
+        "cryo-image-grid-contrast-side--dataset",
+        polarity === "light_on_dark"
+      );
+    }
+    if (imageGridContrastSideDol) {
+      imageGridContrastSideDol.classList.toggle(
+        "cryo-image-grid-contrast-side--dataset",
+        polarity === "dark_on_light"
+      );
+    }
+    if (imageGridDatasetBadgeLod) {
+      var showLod = polarity === "light_on_dark";
+      imageGridDatasetBadgeLod.hidden = !showLod;
+      imageGridDatasetBadgeLod.setAttribute("aria-hidden", showLod ? "false" : "true");
+    }
+    if (imageGridDatasetBadgeDol) {
+      var showDol = polarity === "dark_on_light";
+      imageGridDatasetBadgeDol.hidden = !showDol;
+      imageGridDatasetBadgeDol.setAttribute("aria-hidden", showDol ? "false" : "true");
+    }
+    if (imageGridInvertCheck) {
+      imageGridInvertCheck.checked = polarity === "dark_on_light";
+    }
+    syncMontageInvertFromToggle();
   }
   var montageCells = [];  /* [{img, idx, covar, cell}] */
 
@@ -1008,8 +1081,7 @@
 
   if (imageGridInvertCheck) {
     imageGridInvertCheck.addEventListener("change", function() {
-      montageImageInvert = !!this.checked;
-      applyMontageImageInvert();
+      syncMontageInvertFromToggle();
     });
   }
 
@@ -1627,6 +1699,7 @@
       }
       preloaded = null;
       imagesViewEnabled = false;
+      clearParticleDatasetPolarity();
       gridSizeSelect.disabled = true;
       setImageGridMenuOpen(false);
       lastMontageRows = [];
@@ -1963,6 +2036,9 @@
           rowsSet.add(r);
         });
         preloaded = {rows: rowsSet, rowToSrc: rowToSrc, traceMap: null};
+        if (data.particle_dataset_polarity) {
+          applyParticleDatasetPolarity(data.particle_dataset_polarity);
+        }
         if (opts.enableImages) {
           imagesViewEnabled = true;
           gridSizeSelect.disabled = false;

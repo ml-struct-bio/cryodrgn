@@ -39,8 +39,6 @@ def _polarity_from_scores(scores: list[float], *, min_score: float = 0.02) -> st
     mean_score = float(np.mean(scores))
     if mean_score >= min_score:
         return PARTICLE_POLARITY_LIGHT_ON_DARK
-    if mean_score <= -min_score:
-        return PARTICLE_POLARITY_DARK_ON_LIGHT
     return PARTICLE_POLARITY_DARK_ON_LIGHT
 
 

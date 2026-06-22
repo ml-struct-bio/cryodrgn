@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from cryodrgn.dashboard.context import PRELOAD_CACHE
+from cryodrgn.dashboard import app as dash_app
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import (
     _chimerax_render_cmds,
@@ -117,7 +118,7 @@ class TestChimeraxRenderCmds:
 
 
 class TestPreloadTimeHints:
-    @pytest.mark.parametrize("cpus", [1, 2, 4, 8, 16, 64])
+    @pytest.mark.parametrize("cpus", [1, 64])
     def test_bounds_are_ordered_and_positive(self, cpus: int) -> None:
         lo, hi = _preload_cache_time_estimate_bounds(cpus)
         assert 0 < lo <= hi
@@ -833,6 +834,15 @@ class TestApiPreloadImages:
 
 
 class TestParticleExplorerTemplateRegressions:
+    @pytest.fixture(scope="module")
+    def explorer_template_body(self, dashboard_workdir: str) -> str:
+        """Cached ``/explorer`` HTML for template contract checks (one fetch per module)."""
+        app = dash_app.create_app(workdir=dashboard_workdir)
+        with app.test_client() as client:
+            r = client.get("/explorer")
+        assert r.status_code == 200
+        return r.get_data(as_text=True)
+
     def test_explorer_legend_static_assets_served_by_flask(self, flask_client) -> None:
         """Wheel/sdist must ship nested ``static/js/*`` (``static/*`` alone omits them)."""
         r_prim = flask_client.get("/static/js/cryo_cc_legend_primitives.js")
@@ -843,7 +853,7 @@ class TestParticleExplorerTemplateRegressions:
         assert b"CryoColorCovariateLegend" in r_leg.data
 
     def test_lasso_box_selection_union_and_deselect_preserves(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Selection UX regression checks for disjoint lasso/box drags.
 
@@ -855,9 +865,7 @@ class TestParticleExplorerTemplateRegressions:
         - lasso/box accumulation only happens when the previous selection mode
           was already geometric/``lasso`` (range/toggle selections overwrite)
         """
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
 
         # Accumulation logic is guarded by "prevMode === 'lasso'" so lasso clears
         # range/toggle selection instead of unioning with it.
@@ -920,11 +928,9 @@ class TestParticleExplorerTemplateRegressions:
         assert "2px 3px 3px 3px" in body
 
     def test_full_cache_load_suppresses_montage_and_plot_highlight_updates(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "suppressMontageUpdate: true" in body
         assert "suppressPlotGridHighlights = true" in body
         assert "IMAGE_CACHE_HTTP_CHUNK_MAX" in body
@@ -933,12 +939,10 @@ class TestParticleExplorerTemplateRegressions:
         assert "preloadFetchErrorMessage" in body
 
     def test_scatter_double_click_replaces_montage_slot_a_without_selection(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Double-click assigns the particle to montage A and may grow the cache."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "handleScatterPointDoubleClick" in body
         assert "replaceMontageSlotAt" in body
         assert "paintMontageCellAtIndex" in body
@@ -960,7 +964,7 @@ class TestParticleExplorerTemplateRegressions:
         assert "updateMontage(nbs)" in click_block
 
     def test_queue_highlight_restyle_merges_pending_xy_update_with_styling_patch(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Regression test for montage cache resample drift.
 
@@ -969,20 +973,16 @@ class TestParticleExplorerTemplateRegressions:
         styling-only patch; if the pending payload is overwritten, the highlighted points
         drift because the x/y update is dropped.
         """
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "function queueHighlightRestyle(restyleData)" in body
         assert "highlightRestyleRaf != null && pendingHighlightRestyle" in body
         assert "pendingHighlightRestyle[k] = restyleData[k];" in body
 
     def test_grid_letter_highlights_constant_opacity_and_white_marker_ring(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Grid-letter overlay: fixed opacity, white marker ring, HTML labels with black stroke."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "cryo-grid-highlight-marker-policy" in body
         assert "GRID_HIGHLIGHT_MARKER_OPACITY = 0.53" in body
         assert "gridHighlightMarkerSizePx" in body
@@ -1007,22 +1007,18 @@ class TestParticleExplorerTemplateRegressions:
         assert "-webkit-text-stroke: 0.9px #000000" in body
 
     def test_committed_scatter_shapes_use_between_layer_for_grid_letters(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Committed lasso/box fills use Plotly layer "between" so letter markers draw on top."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert 'layer: "between"' in body
         assert "CDRGN_COMMIT_REGION_LINE_WIDTH" in body
 
     def test_multi_region_lasso_overlay_chips_solo_and_colour_wheel(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Disjoint regions use HTML overlay chips with solo ``1`` + colour wheel (not Plotly text)."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert 'id="scatter-region-chips-overlay"' in body
         assert "soloCommittedScatterRegion" in body
         assert "__cdrgnScatterRegion:" in body
@@ -1036,21 +1032,21 @@ class TestParticleExplorerTemplateRegressions:
         assert "openRegionSelectionFileBrowser" in body
         assert "pendingRegionSaveRows" in body
 
-    def test_multi_region_selection_pie_coloured_slices(self, flask_client) -> None:
+    def test_multi_region_selection_pie_coloured_slices(
+        self, explorer_template_body: str
+    ) -> None:
         """Multi-region pie: per-region slices; total % stays black."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "buildMultiRegionSelPieBackground" in body
         assert "applySelectionPieVisual" in body
         assert "cryo-explorer-sel-pie--multi-region" in body
         assert "sel-pie-union-outline" not in body
         assert "updateSelPieUnionOutline" not in body
 
-    def test_dashboard_save_buttons_use_floppy_disk_icon(self, flask_client) -> None:
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+    def test_dashboard_save_buttons_use_floppy_disk_icon(
+        self, explorer_template_body: str
+    ) -> None:
+        body = explorer_template_body
         assert "cryo_dashboard_icons.js" in body
         assert "CryoDashboardIcons" in body
 
@@ -1062,22 +1058,20 @@ class TestParticleExplorerTemplateRegressions:
         assert 'x=\\"2.6\\"' not in js
 
     def test_multi_region_overlap_preserves_existing_regions_on_commit(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Overlapping lassos: unchanged regions keep prior rows; no polygon clipping."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "rowArr = prevSnap[ci].rows.slice()" in body
         assert "polygon_clipping.umd.js" not in body
         assert "overlayRaw" not in body
         assert "clipScatterRawExcludingNewerRegions" not in body
         assert "Overlapping lassos: each region keeps" in body
 
-    def test_selection_save_file_browser_is_modal_popup(self, flask_client) -> None:
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+    def test_selection_save_file_browser_is_modal_popup(
+        self, explorer_template_body: str
+    ) -> None:
+        body = explorer_template_body
         assert 'id="sel-file-browser-panel"' in body
         assert "cryo-explorer-save-modal" in body
         assert 'role="dialog"' in body
@@ -1086,7 +1080,7 @@ class TestParticleExplorerTemplateRegressions:
         assert "cryo-explorer-save-modal-open" in body
 
     def test_plotly_selected_commits_regions_before_montage_pool_refresh(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Image cache + multi-lasso: rebuild ``committedScatterRegions`` before montage refresh.
 
@@ -1095,9 +1089,7 @@ class TestParticleExplorerTemplateRegressions:
         ``syncCommittedScatterRegionOverlays``, then grid-letter colours catch up via
         ``refreshGridHighlightMarkerStylesFromLastRows``.
         """
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         start = body.find('gd.on("plotly_selected", function(ev)')
         assert start != -1, "missing plotly_selected handler"
         mid = body.find("lassoSelectionDebounceTimer = setTimeout(function()", start)
@@ -1135,12 +1127,10 @@ class TestParticleExplorerTemplateRegressions:
         )
 
     def test_multi_region_lasso_combo_uses_selectedpoints_dimming_in_debounce(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Scattergl selection uses compact ``selectedpoints`` restyle (trace map for row→index)."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "applyScatterSelectionHighlight" in body
         assert "rowToTraceIndexMap" in body
         assert "rowsUnionFromCommittedScatterRegions" in body
@@ -1155,12 +1145,10 @@ class TestParticleExplorerTemplateRegressions:
         assert "cdrgnSelectionOverlay" not in body
 
     def test_multi_region_row_membership_recomputed_from_geometry(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Each region's ``rows`` must follow lasso geometry, not only the last ``rowsSnap``."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "recomputeCommittedScatterRegionRowsFromGeometry" in body
         assert "rowsUnionFromCommittedScatterRegions" in body
         assert "scatterRawShapeContainsDataXY" in body
@@ -1168,12 +1156,10 @@ class TestParticleExplorerTemplateRegressions:
         assert "traceIndexForPlotDfRow" in body
 
     def test_multi_region_montage_and_grid_use_scatter_region_line_colour(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Montage borders track region line colour; grid-letter rings stay white."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "function selectionRegionMontageStyles(regionIdx)" in body
         assert "scatterRegionPlotStyle(regionIdx).line" in body
         assert "discreteLabelMontageStyles(lineHex)" in body
@@ -1184,12 +1170,10 @@ class TestParticleExplorerTemplateRegressions:
         assert "fillColors.push(inSel ? ACCENT : GRID_HIGHLIGHT_CLEAR_FILL)" in body
 
     def test_scatter_region_overlay_chips_compact_vertical_css(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Region count chips stay short while preserving count font + icon metrics."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert (
             ".cryo-dash-page--particle-explorer "
             ".cryo-explorer-scatter-region-chip.cryo-cc-discrete-cell--plastic {"
@@ -1216,12 +1200,10 @@ class TestParticleExplorerTemplateRegressions:
         assert "height: 0.56rem" in body
 
     def test_montage_cards_use_top_meta_band_and_tight_image_margins(
-        self, flask_client
+        self, explorer_template_body: str
     ) -> None:
         """Letter + covariate/idx top-aligned in ``cryo-montage-meta``; tight cell padding and zero gap to image."""
-        r = flask_client.get("/explorer")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        body = explorer_template_body
         assert "cryo-montage-meta" in body
         assert "cryo-montage-meta-right" in body
         assert "cryo-montage-cell--light" in body

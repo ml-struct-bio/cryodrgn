@@ -1620,6 +1620,59 @@ def dashboard_smoke_trajectory(
     }
 
 
+def dashboard_smoke_volume_slice_viewer(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict | None:
+    """Volume slice viewer: scatter plot, analyze catalog, and slice canvas."""
+    base = base_url.rstrip("/")
+    page.goto(
+        f"{base}/volume-slice-viewer",
+        wait_until="domcontentloaded",
+        timeout=timeout_ms,
+    )
+    if page.locator("#vslice-canvas").count() == 0:
+        body = page.inner_text("body")
+        if "CUDA" in body or "GPU" in body or "weights" in body.lower():
+            return None
+        raise RuntimeError(
+            "volume slice viewer missing #vslice-canvas without known ineligible message"
+        )
+    scatter_info = _dashboard_smoke_wait_plot_ready(
+        page, "scatter", timeout_ms=timeout_ms
+    )
+    page.wait_for_function(
+        """() => {
+          var picker = document.getElementById('vslice-volume-picker-rows');
+          if (!picker) return false;
+          return picker.querySelectorAll('.cryo-vslice-vol-btn').length > 0;
+        }""",
+        timeout=timeout_ms,
+    )
+    page.wait_for_function(
+        """() => {
+          var viewport = document.getElementById('vslice-viewport');
+          return !!(viewport && !viewport.hidden);
+        }""",
+        timeout=timeout_ms,
+    )
+    picker_count = page.evaluate(
+        """() => {
+          var picker = document.getElementById('vslice-volume-picker-rows');
+          return picker
+            ? picker.querySelectorAll('.cryo-vslice-vol-btn').length
+            : 0;
+        }"""
+    )
+    return {
+        "scatter_points": scatter_info.get("n"),
+        "volume_picker_buttons": int(picker_count),
+        "canvas_visible": page.locator("#vslice-canvas").count() > 0,
+    }
+
+
 def dashboard_smoke_particle_explorer_panels(
     page,
     base_url: str,
@@ -1991,6 +2044,12 @@ def run_dashboard_plotly_smoke(
                 ),
             ),
             (
+                "volume_slice_viewer",
+                lambda: dashboard_smoke_volume_slice_viewer(
+                    page, base_url, timeout_ms=timeout_ms
+                ),
+            ),
+            (
                 "particle_explorer",
                 lambda: dashboard_smoke_particle_explorer(
                     page, base_url, timeout_ms=timeout_ms, cache_size=cache_size
@@ -2022,6 +2081,7 @@ def run_dashboard_plotly_smoke(
 
         skip_labels = {
             "trajectory": "trajectory (no CUDA GPU / weights)",
+            "volume_slice_viewer": "volume_slice_viewer (no CUDA GPU / weights)",
             "landscape_volpca": "landscape_volpca (no analyze_landscape outputs)",
             "landscape_full_3d": "landscape_full_3d (no analyze_landscape_full outputs)",
         }

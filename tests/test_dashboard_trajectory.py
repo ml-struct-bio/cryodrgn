@@ -842,6 +842,136 @@ class TestSaveZPath:
         assert r.status_code == 400
 
 
+class TestTrajectoryVolumeApis:
+    """HTTP coverage for trajectory volume generation and save routes."""
+
+    _DIRECT_BODY = {
+        "mode": "direct",
+        "x": "z0",
+        "y": "z1",
+        "start": [0.0, 0.0],
+        "end": [1.0, 1.0],
+        "n_points": 3,
+    }
+
+    def test_trajectory_volumes_ineligible_is_400(
+        self, flask_client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
+            lambda _e: False,
+        )
+        r = flask_client.post("/api/trajectory_volumes", json=self._DIRECT_BODY)
+        assert r.status_code == 400
+        assert r.get_json().get("error") == _TRAJECTORY_INELIGIBLE_MSG
+
+    def test_trajectory_save_volumes_ineligible_is_400(
+        self, flask_client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
+            lambda _e: False,
+        )
+        r = flask_client.post(
+            "/api/trajectory_save_volumes",
+            json={"volume_cache_id": "tok", "out_dir": "/tmp/out"},
+        )
+        assert r.status_code == 400
+        assert r.get_json().get("error") == _TRAJECTORY_INELIGIBLE_MSG
+
+    def test_trajectory_save_volumes_requires_cache_id(
+        self, flask_client_volumes_eligible
+    ) -> None:
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_save_volumes",
+            json={"out_dir": "/tmp/out"},
+        )
+        assert r.status_code == 400
+        assert "volume_cache_id" in r.get_json().get("error", "").lower()
+
+    def test_trajectory_save_volumes_requires_out_dir(
+        self, flask_client_volumes_eligible
+    ) -> None:
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_save_volumes",
+            json={"volume_cache_id": "tok"},
+        )
+        assert r.status_code == 400
+        assert "folder" in r.get_json().get("error", "").lower()
+
+    def test_trajectory_save_volumes_api_mocked(
+        self,
+        flask_client_volumes_eligible,
+        tmp_path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        out_dir = tmp_path / "saved_vols"
+        saved_path = str(out_dir / "trajectory_volume_001.mrc")
+
+        def _fake_save(token: str, directory: str, *, filename_prefix: str = "volume"):
+            assert token == "cache-tok"
+            assert directory == str(out_dir)
+            assert filename_prefix == "trajectory_volume"
+            return [saved_path]
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_analysis.save_cached_volumes_to_dir",
+            _fake_save,
+        )
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_save_volumes",
+            json={"volume_cache_id": "cache-tok", "out_dir": str(out_dir)},
+        )
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j["ok"] is True
+        assert j["n_saved"] == 1
+        assert j["files"] == [saved_path]
+
+    def test_trajectory_volumes_api_mocked(
+        self,
+        flask_client_volumes_eligible,
+        dashboard_experiment: DashboardExperiment,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import io
+
+        from PIL import Image
+
+        z_traj = dashboard_experiment.z[:3]
+
+        def _fake_compute(exp, params):
+            return z_traj, None, np.zeros((3, 2), dtype=np.float64)
+
+        def _fake_pngs(exp, z_values, chimerax_cpus=1):
+            blobs = []
+            for _ in range(len(z_values)):
+                buf = io.BytesIO()
+                Image.new("RGB", (4, 4)).save(buf, format="PNG")
+                blobs.append(buf.getvalue())
+            return blobs, "cache-tok"
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_analysis.compute_trajectory_latent_path",
+            _fake_compute,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_analysis.generate_trajectory_volume_pngs",
+            _fake_pngs,
+        )
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_volumes",
+            json=self._DIRECT_BODY,
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:500]
+        j = r.get_json()
+        assert j["ok"] is True
+        assert j["volume_cache_id"] == "cache-tok"
+        assert len(j["images"]) == 3
+        assert all(isinstance(b64, str) and b64 for b64 in j["images"])
+        assert len(j["z_traj"]) >= 2
+
+
 class TestTrajectoryPlotlyBrowserSmoke:
     """Headless Chromium: default trajectory overlay and random anchor coords."""
 

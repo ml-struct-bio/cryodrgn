@@ -116,6 +116,7 @@ class TestDashboardPages:
             "/trajectory",
             "/command-builder",
             "/landscape-volpca",
+            "/volume-slice-viewer",
         ],
     )
     def test_page_renders(self, flask_client, path: str) -> None:

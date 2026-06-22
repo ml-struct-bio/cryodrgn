@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import base64
+
 import numpy as np
+import pytest
+
 from cryodrgn.dashboard.volume_slice_viewer import (
     analyze_volume_by_id_payload,
     analyze_volume_markers_payload,
@@ -125,6 +128,38 @@ class TestVolumeSliceViewerRoutes:
         assert j["id"] == vol_id
         assert j["volume_b64"]
 
+    def test_analyze_volumes_batch_api(self, flask_client) -> None:
+        cat = flask_client.get(
+            "/api/volume_slice_viewer/analyze_volumes?include_markers=0"
+        ).get_json()
+        vol_ids = [e["id"] for e in cat["catalog"][:2]]
+        r = flask_client.post(
+            "/api/volume_slice_viewer/analyze_volumes_batch",
+            json={"ids": vol_ids},
+        )
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j["ok"] is True
+        for vol_id in vol_ids:
+            assert vol_id in j["volumes"]
+            assert j["volumes"][vol_id]["volume_b64"]
+
+    def test_analyze_volumes_batch_api_rejects_empty_ids(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/volume_slice_viewer/analyze_volumes_batch",
+            json={"ids": []},
+        )
+        assert r.status_code == 400
+        assert "ids" in r.get_json().get("error", "").lower()
+
+    def test_analyze_volumes_batch_api_rejects_missing_ids(self, flask_client) -> None:
+        r = flask_client.post(
+            "/api/volume_slice_viewer/analyze_volumes_batch",
+            json={},
+        )
+        assert r.status_code == 400
+        assert "ids" in r.get_json().get("error", "").lower()
+
     def test_page_requires_volumes_eligible(self, flask_client) -> None:
         r = flask_client.get("/volume-slice-viewer")
         assert r.status_code == 200
@@ -165,6 +200,31 @@ class TestVolumeSliceViewerRoutes:
         assert r.status_code == 400
         assert "row" in r.get_json().get("error", "").lower()
 
+    def test_decode_api_success(
+        self,
+        flask_client_volumes_eligible,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake = np.zeros((8, 8, 8), dtype=np.float32)
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.volume_slice_viewer._decode_volume_array",
+            lambda _exp, row: fake,
+        )
+        r = flask_client_volumes_eligible.post(
+            "/api/volume_slice_viewer/decode",
+            json={"row": 0},
+        )
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j["ok"] is True
+        assert j["row"] == 0
+        assert j["D"] == 8
+        assert j["volume_b64"]
+        assert j["volume_dtype"] == "float32"
+        raw = base64.standard_b64decode(j["volume_b64"])
+        back = np.frombuffer(raw, dtype=np.float32).reshape(8, 8, 8)
+        np.testing.assert_array_equal(back, fake)
+
     def test_landing_lists_volume_slice_viewer(
         self, flask_client_volumes_eligible
     ) -> None:
@@ -172,3 +232,20 @@ class TestVolumeSliceViewerRoutes:
         body = r.get_data(as_text=True)
         assert "Volume slice viewer" in body
         assert "/volume-slice-viewer" in body
+
+
+class TestVolumeSliceViewerBrowserSmoke:
+    """Headless Chromium: analyze catalog, volume picker, and slice canvas."""
+
+    def test_catalog_and_canvas_load(
+        self, playwright_page, dashboard_volumes_eligible_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_volume_slice_viewer
+
+        out = dashboard_smoke_volume_slice_viewer(
+            playwright_page, dashboard_volumes_eligible_live_url
+        )
+        assert out is not None
+        assert out["volume_picker_buttons"] >= 1
+        assert out["canvas_visible"] is True
+        assert (out.get("scatter_points") or 0) > 0

@@ -27,134 +27,6 @@ DEFAULT_PRELOAD_IMAGE_LIMIT = 1000
 # Max thumbnails encoded in one ``api_preload_images`` response (JSON + base64 size).
 MAX_PRELOAD_IMAGES_PER_HTTP_RESPONSE = 400
 
-PARTICLE_POLARITY_LIGHT_ON_DARK = "light_on_dark"
-PARTICLE_POLARITY_DARK_ON_LIGHT = "dark_on_light"
-POLARITY_ENCODE_SAMPLE_CAP = 4
-POLARITY_MIN_SAMPLES = 3
-
-
-def _polarity_from_scores(scores: list[float], *, min_score: float = 0.02) -> str:
-    if not scores:
-        return PARTICLE_POLARITY_DARK_ON_LIGHT
-    mean_score = float(np.mean(scores))
-    if mean_score >= min_score:
-        return PARTICLE_POLARITY_LIGHT_ON_DARK
-    return PARTICLE_POLARITY_DARK_ON_LIGHT
-
-
-def _particle_contrast_polarity_score_scaled(u: np.ndarray) -> float:
-    """Score from a 0–1 scaled 2-D particle (see :func:`particle_contrast_polarity_score`)."""
-    h, w = u.shape
-    cy, cx = h // 2, w // 2
-    side = min(h, w)
-    yy, xx = np.ogrid[:h, :w]
-    dist2 = (yy - cy) ** 2 + (xx - cx) ** 2
-    r_inner = (side * 0.22) ** 2
-    r_outer_lo = (side * 0.38) ** 2
-    r_outer_hi = (side * 0.50) ** 2
-    center = u[dist2 <= r_inner]
-    ring = u[(dist2 >= r_outer_lo) & (dist2 <= r_outer_hi)]
-    if center.size == 0 or ring.size == 0:
-        return 0.0
-    return float(center.mean() - ring.mean())
-
-
-def particle_contrast_polarity_score(img: np.ndarray) -> float:
-    """Signed centre-vs-ring brightness after explorer thumbnail scaling.
-
-    Positive ⇒ particle centre brighter than background (light-on-dark).
-    Negative ⇒ particle centre darker than background (dark-on-light).
-    """
-    arr = np.asarray(img, dtype=np.float32)
-    if arr.ndim == 3:
-        arr = arr[0]
-    lo, hi = np.percentile(arr, (2, 98))
-    u = np.clip((arr - lo) / (hi - lo + 1e-9), 0, 1)
-    return _particle_contrast_polarity_score_scaled(u)
-
-
-def infer_particle_display_polarity(
-    exp: DashboardExperiment,
-    *,
-    max_samples: int = 4,
-    min_score: float = 0.02,
-) -> str:
-    """Infer raw-stack display polarity for explorer thumbnails."""
-    if not exp.can_preview_particles:
-        return PARTICLE_POLARITY_DARK_ON_LIGHT
-    n = int(len(exp.all_indices))
-    if n <= 0:
-        return PARTICLE_POLARITY_DARK_ON_LIGHT
-    from cryodrgn.source import ImageSource
-
-    src = ImageSource.from_file(
-        exp.particles_path, lazy=True, datadir=exp.datadir or ""
-    )
-    k = max(1, min(int(max_samples), n))
-    if k == 1:
-        global_indices = [int(exp.all_indices[0])]
-    else:
-        local_rows = np.linspace(0, n - 1, num=k, dtype=int)
-        global_indices = [int(exp.all_indices[i]) for i in local_rows]
-    scores: list[float] = []
-    for gidx in global_indices:
-        try:
-            raw = src.images(gidx, as_numpy=True)
-            scores.append(particle_contrast_polarity_score(raw))
-        except (OSError, RuntimeError, ValueError) as err:
-            logger.debug("particle polarity sample gidx %s failed: %s", gidx, err)
-    return _polarity_from_scores(scores, min_score=min_score)
-
-
-_PARTICLE_POLARITY_CACHE: dict[tuple[str, int], str] = {}
-_POLARITY_PENDING_SAMPLES: dict[tuple[str, int], list[float]] = {}
-
-
-def _polarity_cache_key(exp: DashboardExperiment) -> tuple[str, int]:
-    return (str(exp.workdir), int(exp.epoch))
-
-
-def record_polarity_samples(exp: DashboardExperiment, scores: Iterable[float]) -> None:
-    """Accumulate polarity scores from thumbnail encode batches (no extra I/O)."""
-    incoming = [float(s) for s in scores]
-    if not incoming:
-        return
-    key = _polarity_cache_key(exp)
-    if key in _PARTICLE_POLARITY_CACHE:
-        return
-    acc = _POLARITY_PENDING_SAMPLES.setdefault(key, [])
-    for score in incoming:
-        if len(acc) >= POLARITY_ENCODE_SAMPLE_CAP:
-            break
-        acc.append(score)
-    if len(acc) >= POLARITY_MIN_SAMPLES:
-        _PARTICLE_POLARITY_CACHE[key] = _polarity_from_scores(acc)
-        _POLARITY_PENDING_SAMPLES.pop(key, None)
-
-
-def get_particle_display_polarity(exp: DashboardExperiment) -> str | None:
-    """Return cached polarity, or ``None`` until enough encode samples exist."""
-    return _PARTICLE_POLARITY_CACHE.get(_polarity_cache_key(exp))
-
-
-def clear_particle_polarity_cache_for_experiment(exp: object) -> None:
-    """Drop cached polarity for one experiment (paired with preload cache clear)."""
-    workdir = str(getattr(exp, "workdir", ""))
-    epoch = int(getattr(exp, "epoch", -1))
-    key = (workdir, epoch)
-    _PARTICLE_POLARITY_CACHE.pop(key, None)
-    _POLARITY_PENDING_SAMPLES.pop(key, None)
-
-
-def preload_response_with_polarity(exp: DashboardExperiment, payload: dict) -> dict:
-    """Attach ``particle_dataset_polarity`` when polarity is already known."""
-    polarity = get_particle_display_polarity(exp)
-    if polarity and (payload.get("rows") or payload.get("images")):
-        out = dict(payload)
-        out["particle_dataset_polarity"] = polarity
-        return out
-    return payload
-
 
 def explorer_cache_size_power10_step(scatter_plotted_point_count: int) -> int:
     """Largest power of ten not greater than 5% of scatter-plotted point count.
@@ -190,17 +62,12 @@ def encode_particle_batch(
     datadir: str | None,
     global_indices: Iterable[int],
     max_px: int,
-    *,
-    polarity_sample: bool = False,
-) -> tuple[list[str], list[float]]:
+) -> list[str]:
     """Load and encode raw particles as base64 JPEGs for thumbnail preloading.
 
     Use :class:`ImageSource` directly instead of :class:`ImageDataset`; dashboard
     thumbnails do their own percentile scaling and do not need ImageDataset's
     costly normalization estimates.
-
-    When ``polarity_sample`` is true, the first few particles in the batch also
-    contribute contrast scores (no extra disk reads).
     """
     import base64 as _b64
     import io as _io
@@ -212,7 +79,6 @@ def encode_particle_batch(
 
     src = ImageSource.from_file(mrcfile, lazy=True, datadir=datadir or "")
     out: list[str] = []
-    polarity_scores: list[float] = []
     for gidx in global_indices:
         raw = src.images(gidx, as_numpy=True)
         if raw.ndim == 3:
@@ -220,8 +86,6 @@ def encode_particle_batch(
         arr = _np.asarray(raw, dtype=_np.float32)
         lo, hi = _np.percentile(arr, (2, 98))
         u = _np.clip((arr - lo) / (hi - lo + 1e-9), 0, 1)
-        if polarity_sample and len(polarity_scores) < POLARITY_ENCODE_SAMPLE_CAP:
-            polarity_scores.append(_particle_contrast_polarity_score_scaled(u))
         u8 = (u * 255).astype(_np.uint8)
         pil = PILImage.fromarray(u8, mode="L")
         if max(pil.size) > max_px:
@@ -229,7 +93,7 @@ def encode_particle_batch(
         buf = _io.BytesIO()
         pil.save(buf, format="JPEG", quality=85)
         out.append(_b64.b64encode(buf.getvalue()).decode("ascii"))
-    return out, polarity_scores
+    return out
 
 
 def montage_bytes(exp: DashboardExperiment, row_indices: list[int]) -> bytes:

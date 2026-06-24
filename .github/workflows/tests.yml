@@ -35,14 +35,14 @@ jobs:
             torch: '2.1.2'
             numpy: '1.26.4'
           - python: '3.12'
-            torch: '2.2.2'
+            torch: '2.4.1'
             numpy: '2.0.2'
           - python: '3.13'
-            torch: '2.5.1'
+            torch: '2.6.0'
             numpy: '2.1.3'
           - python: '3.14'
             torch: '2.12.1'
-            numpy: '2.5.0'
+            numpy: '2.4.6'
       fail-fast: false
 
     steps:
@@ -56,10 +56,12 @@ jobs:
       - name: Install cryoDRGN with pytest dependencies
         run: |
           python3 -m pip install --upgrade pip
-          # Pin numpy before torch so pip does not upgrade numpy as a torch dependency.
           python3 -m pip install --force-reinstall --no-cache-dir \
             "numpy==${{ matrix.numpy }}" "torch==${{ matrix.torch }}"
-          python3 -m pip install ".[dev]"
+          # Keep numpy pinned when resolving cryoDRGN deps (pandas etc. may upgrade it).
+          echo "numpy==${{ matrix.numpy }}" > "${{ runner.temp }}/numpy-constraint.txt"
+          python3 -m pip install --no-cache-dir ".[dev]" \
+            -c "${{ runner.temp }}/numpy-constraint.txt"
           python -m playwright install chromium
 
       - name: Pytest

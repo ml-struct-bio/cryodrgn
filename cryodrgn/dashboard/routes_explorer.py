@@ -75,8 +75,6 @@ from cryodrgn.dashboard.preload import (
     format_preload_cache_time_hint,
     load_plot_df_rows_from_plot_inds_file,
     montage_bytes,
-    preload_response_with_polarity,
-    record_polarity_samples,
     sample_plot_df_rows_for_preload,
 )
 from cryodrgn.dashboard.volume_slice_viewer import (
@@ -1360,11 +1358,10 @@ def api_preload_images():
     cpus = int(current_app.config.get("PRELOAD_CPUS") or 4)
 
     def _preload_json(**payload):
-        return jsonify(preload_response_with_polarity(e, payload))
+        return jsonify(payload)
 
     def _encode_indices(global_indices: list[int]) -> list[str]:
         parallel_threshold = max(128, cpus * 32)
-        polarity_scores: list[float] = []
         if cpus > 1 and len(global_indices) >= parallel_threshold:
             from concurrent.futures import ProcessPoolExecutor
 
@@ -1381,26 +1378,19 @@ def api_preload_images():
                         e.datadir,
                         ch,
                         96,
-                        polarity_sample=(i == 0),
                     )
-                    for i, ch in enumerate(chunks)
+                    for ch in chunks
                 ]
                 imgs: list[str] = []
                 for f in futures:
-                    batch_imgs, batch_scores = f.result()
-                    imgs.extend(batch_imgs)
-                    polarity_scores.extend(batch_scores)
-                record_polarity_samples(e, polarity_scores)
+                    imgs.extend(f.result())
                 return imgs
-        imgs, polarity_scores = encode_particle_batch(
+        return encode_particle_batch(
             e.particles_path,
             e.datadir,
             global_indices,
             96,
-            polarity_sample=True,
         )
-        record_polarity_samples(e, polarity_scores)
-        return imgs
 
     cached = PRELOAD_CACHE.get(key)
     if cached:

@@ -128,24 +128,15 @@ def clear_preload_cache_for_experiment(e: object) -> int:
     to_drop = [k for k in list(PRELOAD_CACHE.keys()) if k[:2] == prefix]
     for k in to_drop:
         del PRELOAD_CACHE[k]
-    from cryodrgn.dashboard.preload import clear_particle_polarity_cache_for_experiment
-
-    clear_particle_polarity_cache_for_experiment(e)
     return len(to_drop)
 
 
 def clear_experiment_caches() -> None:
     """Drop cached experiments / preloads / graph neighbors across the process."""
-    from cryodrgn.dashboard.preload import (
-        _PARTICLE_POLARITY_CACHE,
-        _POLARITY_PENDING_SAMPLES,
-    )
     from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
 
     EXP_CACHE.clear()
     PRELOAD_CACHE.clear()
-    _PARTICLE_POLARITY_CACHE.clear()
-    _POLARITY_PENDING_SAMPLES.clear()
     _TRAJ_GRAPH_NEIGHBOR_CACHE.clear()
 
 

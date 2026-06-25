@@ -327,7 +327,7 @@
   {% set latent3d_active = (zdim >= 3) and (not command_builder_only) %}
   {% set vol_landscape_3d_active = landscape_full_3d_active and (not command_builder_only) %}
   {% set trajectory_active = show_trajectory_creator and not command_builder_only %}
-  {% set volume_slice_active = show_volume_slice_viewer and not command_builder_only %}
+  {% set volume_viewer_active = show_volume_viewer and not command_builder_only %}
   {% set landscape_card_active = landscape_volpca_active and not command_builder_only %}
 
   {# Active interfaces first #}
@@ -407,9 +407,9 @@
     </div>
   </a>
   {% endif %}
-  {% if volume_slice_active %}
-  <a class="landing-card landing-card-link" href="{{ url_for('volume_slice_viewer_page') }}">
-    <h2 class="landing-card-title">Volume slice viewer</h2>
+  {% if volume_viewer_active %}
+  <a class="landing-card landing-card-link" href="{{ url_for('volume_viewer_page') }}">
+    <h2 class="landing-card-title">Volume viewer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
     <div class="landing-card-text-scroll" tabindex="0">
       <p>Scatter particles by analysis covariates, click to decode a single volume, and inspect an
@@ -479,10 +479,10 @@
     </div>
   </article>
   {% endif %}
-  {% if not volume_slice_active %}
+  {% if not volume_viewer_active %}
   <article class="landing-card landing-card--inactive">
     <span class="landing-inactive-badge">Inactive</span>
-    <h2 class="landing-card-title">Volume slice viewer</h2>
+    <h2 class="landing-card-title">Volume viewer</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
     <div class="landing-card-text-scroll" tabindex="0">
       <p>Scatter particles by covariates, decode a selected particle volume on the GPU, and browse a

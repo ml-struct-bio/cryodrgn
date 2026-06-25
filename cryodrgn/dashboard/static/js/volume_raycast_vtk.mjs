@@ -11,7 +11,6 @@ import vtkVolume from "@kitware/vtk.js/Rendering/Core/Volume";
 import vtkVolumeMapper from "@kitware/vtk.js/Rendering/Core/VolumeMapper";
 
 var VOLUME_BG = [0.98, 0.97, 0.96];
-var DEFAULT_ISO_LEVEL = 42;
 
 function utils() {
   if (typeof window !== "undefined" && window.CryoVolume3dUtils) {
@@ -39,17 +38,13 @@ function volumeRange(values) {
   return { min: min, max: max };
 }
 
-function applyTransferFunctions(ctfun, ofun, range, percentileSamples, isoPercentile) {
-  var U = utils();
-  var pct = clamp(Number(isoPercentile), 0, 100);
+function applyTransferFunctions(ctfun, ofun, range, isoLevel) {
+  var threshold = clamp(Number(isoLevel), range.min, range.max);
   var span = range.max - range.min;
-  var minSep = span > 0 ? span * 0.0015 : 1e-6;
-
-  var threshold = U.percentileValue(percentileSamples, pct);
-  var rampPctLo = Math.max(0, pct - 4 - (100 - pct) * 0.04);
-  var rampPctHi = Math.min(100, pct + 8 + (100 - pct) * 0.06);
-  var rampLo = U.percentileValue(percentileSamples, rampPctLo);
-  var rampHi = U.percentileValue(percentileSamples, rampPctHi);
+  if (!(span > 0)) span = 1;
+  var minSep = span * 0.0015;
+  var rampLo = threshold - span * 0.018;
+  var rampHi = threshold + span * 0.045;
 
   rampLo = Math.max(range.min, Math.min(rampLo, range.max - 3 * minSep));
   threshold = Math.max(rampLo + minSep, Math.min(threshold, range.max - 2 * minSep));
@@ -65,9 +60,9 @@ function applyTransferFunctions(ctfun, ofun, range, percentileSamples, isoPercen
   ofun.removeAllPoints();
   ofun.addPoint(range.min, 0.0);
   ofun.addPoint(rampLo, 0.0);
-  ofun.addPoint(threshold, 0.22);
-  ofun.addPoint(rampHi, 0.38);
-  ofun.addPoint(range.max, 0.42);
+  ofun.addPoint(threshold, 0.32);
+  ofun.addPoint(rampHi, 0.50);
+  ofun.addPoint(range.max, 0.55);
 }
 
 export class VolumeRaycastView {
@@ -87,19 +82,19 @@ export class VolumeRaycastView {
     this.ofun = vtkPiecewiseFunction.newInstance();
     this._resizeObserver = null;
     this.volumeRange = null;
+    this.isoSliderRange = null;
     this.percentileSamples = null;
-    this.isoLevel = DEFAULT_ISO_LEVEL;
+    this.isoLevel = 0;
   }
 
   _reapplyTransferFunctions() {
-    if (!this.volume || !this.volumeRange || !this.percentileSamples || !this.ctfun || !this.ofun) {
+    if (!this.volume || !this.volumeRange || !this.ctfun || !this.ofun) {
       return;
     }
     applyTransferFunctions(
       this.ctfun,
       this.ofun,
       this.volumeRange,
-      this.percentileSamples,
       this.isoLevel
     );
     if (this.renderWindow) this.renderWindow.render();
@@ -109,8 +104,19 @@ export class VolumeRaycastView {
     return this.isoLevel;
   }
 
+  getIsoDataRange() {
+    if (this.isoSliderRange) return this.isoSliderRange;
+    if (this.volumeRange) return { min: this.volumeRange.min, max: this.volumeRange.max };
+    return { min: 0, max: 1 };
+  }
+
   setIsoLevel(level) {
-    this.isoLevel = clamp(Number(level), 0, 100);
+    var range = this.getIsoDataRange();
+    if (!this.volumeRange) {
+      this.isoLevel = Number(level);
+      return;
+    }
+    this.isoLevel = clamp(Number(level), range.min, range.max);
     this._reapplyTransferFunctions();
   }
 
@@ -164,12 +170,12 @@ export class VolumeRaycastView {
 
     this.volumeRange = volumeRange(values);
     this.percentileSamples = U.volumePercentileSamples(values);
-    this.isoLevel = U.suggestIsoPercentile(this.percentileSamples);
+    this.isoSliderRange = U.isoSliderDataRange(this.percentileSamples);
+    this.isoLevel = 0.5 * (this.isoSliderRange.min + this.isoSliderRange.max);
     applyTransferFunctions(
       this.ctfun,
       this.ofun,
       this.volumeRange,
-      this.percentileSamples,
       this.isoLevel
     );
 
@@ -178,7 +184,7 @@ export class VolumeRaycastView {
     var prop = this.volume.getProperty();
     prop.setRGBTransferFunction(0, this.ctfun);
     prop.setScalarOpacity(0, this.ofun);
-    prop.setScalarOpacityUnitDistance(0, 2.5);
+    prop.setScalarOpacityUnitDistance(0, 2.0);
     prop.setInterpolationTypeToLinear();
     prop.setShade(true);
     prop.setAmbient(0.25);

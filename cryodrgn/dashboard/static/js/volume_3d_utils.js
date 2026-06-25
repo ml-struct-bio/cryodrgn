@@ -6,12 +6,6 @@
 
   var PLOT3D_TARGET_D = 128;
   var DEFAULT_ISO_PERCENTILE = 42;
-  // Slider maps into this percentile band; upper 60% of travel is compressed into the tail.
-  var ISO_SLIDER_PCT_MIN = 15;
-  var ISO_SLIDER_PCT_MID = 55;
-  var ISO_SLIDER_PCT_MAX = 99.2;
-  var ISO_SLIDER_MID_TRAVEL = 0.4;
-  var ISO_SLIDER_UPPER_GAMMA = 0.55;
 
   function decodeFloat32Volume(b64, d) {
     var binary = atob(b64);
@@ -165,31 +159,43 @@
     return 88;
   }
 
-  function isoSliderToPercentile(slider) {
-    var t = Math.max(0, Math.min(100, Number(slider))) / 100;
-    if (t <= 0) return ISO_SLIDER_PCT_MIN;
-    if (t >= 1) return ISO_SLIDER_PCT_MAX;
-    if (t <= ISO_SLIDER_MID_TRAVEL) {
-      return ISO_SLIDER_PCT_MIN
-        + (ISO_SLIDER_PCT_MID - ISO_SLIDER_PCT_MIN) * (t / ISO_SLIDER_MID_TRAVEL);
-    }
-    var u = (t - ISO_SLIDER_MID_TRAVEL) / (1 - ISO_SLIDER_MID_TRAVEL);
-    return ISO_SLIDER_PCT_MID
-      + (ISO_SLIDER_PCT_MAX - ISO_SLIDER_PCT_MID) * Math.pow(u, ISO_SLIDER_UPPER_GAMMA);
+  function suggestIsoDataValue(samples) {
+    return percentileValue(samples, suggestIsoPercentile(samples));
   }
 
-  function isoPercentileToSlider(pct) {
-    var p = Math.max(ISO_SLIDER_PCT_MIN, Math.min(ISO_SLIDER_PCT_MAX, Number(pct)));
-    if (p <= ISO_SLIDER_PCT_MID) {
-      var loSpan = ISO_SLIDER_PCT_MID - ISO_SLIDER_PCT_MIN;
-      return loSpan > 0
-        ? 100 * ISO_SLIDER_MID_TRAVEL * (p - ISO_SLIDER_PCT_MIN) / loSpan
-        : 0;
+  /** Rank window for the iso slider (linear in data values, ChimeraX map units). */
+  var ISO_SLIDER_RANK_LO = 2;
+  var ISO_SLIDER_RANK_HI = 99.5;
+
+  function isoSliderDataRange(samples) {
+    if (!samples || samples.length < 2) return { min: 0, max: 1 };
+    var lo = percentileValue(samples, ISO_SLIDER_RANK_LO);
+    var hi = percentileValue(samples, ISO_SLIDER_RANK_HI);
+    if (!(hi > lo)) {
+      lo = samples[0];
+      hi = samples[samples.length - 1];
     }
-    var hiSpan = ISO_SLIDER_PCT_MAX - ISO_SLIDER_PCT_MID;
-    if (!(hiSpan > 0)) return 100 * ISO_SLIDER_MID_TRAVEL;
-    var u = Math.pow((p - ISO_SLIDER_PCT_MID) / hiSpan, 1 / ISO_SLIDER_UPPER_GAMMA);
-    return 100 * (ISO_SLIDER_MID_TRAVEL + (1 - ISO_SLIDER_MID_TRAVEL) * u);
+    return { min: lo, max: hi };
+  }
+
+  /** Slider 0–100 ↔ data value, linear between slider endpoints (ChimeraX contour units). */
+  function isoSliderToDataValue(slider, vmin, vmax) {
+    vmin = Number(vmin);
+    vmax = Number(vmax);
+    var t = Math.max(0, Math.min(100, Number(slider))) / 100;
+    if (!isFinite(vmin) || !isFinite(vmax)) return 0;
+    if (vmax <= vmin) return vmin;
+    return vmin + t * (vmax - vmin);
+  }
+
+  function isoDataValueToSlider(value, vmin, vmax) {
+    vmin = Number(vmin);
+    vmax = Number(vmax);
+    value = Number(value);
+    var span = vmax - vmin;
+    if (!isFinite(span) || !(span > 0)) return 0;
+    var t = Math.max(0, Math.min(1, (value - vmin) / span));
+    return 100 * t;
   }
 
   function isoRangeFromPercentile(samples, isoPercentile) {
@@ -208,8 +214,10 @@
     downsampleVolumeTrilinear: downsampleVolumeTrilinear,
     volumePercentileSamples: volumePercentileSamples,
     suggestIsoPercentile: suggestIsoPercentile,
-    isoSliderToPercentile: isoSliderToPercentile,
-    isoPercentileToSlider: isoPercentileToSlider,
+    suggestIsoDataValue: suggestIsoDataValue,
+    isoSliderDataRange: isoSliderDataRange,
+    isoSliderToDataValue: isoSliderToDataValue,
+    isoDataValueToSlider: isoDataValueToSlider,
     isoRangeFromPercentile: isoRangeFromPercentile,
     percentileValue: percentileValue
   };

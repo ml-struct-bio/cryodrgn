@@ -14,12 +14,13 @@ from cryodrgn.dashboard.volume_slice_viewer import (
     analyze_volumes_batch_payload,
     analyze_volumes_catalog_payload,
     apply_reconstruction_window,
+    default_analyze_volume_id,
     discover_analyze_volume_catalog,
     discover_analyze_volume_markers,
     reconstruction_window_params,
+    spherical_window_mask_3d,
     volume_array_b64,
 )
-from cryodrgn.masking import spherical_window_mask_3d
 
 
 _VTK_BUNDLE = (
@@ -119,6 +120,24 @@ class TestVolumeSliceViewerRoutes:
         assert payload["markers"]
         assert len(payload["markers"]) == len(payload["catalog"])
         assert "volumes" not in payload
+        km = [
+            e for e in payload["catalog"] if e.get("kind") == "kmeans" and "znorm" in e
+        ]
+        assert km
+        assert payload["default_vol_id"] == min(km, key=lambda e: e["znorm"])["id"]
+
+    def test_default_analyze_volume_id_lowest_znorm(self, dashboard_experiment) -> None:
+        payload = analyze_volumes_catalog_payload(
+            dashboard_experiment, include_markers=False
+        )
+        km = [
+            e for e in payload["catalog"] if e.get("kind") == "kmeans" and "znorm" in e
+        ]
+        assert km
+        assert (
+            default_analyze_volume_id(payload["catalog"])
+            == min(km, key=lambda e: e["znorm"])["id"]
+        )
 
     def test_analyze_volumes_payload_fast_catalog(self, dashboard_experiment) -> None:
         payload = analyze_volumes_catalog_payload(
@@ -174,6 +193,9 @@ class TestVolumeSliceViewerRoutes:
         assert j["markers"]
         assert len(j["markers"]) == len(j["catalog"])
         assert j.get("volumes") in (None, {})
+        km = [e for e in j["catalog"] if e.get("kind") == "kmeans" and "znorm" in e]
+        assert km
+        assert j["default_vol_id"] == min(km, key=lambda e: e["znorm"])["id"]
 
     def test_analyze_volumes_api_fast_catalog(self, flask_client) -> None:
         r = flask_client.get("/api/volume_viewer/analyze_volumes?include_markers=0")
@@ -182,6 +204,9 @@ class TestVolumeSliceViewerRoutes:
         assert j["ok"] is True
         assert j["catalog"]
         assert j["markers"] == []
+        km = [e for e in j["catalog"] if e.get("kind") == "kmeans" and "znorm" in e]
+        assert km
+        assert j["default_vol_id"] == min(km, key=lambda e: e["znorm"])["id"]
 
     def test_analyze_markers_api(self, flask_client) -> None:
         cat = flask_client.get(

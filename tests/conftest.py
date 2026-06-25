@@ -1838,23 +1838,34 @@ def dashboard_smoke_volume_viewer_picker_switch(
           return btn ? btn.textContent.trim() : '';
         }"""
     )
-    page.evaluate(
+    target_idx = page.evaluate(
         """() => {
           var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          if (buttons.length < 2) return false;
-          if (buttons[0].classList.contains('cryo-vslice-vol-btn--active')) {
-            buttons[0].click();
+          if (buttons.length < 2) return -1;
+          var activeIdx = -1;
+          for (var i = 0; i < buttons.length; i++) {
+            if (buttons[i].classList.contains('cryo-vslice-vol-btn--active')) {
+              activeIdx = i;
+              break;
+            }
           }
-          buttons[1].click();
-          return true;
+          var targetIdx = activeIdx === 0 ? 1 : 0;
+          window.__vslicePickerTargetIdx = targetIdx;
+          if (activeIdx >= 0) buttons[activeIdx].click();
+          buttons[targetIdx].click();
+          return targetIdx;
         }"""
     )
+    if target_idx < 0:
+        return {**ready, "switched": False, "reason": "fewer_than_two_volumes"}
     page.wait_for_function(
         """() => {
+          var targetIdx = window.__vslicePickerTargetIdx;
           var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          if (buttons.length < 2) return false;
+          if (buttons.length < 2 || targetIdx == null) return false;
           var active = document.querySelectorAll('.cryo-vslice-vol-btn--active');
-          return active.length === 1 && buttons[1].classList.contains('cryo-vslice-vol-btn--active');
+          return active.length === 1
+            && buttons[targetIdx].classList.contains('cryo-vslice-vol-btn--active');
         }""",
         timeout=timeout_ms,
     )

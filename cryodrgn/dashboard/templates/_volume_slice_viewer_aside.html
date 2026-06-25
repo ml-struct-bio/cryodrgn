@@ -1,9 +1,9 @@
-{# Volume slice viewer right column: interactive slice canvas + volume navigation. #}
-<aside class="cryo-dash-montage cryo-dash-montage--volume-slices" aria-label="Volume slice viewer">
+{# Volume viewer right column: interactive slice canvas + volume navigation. #}
+<aside class="cryo-dash-montage cryo-dash-montage--volume-slices" aria-label="Volume viewer">
 <div class="cryo-explorer-menu-scroll">
 <div class="cryo-dash-montage-scroll">
 <div id="montage-actions" class="cryo-explorer-montage-actions">
-  <section class="cryo-explorer-panel-section cryo-vslice-panel-section" aria-label="Volume slice viewer">
+  <section class="cryo-explorer-panel-section cryo-vslice-panel-section" aria-label="Volume viewer">
       <div class="cryo-explorer-panel-shell cryo-vslice-panel-shell">
       <div class="cryo-vslice-panel-top">
         <div id="vslice-volume-picker" class="cryo-vslice-volume-picker" hidden>
@@ -21,6 +21,8 @@
       <div class="cryo-vslice-scroll">
       <div class="cryo-vslice-viewport" id="vslice-viewport" hidden>
         <canvas id="vslice-canvas" class="cryo-vslice-canvas" aria-label="Volume slice"></canvas>
+        <div id="vslice-vtk-container" class="cryo-vslice-vtk-container" hidden
+          aria-label="Volume 3D raycast"></div>
       </div>
       <div id="vslice-progress" class="cryo-plot-rendering-overlay__track cryo-vslice-progress" role="progressbar"
         aria-valuetext="Loading volume" hidden>
@@ -29,7 +31,113 @@
       </div>
       <div class="cryo-vslice-controls-dock" id="vslice-controls-dock" hidden>
         <div class="cryo-vslice-controls" id="vslice-controls">
-          <div class="cryo-vslice-controls-row">
+          <div class="cryo-vslice-toggle-stack">
+            <div id="vslice-view-mode-switch" class="cryo-image-grid-contrast-switch cryo-vslice-feature-switch cryo-vslice-view-mode-switch"
+              role="group" aria-label="Volume view mode">
+              <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--slice">
+                <span class="cryo-image-grid-contrast-label" aria-hidden="true">
+                  <span class="cryo-image-grid-contrast-label__line">2D</span>
+                  <span class="cryo-image-grid-contrast-label__line">slice</span>
+                </span>
+                <span class="cryo-image-grid-contrast-picto-col">
+                  <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="2D slice">
+                    <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
+                      <rect width="16" height="16" fill="#e8ecf1"/>
+                      <rect x="2" y="2.5" width="12" height="4.5" fill="#9aafc4" opacity="0.55"/>
+                      <rect x="2" y="9" width="12" height="4.5" fill="#3d5a80" opacity="0.45"/>
+                      <line x1="1.5" y1="8" x2="14.5" y2="8" stroke="#243b53" stroke-width="1.35"/>
+                    </svg>
+                  </span>
+                </span>
+              </span>
+              <label id="vslice-view-mode-wrap" class="cryo-image-grid-invert-switch" for="vslice-view-mode-3d">
+                <input type="checkbox" id="vslice-view-mode-3d" role="switch"
+                  aria-label="Switch between 2D slice and 3D volume"/>
+                <span class="cryo-image-grid-invert-switch__track" aria-hidden="true">
+                  <span class="cryo-image-grid-invert-switch__thumb"></span>
+                </span>
+              </label>
+              <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--volume3d">
+                <span class="cryo-image-grid-contrast-picto-col">
+                  <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="3D volume">
+                    <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
+                      <rect width="16" height="16" fill="#e8ecf1"/>
+                      <ellipse cx="8" cy="8.6" rx="5.1" ry="3.5" fill="#3d5a80" opacity="0.38"/>
+                      <ellipse cx="8" cy="7.2" rx="4.4" ry="3.1" fill="none" stroke="#243b53" stroke-width="1.2"/>
+                      <path d="M4.2 10.2 L8 12.4 L11.8 10.2" fill="none" stroke="#3d5a80" stroke-width="1"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                </span>
+                <span class="cryo-image-grid-contrast-label" aria-hidden="true">
+                  <span class="cryo-image-grid-contrast-label__line">3D</span>
+                  <span class="cryo-image-grid-contrast-label__line">volume</span>
+                </span>
+              </span>
+            </div>
+            <div id="vslice-rotation-lock-toolbar" class="cryo-vslice-rotation-lock-toolbar" hidden>
+              <div id="vslice-rotation-lock-switch" class="cryo-image-grid-contrast-switch cryo-vslice-feature-switch cryo-vslice-rotation-lock-switch"
+                role="group" aria-label="Slice rotation linking">
+                <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--solo">
+                  <span class="cryo-image-grid-contrast-label" aria-hidden="true">
+                    <span class="cryo-image-grid-contrast-label__line">Solo</span>
+                    <span class="cryo-image-grid-contrast-label__line">rotate</span>
+                  </span>
+                  <span class="cryo-image-grid-contrast-picto-col">
+                    <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="Rotate slices independently">
+                      <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
+                        <rect x="1" y="2.2" width="5.8" height="5.8" fill="#e8ecf1" stroke="#243b53" stroke-width="0.75"/>
+                        <line x1="1.4" y1="5.1" x2="6.4" y2="5.1" stroke="#3d5a80" stroke-width="0.95"/>
+                        <g transform="rotate(24 12.2 10.8)">
+                          <rect x="9.2" y="7.9" width="5.8" height="5.8" fill="#e8ecf1" stroke="#243b53" stroke-width="0.75"/>
+                          <line x1="9.6" y1="10.8" x2="14.6" y2="10.8" stroke="#3d5a80" stroke-width="0.95"/>
+                        </g>
+                      </svg>
+                    </span>
+                  </span>
+                </span>
+                <label id="vslice-rotation-lock-wrap" class="cryo-image-grid-invert-switch" for="vslice-rotation-lock">
+                  <input type="checkbox" id="vslice-rotation-lock" role="switch"
+                    aria-label="Link slice rotation together"/>
+                  <span class="cryo-image-grid-invert-switch__track" aria-hidden="true">
+                    <span class="cryo-image-grid-invert-switch__thumb"></span>
+                  </span>
+                </label>
+                <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--linked">
+                  <span class="cryo-image-grid-contrast-picto-col">
+                    <span class="cryo-image-grid-contrast-picto" aria-hidden="true" title="Rotate slices together">
+                      <svg viewBox="0 0 16 16" width="16" height="16" focusable="false" role="presentation">
+                        <g transform="rotate(-18 4.1 6.6)">
+                          <rect x="1.2" y="3.7" width="5.8" height="5.8" fill="#e8ecf1" stroke="#243b53" stroke-width="0.75"/>
+                          <line x1="1.6" y1="6.6" x2="6.6" y2="6.6" stroke="#3d5a80" stroke-width="0.95"/>
+                        </g>
+                        <g transform="rotate(-18 11.9 6.6)">
+                          <rect x="9" y="3.7" width="5.8" height="5.8" fill="#e8ecf1" stroke="#243b53" stroke-width="0.75"/>
+                          <line x1="9.4" y1="6.6" x2="14.4" y2="6.6" stroke="#3d5a80" stroke-width="0.95"/>
+                        </g>
+                        <path d="M7.15 8.05h1.7" stroke="#c4703a" stroke-width="1.15" stroke-linecap="round"/>
+                      </svg>
+                    </span>
+                  </span>
+                  <span class="cryo-image-grid-contrast-label" aria-hidden="true">
+                    <span class="cryo-image-grid-contrast-label__line">Linked</span>
+                    <span class="cryo-image-grid-contrast-label__line">rotate</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <div id="vslice-iso-controls" class="cryo-vslice-iso-controls" hidden>
+            <label class="cryo-vslice-iso-label" for="vslice-iso-level">Isosurface level</label>
+            <input type="range" id="vslice-iso-level" class="cryo-vslice-iso-slider"
+              min="0" max="100" value="50" step="1"
+              aria-label="Isosurface contour level (linear in map data values, ChimeraX-style)"/>
+          </div>
+          <div class="cryo-vslice-reset-row">
+            <button type="button" class="btn btn-secondary cryo-vslice-reset-btn" id="btn-vslice-reset-view"
+              aria-label="Reset slice view in volume(s)">Reset slice(s)</button>
+          </div>
+          <div class="cryo-vslice-controls-row" id="vslice-slice-controls-row">
             <div class="cryo-vslice-pad" role="group" aria-label="Slice pan and depth">
               <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-up"
                 aria-label="Pan up">▲</button>
@@ -47,8 +155,6 @@
                 aria-label="Pan down">▼</button>
             </div>
             <div class="cryo-vslice-slice-contrast-stack">
-              <button type="button" class="btn btn-secondary cryo-vslice-reset-btn" id="btn-vslice-reset-view"
-                aria-label="Reset slice view in volume(s)">Reset slice(s)</button>
               <label class="cryo-vslice-contrast-label" for="vslice-slice-contrast">Image contrast</label>
               <input type="range" id="vslice-slice-contrast" class="cryo-vslice-contrast-slider"
                 min="0" max="100" value="50" step="1" aria-label="Image contrast"/>

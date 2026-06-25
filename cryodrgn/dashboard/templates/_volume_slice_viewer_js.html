@@ -1,4 +1,4 @@
-// Volume slice viewer: parallel analyze preload + scatter volume markers.
+// Volume viewer: parallel analyze preload + scatter volume markers.
   var vsliceAnalyzeEpoch = {{ exp_epoch | tojson }};
   var vslicePrefetchCpus = {{ preload_cpus | tojson }};
   var vsliceStatusEl = document.getElementById("vslice-status");
@@ -16,7 +16,15 @@
   var btnVsliceZoomIn = document.getElementById("btn-vslice-zoom-in");
   var btnVsliceZoomOut = document.getElementById("btn-vslice-zoom-out");
   var btnVsliceResetView = document.getElementById("btn-vslice-reset-view");
+  var vsliceRotationLockEl = document.getElementById("vslice-rotation-lock");
+  var vsliceRotationLockToolbarEl = document.getElementById("vslice-rotation-lock-toolbar");
   var vsliceSliceContrastSlider = document.getElementById("vslice-slice-contrast");
+  var vsliceViewMode3dEl = document.getElementById("vslice-view-mode-3d");
+  var vsliceIsoControlsEl = document.getElementById("vslice-iso-controls");
+  var vsliceIsoLevelSlider = document.getElementById("vslice-iso-level");
+  var vsliceSliceControlsRowEl = document.getElementById("vslice-slice-controls-row");
+  var vsliceVtkContainerEl = document.getElementById("vslice-vtk-container");
+  var VSLICE_VTK_BUNDLE_URL = {{ url_for('static', filename='js/volume_raycast_vtk.bundle.js') | tojson }};
   var vsliceMarkerGlyphsOverlayEl = document.getElementById("vslice-marker-glyphs-overlay");
   var VSLICE_PAN_STEP = 3;
   var VSLICE_MARKER_ACCENT = "#c4703a";
@@ -46,11 +54,179 @@
   var vsliceMarkerTraceIndex = null;
   var vsliceVisibleMarkerVolIds = [];
   var vsliceMarkerRestyleGuard = false;
+  var vsliceRaycastView = null;
+  var vsliceVtkModulePromise = null;
+  var vsliceRaycastVolId = null;
 
   if (vsliceCanvasEl && window.CryoVolumeSliceCanvas) {
     vsliceViewer = new CryoVolumeSliceCanvas({
       canvas: vsliceCanvasEl
     });
+  }
+
+  function vsliceIs3dVolumeMode() {
+    return !!(vsliceViewMode3dEl && vsliceViewMode3dEl.checked);
+  }
+
+  function vsliceEnsureVtkModule() {
+    if (window.CryoVolumeRaycastView) {
+      return Promise.resolve();
+    }
+    if (!vsliceVtkModulePromise) {
+      vsliceVtkModulePromise = new Promise(function(resolve, reject) {
+        var script = document.createElement("script");
+        script.src = VSLICE_VTK_BUNDLE_URL;
+        script.async = true;
+        script.onload = function() {
+          if (window.CryoVolumeRaycastView) {
+            resolve();
+            return;
+          }
+          reject(new Error("Volume raycast bundle did not register CryoVolumeRaycastView."));
+        };
+        script.onerror = function() {
+          reject(new Error("Failed to load volume raycast bundle."));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return vsliceVtkModulePromise;
+  }
+
+  function vsliceSyncViewModeChrome() {
+    var is3d = vsliceIs3dVolumeMode();
+    if (vsliceIsoControlsEl) vsliceIsoControlsEl.hidden = !is3d;
+    if (vsliceSliceControlsRowEl) vsliceSliceControlsRowEl.hidden = is3d;
+    if (vsliceCanvasEl) vsliceCanvasEl.hidden = is3d;
+    if (vsliceVtkContainerEl) vsliceVtkContainerEl.hidden = !is3d;
+    if (btnVsliceResetView) {
+      btnVsliceResetView.textContent = is3d ? "Reset camera" : "Reset slice(s)";
+      btnVsliceResetView.setAttribute(
+        "aria-label",
+        is3d ? "Reset 3D camera" : "Reset slice view in volume(s)"
+      );
+    }
+    vsliceSyncRotationLockButton();
+  }
+
+  function vsliceSyncRotationLockButton() {
+    if (!vsliceViewer) return;
+    var is3d = vsliceIs3dVolumeMode();
+    var multi = !!(vsliceViewer.layers && vsliceViewer.layers.length > 1);
+    if (vsliceRotationLockToolbarEl) {
+      vsliceRotationLockToolbarEl.hidden = is3d || !multi;
+    }
+    if (!vsliceRotationLockEl) return;
+    var locked = vsliceViewer.isRotationLocked();
+    if (vsliceRotationLockEl.checked !== locked) {
+      vsliceRotationLockEl.checked = locked;
+    }
+  }
+
+  function vsliceSyncIsoSliderFromView() {
+    if (!vsliceRaycastView || !vsliceIsoLevelSlider || !window.CryoVolume3dUtils) return;
+    var U = window.CryoVolume3dUtils;
+    var range = vsliceRaycastView.getIsoDataRange();
+    var slider = U.isoDataValueToSlider(
+      vsliceRaycastView.getIsoLevel(),
+      range.min,
+      range.max
+    );
+    vsliceIsoLevelSlider.value = String(Math.round(slider));
+  }
+
+  function vsliceOnIsoLevelInput() {
+    if (!vsliceRaycastView || !vsliceIsoLevelSlider || !window.CryoVolume3dUtils) return;
+    var U = window.CryoVolume3dUtils;
+    var range = vsliceRaycastView.getIsoDataRange();
+    var level = U.isoSliderToDataValue(
+      Number(vsliceIsoLevelSlider.value),
+      range.min,
+      range.max
+    );
+    vsliceRaycastView.setIsoLevel(level);
+  }
+
+  function vsliceDestroyRaycastView() {
+    if (vsliceRaycastView) {
+      vsliceRaycastView.destroy();
+      vsliceRaycastView = null;
+    }
+    vsliceRaycastVolId = null;
+  }
+
+  function vsliceResetRaycastCamera() {
+    if (vsliceRaycastView) vsliceRaycastView.resetCamera();
+  }
+
+  function vsliceResizeRaycast() {
+    if (vsliceRaycastView) vsliceRaycastView.resize();
+  }
+
+  function vsliceEnsureRaycastView() {
+    return vsliceEnsureVtkModule().then(function() {
+      if (!vsliceVtkContainerEl) return null;
+      if (!vsliceRaycastView && window.CryoVolumeRaycastView) {
+        vsliceRaycastView = new window.CryoVolumeRaycastView(vsliceVtkContainerEl);
+        if (vsliceViewportEl) {
+          vsliceRaycastView.observeResize(vsliceViewportEl);
+        }
+      }
+      return vsliceRaycastView;
+    });
+  }
+
+  function vslicePrimarySelectedVolId() {
+    return vsliceSelectedVolIds.length ? String(vsliceSelectedVolIds[0]) : "";
+  }
+
+  function vsliceRenderRaycastVolume() {
+    var volId = vslicePrimarySelectedVolId();
+    if (!volId) {
+      vsliceDestroyRaycastView();
+      return Promise.resolve();
+    }
+    var blob = vsliceVolumeData[volId];
+    if (!blob || !blob.volume_b64) {
+      return new Promise(function(resolve, reject) {
+        vsliceEnsureVolumesLoaded([volId], function(err) {
+          if (err) {
+            reject(err);
+            return;
+          }
+          vsliceRenderRaycastVolume().then(resolve).catch(reject);
+        });
+      });
+    }
+    if (vsliceRaycastVolId === volId && vsliceRaycastView) {
+      vsliceSyncIsoSliderFromView();
+      return Promise.resolve();
+    }
+    setVsliceStatus("Loading 3D viewer…", true);
+    return vsliceEnsureRaycastView().then(function(view) {
+      if (!view) throw new Error("3D viewer unavailable.");
+      var data = vsliceVolumeData[volId];
+      view.setVolumeFromB64(data.volume_b64, data.D);
+      vsliceRaycastVolId = volId;
+      vsliceSyncIsoSliderFromView();
+      setVsliceStatus("", false);
+    }).catch(function(err) {
+      setVsliceStatus(err.message || "Failed to load 3D viewer.", false);
+      if (vsliceViewMode3dEl) vsliceViewMode3dEl.checked = false;
+      vsliceSyncViewModeChrome();
+      vsliceRenderSelectedVolumes();
+    });
+  }
+
+  function vsliceOnViewModeChange() {
+    vsliceSyncViewModeChrome();
+    if (vsliceIs3dVolumeMode()) {
+      if (vsliceViewer) vsliceViewer.setVolumes([], false);
+      vsliceRenderSelectedVolumes();
+      return;
+    }
+    vsliceDestroyRaycastView();
+    vsliceRenderSelectedVolumes();
   }
 
   function vsliceIsVolumeSelected(volId) {
@@ -274,8 +450,18 @@
       if (vsliceViewportEl) vsliceViewportEl.hidden = true;
       vsliceShowSliceControls(false);
       if (vsliceViewer) vsliceViewer.setVolumes([], false);
+      vsliceDestroyRaycastView();
       return;
     }
+    if (vsliceIs3dVolumeMode()) {
+      vsliceSyncViewModeChrome();
+      if (vsliceViewportEl) vsliceViewportEl.hidden = false;
+      vsliceShowSliceControls(true);
+      vsliceRenderRaycastVolume();
+      vsliceSyncMarkerOverlay();
+      return;
+    }
+    vsliceDestroyRaycastView();
     vsliceEnsureVolumesLoaded(vsliceSelectedVolIds, function(err) {
       if (err) {
         setVsliceStatus(err.message || "Failed to load volume.", false);
@@ -298,11 +484,13 @@
       }
       if (!layers.length) return;
       if (vsliceViewportEl) vsliceViewportEl.hidden = false;
+      vsliceSyncViewModeChrome();
       vsliceShowSliceControls(true);
       if (vsliceViewer) {
         var hadLayers = vsliceViewer.layers && vsliceViewer.layers.length > 0;
         vsliceViewer.setVolumes(layers, !hadLayers);
       }
+      vsliceSyncRotationLockButton();
       vsliceSyncMarkerOverlay();
     });
   }
@@ -311,6 +499,17 @@
     volId = String(volId || "");
     if (!volId) return;
     var idx = vsliceSelectedVolIds.indexOf(volId);
+    if (vsliceIs3dVolumeMode()) {
+      if (idx >= 0) {
+        vsliceSelectedVolIds.splice(idx, 1);
+      } else {
+        vsliceSelectedVolIds = [volId];
+      }
+      vsliceRaycastVolId = null;
+      vsliceSyncVolumePicker();
+      vsliceRenderSelectedVolumes();
+      return;
+    }
     if (idx >= 0) {
       vsliceSelectedVolIds.splice(idx, 1);
       vsliceSyncVolumePicker();
@@ -387,7 +586,7 @@
     if (vsliceVolumeFetchById[volId]) {
       return vsliceVolumeFetchById[volId];
     }
-    var url = "{{ url_for('api_volume_slice_viewer_analyze_volume') }}"
+    var url = "{{ url_for('api_volume_viewer_analyze_volume') }}"
       + "?id=" + encodeURIComponent(String(volId));
     var promise = fetch(url)
       .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, j: j}; }); })
@@ -408,7 +607,7 @@
   }
 
   function vsliceLoadAnalyzeMarkers(myGen) {
-    return fetch("{{ url_for('api_volume_slice_viewer_analyze_markers') }}")
+    return fetch("{{ url_for('api_volume_viewer_analyze_markers') }}")
       .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, j: j}; }); })
       .then(function(res) {
         if (myGen !== vsliceLoadGeneration) return;
@@ -780,7 +979,7 @@
     }
     var myGen = ++vsliceDecodeGeneration;
     setVsliceStatus("Decoding volume on GPU…", true);
-    fetch("{{ url_for('api_volume_slice_viewer_decode') }}", {
+    fetch("{{ url_for('api_volume_viewer_decode') }}", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({row: row})
@@ -870,7 +1069,7 @@
   function loadAnalyzeVolumes() {
     var myGen = ++vsliceLoadGeneration;
     setVsliceStatus("Loading analyze volume catalog…", true);
-    fetch("{{ url_for('api_volume_slice_viewer_analyze_volumes') }}?include_markers=0")
+    fetch("{{ url_for('api_volume_viewer_analyze_volumes') }}?include_markers=0")
       .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, j: j}; }); })
       .then(function(res) {
         if (myGen !== vsliceLoadGeneration) return;
@@ -897,7 +1096,10 @@
           );
           return;
         }
-        var firstVolId = vsliceCycleIds[0];
+        var firstVolId = res.j.default_vol_id || vsliceCycleIds[0];
+        if (vsliceCycleIds.indexOf(firstVolId) < 0) {
+          firstVolId = vsliceCycleIds[0];
+        }
         vsliceSelectedVolIds = [firstVolId];
         setVsliceStatus("Loading " + vsliceCatalogTitle(firstVolId) + "…", true);
         return vsliceFetchVolume(firstVolId).then(function() {
@@ -947,20 +1149,51 @@
   vsliceWirePadButton(btnVsliceZoomOut, function() { vsliceViewer.zoomOut(); });
   if (btnVsliceResetView) {
     btnVsliceResetView.addEventListener("click", function() {
+      if (vsliceIs3dVolumeMode()) {
+        vsliceResetRaycastCamera();
+        return;
+      }
       if (vsliceViewer && vsliceViewer.layers && vsliceViewer.layers.length) {
         vsliceViewer.resetView();
       }
     });
   }
+  if (vsliceRotationLockEl) {
+    vsliceRotationLockEl.addEventListener("change", function() {
+      if (!vsliceViewer || !vsliceViewer.layers || vsliceViewer.layers.length < 2) {
+        vsliceSyncRotationLockButton();
+        return;
+      }
+      vsliceViewer.setRotationLocked(vsliceRotationLockEl.checked);
+    });
+    vsliceSyncRotationLockButton();
+  }
+
+  if (vsliceViewMode3dEl) {
+    vsliceViewMode3dEl.addEventListener("change", vsliceOnViewModeChange);
+    vsliceSyncViewModeChrome();
+  }
+
+  if (vsliceIsoLevelSlider) {
+    vsliceIsoLevelSlider.addEventListener("input", vsliceOnIsoLevelInput);
+  }
 
   if (vsliceCanvasEl && window.CryoResizeObserverUtils) {
     window.CryoResizeObserverUtils.observeResize([vsliceCanvasEl], function() {
+      if (vsliceIs3dVolumeMode()) {
+        vsliceResizeRaycast();
+        return;
+      }
       if (vsliceViewer && vsliceViewer.layers && vsliceViewer.layers.length) {
         vsliceViewer.draw();
       }
     });
   } else if (vsliceCanvasEl) {
     window.addEventListener("resize", function() {
+      if (vsliceIs3dVolumeMode()) {
+        vsliceResizeRaycast();
+        return;
+      }
       if (vsliceViewer && vsliceViewer.layers && vsliceViewer.layers.length) {
         vsliceViewer.draw();
       }

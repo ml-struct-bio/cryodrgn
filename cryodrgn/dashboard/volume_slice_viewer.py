@@ -14,18 +14,63 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional
 
 import numpy as np
 
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import _decode_z_values_to_vol_paths
-from cryodrgn.masking import apply_spherical_window_mask_3d
 from cryodrgn.mrcfile import parse_mrc
 from cryodrgn import analysis as cryo_analysis
 
 _VOL_MRC_RE = re.compile(r"^vol_(\d+)\.mrc$", re.IGNORECASE)
 _PC_DIR_RE = re.compile(r"^pc(\d+)$", re.IGNORECASE)
 _RECON_WINDOW_OUT_RAD = 0.99
+
+
+def spherical_window_mask_3d(
+    vol: Optional[np.ndarray] = None,
+    *,
+    D: Optional[int] = None,
+    in_rad: float = 1.0,
+    out_rad: float = 1.0,
+) -> np.ndarray:
+    """Create a 3-D radial mask for cubic volumes (soft or hard edge).
+
+    Uses normalized radial coordinates with ``in_rad`` / ``out_rad`` semantics
+    matching training-time ``spherical_window_mask``, extended to
+    ``sqrt(x^2 + y^2 + z^2)``.
+    """
+    if (vol is None) == (D is None):
+        raise ValueError("Either `vol` or `D` must be specified!")
+    if vol is not None:
+        D = int(vol.shape[0])
+
+    assert in_rad <= out_rad
+    ax = np.linspace(-1.0, 1.0, int(D) + 1, dtype=np.float32)[:-1]
+    x0, x1, x2 = np.meshgrid(ax, ax, ax, indexing="ij")
+    dists = np.sqrt(x0**2 + x1**2 + x2**2)
+
+    if in_rad == out_rad:
+        return (dists <= out_rad).astype(np.float32)
+
+    return np.clip(
+        1.0 - (dists - in_rad) / (out_rad - in_rad),
+        0.0,
+        1.0,
+    ).astype(np.float32)
+
+
+def apply_spherical_window_mask_3d(
+    vol: np.ndarray,
+    *,
+    in_rad: float = 0.85,
+    out_rad: float = 0.99,
+) -> np.ndarray:
+    """Multiply a cubic volume by a 3-D spherical window."""
+    vol = np.asarray(vol, dtype=np.float32)
+    mask = spherical_window_mask_3d(D=int(vol.shape[0]), in_rad=in_rad, out_rad=out_rad)
+    return (vol * mask).astype(np.float32)
 
 
 def reconstruction_window_params(exp: DashboardExperiment) -> tuple[bool, float, float]:
@@ -282,6 +327,53 @@ def _catalog_public(catalog: list[dict]) -> list[dict]:
     return [{k: v for k, v in entry.items() if k != "path"} for entry in catalog]
 
 
+def _enrich_kmeans_catalog_znorm(exp: DashboardExperiment, catalog: list[dict]) -> None:
+    """Attach ``znorm`` at each k-means center's nearest plot row (in-place)."""
+    if "znorm" not in exp.plot_df.columns:
+        return
+    km_dir = os.path.join(_analyze_dir(exp), f"kmeans{int(exp.kmeans_folder_id)}")
+    km_rows = _load_kmeans_center_plot_rows(km_dir)
+    if km_rows is None:
+        return
+    znorm = np.asarray(exp.plot_df["znorm"], dtype=np.float64)
+    for entry in catalog:
+        if entry.get("kind") != "kmeans":
+            continue
+        cl = int(entry["cluster_label"])
+        if not (0 <= cl < len(km_rows)):
+            continue
+        plot_row = int(km_rows[cl])
+        if not (0 <= plot_row < len(znorm)):
+            continue
+        zn = float(znorm[plot_row])
+        if np.isfinite(zn):
+            entry["znorm"] = zn
+
+
+def default_analyze_volume_id(catalog: list[dict]) -> str | None:
+    """Return the k-means catalog id with the lowest ``znorm``, if any."""
+    best_id: str | None = None
+    best_znorm: float | None = None
+    for entry in catalog:
+        if entry.get("kind") != "kmeans":
+            continue
+        zn = entry.get("znorm")
+        if zn is None:
+            continue
+        zn_f = float(zn)
+        if not np.isfinite(zn_f):
+            continue
+        if best_znorm is None or zn_f < best_znorm:
+            best_znorm = zn_f
+            best_id = str(entry["id"])
+    if best_id is not None:
+        return best_id
+    for entry in catalog:
+        if entry.get("kind") == "kmeans":
+            return str(entry["id"])
+    return str(catalog[0]["id"]) if catalog else None
+
+
 def _catalog_entry_by_id(catalog: list[dict], vol_id: str) -> dict | None:
     for entry in catalog:
         if entry["id"] == vol_id:
@@ -307,13 +399,16 @@ def analyze_volumes_catalog_payload(
             return dict(cached["payload"])
 
     catalog = discover_analyze_volume_catalog(exp)
+    catalog_public = _catalog_public(catalog)
+    _enrich_kmeans_catalog_znorm(exp, catalog_public)
     markers: list[dict] = []
     if include_markers:
         markers = discover_analyze_volume_markers(exp, catalog)
 
     payload = {
         "ok": True,
-        "catalog": _catalog_public(catalog),
+        "catalog": catalog_public,
+        "default_vol_id": default_analyze_volume_id(catalog_public),
         "markers": markers,
         "D": None,
     }

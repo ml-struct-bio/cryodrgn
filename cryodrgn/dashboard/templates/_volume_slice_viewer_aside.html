@@ -18,6 +18,23 @@
           </p>
         </div>
       </div>
+      <div class="cryo-vslice-volume-nav-row" id="vslice-volume-nav-row">
+        <div id="vslice-volume-nav" class="cryo-vslice-volume-nav cryo-vslice-volume-nav--inactive"
+          role="group" aria-label="Cycle displayed volumes" aria-disabled="true">
+          <button type="button" class="btn btn-secondary cryo-vslice-vol-nav-btn cryo-vslice-vol-nav-btn--prev"
+            id="btn-vslice-vol-prev" aria-label="Previous displayed volume" disabled>◀</button>
+          <span id="vslice-volume-nav-label" class="cryo-vslice-volume-nav-label"
+            aria-live="polite">—</span>
+          <button type="button" class="btn btn-secondary cryo-vslice-vol-nav-btn cryo-vslice-vol-nav-btn--next"
+            id="btn-vslice-vol-next" aria-label="Next displayed volume" disabled>▶</button>
+        </div>
+        <label id="vslice-fix-grid-toolbar" class="cryo-vslice-fix-grid-label cryo-vslice-fix-grid-label--inactive"
+          for="vslice-fix-grid-size">
+          <input type="checkbox" id="vslice-fix-grid-size" role="switch"
+            aria-label="Fix slice grid size and page extra volumes" disabled/>
+          <span>Fix grid size</span>
+        </label>
+      </div>
       <div class="cryo-vslice-scroll">
       <div class="cryo-vslice-viewport" id="vslice-viewport" hidden>
         <canvas id="vslice-canvas" class="cryo-vslice-canvas" aria-label="Volume slice"></canvas>

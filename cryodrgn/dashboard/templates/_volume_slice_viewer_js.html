@@ -22,6 +22,12 @@
   var vsliceViewMode3dEl = document.getElementById("vslice-view-mode-3d");
   var vsliceIsoControlsEl = document.getElementById("vslice-iso-controls");
   var vsliceIsoLevelSlider = document.getElementById("vslice-iso-level");
+  var vsliceVolumeNavEl = document.getElementById("vslice-volume-nav");
+  var vsliceVolumeNavLabelEl = document.getElementById("vslice-volume-nav-label");
+  var btnVsliceVolPrev = document.getElementById("btn-vslice-vol-prev");
+  var btnVsliceVolNext = document.getElementById("btn-vslice-vol-next");
+  var vsliceFixGridToolbarEl = document.getElementById("vslice-fix-grid-toolbar");
+  var vsliceFixGridSizeEl = document.getElementById("vslice-fix-grid-size");
   var vsliceSliceControlsRowEl = document.getElementById("vslice-slice-controls-row");
   var vsliceVtkContainerEl = document.getElementById("vslice-vtk-container");
   var VSLICE_VTK_BUNDLE_URL = {{ url_for('static', filename='js/volume_raycast_vtk.bundle.js') | tojson }};
@@ -57,6 +63,9 @@
   var vsliceRaycastView = null;
   var vsliceVtkModulePromise = null;
   var vsliceRaycastVolId = null;
+  var vsliceRaycastFocusVolId = null;
+  var vsliceFixedGridN = 0;
+  var vsliceGridWindowOffset = 0;
 
   if (vsliceCanvasEl && window.CryoVolumeSliceCanvas) {
     vsliceViewer = new CryoVolumeSliceCanvas({
@@ -93,12 +102,89 @@
     return vsliceVtkModulePromise;
   }
 
+  function vsliceIsFixGridSize() {
+    return !!(vsliceFixGridSizeEl && vsliceFixGridSizeEl.checked);
+  }
+
+  function vsliceGridSlotCapacity() {
+    if (!vsliceIsFixGridSize() || vsliceFixedGridN < 1) {
+      return vsliceSelectedVolIds.length;
+    }
+    return vsliceFixedGridN * vsliceFixedGridN;
+  }
+
+  function vsliceClampGridWindowOffset() {
+    var cap = vsliceGridSlotCapacity();
+    var len = vsliceSelectedVolIds.length;
+    if (!vsliceIsFixGridSize() || len <= cap) {
+      vsliceGridWindowOffset = 0;
+      return;
+    }
+    var maxOff = len - cap;
+    if (vsliceGridWindowOffset > maxOff) vsliceGridWindowOffset = maxOff;
+    if (vsliceGridWindowOffset < 0) vsliceGridWindowOffset = 0;
+  }
+
+  function vsliceVolumeNavNeeded() {
+    if (!vsliceSelectedVolIds.length) return false;
+    if (vsliceIs3dVolumeMode()) {
+      return vsliceSelectedVolIds.length > 1;
+    }
+    if (!vsliceIsFixGridSize()) return false;
+    return vsliceSelectedVolIds.length > vsliceGridSlotCapacity();
+  }
+
+  function vsliceDisplayFocusVolIds() {
+    if (vsliceIs3dVolumeMode()) {
+      var volId = vsliceEffectiveRaycastVolId();
+      return volId ? [volId] : [];
+    }
+    return vsliceDisplayVolumeIds();
+  }
+
+  function vsliceDisplayVolumeIds() {
+    var ids = vsliceSelectedVolIds.slice();
+    if (vsliceIs3dVolumeMode()) {
+      var one = vsliceEffectiveRaycastVolId();
+      return one ? [one] : [];
+    }
+    if (!vsliceIsFixGridSize()) return ids;
+    var cap = vsliceGridSlotCapacity();
+    if (ids.length <= cap) return ids;
+    vsliceClampGridWindowOffset();
+    return ids.slice(vsliceGridWindowOffset, vsliceGridWindowOffset + cap);
+  }
+
+  function vsliceSyncVolumeNavChrome() {
+    var active = vsliceVolumeNavNeeded();
+    if (vsliceVolumeNavEl) {
+      vsliceVolumeNavEl.classList.toggle("cryo-vslice-volume-nav--inactive", !active);
+      vsliceVolumeNavEl.setAttribute("aria-disabled", active ? "false" : "true");
+    }
+    if (btnVsliceVolPrev) btnVsliceVolPrev.disabled = !active;
+    if (btnVsliceVolNext) btnVsliceVolNext.disabled = !active;
+    vsliceSyncVolumeNavLabel();
+  }
+
+  function vsliceSyncFixGridChrome() {
+    if (!vsliceFixGridToolbarEl || !vsliceFixGridSizeEl) return;
+    var is3d = vsliceIs3dVolumeMode();
+    var enabled = !is3d && vsliceSelectedVolIds.length > 0;
+    vsliceFixGridToolbarEl.classList.toggle(
+      "cryo-vslice-fix-grid-label--inactive",
+      !enabled
+    );
+    vsliceFixGridSizeEl.disabled = !enabled;
+  }
+
   function vsliceSyncViewModeChrome() {
     var is3d = vsliceIs3dVolumeMode();
     if (vsliceIsoControlsEl) vsliceIsoControlsEl.hidden = !is3d;
     if (vsliceSliceControlsRowEl) vsliceSliceControlsRowEl.hidden = is3d;
     if (vsliceCanvasEl) vsliceCanvasEl.hidden = is3d;
     if (vsliceVtkContainerEl) vsliceVtkContainerEl.hidden = !is3d;
+    vsliceSyncFixGridChrome();
+    vsliceSyncVolumeNavChrome();
     if (btnVsliceResetView) {
       btnVsliceResetView.textContent = is3d ? "Reset camera" : "Reset slice(s)";
       btnVsliceResetView.setAttribute(
@@ -107,6 +193,108 @@
       );
     }
     vsliceSyncRotationLockButton();
+  }
+
+  function vsliceEffectiveRaycastVolId() {
+    if (!vsliceSelectedVolIds.length) return "";
+    if (
+      vsliceRaycastFocusVolId
+      && vsliceSelectedVolIds.indexOf(vsliceRaycastFocusVolId) >= 0
+    ) {
+      return String(vsliceRaycastFocusVolId);
+    }
+    return String(vsliceSelectedVolIds[0]);
+  }
+
+  function vsliceSyncVolumeNavLabel() {
+    if (!vsliceVolumeNavLabelEl) return;
+    if (!vsliceVolumeNavNeeded()) {
+      vsliceVolumeNavLabelEl.textContent = "—";
+      vsliceVolumeNavLabelEl.classList.add("cryo-vslice-volume-nav-label--inactive");
+      return;
+    }
+    vsliceVolumeNavLabelEl.classList.remove("cryo-vslice-volume-nav-label--inactive");
+    var len = vsliceSelectedVolIds.length;
+    if (vsliceIs3dVolumeMode()) {
+      var volId = vsliceEffectiveRaycastVolId();
+      var idx = vsliceSelectedVolIds.indexOf(volId);
+      var entry = vsliceCatalogById[volId] || { id: volId };
+      var label = vsliceVolButtonLabel(entry) || volId;
+      vsliceVolumeNavLabelEl.textContent =
+        label + " (" + String(idx + 1) + "/" + String(len) + ")";
+      return;
+    }
+    vsliceClampGridWindowOffset();
+    var cap = vsliceGridSlotCapacity();
+    var start = vsliceGridWindowOffset + 1;
+    var end = Math.min(vsliceGridWindowOffset + cap, len);
+    vsliceVolumeNavLabelEl.textContent = start + "–" + end + " of " + len;
+  }
+
+  function vsliceSetRaycastFocusVolId(volId, rerender) {
+    volId = String(volId || "");
+    if (!volId || vsliceSelectedVolIds.indexOf(volId) < 0) return;
+    vsliceRaycastFocusVolId = volId;
+    if (rerender === false) {
+      vsliceSyncVolumePicker();
+      vsliceSyncVolumeNavLabel();
+      return;
+    }
+    if (vsliceRaycastVolId !== volId) {
+      vsliceRaycastVolId = null;
+    }
+    vsliceSyncVolumePicker();
+    vsliceSyncVolumeNavLabel();
+    if (vsliceIs3dVolumeMode()) {
+      vsliceRenderRaycastVolume();
+    }
+  }
+
+  function vsliceCycleRaycastFocus(delta) {
+    if (!vsliceIs3dVolumeMode() || vsliceSelectedVolIds.length < 2) return;
+    var cur = vsliceEffectiveRaycastVolId();
+    var idx = vsliceSelectedVolIds.indexOf(cur);
+    if (idx < 0) idx = 0;
+    var n = vsliceSelectedVolIds.length;
+    var nextIdx = (idx + delta + n) % n;
+    vsliceSetRaycastFocusVolId(vsliceSelectedVolIds[nextIdx]);
+  }
+
+  function vsliceCycleVolumeNav(delta) {
+    if (vsliceIs3dVolumeMode()) {
+      vsliceCycleRaycastFocus(delta);
+      return;
+    }
+    if (!vsliceIsFixGridSize()) return;
+    var cap = vsliceGridSlotCapacity();
+    var len = vsliceSelectedVolIds.length;
+    if (len <= cap) return;
+    var maxOff = len - cap;
+    vsliceGridWindowOffset = (vsliceGridWindowOffset + delta + maxOff + 1) % (maxOff + 1);
+    vsliceSyncVolumePicker();
+    vsliceSyncVolumeNavLabel();
+    vsliceRenderSelectedVolumes(false);
+  }
+
+  function vsliceOnFixGridSizeChange() {
+    if (!vsliceFixGridSizeEl) return;
+    if (vsliceFixGridSizeEl.checked) {
+      var count = Math.max(1, vsliceSelectedVolIds.length);
+      vsliceFixedGridN = Math.max(1, Math.ceil(Math.sqrt(count)));
+      if (vsliceViewer && vsliceViewer.setFixedGridN) {
+        vsliceViewer.setFixedGridN(vsliceFixedGridN);
+      }
+      vsliceGridWindowOffset = 0;
+    } else {
+      vsliceFixedGridN = 0;
+      vsliceGridWindowOffset = 0;
+      if (vsliceViewer && vsliceViewer.setFixedGridN) {
+        vsliceViewer.setFixedGridN(0);
+      }
+    }
+    vsliceClampGridWindowOffset();
+    vsliceSyncViewModeChrome();
+    vsliceRenderSelectedVolumes(false);
   }
 
   function vsliceSyncRotationLockButton() {
@@ -153,6 +341,7 @@
       vsliceRaycastView = null;
     }
     vsliceRaycastVolId = null;
+    vsliceRaycastFocusVolId = null;
   }
 
   function vsliceResetRaycastCamera() {
@@ -181,7 +370,7 @@
   }
 
   function vsliceRenderRaycastVolume() {
-    var volId = vslicePrimarySelectedVolId();
+    var volId = vsliceEffectiveRaycastVolId();
     if (!volId) {
       vsliceDestroyRaycastView();
       return Promise.resolve();
@@ -208,7 +397,10 @@
       var data = vsliceVolumeData[volId];
       view.setVolumeFromB64(data.volume_b64, data.D);
       vsliceRaycastVolId = volId;
+      vsliceRaycastFocusVolId = volId;
       vsliceSyncIsoSliderFromView();
+      vsliceSyncVolumePicker();
+      vsliceSyncVolumeNavChrome();
       setVsliceStatus("", false);
     }).catch(function(err) {
       setVsliceStatus(err.message || "Failed to load 3D viewer.", false);
@@ -331,8 +523,14 @@
     });
   }
 
-  function vsliceFillVolumeButtonRow(btnWrap, entries, selectedIds) {
+  function vsliceFillVolumeButtonRow(btnWrap, entries, selectedIds, displayFocusIds) {
     if (!btnWrap) return;
+    var focusSet = {};
+    var focusList = displayFocusIds || [];
+    for (var fi = 0; fi < focusList.length; fi++) {
+      focusSet[String(focusList[fi])] = true;
+    }
+    var singleFocus = focusList.length === 1 ? String(focusList[0]) : "";
     btnWrap.innerHTML = "";
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i];
@@ -340,10 +538,18 @@
       btn.type = "button";
       btn.className = "btn btn-secondary cryo-vslice-vol-btn";
       if (selectedIds.indexOf(entry.id) >= 0) btn.classList.add("cryo-vslice-vol-btn--active");
+      if (focusSet[entry.id]) {
+        btn.classList.add("cryo-vslice-vol-btn--raycast-focus");
+      }
       btn.textContent = vsliceVolButtonLabel(entry);
       btn.title = vsliceCatalogTitle(entry.id);
       btn.setAttribute("data-vol-id", entry.id);
       btn.setAttribute("aria-pressed", selectedIds.indexOf(entry.id) >= 0 ? "true" : "false");
+      if (singleFocus && entry.id === singleFocus) {
+        btn.setAttribute("aria-current", "true");
+      } else {
+        btn.removeAttribute("aria-current");
+      }
       btn.addEventListener("click", function() {
         vsliceToggleVolumeSelection(this.getAttribute("data-vol-id"));
       });
@@ -368,7 +574,7 @@
     head.textContent = spec.head || "";
     var btns = document.createElement("div");
     btns.className = "cryo-vslice-volume-row-btns";
-    vsliceFillVolumeButtonRow(btns, entries, selectedIds);
+    vsliceFillVolumeButtonRow(btns, entries, selectedIds, spec.displayFocusIds || []);
     row.appendChild(head);
     row.appendChild(btns);
     return row;
@@ -418,7 +624,11 @@
       else if (entry.kind === "pc") pc.push(entry);
     }
     var selectedIds = vsliceSelectedVolIds.slice();
+    var displayFocusIds = vsliceVolumeNavNeeded() ? vsliceDisplayFocusVolIds() : [];
     var specs = vsliceVolumePickerRowSpecs(km, pc, manual);
+    for (var sj = 0; sj < specs.length; sj++) {
+      specs[sj].displayFocusIds = displayFocusIds;
+    }
     if (vsliceVolumePickerRowsEl) {
       vsliceVolumePickerRowsEl.innerHTML = "";
       for (var si = 0; si < specs.length; si++) {
@@ -428,6 +638,8 @@
     if (vsliceVolumePickerEl) {
       vsliceVolumePickerEl.hidden = specs.length === 0;
     }
+    vsliceSyncVolumeNavChrome();
+    vsliceSyncFixGridChrome();
   }
 
   function vsliceEnsureVolumesLoaded(volIds, cb) {
@@ -445,14 +657,19 @@
       .catch(function(err) { cb(err); });
   }
 
-  function vsliceRenderSelectedVolumes() {
+  function vsliceRenderSelectedVolumes(resetView) {
     if (!vsliceSelectedVolIds.length) {
       if (vsliceViewportEl) vsliceViewportEl.hidden = true;
       vsliceShowSliceControls(false);
-      if (vsliceViewer) vsliceViewer.setVolumes([], false);
+      if (vsliceViewer) {
+        if (vsliceViewer.setFixedGridN) vsliceViewer.setFixedGridN(0);
+        vsliceViewer.setVolumes([], false);
+      }
       vsliceDestroyRaycastView();
+      vsliceSyncViewModeChrome();
       return;
     }
+    vsliceClampGridWindowOffset();
     if (vsliceIs3dVolumeMode()) {
       vsliceSyncViewModeChrome();
       if (vsliceViewportEl) vsliceViewportEl.hidden = false;
@@ -462,14 +679,15 @@
       return;
     }
     vsliceDestroyRaycastView();
-    vsliceEnsureVolumesLoaded(vsliceSelectedVolIds, function(err) {
+    var displayIds = vsliceDisplayVolumeIds();
+    vsliceEnsureVolumesLoaded(displayIds, function(err) {
       if (err) {
         setVsliceStatus(err.message || "Failed to load volume.", false);
         return;
       }
       var layers = [];
-      for (var i = 0; i < vsliceSelectedVolIds.length; i++) {
-        var id = vsliceSelectedVolIds[i];
+      for (var i = 0; i < displayIds.length; i++) {
+        var id = displayIds[i];
         var blob = vsliceVolumeData[id];
         if (blob && blob.volume_b64) {
           var entry = vsliceCatalogById[id] || { id: id };
@@ -487,8 +705,14 @@
       vsliceSyncViewModeChrome();
       vsliceShowSliceControls(true);
       if (vsliceViewer) {
-        var hadLayers = vsliceViewer.layers && vsliceViewer.layers.length > 0;
-        vsliceViewer.setVolumes(layers, !hadLayers);
+        if (vsliceIsFixGridSize() && vsliceFixedGridN > 0) {
+          vsliceViewer.setFixedGridN(vsliceFixedGridN);
+        } else if (vsliceViewer.setFixedGridN) {
+          vsliceViewer.setFixedGridN(0);
+        }
+        var shouldReset = resetView !== false
+          && !(vsliceViewer.layers && vsliceViewer.layers.length > 0);
+        vsliceViewer.setVolumes(layers, shouldReset);
       }
       vsliceSyncRotationLockButton();
       vsliceSyncMarkerOverlay();
@@ -502,16 +726,44 @@
     if (vsliceIs3dVolumeMode()) {
       if (idx >= 0) {
         vsliceSelectedVolIds.splice(idx, 1);
-      } else {
-        vsliceSelectedVolIds = [volId];
+        if (vsliceRaycastFocusVolId === volId) {
+          vsliceRaycastFocusVolId = null;
+          vsliceRaycastVolId = null;
+        }
+        vsliceClampGridWindowOffset();
+        vsliceSyncViewModeChrome();
+        vsliceSyncVolumePicker();
+        vsliceRenderSelectedVolumes();
+        return;
       }
+      vsliceSelectedVolIds.push(volId);
+      vsliceRaycastFocusVolId = volId;
       vsliceRaycastVolId = null;
-      vsliceSyncVolumePicker();
-      vsliceRenderSelectedVolumes();
+      setVsliceStatus("Loading " + vsliceCatalogTitle(volId) + "…", true);
+      vsliceEnsureVolumesLoaded([volId], function(err) {
+        setVsliceStatus("", false);
+        if (err) {
+          var rm = vsliceSelectedVolIds.indexOf(volId);
+          if (rm >= 0) vsliceSelectedVolIds.splice(rm, 1);
+          if (vsliceRaycastFocusVolId === volId) {
+            vsliceRaycastFocusVolId = null;
+            vsliceRaycastVolId = null;
+          }
+          setVsliceStatus(err.message || "Failed to load volume.", false);
+          vsliceSyncViewModeChrome();
+          vsliceSyncVolumePicker();
+          return;
+        }
+        vsliceSyncViewModeChrome();
+        vsliceSyncVolumePicker();
+        vsliceRenderSelectedVolumes();
+      });
       return;
     }
     if (idx >= 0) {
       vsliceSelectedVolIds.splice(idx, 1);
+      vsliceClampGridWindowOffset();
+      vsliceSyncViewModeChrome();
       vsliceSyncVolumePicker();
       vsliceRenderSelectedVolumes();
       return;
@@ -1157,6 +1409,19 @@
         vsliceViewer.resetView();
       }
     });
+  }
+  if (btnVsliceVolPrev) {
+    btnVsliceVolPrev.addEventListener("click", function() {
+      vsliceCycleVolumeNav(-1);
+    });
+  }
+  if (btnVsliceVolNext) {
+    btnVsliceVolNext.addEventListener("click", function() {
+      vsliceCycleVolumeNav(1);
+    });
+  }
+  if (vsliceFixGridSizeEl) {
+    vsliceFixGridSizeEl.addEventListener("change", vsliceOnFixGridSizeChange);
   }
   if (vsliceRotationLockEl) {
     vsliceRotationLockEl.addEventListener("change", function() {

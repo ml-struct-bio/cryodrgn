@@ -102,6 +102,8 @@
     /** Display contrast slider level (0–100, 50 = neutral). */
     this.contrastLevel = 50;
     this.recomputePending = false;
+    /** When > 0, keep an n×n grid even if fewer volumes are shown. */
+    this.fixedGridN = 0;
     this._wirePointer();
   }
 
@@ -167,8 +169,26 @@
     }
   };
 
+  VolumeSliceCanvas.prototype.setFixedGridN = function (n) {
+    this.fixedGridN = n > 0 ? Math.max(1, Math.floor(Number(n))) : 0;
+  };
+
+  VolumeSliceCanvas.prototype.gridSlotCapacity = function () {
+    if (this.fixedGridN > 0) {
+      return this.fixedGridN * this.fixedGridN;
+    }
+    var count = Math.max(1, this.layers.length);
+    var n = Math.max(1, Math.ceil(Math.sqrt(count)));
+    return n * n;
+  };
+
   VolumeSliceCanvas.prototype._gridLayout = function (layerCount) {
-    var n = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, layerCount))));
+    var n;
+    if (this.fixedGridN > 0) {
+      n = this.fixedGridN;
+    } else {
+      n = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, layerCount))));
+    }
     return { cols: n, rows: n, n: n, slots: n * n };
   };
 

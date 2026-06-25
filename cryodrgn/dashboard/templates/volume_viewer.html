@@ -1,22 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Volume slice viewer · cryoDRGN{% endblock %}
+{% block title %}Volume viewer · cryoDRGN{% endblock %}
 {% from "_macros.html" import nav_page_title_span %}
 {% from "_palette_options.html" import continuous_palette_options %}
-{% block nav_page_title %}{{ nav_page_title_span("Volume slice viewer") }}{% endblock %}
+{% block nav_page_title %}{{ nav_page_title_span("Volume viewer") }}{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/cryo_cc_legend_palette_menu.css') }}"/>
 <style>
-  .cryo-dash-page--volume-slice-viewer {
+  .cryo-dash-page--volume-viewer {
     --cryo-dash-below-nav-tall: 9.5rem;
     --cryo-vslice-side-w: min(245px, 17.5vw);
     --cryo-vslice-aside-max-w: min(24rem, 42vw);
     --cryo-vslice-plot-status-h: 1.35rem;
   }
-  main:has(.cryo-dash-page--volume-slice-viewer) {
+  main:has(.cryo-dash-page--volume-viewer) {
     padding-top: 0.2rem;
     padding-bottom: 0.35rem;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-dash-row--volume-slice {
+  .cryo-dash-page--volume-viewer .cryo-dash-row--volume-slice {
     display: grid;
     grid-template-columns: var(--cryo-vslice-side-w) minmax(0, 1fr) max-content;
     align-items: stretch;
@@ -25,14 +25,14 @@
     min-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
     max-height: calc(100svh - var(--cryo-dash-below-nav, 9.5rem));
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-dash-side {
+  .cryo-dash-page--volume-viewer .cryo-dash-side {
     grid-column: 1;
     width: auto;
     min-width: 163px;
     max-width: none;
     flex: unset;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-dash-viewport--plotly {
+  .cryo-dash-page--volume-viewer .cryo-dash-viewport--plotly {
     grid-column: 2;
     flex: unset;
     width: auto;
@@ -47,13 +47,13 @@
     container-type: size;
     container-name: cryo-vslice-plot;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-particle-explorer-plot-status {
+  .cryo-dash-page--volume-viewer .cryo-particle-explorer-plot-status {
     margin: 0 0 0.05rem !important;
     min-height: 1em;
     line-height: 1.2;
     font-size: 0.78rem;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-plotly-stack {
+  .cryo-dash-page--volume-viewer .cryo-plotly-stack {
     position: relative;
     flex: 0 0 auto;
     align-self: center;
@@ -73,14 +73,14 @@
     height: auto;
     margin-top: 0;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-plotly-graph-host {
+  .cryo-dash-page--volume-viewer .cryo-plotly-graph-host {
     flex: 1 1 auto;
     min-height: 0;
     min-width: 0;
     height: 100% !important;
     width: 100% !important;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices {
+  .cryo-dash-page--volume-viewer .cryo-dash-montage--volume-slices {
     grid-column: 3;
     flex: unset;
     width: max-content;
@@ -95,9 +95,13 @@
     flex-direction: column;
     justify-self: end;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices .cryo-explorer-menu-scroll,
-  .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices .cryo-dash-montage-scroll,
-  .cryo-dash-page--volume-slice-viewer .cryo-dash-montage--volume-slices #montage-actions {
+  .cryo-dash-page--volume-viewer .cryo-vslice-panel-section,
+  .cryo-dash-page--volume-viewer .cryo-vslice-panel-section .cryo-explorer-panel-shell {
+    width: 100%;
+  }
+  .cryo-dash-page--volume-viewer .cryo-dash-montage--volume-slices .cryo-explorer-menu-scroll,
+  .cryo-dash-page--volume-viewer .cryo-dash-montage--volume-slices .cryo-dash-montage-scroll,
+  .cryo-dash-page--volume-viewer .cryo-dash-montage--volume-slices #montage-actions {
     flex: 1 1 auto;
     min-height: 0;
     height: 100%;
@@ -107,11 +111,11 @@
     margin-top: 0;
     gap: 0;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-vslice-panel-section {
+  .cryo-dash-page--volume-viewer .cryo-vslice-panel-section {
     margin-bottom: 0;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-vslice-panel-section,
-  .cryo-dash-page--volume-slice-viewer .cryo-vslice-panel-section .cryo-explorer-panel-shell {
+  .cryo-dash-page--volume-viewer .cryo-vslice-panel-section,
+  .cryo-dash-page--volume-viewer .cryo-vslice-panel-section .cryo-explorer-panel-shell {
     flex: 1 1 auto;
     min-height: 0;
     height: 100%;
@@ -119,23 +123,25 @@
   .cryo-vslice-panel-shell {
     flex: 1 1 auto;
     min-height: 0;
-    width: max-content;
+    width: 100%;
     max-width: 100%;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
+    justify-items: center;
   }
   .cryo-vslice-scroll {
     grid-row: 2;
+    flex: 1 1 auto;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    display: grid;
-    grid-template-rows: minmax(5.5rem, 1fr);
-    justify-items: center;
-    align-content: stretch;
-    width: max-content;
-    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    align-self: stretch;
     box-sizing: border-box;
   }
   .cryo-vslice-controls-dock {
@@ -157,12 +163,12 @@
   .cryo-vslice-panel-top {
     flex: 0 0 auto;
     width: 100%;
+    align-self: stretch;
     min-width: 0;
     box-sizing: border-box;
     grid-row: 1;
     margin: 0;
     padding: 0;
-    align-self: start;
   }
   .cryo-vslice-status-slot {
     flex: 0 0 auto;
@@ -265,10 +271,11 @@
   }
   .cryo-vslice-viewport {
     position: relative;
-    grid-row: 1;
+    flex: 1 1 auto;
     width: auto;
-    height: 100%;
     max-width: 100%;
+    height: auto;
+    max-height: 100%;
     min-width: 0;
     min-height: 5.5rem;
     margin: 0.25rem 0 0.35rem;
@@ -277,7 +284,6 @@
     background: transparent;
     overflow: hidden;
     aspect-ratio: 1 / 1.19;
-    justify-self: center;
     box-sizing: border-box;
   }
   .cryo-vslice-canvas {
@@ -291,6 +297,222 @@
   }
   .cryo-vslice-canvas:active {
     cursor: grabbing;
+  }
+  .cryo-vslice-vtk-container {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    cursor: grab;
+    touch-action: none;
+    background: #faf8f4;
+    overflow: hidden;
+  }
+  .cryo-vslice-vtk-container[hidden] {
+    display: none !important;
+  }
+  .cryo-vslice-panel-shell:has(#vslice-view-mode-3d:checked) .cryo-vslice-viewport {
+    border: none;
+    border-radius: 0;
+    background: #faf8f4;
+  }
+  .cryo-vslice-toggle-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.42rem;
+    width: 100%;
+    margin: 0 0 0.35rem;
+    box-sizing: border-box;
+  }
+  .cryo-vslice-rotation-lock-toolbar {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-vslice-rotation-lock-toolbar[hidden] {
+    display: none !important;
+  }
+  .cryo-vslice-feature-switch.cryo-image-grid-contrast-switch {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 0.42rem;
+    flex-shrink: 0;
+    margin: 0;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-contrast-side {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 0.46rem;
+    flex-shrink: 0;
+    opacity: 0.42;
+    transition: opacity 0.15s ease;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-contrast-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    min-width: 0;
+    color: var(--muted, #5c6b7a);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    text-align: center;
+    user-select: none;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-contrast-label__line {
+    display: block;
+    white-space: nowrap;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-contrast-picto-col {
+    position: relative;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 1.5rem;
+    min-height: 2.33rem;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-contrast-picto {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-contrast-picto svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .cryo-vslice-view-mode-switch:has(#vslice-view-mode-3d:not(:checked))
+    .cryo-image-grid-contrast-side--slice {
+    opacity: 1;
+  }
+  .cryo-vslice-view-mode-switch:has(#vslice-view-mode-3d:not(:checked))
+    .cryo-image-grid-contrast-side--slice .cryo-image-grid-contrast-label {
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-vslice-view-mode-switch:has(#vslice-view-mode-3d:checked)
+    .cryo-image-grid-contrast-side--raycast {
+    opacity: 1;
+  }
+  .cryo-vslice-view-mode-switch:has(#vslice-view-mode-3d:checked)
+    .cryo-image-grid-contrast-side--raycast .cryo-image-grid-contrast-label {
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-vslice-rotation-lock-switch:has(#vslice-rotation-lock:not(:checked))
+    .cryo-image-grid-contrast-side--solo {
+    opacity: 1;
+  }
+  .cryo-vslice-rotation-lock-switch:has(#vslice-rotation-lock:not(:checked))
+    .cryo-image-grid-contrast-side--solo .cryo-image-grid-contrast-label {
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-vslice-rotation-lock-switch:has(#vslice-rotation-lock:checked)
+    .cryo-image-grid-contrast-side--linked {
+    opacity: 1;
+  }
+  .cryo-vslice-rotation-lock-switch:has(#vslice-rotation-lock:checked)
+    .cryo-image-grid-contrast-side--linked .cryo-image-grid-contrast-label {
+    color: var(--nav-bg, #243b53);
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-invert-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: flex-end;
+    align-self: flex-end;
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-invert-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-invert-switch__track {
+    display: block;
+    width: 3.15rem;
+    height: 0.885rem;
+    border-radius: 999px;
+    background: #b8c4d0;
+    border: 1px solid rgba(36, 59, 83, 0.25);
+    box-sizing: border-box;
+    transition: background 0.18s ease, border-color 0.18s ease;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-invert-switch__thumb {
+    display: block;
+    width: 0.69rem;
+    height: 0.69rem;
+    margin: 0.075rem;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform 0.18s ease;
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-invert-switch input:checked
+    + .cryo-image-grid-invert-switch__track {
+    background: var(--nav-bg, #243b53);
+    border-color: rgba(36, 59, 83, 0.35);
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-invert-switch input:checked
+    + .cryo-image-grid-invert-switch__track .cryo-image-grid-invert-switch__thumb {
+    transform: translateX(2.31rem);
+  }
+  .cryo-vslice-feature-switch .cryo-image-grid-invert-switch input:focus-visible
+    + .cryo-image-grid-invert-switch__track {
+    outline: 2px solid var(--nav-bg, #243b53);
+    outline-offset: 2px;
+  }
+  .cryo-vslice-iso-controls {
+    width: 83%;
+    max-width: 83%;
+    margin: 0 auto 0.35rem;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.2rem;
+  }
+  .cryo-vslice-iso-controls[hidden] {
+    display: none !important;
+  }
+  .cryo-vslice-iso-label {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--ink, #243b53);
+    line-height: 1.2;
+    text-align: center;
+  }
+  .cryo-vslice-iso-slider {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--accent, #c4703a);
+  }
+  #vslice-slice-controls-row[hidden] {
+    display: none !important;
+  }
+  .cryo-vslice-reset-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    margin: 0 0 0.3rem;
   }
   .cryo-vslice-controls {
     display: flex;
@@ -448,23 +670,23 @@
     color: #243b53;
     cursor: pointer;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-vslice-analyze-volume-glyph {
+  .cryo-dash-page--volume-viewer .cryo-vslice-analyze-volume-glyph {
     font-family: Georgia, "Times New Roman", serif;
     font-weight: 500;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-vslice-manual-volume-glyph {
+  .cryo-dash-page--volume-viewer .cryo-vslice-manual-volume-glyph {
     font-family: "Palatino Linotype", Palatino, "Book Antiqua", serif;
     font-weight: 600;
     font-style: italic;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-explorer-grid-letter-glyphs-overlay {
+  .cryo-dash-page--volume-viewer .cryo-explorer-grid-letter-glyphs-overlay {
     position: absolute;
     inset: 0;
     z-index: 6;
     pointer-events: none;
     overflow: visible;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-explorer-grid-letter-glyph {
+  .cryo-dash-page--volume-viewer .cryo-explorer-grid-letter-glyph {
     position: absolute;
     transform: translate(-50%, -50%);
     color: #ffffff;
@@ -486,20 +708,20 @@
     margin: 0.35rem 0;
     height: 4px;
   }
-  .cryo-dash-page--volume-slice-viewer .cryo-color-hist-panel {
+  .cryo-dash-page--volume-viewer .cryo-color-hist-panel {
     margin-top: 0.25rem;
   }
-  .cryo-dash-page--volume-slice-viewer #scatter-controls-card fieldset legend {
+  .cryo-dash-page--volume-viewer #scatter-controls-card fieldset legend {
     font-size: 0.88rem;
   }
-  .cryo-dash-page--volume-slice-viewer #scatter-region-chips-overlay,
-  .cryo-dash-page--volume-slice-viewer #box-select-tooltip {
+  .cryo-dash-page--volume-viewer #scatter-region-chips-overlay,
+  .cryo-dash-page--volume-viewer #box-select-tooltip {
     display: none !important;
   }
 </style>
 {% endblock %}
 {% block content %}
-<div class="cryo-dash-page cryo-dash-page--image-viewer cryo-dash-page--particle-explorer cryo-dash-page--volume-slice-viewer">
+<div class="cryo-dash-page cryo-dash-page--image-viewer cryo-dash-page--particle-explorer cryo-dash-page--volume-viewer">
 <div class="cryo-dash-row cryo-dash-row--volume-slice">
   {% include "_volume_slice_scatter.html" %}
   {% include "_volume_slice_viewer_aside.html" %}
@@ -508,6 +730,7 @@
 
 <script src="{{ url_for('static', filename='js/cryo_cc_legend_primitives.js') }}"></script>
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+<script src="{{ url_for('static', filename='js/volume_3d_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/volume_slice_canvas.js') }}"></script>
 <script>
 (function() {

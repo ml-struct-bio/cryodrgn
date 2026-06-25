@@ -42,9 +42,18 @@ function volumeRange(values) {
 function applyTransferFunctions(ctfun, ofun, range, percentileSamples, isoPercentile) {
   var U = utils();
   var pct = clamp(Number(isoPercentile), 0, 100);
+  var span = range.max - range.min;
+  var minSep = span > 0 ? span * 0.0015 : 1e-6;
+
   var threshold = U.percentileValue(percentileSamples, pct);
-  var rampLo = U.percentileValue(percentileSamples, Math.max(0, pct - 2.5));
-  var rampHi = U.percentileValue(percentileSamples, Math.min(100, pct + 6));
+  var rampPctLo = Math.max(0, pct - 4 - (100 - pct) * 0.04);
+  var rampPctHi = Math.min(100, pct + 8 + (100 - pct) * 0.06);
+  var rampLo = U.percentileValue(percentileSamples, rampPctLo);
+  var rampHi = U.percentileValue(percentileSamples, rampPctHi);
+
+  rampLo = Math.max(range.min, Math.min(rampLo, range.max - 3 * minSep));
+  threshold = Math.max(rampLo + minSep, Math.min(threshold, range.max - 2 * minSep));
+  rampHi = Math.max(threshold + minSep, Math.min(rampHi, range.max - minSep));
 
   ctfun.removeAllPoints();
   ctfun.addRGBPoint(range.min, 0.04, 0.04, 0.05);
@@ -56,9 +65,9 @@ function applyTransferFunctions(ctfun, ofun, range, percentileSamples, isoPercen
   ofun.removeAllPoints();
   ofun.addPoint(range.min, 0.0);
   ofun.addPoint(rampLo, 0.0);
-  ofun.addPoint(threshold, 0.4);
-  ofun.addPoint(rampHi, 0.58);
-  ofun.addPoint(range.max, 0.62);
+  ofun.addPoint(threshold, 0.22);
+  ofun.addPoint(rampHi, 0.38);
+  ofun.addPoint(range.max, 0.42);
 }
 
 export class VolumeRaycastView {

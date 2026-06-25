@@ -147,7 +147,7 @@ def index():
             can_images=False,
             zdim=0,
             show_trajectory_creator=False,
-            show_volume_slice_viewer=False,
+            show_volume_viewer=False,
             landscape_volpca_active=False,
             landscape_full_3d_active=False,
             exp_epoch=0,
@@ -161,7 +161,7 @@ def index():
         can_images=e.can_preview_particles,
         zdim=zdim,
         show_trajectory_creator=explorer_volumes_eligible(e),
-        show_volume_slice_viewer=explorer_volumes_eligible(e),
+        show_volume_viewer=explorer_volumes_eligible(e),
         landscape_volpca_active=landscape_analysis_ready(e.workdir, e.epoch),
         landscape_full_3d_active=landscape_full_3d_active,
         exp_epoch=int(e.epoch),
@@ -395,15 +395,15 @@ def explorer():
     )
 
 
-def volume_slice_viewer_page():
-    """Scatter covariate explorer with orthogonal decoded-volume slice previews."""
+def volume_viewer_page():
+    """Scatter covariate explorer with 2D slices and vtk.js 3D volume raycast."""
     e: DashboardExperiment = g.dashboard_exp
     if not explorer_volumes_eligible(e):
         return (
             render_template(
                 "no_images.html",
                 reason=(
-                    "Volume slice viewer needs a CUDA GPU and model weights for the "
+                    "Volume viewer needs a CUDA GPU and model weights for the "
                     "current epoch."
                 ),
             ),
@@ -418,7 +418,7 @@ def volume_slice_viewer_page():
     scatter_plotted_n = min(int(len(e.plot_df)), scatter_cap)
     pc = int(current_app.config["PRELOAD_CPUS"])
     return render_template(
-        "volume_slice_viewer.html",
+        "volume_viewer.html",
         numeric_cols=cols,
         covariate_display_map=_covariate_display_map(cols),
         default_x=dx,
@@ -514,7 +514,7 @@ def api_explorer_volume_media():
         return jsonify(error=str(err)), 500
 
 
-def api_volume_slice_viewer_analyze_volumes():
+def api_volume_viewer_analyze_volumes():
     """Catalog of ``analyze.{epoch}/kmeans*`` and ``pc*`` volumes (arrays load on demand)."""
     e: DashboardExperiment = g.dashboard_exp
     include_markers = request.args.get("include_markers", "1").strip().lower() not in (
@@ -532,7 +532,7 @@ def api_volume_slice_viewer_analyze_volumes():
         return jsonify(error=str(err)), 500
 
 
-def api_volume_slice_viewer_analyze_markers():
+def api_volume_viewer_analyze_markers():
     """Scatterplot markers for analyze k-means / PC volumes."""
     e: DashboardExperiment = g.dashboard_exp
     try:
@@ -545,7 +545,7 @@ def api_volume_slice_viewer_analyze_markers():
         return jsonify(error=str(err)), 500
 
 
-def api_volume_slice_viewer_analyze_volume():
+def api_volume_viewer_analyze_volume():
     """Load one analyze volume by catalog id."""
     e: DashboardExperiment = g.dashboard_exp
     vol_id = request.args.get("id", "").strip()
@@ -561,7 +561,7 @@ def api_volume_slice_viewer_analyze_volume():
         return jsonify(error=str(err)), 500
 
 
-def api_volume_slice_viewer_analyze_volumes_batch():
+def api_volume_viewer_analyze_volumes_batch():
     """Load several analyze volumes in parallel (background prefetch)."""
     e: DashboardExperiment = g.dashboard_exp
     cpus = int(current_app.config.get("PRELOAD_CPUS") or 1)
@@ -580,7 +580,7 @@ def api_volume_slice_viewer_analyze_volumes_batch():
         return jsonify(error=str(err)), 500
 
 
-def api_volume_slice_viewer_decode():
+def api_volume_viewer_decode():
     """Decode one particle volume and return default orthogonal slice PNGs."""
     e: DashboardExperiment = g.dashboard_exp
     if not explorer_volumes_eligible(e):
@@ -597,7 +597,7 @@ def api_volume_slice_viewer_decode():
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:
-        logger.exception("volume slice decode failed")
+        logger.exception("volume decode failed")
         return jsonify(error=str(err)), 500
 
 

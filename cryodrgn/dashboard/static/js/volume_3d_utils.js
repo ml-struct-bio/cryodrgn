@@ -6,6 +6,12 @@
 
   var PLOT3D_TARGET_D = 128;
   var DEFAULT_ISO_PERCENTILE = 42;
+  // Slider maps into this percentile band; upper 60% of travel is compressed into the tail.
+  var ISO_SLIDER_PCT_MIN = 15;
+  var ISO_SLIDER_PCT_MID = 55;
+  var ISO_SLIDER_PCT_MAX = 99.2;
+  var ISO_SLIDER_MID_TRAVEL = 0.4;
+  var ISO_SLIDER_UPPER_GAMMA = 0.55;
 
   function decodeFloat32Volume(b64, d) {
     var binary = atob(b64);
@@ -159,6 +165,33 @@
     return 88;
   }
 
+  function isoSliderToPercentile(slider) {
+    var t = Math.max(0, Math.min(100, Number(slider))) / 100;
+    if (t <= 0) return ISO_SLIDER_PCT_MIN;
+    if (t >= 1) return ISO_SLIDER_PCT_MAX;
+    if (t <= ISO_SLIDER_MID_TRAVEL) {
+      return ISO_SLIDER_PCT_MIN
+        + (ISO_SLIDER_PCT_MID - ISO_SLIDER_PCT_MIN) * (t / ISO_SLIDER_MID_TRAVEL);
+    }
+    var u = (t - ISO_SLIDER_MID_TRAVEL) / (1 - ISO_SLIDER_MID_TRAVEL);
+    return ISO_SLIDER_PCT_MID
+      + (ISO_SLIDER_PCT_MAX - ISO_SLIDER_PCT_MID) * Math.pow(u, ISO_SLIDER_UPPER_GAMMA);
+  }
+
+  function isoPercentileToSlider(pct) {
+    var p = Math.max(ISO_SLIDER_PCT_MIN, Math.min(ISO_SLIDER_PCT_MAX, Number(pct)));
+    if (p <= ISO_SLIDER_PCT_MID) {
+      var loSpan = ISO_SLIDER_PCT_MID - ISO_SLIDER_PCT_MIN;
+      return loSpan > 0
+        ? 100 * ISO_SLIDER_MID_TRAVEL * (p - ISO_SLIDER_PCT_MIN) / loSpan
+        : 0;
+    }
+    var hiSpan = ISO_SLIDER_PCT_MAX - ISO_SLIDER_PCT_MID;
+    if (!(hiSpan > 0)) return 100 * ISO_SLIDER_MID_TRAVEL;
+    var u = Math.pow((p - ISO_SLIDER_PCT_MID) / hiSpan, 1 / ISO_SLIDER_UPPER_GAMMA);
+    return 100 * (ISO_SLIDER_MID_TRAVEL + (1 - ISO_SLIDER_MID_TRAVEL) * u);
+  }
+
   function isoRangeFromPercentile(samples, isoPercentile) {
     if (!samples || !samples.length) return { isomin: 0, isomax: 1 };
     var pct = Math.max(0, Math.min(100, Number(isoPercentile)));
@@ -175,6 +208,8 @@
     downsampleVolumeTrilinear: downsampleVolumeTrilinear,
     volumePercentileSamples: volumePercentileSamples,
     suggestIsoPercentile: suggestIsoPercentile,
+    isoSliderToPercentile: isoSliderToPercentile,
+    isoPercentileToSlider: isoPercentileToSlider,
     isoRangeFromPercentile: isoRangeFromPercentile,
     percentileValue: percentileValue
   };

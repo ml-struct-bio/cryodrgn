@@ -88,8 +88,9 @@
     this.sliceData = null;
     this.sliceMin = 0;
     this.sliceMax = 1;
-    this.yaw = 0;
-    this.pitch = 0;
+    /** When false (default), drag rotates only the slice under the pointer. */
+    this.rotationLocked = false;
+    this.activeLayerIndex = 0;
     /** In-plane translation of the cutting plane (voxel units, plane-local axes). */
     this.slicePanU = 0;
     this.slicePanV = 0;
@@ -105,11 +106,48 @@
   }
 
   VolumeSliceCanvas.prototype._resetSliceView = function () {
-    this.yaw = 0;
-    this.pitch = 0;
     this.slicePanU = 0;
     this.slicePanV = 0;
     this.sliceDepth = 0;
+    for (var i = 0; i < this.layers.length; i++) {
+      this.layers[i].yaw = 0;
+      this.layers[i].pitch = 0;
+    }
+  };
+
+  VolumeSliceCanvas.prototype.isRotationLocked = function () {
+    return !!this.rotationLocked;
+  };
+
+  VolumeSliceCanvas.prototype.setRotationLocked = function (locked) {
+    locked = !!locked;
+    if (locked && !this.rotationLocked && this.layers.length > 1) {
+      var src = this.layers[this.activeLayerIndex] || this.layers[0];
+      for (var i = 0; i < this.layers.length; i++) {
+        this.layers[i].yaw = src.yaw;
+        this.layers[i].pitch = src.pitch;
+      }
+    }
+    this.rotationLocked = locked;
+    this.scheduleRecompute();
+  };
+
+  VolumeSliceCanvas.prototype._layerIndexAtCanvasPoint = function (x, y) {
+    if (!this.layers.length) return -1;
+    var cw = this.canvas.clientWidth || 256;
+    var ch = this.canvas.clientHeight || 256;
+    var layout = this._computeGridCells(cw, ch, this.layers.length);
+    for (var si = 0; si < layout.cells.length; si++) {
+      var cell = layout.cells[si];
+      if (cell.layerIndex < 0) continue;
+      if (
+        x >= cell.x0 && x <= cell.x0 + cell.cellW &&
+        y >= cell.y0 && y <= cell.y0 + cell.blockH
+      ) {
+        return cell.layerIndex;
+      }
+    }
+    return this.activeLayerIndex >= 0 ? this.activeLayerIndex : 0;
   };
 
   VolumeSliceCanvas.prototype._syncPrimaryLayer = function () {
@@ -235,11 +273,14 @@
     ctx.fillText(labStr, x + letterFontPx * 0.11, y + metaH * 0.5);
   };
 
-  VolumeSliceCanvas.prototype._planeGeometry = function (layerD) {
-    var d = Number(layerD) || (this.layers.length ? this.layers[0].d : 0);
-    if (!d || !this.layers.length) return null;
+  VolumeSliceCanvas.prototype._planeGeometry = function (layer) {
+    if (!layer) return null;
+    var d = Number(layer.d);
+    if (!d) return null;
     var center = (d - 1) / 2;
-    var R = rotationMatrix(this.yaw, this.pitch);
+    var yaw = Number(layer.yaw) || 0;
+    var pitch = Number(layer.pitch) || 0;
+    var R = rotationMatrix(yaw, pitch);
     var t0x = R[0][0];
     var t0y = R[1][0];
     var t0z = R[2][0];
@@ -297,9 +338,12 @@
 
   VolumeSliceCanvas.prototype._clampSliceDepth = function () {
     if (!this.layers.length) return;
-    var d = this.layers[0].d;
+    var layer = this.layers[this.activeLayerIndex] || this.layers[0];
+    var d = layer.d;
     var center = (d - 1) / 2;
-    var R = rotationMatrix(this.yaw, this.pitch);
+    var yaw = Number(layer.yaw) || 0;
+    var pitch = Number(layer.pitch) || 0;
+    var R = rotationMatrix(yaw, pitch);
     var offX = this.slicePanU * R[0][0] + this.slicePanV * R[0][1];
     var offY = this.slicePanU * R[1][0] + this.slicePanV * R[1][1];
     var offZ = this.slicePanU * R[2][0] + this.slicePanV * R[2][1];
@@ -326,7 +370,8 @@
   };
 
   VolumeSliceCanvas.prototype.getViewInfo = function () {
-    var geom = this._planeGeometry();
+    var layer = this.layers[this.activeLayerIndex] || this.layers[0];
+    var geom = layer ? this._planeGeometry(layer) : null;
     if (!geom) {
       return { d: 0 };
     }
@@ -385,17 +430,34 @@
 
   VolumeSliceCanvas.prototype.setVolumes = function (volumeSpecs, resetView) {
     var specs = volumeSpecs || [];
+    var prevById = {};
+    for (var pi = 0; pi < this.layers.length; pi++) {
+      prevById[this.layers[pi].id] = this.layers[pi];
+    }
     var newLayers = [];
     for (var i = 0; i < specs.length; i++) {
       var spec = specs[i];
       var d = Number(spec.d);
       if (!spec.b64 || !isFinite(d) || d < 1) continue;
+      var id = String(spec.id || "");
+      var prev = prevById[id];
+      var yaw = 0;
+      var pitch = 0;
+      if (prev) {
+        yaw = Number(prev.yaw) || 0;
+        pitch = Number(prev.pitch) || 0;
+      } else if (this.rotationLocked && newLayers.length > 0) {
+        yaw = Number(newLayers[0].yaw) || 0;
+        pitch = Number(newLayers[0].pitch) || 0;
+      }
       newLayers.push({
-        id: String(spec.id || ""),
+        id: id,
         label: String(spec.label || ""),
         manual: !!spec.manual,
         cellBg: spec.cellBg || null,
         cellBorder: spec.cellBorder || null,
+        yaw: yaw,
+        pitch: pitch,
         d: d,
         vol: decodeFloat32Volume(spec.b64, d),
         sliceData: null,
@@ -404,6 +466,9 @@
       });
     }
     this.layers = newLayers;
+    if (this.activeLayerIndex >= this.layers.length) {
+      this.activeLayerIndex = Math.max(0, this.layers.length - 1);
+    }
     if (resetView !== false) this._resetSliceView();
     var self = this;
     window.requestAnimationFrame(function () {
@@ -435,7 +500,7 @@
     if (!this.layers.length) return;
     for (var li = 0; li < this.layers.length; li++) {
       var layer = this.layers[li];
-      var geom = this._planeGeometry(layer.d);
+      var geom = this._planeGeometry(layer);
       if (!geom) continue;
       var d = geom.d;
       var center = geom.center;
@@ -545,6 +610,9 @@
     canvas.addEventListener("pointerdown", function (e) {
       if (!self.layers.length) return;
       if (e.button !== 0) return;
+      var rect = canvas.getBoundingClientRect();
+      var hit = self._layerIndexAtCanvasPoint(e.clientX - rect.left, e.clientY - rect.top);
+      if (hit >= 0) self.activeLayerIndex = hit;
       canvas.setPointerCapture(e.pointerId);
       self.lastX = e.clientX;
       self.lastY = e.clientY;
@@ -558,8 +626,17 @@
       var dy = e.clientY - self.lastY;
       self.lastX = e.clientX;
       self.lastY = e.clientY;
-      self.yaw += dx * 0.012;
-      self.pitch = clamp(self.pitch + dy * 0.012, -1.45, 1.45);
+      if (self.rotationLocked) {
+        for (var li = 0; li < self.layers.length; li++) {
+          self.layers[li].yaw += dx * 0.012;
+          self.layers[li].pitch = clamp(self.layers[li].pitch + dy * 0.012, -1.45, 1.45);
+        }
+      } else {
+        var layer = self.layers[self.activeLayerIndex] || self.layers[0];
+        if (!layer) return;
+        layer.yaw += dx * 0.012;
+        layer.pitch = clamp(layer.pitch + dy * 0.012, -1.45, 1.45);
+      }
       self.scheduleRecompute();
     });
 

@@ -1,4 +1,4 @@
-"""Volume decode and analyze-volume catalog for the dashboard volume slice viewer.
+"""Volume decode and analyze-volume catalog for the dashboard volume viewer.
 
 Decodes latent ``z`` vectors to 3-D volumes (reusing the particle explorer decoder)
 and returns float32 arrays for client-side slicing in the browser canvas.
@@ -19,11 +19,42 @@ import numpy as np
 
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import _decode_z_values_to_vol_paths
+from cryodrgn.masking import apply_spherical_window_mask_3d
 from cryodrgn.mrcfile import parse_mrc
 from cryodrgn import analysis as cryo_analysis
 
 _VOL_MRC_RE = re.compile(r"^vol_(\d+)\.mrc$", re.IGNORECASE)
 _PC_DIR_RE = re.compile(r"^pc(\d+)$", re.IGNORECASE)
+_RECON_WINDOW_OUT_RAD = 0.99
+
+
+def reconstruction_window_params(exp: DashboardExperiment) -> tuple[bool, float, float]:
+    """Window settings from the training config (matches ``ImageDataset`` defaults)."""
+    cfg = exp.train_configs or {}
+    ds = cfg.get("dataset_args") or {}
+    if "window" in ds:
+        enabled = bool(ds["window"])
+    else:
+        enabled = True
+    if not enabled:
+        return False, 0.85, _RECON_WINDOW_OUT_RAD
+    if ds.get("window_r") is not None:
+        in_rad = float(ds["window_r"])
+    elif cfg.get("window_radius_gt_real") is not None:
+        in_rad = float(cfg["window_radius_gt_real"])
+    else:
+        in_rad = 0.85
+    return True, in_rad, _RECON_WINDOW_OUT_RAD
+
+
+def apply_reconstruction_window(
+    vol: np.ndarray, exp: DashboardExperiment
+) -> np.ndarray:
+    """Apply the same real-space spherical window used during reconstruction."""
+    enabled, in_rad, out_rad = reconstruction_window_params(exp)
+    if not enabled:
+        return np.asarray(vol, dtype=np.float32)
+    return apply_spherical_window_mask_3d(vol, in_rad=in_rad, out_rad=out_rad)
 
 
 def _decode_volume_array(exp: DashboardExperiment, row: int) -> np.ndarray:
@@ -36,7 +67,7 @@ def _decode_volume_array(exp: DashboardExperiment, row: int) -> np.ndarray:
         zsel = exp.z[np.asarray([row], dtype=int)]
         paths = _decode_z_values_to_vol_paths(exp, zsel, mrc_dir)
         vol, _ = parse_mrc(paths[0])
-        return np.asarray(vol, dtype=np.float32)
+        return apply_reconstruction_window(np.asarray(vol, dtype=np.float32), exp)
     finally:
         shutil.rmtree(mrc_dir, ignore_errors=True)
 
@@ -312,7 +343,7 @@ def analyze_volume_by_id_payload(exp: DashboardExperiment, vol_id: str) -> dict:
     if entry is None:
         raise ValueError(f"Unknown analyze volume id: {vol_id}")
 
-    _, vol_payload = _load_catalog_volume(entry)
+    _, vol_payload = _load_catalog_volume(entry, exp)
     meta = next(e for e in _catalog_public(catalog) if e["id"] == vol_id)
     payload = {
         "ok": True,
@@ -342,14 +373,14 @@ def analyze_volumes_batch_payload(
         entry = by_id.get(str(vol_id))
         if entry is not None:
             entries.append(entry)
-    volumes = _load_catalog_volumes_parallel(entries, n_cpus=n_cpus)
+    volumes = _load_catalog_volumes_parallel(entries, exp=exp, n_cpus=n_cpus)
     return {"ok": True, "volumes": volumes}
 
 
-def _load_catalog_volume(entry: dict) -> tuple[str, dict]:
+def _load_catalog_volume(entry: dict, exp: DashboardExperiment) -> tuple[str, dict]:
     """Load one analyze ``.mrc`` volume (module-level for process pools)."""
     vol, _ = parse_mrc(entry["path"])
-    vol = np.asarray(vol, dtype=np.float32)
+    vol = apply_reconstruction_window(np.asarray(vol, dtype=np.float32), exp)
     return entry["id"], {
         "D": int(vol.shape[0]),
         "volume_b64": volume_array_b64(vol),
@@ -359,6 +390,7 @@ def _load_catalog_volume(entry: dict) -> tuple[str, dict]:
 def _load_catalog_volumes_parallel(
     catalog: list[dict],
     *,
+    exp: DashboardExperiment,
     n_cpus: int,
 ) -> dict[str, dict]:
     """Load catalog volumes using up to ``n_cpus`` worker threads."""
@@ -366,14 +398,14 @@ def _load_catalog_volumes_parallel(
     if len(catalog) <= 1:
         volumes: dict[str, dict] = {}
         for entry in catalog:
-            vol_id, payload = _load_catalog_volume(entry)
+            vol_id, payload = _load_catalog_volume(entry, exp)
             volumes[vol_id] = payload
         return volumes
 
     max_workers = min(n_cpus, len(catalog))
     volumes = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [pool.submit(_load_catalog_volume, entry) for entry in catalog]
+        futures = [pool.submit(_load_catalog_volume, entry, exp) for entry in catalog]
         for fut in as_completed(futures):
             vol_id, payload = fut.result()
             volumes[vol_id] = payload

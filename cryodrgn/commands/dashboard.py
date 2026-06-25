@@ -163,9 +163,9 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="open the landscape 3D visualizer instead of the launch menu",
     )
     view.add_argument(
-        "--volume-slice-viewer",
+        "--volume-viewer",
         action="store_true",
-        help="open the volume slice viewer instead of the launch menu",
+        help="open the volume viewer instead of the launch menu",
     )
 
     parser.add_argument(
@@ -218,7 +218,7 @@ def main(args: argparse.Namespace) -> None:
         "trajectory_creator": "/trajectory",
         "sketch_explorer": "/landscape-volpca",
         "landscape_three_dimensional": "/landscape-full-3d",
-        "volume_slice_viewer": "/volume-slice-viewer",
+        "volume_viewer": "/volume-viewer",
     }
     experiment_views = set(view_paths) - {"command_builder"}
     if command_builder_only and any(getattr(args, f, False) for f in experiment_views):

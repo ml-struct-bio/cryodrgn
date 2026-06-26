@@ -38,8 +38,13 @@
   var VSLICE_MARKER_GLYPH_SIZE_INACTIVE = VSLICE_MARKER_GLYPH_SIZE * 0.7;
   var VSLICE_MARKER_SIZE = 22;
   var VSLICE_MARKER_SIZE_ACTIVE = 26;
+  var VSLICE_MARKER_SIZE_SELECTED = 24;
+  var VSLICE_MARKER_SIZE_FOCUS = 28;
   var VSLICE_MARKER_OPACITY = 0.53;
+  var VSLICE_MARKER_OPACITY_SELECTED = 0.72;
+  var VSLICE_MARKER_OPACITY_FOCUS = 0.94;
   var VSLICE_MARKER_LINE_WIDTH = 2.5;
+  var VSLICE_MARKER_LINE_WIDTH_FOCUS = 3.25;
   var VSLICE_MARKER_LINE_COLOR = "#ffffff";
   var vsliceMarkerGlyphHookWired = false;
 
@@ -238,6 +243,7 @@
     if (rerender === false) {
       vsliceSyncVolumePicker();
       vsliceSyncVolumeNavLabel();
+      vsliceSyncMarkerOverlay();
       return;
     }
     if (vsliceRaycastVolId !== volId) {
@@ -245,6 +251,7 @@
     }
     vsliceSyncVolumePicker();
     vsliceSyncVolumeNavLabel();
+    vsliceSyncMarkerOverlay();
     if (vsliceIs3dVolumeMode()) {
       vsliceRenderRaycastVolume();
     }
@@ -423,6 +430,96 @@
 
   function vsliceIsVolumeSelected(volId) {
     return vsliceSelectedVolIds.indexOf(String(volId)) >= 0;
+  }
+
+  function vsliceMarkerUsesFocusTier() {
+    if (vsliceIs3dVolumeMode()) return true;
+    return vsliceIsFixGridSize()
+      && vsliceSelectedVolIds.length > vsliceGridSlotCapacity();
+  }
+
+  function vsliceMarkerHighlightTier(volId) {
+    volId = String(volId || "");
+    if (!vsliceIsVolumeSelected(volId)) return "none";
+    if (!vsliceMarkerUsesFocusTier()) return "active";
+    var focusIds = vsliceDisplayFocusVolIds();
+    for (var i = 0; i < focusIds.length; i++) {
+      if (String(focusIds[i]) === volId) return "focus";
+    }
+    return "selected";
+  }
+
+  function vsliceCovariateScatterFillForVolId(volId) {
+    if (typeof montageCellStyleContext !== "function") return null;
+    var plotRow = vslicePlotRowForVolId(volId);
+    if (plotRow == null) return null;
+    var ctx = montageCellStyleContext();
+    if (!ctx.hasColor || !ctx.markerColors) return null;
+    var ti = vslicePlotRowToTraceIndex(plotRow);
+    if (ti == null) return null;
+    if (typeof montageCovariateBorderCss === "function") {
+      return montageCovariateBorderCss(
+        ti, ctx.colorMode, ctx.markerColors, ctx.cmin, ctx.cmax
+      );
+    }
+    if (ctx.colorMode === "discrete") {
+      var hexCol = plotlyAt(ctx.markerColors, ti);
+      return hexCol != null && hexCol !== "" ? String(hexCol) : null;
+    }
+    return null;
+  }
+
+  function vsliceMarkerFillForTier(tier, volId) {
+    if (tier === "none") return "rgba(0,0,0,0)";
+    return vsliceCovariateScatterFillForVolId(volId) || VSLICE_MARKER_ACCENT;
+  }
+
+  function vsliceMarkerStyleForTier(tier, volId) {
+    var fill = vsliceMarkerFillForTier(tier, volId);
+    if (tier === "focus") {
+      return {
+        size: VSLICE_MARKER_SIZE_FOCUS,
+        fill: fill,
+        opacity: VSLICE_MARKER_OPACITY_FOCUS,
+        lineWidth: VSLICE_MARKER_LINE_WIDTH_FOCUS
+      };
+    }
+    if (tier === "selected") {
+      return {
+        size: VSLICE_MARKER_SIZE_SELECTED,
+        fill: fill,
+        opacity: VSLICE_MARKER_OPACITY_SELECTED,
+        lineWidth: VSLICE_MARKER_LINE_WIDTH
+      };
+    }
+    if (tier === "active") {
+      return {
+        size: VSLICE_MARKER_SIZE_ACTIVE,
+        fill: fill,
+        opacity: 0.88,
+        lineWidth: VSLICE_MARKER_LINE_WIDTH
+      };
+    }
+    return {
+      size: VSLICE_MARKER_SIZE,
+      fill: "rgba(0,0,0,0)",
+      opacity: VSLICE_MARKER_OPACITY,
+      lineWidth: VSLICE_MARKER_LINE_WIDTH
+    };
+  }
+
+  function vsliceGlyphClassForTier(tier, isManual) {
+    var base = "cryo-explorer-grid-letter-glyph "
+      + (isManual ? "cryo-vslice-manual-volume-glyph" : "cryo-vslice-analyze-volume-glyph");
+    if (tier === "none") return base + " cryo-vslice-volume-glyph--inactive";
+    if (tier === "selected") return base + " cryo-vslice-volume-glyph--selected";
+    return base;
+  }
+
+  function vsliceGlyphSizeForTier(tier, fontSize) {
+    if (tier === "focus" || tier === "active") return fontSize;
+    if (tier === "selected") return fontSize * 0.88;
+    return VSLICE_MARKER_GLYPH_SIZE_INACTIVE;
   }
 
   function setVsliceStatus(msg, busy) {
@@ -624,7 +721,9 @@
       else if (entry.kind === "pc") pc.push(entry);
     }
     var selectedIds = vsliceSelectedVolIds.slice();
-    var displayFocusIds = vsliceVolumeNavNeeded() ? vsliceDisplayFocusVolIds() : [];
+    var displayFocusIds = vsliceIs3dVolumeMode()
+      ? vsliceDisplayFocusVolIds()
+      : (vsliceVolumeNavNeeded() ? vsliceDisplayFocusVolIds() : []);
     var specs = vsliceVolumePickerRowSpecs(km, pc, manual);
     for (var sj = 0; sj < specs.length; sj++) {
       specs[sj].displayFocusIds = displayFocusIds;
@@ -640,6 +739,9 @@
     }
     vsliceSyncVolumeNavChrome();
     vsliceSyncFixGridChrome();
+    if (gd && typeof plotHasScatterData === "function" && plotHasScatterData()) {
+      vsliceSyncMarkerOverlay();
+    }
   }
 
   function vsliceEnsureVolumesLoaded(volIds, cb) {
@@ -961,14 +1063,18 @@
   }
 
   function vsliceRefreshCellCovariateColors() {
-    if (!vsliceViewer || !vsliceViewer.layers || !vsliceViewer.layers.length) return;
-    for (var i = 0; i < vsliceViewer.layers.length; i++) {
-      var layer = vsliceViewer.layers[i];
-      var chrome = vsliceCovariateCellChromeForVolId(layer.id);
-      layer.cellBg = chrome ? chrome.bg : null;
-      layer.cellBorder = chrome ? chrome.border : null;
+    if (vsliceViewer && vsliceViewer.layers && vsliceViewer.layers.length) {
+      for (var i = 0; i < vsliceViewer.layers.length; i++) {
+        var layer = vsliceViewer.layers[i];
+        var chrome = vsliceCovariateCellChromeForVolId(layer.id);
+        layer.cellBg = chrome ? chrome.bg : null;
+        layer.cellBorder = chrome ? chrome.border : null;
+      }
+      vsliceViewer.draw();
     }
-    vsliceViewer.draw();
+    if (gd && typeof plotHasScatterData === "function" && plotHasScatterData()) {
+      vsliceSyncMarkerOverlay();
+    }
   }
 
   function vslicePlotRowToScatterXY(row) {
@@ -1040,14 +1146,12 @@
       var volId = vsliceVisibleMarkerVolIds[gi] || "";
       var marker = volId ? vsliceMarkersByVolId[volId] : null;
       var isManual = marker && marker.kind === "particle";
-      var isActive = volId && vsliceIsVolumeSelected(volId);
+      var tier = volId ? vsliceMarkerHighlightTier(volId) : "none";
       var glyph = document.createElement("span");
-      glyph.className = "cryo-explorer-grid-letter-glyph "
-        + (isManual ? "cryo-vslice-manual-volume-glyph" : "cryo-vslice-analyze-volume-glyph")
-        + (isActive ? "" : " cryo-vslice-volume-glyph--inactive");
+      glyph.className = vsliceGlyphClassForTier(tier, isManual);
       glyph.style.left = pt[0].toFixed(2) + "px";
       glyph.style.top = pt[1].toFixed(2) + "px";
-      glyph.style.fontSize = (isActive ? fontSize : VSLICE_MARKER_GLYPH_SIZE_INACTIVE) + "px";
+      glyph.style.fontSize = vsliceGlyphSizeForTier(tier, fontSize) + "px";
       glyph.style.color = "#ffffff";
       glyph.textContent = lab;
       vsliceMarkerGlyphsOverlayEl.appendChild(glyph);
@@ -1121,20 +1225,23 @@
     var sizes = [];
     var fills = [];
     var opacities = [];
+    var lineWidths = [];
     vsliceVisibleMarkerVolIds = [];
     for (var i = 0; i < markers.length; i++) {
       var m = markers[i];
       if (m.plot_row == null) continue;
       var xy = vslicePlotRowToScatterXY(m.plot_row);
       if (!xy) continue;
-      var isActive = vsliceIsVolumeSelected(m.vol_id);
+      var tier = vsliceMarkerHighlightTier(m.vol_id);
+      var style = vsliceMarkerStyleForTier(tier, m.vol_id);
       vsliceVisibleMarkerVolIds.push(m.vol_id);
       xs.push(xy.x);
       ys.push(xy.y);
       texts.push(m.label || "");
-      sizes.push(isActive ? VSLICE_MARKER_SIZE_ACTIVE : VSLICE_MARKER_SIZE);
-      fills.push(isActive ? VSLICE_MARKER_ACCENT : "rgba(0,0,0,0)");
-      opacities.push(isActive ? 0.88 : VSLICE_MARKER_OPACITY);
+      sizes.push(style.size);
+      fills.push(style.fill);
+      opacities.push(style.opacity);
+      lineWidths.push(style.lineWidth);
     }
     try {
       vsliceMarkerRestyleGuard = true;
@@ -1150,7 +1257,7 @@
         "marker.size": [sizes],
         "marker.color": [fills],
         "marker.opacity": [opacities],
-        "marker.line.width": [VSLICE_MARKER_LINE_WIDTH],
+        "marker.line.width": [lineWidths],
         "marker.line.color": [VSLICE_MARKER_LINE_COLOR],
         selectedpoints: [null],
         "unselected.marker.opacity": [1]

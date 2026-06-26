@@ -291,6 +291,11 @@ class TestVolumeSliceViewerRoutes:
         assert "vslice-view-mode-3d" in body
         assert "vslice-iso-level" in body
         assert "Isosurface level" in body
+        assert "vslice-volume-nav" in body
+        assert "vslice-volume-nav-row" in body
+        assert "btn-vslice-vol-prev" in body
+        assert "btn-vslice-vol-next" in body
+        assert "vslice-fix-grid-size" in body
         assert "cryo-vslice-view-mode-switch" in body
         assert "/api/volume_viewer/analyze_volumes" in body
         assert "/api/volume_viewer/analyze_markers" in body
@@ -415,3 +420,18 @@ class TestVolumeSliceViewerBrowserSmoke:
         assert out["from_label"]
         assert out["to_label"]
         assert out["from_label"] != out["to_label"]
+
+    def test_volume_nav_visible_in_3d_multi_select(
+        self, playwright_page, dashboard_volumes_eligible_live_url
+    ) -> None:
+        from tests.conftest import dashboard_smoke_volume_viewer_nav_3d
+
+        out = dashboard_smoke_volume_viewer_nav_3d(
+            playwright_page, dashboard_volumes_eligible_live_url
+        )
+        assert out is not None
+        if out.get("reason") == "fewer_than_two_volumes":
+            pytest.skip("fewer than two volumes in catalog")
+        assert out["nav_active"] is True
+        assert out["nav_height"] > 0
+        assert out["nav_label"] and out["nav_label"] != "—"

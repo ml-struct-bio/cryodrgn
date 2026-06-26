@@ -1883,6 +1883,56 @@ def dashboard_smoke_volume_viewer_picker_switch(
     }
 
 
+def dashboard_smoke_volume_viewer_nav_3d(
+    page,
+    base_url: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> dict | None:
+    """Volume viewer: nav bar appears between grid and viewport in 3D multi-select."""
+    ready = _dashboard_smoke_volume_viewer_ready(page, base_url, timeout_ms=timeout_ms)
+    if ready is None:
+        return None
+    if ready["volume_picker_buttons"] < 2:
+        return {**ready, "nav_active": False, "reason": "fewer_than_two_volumes"}
+
+    page.evaluate(
+        """() => {
+          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
+          if (buttons.length < 2) return false;
+          if (!buttons[0].classList.contains('cryo-vslice-vol-btn--active')) {
+            buttons[0].click();
+          }
+          if (!buttons[1].classList.contains('cryo-vslice-vol-btn--active')) {
+            buttons[1].click();
+          }
+          return true;
+        }"""
+    )
+    page.wait_for_function(
+        """() => document.querySelectorAll('.cryo-vslice-vol-btn--active').length === 2""",
+        timeout=timeout_ms,
+    )
+    _dashboard_smoke_volume_viewer_set_3d_mode(page, enabled=True)
+    nav_info = page.evaluate(
+        """() => {
+          var nav = document.getElementById('vslice-volume-nav');
+          var navRow = document.getElementById('vslice-volume-nav-row');
+          var label = document.getElementById('vslice-volume-nav-label');
+          var mode3d = document.getElementById('vslice-view-mode-3d');
+          return {
+            mode3d: !!(mode3d && mode3d.checked),
+            active_buttons: document.querySelectorAll('.cryo-vslice-vol-btn--active').length,
+            nav_row_height: navRow ? navRow.getBoundingClientRect().height : 0,
+            nav_active: !!(nav && !nav.classList.contains('cryo-vslice-volume-nav--inactive')),
+            nav_height: nav ? nav.getBoundingClientRect().height : 0,
+            nav_label: label ? label.textContent.trim() : '',
+          };
+        }"""
+    )
+    return {**ready, **nav_info}
+
+
 def dashboard_smoke_particle_explorer_panels(
     page,
     base_url: str,

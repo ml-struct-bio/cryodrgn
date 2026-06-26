@@ -511,6 +511,13 @@
     width: 100%;
     height: 100%;
   }
+  .cryo-vslice-view-mode-switch--labels-only .cryo-image-grid-contrast-side {
+    align-items: center;
+    gap: 0;
+  }
+  .cryo-vslice-view-mode-switch--labels-only .cryo-image-grid-contrast-label {
+    font-size: 0.68rem;
+  }
   .cryo-vslice-view-mode-switch:has(#vslice-view-mode-3d:not(:checked))
     .cryo-image-grid-contrast-side--slice {
     opacity: 1;
@@ -520,11 +527,11 @@
     color: var(--nav-bg, #243b53);
   }
   .cryo-vslice-view-mode-switch:has(#vslice-view-mode-3d:checked)
-    .cryo-image-grid-contrast-side--raycast {
+    .cryo-image-grid-contrast-side--volume3d {
     opacity: 1;
   }
   .cryo-vslice-view-mode-switch:has(#vslice-view-mode-3d:checked)
-    .cryo-image-grid-contrast-side--raycast .cryo-image-grid-contrast-label {
+    .cryo-image-grid-contrast-side--volume3d .cryo-image-grid-contrast-label {
     color: var(--nav-bg, #243b53);
   }
   .cryo-vslice-rotation-lock-switch:has(#vslice-rotation-lock:not(:checked))
@@ -826,6 +833,9 @@
     font-family: "Palatino Linotype", Palatino, "Book Antiqua", serif;
     font-weight: 600;
     font-style: italic;
+  }
+  .cryo-dash-page--volume-viewer .cryo-vslice-volume-glyph--selected {
+    opacity: 0.82;
   }
   .cryo-dash-page--volume-viewer .cryo-explorer-grid-letter-glyphs-overlay {
     position: absolute;

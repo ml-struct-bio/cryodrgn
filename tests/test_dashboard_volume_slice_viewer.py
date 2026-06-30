@@ -18,9 +18,12 @@ from cryodrgn.dashboard.volume_slice_viewer import (
     default_analyze_volume_id,
     discover_analyze_volume_catalog,
     discover_analyze_volume_markers,
+    downsample_volume_box_average,
+    PLOT3D_TARGET_D,
     reconstruction_window_params,
     spherical_window_mask_3d,
     volume_array_b64,
+    vtk_transfer_volume_payload,
 )
 
 
@@ -30,32 +33,14 @@ _VTK_BUNDLE = (
 )
 
 # Matches ``CryoVolume3dUtils.PLOT3D_TARGET_D`` / client box-average downsample.
-_PLOT3D_TARGET_D = 128
+_PLOT3D_TARGET_D = PLOT3D_TARGET_D
 
 
 def _downsample_volume_box_average(
     vol: np.ndarray, target_d: int = _PLOT3D_TARGET_D
 ) -> np.ndarray:
-    """Box-average resample to ``target_d``³ (mirrors ``volume_3d_utils.js``)."""
-    vol = np.asarray(vol, dtype=np.float32)
-    d = int(vol.shape[0])
-    target_d = int(target_d)
-    if d == target_d:
-        return vol
-    scale = d / target_d
-    out = np.zeros((target_d, target_d, target_d), dtype=np.float32)
-    for iz in range(target_d):
-        z0 = int(np.floor(iz * scale))
-        z1 = int(min(d, np.ceil((iz + 1) * scale)))
-        for iy in range(target_d):
-            y0 = int(np.floor(iy * scale))
-            y1 = int(min(d, np.ceil((iy + 1) * scale)))
-            for ix in range(target_d):
-                x0 = int(np.floor(ix * scale))
-                x1 = int(min(d, np.ceil((ix + 1) * scale)))
-                block = vol[x0:x1, y0:y1, z0:z1]
-                out[ix, iy, iz] = float(block.mean()) if block.size else 0.0
-    return out
+    """Test helper mirroring the dashboard downsample export."""
+    return downsample_volume_box_average(vol, target_d)
 
 
 class TestVolumeSliceViewerPure:
@@ -93,11 +78,33 @@ class TestVolumeSliceViewerPure:
 
     def test_downsample_volume_box_average(self) -> None:
         vol = np.ones((8, 8, 8), dtype=np.float32) * 3.0
-        ds = _downsample_volume_box_average(vol, target_d=128)
+        ds = downsample_volume_box_average(vol, target_d=128)
         assert ds.shape == (128, 128, 128)
         np.testing.assert_allclose(ds, 3.0)
-        same = _downsample_volume_box_average(ds, target_d=128)
+        same = downsample_volume_box_average(ds, target_d=128)
         np.testing.assert_array_equal(same, ds)
+
+    def test_vtk_transfer_volume_payload_downsamples_large_cubes(self) -> None:
+        vol = np.arange(16**3, dtype=np.float32).reshape(16, 16, 16)
+        payload = vtk_transfer_volume_payload(vol, target_d=8)
+        assert payload["D"] == 8
+        assert payload["source_D"] == 16
+        assert payload["downsample"] == "box_average"
+        raw = base64.standard_b64decode(payload["volume_b64"])
+        back = np.frombuffer(raw, dtype=np.float32).reshape(8, 8, 8)
+        expected = downsample_volume_box_average(vol, target_d=8)
+        np.testing.assert_allclose(back, expected)
+
+    def test_analyze_volumes_batch_returns_target_d(self, dashboard_experiment) -> None:
+        catalog = discover_analyze_volume_catalog(dashboard_experiment)
+        vol_ids = [catalog[0]["id"]]
+        batch = analyze_volumes_batch_payload(
+            dashboard_experiment, vol_ids, n_cpus=1, target_d=128
+        )
+        assert batch["target_d"] == 128
+        entry = batch["volumes"][vol_ids[0]]
+        assert entry["D"] <= 128
+        assert "source_D" in entry
 
     def test_spherical_window_mask_3d_soft_edge(self) -> None:
         mask = spherical_window_mask_3d(D=8, in_rad=0.5, out_rad=1.0)
@@ -317,16 +324,16 @@ class TestVolumeSliceViewerRoutes:
         assert "traj-vol-backend-slice" in body
         assert "traj-vol-backend-hint" in body
         assert (
-            'id="traj-vol-backend-vtk"' in body
-            and "checked" in body.split("traj-vol-backend-vtk")[1].split(">")[0]
+            'id="traj-vol-backend-chimerax"' in body
+            and "checked" in body.split("traj-vol-backend-chimerax")[1].split(">")[0]
         )
         assert (
-            'id="traj-vol-backend-vtk"' in body
-            and "disabled" in body.split("traj-vol-backend-vtk")[1].split(">")[0]
+            'id="traj-vol-backend-chimerax"' in body
+            and "disabled" in body.split("traj-vol-backend-chimerax")[1].split(">")[0]
         )
         assert "btn-traj-vol-dock-below" in body
         assert "traj-vol-volume-nav" in body
-        assert "btn-traj-vol-prev" in body
+        assert "traj-vol-volume-slider" in body
         assert "traj-vol-expanded-host" in body
         assert "traj-vol-display-region" in body
         assert "traj-mode-manual" in body
@@ -465,7 +472,7 @@ class TestTrajectoryVolumeBrowserSmoke:
         assert gen_btn["present"] is True
         assert gen_btn["hidden"] is True
 
-    def test_manual_mode_vtk_default_with_analyze_volumes(
+    def test_manual_mode_chimerax_default_with_analyze_volumes(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
         from tests.conftest import _dashboard_smoke_volume_viewer_ready
@@ -476,10 +483,10 @@ class TestTrajectoryVolumeBrowserSmoke:
         assert ready is not None
         playwright_page.wait_for_function(
             """() => {
-              var vtk = document.getElementById('traj-vol-backend-vtk');
-              var vtkHost = document.getElementById('vslice-vtk-container');
-              return !!(vtk && vtk.checked && !vtk.disabled
-                && vtkHost && !vtkHost.hidden);
+              var cx = document.getElementById('traj-vol-backend-chimerax');
+              var preview = document.getElementById('vslice-chimerax-preview');
+              return !!(cx && cx.checked && !cx.disabled
+                && preview && !preview.hidden && preview.src);
             }""",
             timeout=60_000,
         )
@@ -493,6 +500,14 @@ class TestTrajectoryVolumeBrowserSmoke:
             playwright_page, dashboard_volumes_eligible_live_url
         )
         assert ready is not None
+        playwright_page.wait_for_function(
+            """() => {
+              var vtkBackend = document.getElementById('traj-vol-backend-vtk');
+              return !!(vtkBackend && !vtkBackend.disabled);
+            }""",
+            timeout=60_000,
+        )
+        playwright_page.click("label[for='traj-vol-backend-vtk']")
         playwright_page.wait_for_function(
             """() => {
               var vtkBackend = document.getElementById('traj-vol-backend-vtk');

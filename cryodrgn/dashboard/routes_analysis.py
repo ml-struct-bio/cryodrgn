@@ -30,12 +30,17 @@ from cryodrgn.dashboard.landscape_volpca import (
     meta_for_api,
     save_landscape_animations,
 )
-from cryodrgn.dashboard.chimerax_animation import chimerax_view_matrix_camera_arg
+from cryodrgn.dashboard.chimerax_animation import (
+    chimerax_iso_response_fields,
+    chimerax_view_matrix_camera_arg,
+)
 from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
     explorer_volumes_eligible,
     generate_trajectory_volume_b64_list,
     generate_trajectory_volume_pngs,
+    primary_mrc_path_from_volume_cache,
+    rerender_chimerax_pngs_from_volume_cache,
     save_cached_volumes_to_dir,
 )
 from cryodrgn.dashboard.preload import particle_thumbnail_b64_from_row
@@ -484,6 +489,68 @@ def api_trajectory_volumes():
 
     try:
         data = _request_json_dict()
+        render_backend = str(data.get("render_backend", "vtk") or "vtk").strip().lower()
+        if render_backend not in ("vtk", "slice", "chimerax"):
+            return jsonify(error="render_backend must be vtk, slice, or chimerax."), 400
+        cache_token = str(data.get("volume_cache_id", "") or "").strip()
+        if data.get("chimerax_rerender_only") and render_backend == "chimerax":
+            if not cache_token:
+                return (
+                    jsonify(error="Missing volume_cache_id. Generate volumes first."),
+                    400,
+                )
+            cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
+            view_matrix_camera = None
+            raw_vm = data.get("view_matrix")
+            if raw_vm is not None:
+                if not isinstance(raw_vm, str):
+                    return jsonify(error="view_matrix must be a string."), 400
+                raw_vm = raw_vm.strip()
+                if raw_vm:
+                    try:
+                        view_matrix_camera = chimerax_view_matrix_camera_arg(raw_vm)
+                    except ValueError as err:
+                        return jsonify(error=str(err)), 400
+            view_turns = None
+            iso_level = None
+            try:
+                from cryodrgn.dashboard.volume_slice_viewer import (
+                    parse_chimerax_view_turns_from_request,
+                    parse_iso_level_from_request,
+                )
+
+                if data.get("view_turns") is not None:
+                    view_turns = parse_chimerax_view_turns_from_request(
+                        data.get("view_turns")
+                    )
+                iso_level = parse_iso_level_from_request(data)
+            except ValueError as err:
+                return jsonify(error=str(err)), 400
+            blobs, vm = rerender_chimerax_pngs_from_volume_cache(
+                cache_token,
+                chimerax_cpus=cc,
+                view_matrix_camera=view_matrix_camera,
+                view_turns=view_turns,
+                volume_level=iso_level,
+            )
+            payload = {
+                "ok": True,
+                "images": [base64.standard_b64encode(b).decode("ascii") for b in blobs],
+                "volume_cache_id": cache_token,
+                "render_backend": "chimerax",
+            }
+            mrc_path = primary_mrc_path_from_volume_cache(cache_token)
+            if mrc_path:
+                payload.update(
+                    chimerax_iso_response_fields(mrc_path, iso_level=iso_level)
+                )
+            if vm:
+                payload["view_matrix"] = vm
+            if view_turns:
+                payload["view_turns"] = [
+                    {"axis": axis, "degrees": degrees} for axis, degrees in view_turns
+                ]
+            return jsonify(payload)
         p = parse_trajectory_request_body(e, data)
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -505,17 +572,20 @@ def api_trajectory_volumes():
                 except ValueError as err:
                     return jsonify(error=str(err)), 400
         view_turns = None
-        if data.get("view_turns") is not None:
-            try:
-                from cryodrgn.dashboard.volume_slice_viewer import (
-                    parse_chimerax_view_turns_from_request,
-                )
+        iso_level = None
+        try:
+            from cryodrgn.dashboard.volume_slice_viewer import (
+                parse_chimerax_view_turns_from_request,
+                parse_iso_level_from_request,
+            )
 
+            if data.get("view_turns") is not None:
                 view_turns = parse_chimerax_view_turns_from_request(
                     data.get("view_turns")
                 )
-            except ValueError as err:
-                return jsonify(error=str(err)), 400
+            iso_level = parse_iso_level_from_request(data)
+        except ValueError as err:
+            return jsonify(error=str(err)), 400
         payload = trajectory_shared_json_payload(
             e,
             z_traj,
@@ -536,12 +606,18 @@ def api_trajectory_volumes():
                 chimerax_cpus=cc,
                 view_matrix_camera=view_matrix_camera,
                 view_turns=view_turns,
+                volume_level=iso_level,
             )
             payload["images"] = [
                 base64.standard_b64encode(b).decode("ascii") for b in blobs
             ]
             payload["volume_cache_id"] = cache_token
             payload["render_backend"] = "chimerax"
+            mrc_path = primary_mrc_path_from_volume_cache(cache_token)
+            if mrc_path:
+                payload.update(
+                    chimerax_iso_response_fields(mrc_path, iso_level=iso_level)
+                )
         else:
             vol_payloads, cache_token = generate_trajectory_volume_b64_list(e, z_traj)
             payload["volumes"] = vol_payloads

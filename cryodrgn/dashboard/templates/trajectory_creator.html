@@ -5,36 +5,38 @@
 {% block nav_page_title %}{{ nav_page_title_span("Trajectory creator") }}{% endblock %}
 {% block head %}
 <style>
-  .cryo-dash-page--trajectory-integrated {
-    --cryo-traj-vol-panel-min-h: 14rem;
-  }
   .cryo-dash-page--trajectory-integrated .cryo-dash-montage.cryo-dash-montage--trajectory-volumes {
     flex: 0 0 34%;
     width: 34%;
     min-width: 34%;
     max-width: 34%;
+    align-self: stretch;
     overflow-x: hidden;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     min-height: 0;
   }
+  .cryo-dash-page--trajectory-integrated .cryo-dash-montage.cryo-dash-montage--trajectory-volumes > * {
+    flex: 0 0 auto;
+  }
   .cryo-traj-vol-panel-host {
-    flex: 1 1 0;
-    min-height: var(--cryo-traj-vol-panel-min-h);
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     margin-top: 0.45rem;
     min-width: 0;
-    overflow: hidden;
+    width: 100%;
+    overflow: visible;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-panel-shell {
-    flex: 1 1 auto;
-    min-height: 0;
+    flex: 0 0 auto;
     width: 100%;
-    display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: visible;
   }
   .cryo-traj-vol-backend-row {
     display: flex;
@@ -210,35 +212,104 @@
   .cryo-traj-vol-volume-nav-row {
     width: 100%;
     margin: 0.2rem 0 0.15rem;
+    flex: 0 0 auto;
+  }
+  .cryo-traj-vol-panel-host .cryo-vslice-status-slot {
+    flex: 0 0 auto;
+    min-height: 1.15rem;
+    box-sizing: border-box;
+  }
+  .cryo-traj-vol-panel-host .cryo-vslice-status-slot .cryo-vslice-status {
+    margin: 0;
+    min-height: 1.15rem;
+    line-height: 1.15rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cryo-traj-vol-volume-nav-row .cryo-vslice-volume-nav {
     position: relative;
-    height: calc(1.28rem * 0.77);
-    min-height: calc(1.28rem * 0.77);
     border-radius: 3px;
     background: rgba(250, 248, 244, 0.55);
+    padding: 0.28rem 0.35rem 0.18rem;
+    box-sizing: border-box;
   }
-  .cryo-traj-vol-volume-nav-row .cryo-vslice-vol-nav-btn {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    min-width: 2.1rem;
-    padding: 0 0.35rem;
-    font-size: 0.64rem;
+  .cryo-vslice-volume-slider-wrap {
+    width: 100%;
+    box-sizing: border-box;
   }
-  .cryo-traj-vol-volume-nav-row .cryo-vslice-vol-nav-btn--prev {
-    left: 0;
+  .cryo-vslice-volume-slider {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--accent, #c4703a);
   }
-  .cryo-traj-vol-volume-nav-row .cryo-vslice-vol-nav-btn--next {
-    right: 0;
+  .cryo-vslice-volume-slider-ticks {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 0.1rem;
+    gap: 0.08rem;
+    box-sizing: border-box;
+  }
+  .cryo-vslice-volume-slider-tick {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.06rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    color: var(--nav-bg, #243b53);
+    font-size: 0.52rem;
+    line-height: 1.1;
+    font-weight: 600;
+    font-family: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  }
+  .cryo-vslice-volume-slider-tick:disabled {
+    cursor: default;
+  }
+  .cryo-vslice-volume-slider-tick-mark {
+    display: block;
+    width: 1px;
+    height: 0.34rem;
+    background: rgba(36, 59, 83, 0.35);
+  }
+  .cryo-vslice-volume-slider-tick-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+    font-family: inherit;
+  }
+  .cryo-vslice-volume-slider-tick--active .cryo-vslice-volume-slider-tick-mark {
+    background: var(--accent, #c4703a);
+    width: 2px;
+  }
+  .cryo-vslice-volume-slider-tick--active .cryo-vslice-volume-slider-tick-label {
+    color: var(--accent, #c4703a);
+    font-weight: 700;
   }
   .cryo-traj-vol-volume-nav-row .cryo-vslice-volume-nav-label {
     display: block;
     text-align: center;
-    font-size: 0.64rem;
+    font-size: 0.62rem;
     font-weight: 700;
-    line-height: calc(1.28rem * 0.77);
+    line-height: 1.25;
+    min-height: 1.25rem;
+    margin-top: 0.12rem;
     color: var(--nav-bg, #243b53);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .cryo-traj-vol-expanded-host {
     width: 100%;
@@ -327,28 +398,41 @@
     border-color: var(--accent, #c4703a);
     color: #fff !important;
   }
+  .cryo-traj-manual-picker .cryo-vslice-vol-btn--placeholder {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .cryo-traj-manual-picker-loading {
+    opacity: 0.72;
+  }
   .cryo-traj-vol-panel-host .cryo-vslice-display-row:not([hidden]) {
-    min-height: 10rem;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-viewport {
     position: relative;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     width: 100%;
-    min-height: 8rem;
+    aspect-ratio: 1 / 1;
+    height: auto;
+    min-height: 0;
     border: 1px solid rgba(36, 59, 83, 0.18);
     border-radius: 4px;
     background: #faf8f4;
+    box-sizing: border-box;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-canvas,
   .cryo-traj-vol-panel-host .cryo-vslice-vtk-container {
-    width: 100%;
-    height: 100%;
-    min-height: 8rem;
-    display: block;
-  }
-  .cryo-traj-vol-panel-host .cryo-vslice-vtk-container {
     position: absolute;
     inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: block;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-canvas[hidden],
   .cryo-traj-vol-panel-host .cryo-vslice-vtk-container[hidden] {
@@ -359,7 +443,7 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    min-height: 8rem;
+    min-height: 0;
     object-fit: contain;
     display: block;
     background: #faf8f4;
@@ -380,29 +464,37 @@
     box-sizing: border-box;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-scroll {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
+    width: 100%;
     min-width: 0;
-    min-height: 10rem;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: stretch;
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+    display: block;
     box-sizing: border-box;
     position: relative;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-scroll > .cryo-plot-rendering-overlay {
-    flex: 1 1 auto;
-    min-height: 8rem;
-    position: relative;
-    inset: auto;
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    flex: none;
+    min-height: 0;
+    height: auto;
+    margin: 0;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-scroll > .cryo-plot-rendering-overlay[hidden] {
     display: none !important;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-scroll > .cryo-vslice-viewport:not([hidden]) {
-    flex: 1 1 auto;
-    min-height: 8rem;
+    display: block;
+  }
+  .cryo-traj-vol-panel-host .cryo-vslice-pad-column:not([hidden]) {
+    flex: 0 0 auto;
+    width: min(4.75rem, 100%);
+    min-width: 0;
+    margin: 0.35rem auto 0;
+    align-self: center;
   }
   .cryo-vslice-pad-column {
     flex: 0 0 auto;
@@ -800,7 +892,7 @@
     flex-direction: column;
   }
   /* Keep this right-side panel for trajectory controls/actions. */
-  .cryo-dash-page--image-viewer .cryo-dash-montage.cryo-dash-montage--trajectory-volumes {
+  .cryo-dash-page--image-viewer:not(.cryo-dash-page--trajectory-integrated) .cryo-dash-montage.cryo-dash-montage--trajectory-volumes {
     align-self: stretch;
     min-height: 0;
     max-height: none;
@@ -1100,7 +1192,7 @@
       </div>
     </fieldset>
     <div class="cryo-traj-anchor-row" id="traj-anchor-wrap">
-      <div class="cryo-traj-anchor-import-grid" id="traj-anchor-pick">
+      <div class="cryo-traj-anchor-import-grid" id="traj-anchor-pick" hidden>
         <button type="button" class="btn btn-secondary" id="btn-anchor-import-pkl">Import anchor .txt</button>
         <p class="cryo-traj-anchor-desc-line">Open a server-side file picker to choose a <code>.txt</code> file
           containing a whitespace-delimited list of particle indices.</p>
@@ -1111,16 +1203,25 @@
         <p class="cryo-traj-anchor-desc-line">Sample ten random particles from the dataset as anchor points along the
           trajectory.</p>
       </div>
-      <div class="cryo-traj-manual-picker" id="traj-manual-picker" hidden>
+      <div class="cryo-traj-manual-picker" id="traj-manual-picker">
         <div id="vslice-volume-picker" class="cryo-vslice-volume-picker">
           <div class="cryo-vslice-volume-picker-scroll" id="vslice-volume-picker-scroll">
             <div class="cryo-vslice-volume-picker-rows" id="vslice-volume-picker-rows"
-              role="group" aria-label="K-means and PC volumes"></div>
+              role="group" aria-label="K-means and PC volumes">
+              <div class="cryo-vslice-volume-row cryo-traj-manual-picker-loading" id="traj-manual-picker-loading">
+                <div class="cryo-vslice-volume-row-head">PC</div>
+                <div class="cryo-vslice-volume-row-btns">
+                  {% for i in range(10) %}
+                  <button type="button" class="btn btn-secondary cryo-vslice-vol-btn cryo-vslice-vol-btn--placeholder" disabled>PC1·{{ i + 1 }}</button>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <p class="cryo-traj-hint" style="margin:0.35rem 0 0;">Select two or more k-means or PC volumes to define the path.</p>
       </div>
-      <div class="cryo-traj-anchor-manual-row" id="traj-anchor-manual-row">
+      <div class="cryo-traj-anchor-manual-row" id="traj-anchor-manual-row" hidden>
         <input
           type="text"
           id="anchor-indices-manual"
@@ -1154,7 +1255,7 @@
       </div>
       <button type="button" class="btn btn-secondary" id="btn-anchor-remove">Remove indices</button>
     </div>
-    <button type="button" class="btn" id="btn-generate-volumes">Generate 4 volumes</button>
+    <button type="button" class="btn" id="btn-generate-volumes" hidden>Generate 4 volumes</button>
     <p id="traj-status" class="cryo-traj-status"></p>
     <div id="traj-z-panel" class="cryo-traj-z-panel" hidden>
       <details class="cryo-traj-z-details">
@@ -1177,13 +1278,16 @@
         </div>
         <div class="cryo-traj-vol-volume-nav-row" id="traj-vol-volume-nav-row">
           <div id="traj-vol-volume-nav" class="cryo-vslice-volume-nav cryo-vslice-volume-nav--inactive"
-            role="group" aria-label="Cycle trajectory volumes" aria-disabled="true" hidden>
-            <button type="button" class="btn btn-secondary cryo-vslice-vol-nav-btn cryo-vslice-vol-nav-btn--prev"
-              id="btn-traj-vol-prev" aria-label="Previous volume" disabled>◀</button>
+            role="group" aria-label="Select trajectory volume" aria-disabled="true" hidden>
+            <div class="cryo-vslice-volume-slider-wrap">
+              <input type="range" id="traj-vol-volume-slider" class="cryo-vslice-volume-slider"
+                min="0" max="0" step="1" value="0" disabled
+                aria-label="Volume along trajectory" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" />
+              <div id="traj-vol-volume-slider-ticks" class="cryo-vslice-volume-slider-ticks"
+                aria-hidden="true"></div>
+            </div>
             <span id="traj-vol-volume-nav-label" class="cryo-vslice-volume-nav-label"
               aria-live="polite">—</span>
-            <button type="button" class="btn btn-secondary cryo-vslice-vol-nav-btn cryo-vslice-vol-nav-btn--next"
-              id="btn-traj-vol-next" aria-label="Next volume" disabled>▶</button>
           </div>
         </div>
         <div class="cryo-vslice-display-row" id="vslice-display-row">
@@ -1306,10 +1410,10 @@
       </div>
       <div class="cryo-traj-vol-backend-row">
         <div class="cryo-traj-vol-backend-seg" role="radiogroup" aria-label="Volume render backend">
-          <input type="radio" name="traj-vol-backend" id="traj-vol-backend-vtk" value="vtk" checked disabled />
+          <input type="radio" name="traj-vol-backend" id="traj-vol-backend-vtk" value="vtk" disabled />
           <label for="traj-vol-backend-vtk" id="traj-vol-backend-vtk-label"
             title="Generate trajectory volumes first">VTK 3D</label>
-          <input type="radio" name="traj-vol-backend" id="traj-vol-backend-chimerax" value="chimerax" disabled />
+          <input type="radio" name="traj-vol-backend" id="traj-vol-backend-chimerax" value="chimerax" checked disabled />
           <label for="traj-vol-backend-chimerax" id="traj-vol-backend-chimerax-label"
             title="Generate trajectory volumes first">ChimeraX</label>
           <input type="radio" name="traj-vol-backend" id="traj-vol-backend-slice" value="slice" />
@@ -1334,6 +1438,7 @@
 </section>
 </div>
 
+<script src="{{ url_for('static', filename='js/cryo_cc_legend_primitives.js') }}"></script>
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
 <script src="{{ url_for('static', filename='js/volume_3d_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/volume_slice_canvas.js') }}"></script>
@@ -1361,6 +1466,9 @@
   var startXY = null;
   var endXY = null;
   var scatterLoadGeneration = 0;
+  var pendingTrajScatterAfterPlot = null;
+  var trajScatterPlotWatchdog = null;
+  var TRAJ_SCATTER_PLOT_TIMEOUT_MS = 90000;
   var volumeGeneration = 0;
   var dragEndpoint = null;
   var dragPointIndex = -1;
@@ -1426,6 +1534,24 @@
   var manualChimeraxLoadGeneration = 0;
   var manualVolumeLoadGeneration = 0;
   var manualVolumeBackendUserSet = false;
+  var manualVolumeSlots = null;
+  var manualVolumePrefetchGeneration = 0;
+  var manualCatalog = [];
+  var manualCatalogById = {};
+  var manualMarkersByVolId = {};
+  var manualSelectedVolIds = [];
+  var manualCatalogLoaded = false;
+  var manualCatalogLoading = false;
+  var manualDefaultSelectionApplied = false;
+  var manualCoordsInFlight = false;
+  var manualBootstrapPending = false;
+  var manualBootstrapDone = false;
+  var VTK_TRANSFER_TARGET_D = 128;
+  var MANUAL_VOLUME_PREFETCH_CHUNK = Math.max(1, Number(trajPrefetchCpus) || 4);
+
+  function manualVolumeSelectionActive() {
+    return isManualTraversalMode() && manualSelectedVolIds.length > 0;
+  }
 
   var lastVolumePayload = null;
   var bottomVolExpanded = false;
@@ -1438,11 +1564,13 @@
   }
 
   function canUseVtkOrChimeraxBackend() {
-    return hasGeneratedTrajectoryVolumes() || manualAnalyzeVolumesReady;
+    return hasGeneratedTrajectoryVolumes()
+      || manualAnalyzeVolumesReady
+      || manualVolumeSelectionActive();
   }
 
   function defaultManualVolumeBackend() {
-    return "vtk";
+    return "chimerax";
   }
 
   function preferredManualVolumeBackend() {
@@ -1528,6 +1656,37 @@
 
   function chimeraxDataUrl(b64) {
     return "data:image/png;base64," + b64;
+  }
+
+  var chimeraxIsoLevel = null;
+
+  function applyChimeraxIsoMetadata(j) {
+    if (!j) return;
+    if (j.iso_level != null && isFinite(Number(j.iso_level))) {
+      chimeraxIsoLevel = Number(j.iso_level);
+    }
+    if (trajVolDisplay && j.iso_range) {
+      trajVolDisplay.setChimeraxIsoRange(
+        j.iso_range.min,
+        j.iso_range.max,
+        j.iso_level
+      );
+    }
+  }
+
+  function chimeraxIsoLevelForRender() {
+    if (trajVolDisplay && typeof trajVolDisplay.getChimeraxIsoLevel === "function") {
+      var lvl = trajVolDisplay.getChimeraxIsoLevel();
+      if (lvl != null && isFinite(lvl)) return lvl;
+    }
+    if (chimeraxIsoLevel != null && isFinite(chimeraxIsoLevel)) return chimeraxIsoLevel;
+    return null;
+  }
+
+  function appendChimeraxIsoPayloadFields(payload) {
+    var lvl = chimeraxIsoLevelForRender();
+    if (lvl != null && isFinite(lvl)) payload.iso_level = lvl;
+    return payload;
   }
 
   var chimeraxGalleryObjectUrls = [];
@@ -1721,11 +1880,80 @@
     if (isManualTraversalMode() && manualAnalyzeVolumesReady && !hasGeneratedTrajectoryVolumes()) {
       if (syncManualChimeraxDisplay()) return;
     }
+    if (lastTrajectoryVolumeCacheId && currentVolumeRenderBackend() === "chimerax") {
+      rerenderTrajectoryChimeraxViews(statusMsg);
+      return;
+    }
     if (lastTrajectoryVolumeCacheId || hasAnchorIndices()) {
       generateTrajectory();
       return;
     }
     syncTrajChimeraxViewControls();
+  }
+
+  function rerenderTrajectoryChimeraxViews(statusMsg) {
+    if (!lastTrajectoryVolumeCacheId) return;
+    var myGen = ++volumeGeneration;
+    if (trajVolDisplay) {
+      trajVolDisplay.setChimeraxRendering(true);
+      if (statusMsg) trajVolDisplay.setStatus(statusMsg, true);
+    }
+    var payload = {
+      volume_cache_id: lastTrajectoryVolumeCacheId,
+      chimerax_rerender_only: true,
+      chimerax_cpus: trajChimeraxCpus,
+      render_backend: "chimerax"
+    };
+    appendChimeraxIsoPayloadFields(payload);
+    var renderTurns = chimeraxViewTurnsForRender();
+    var renderVm = chimeraxViewMatrixForRender();
+    if (renderVm) payload.view_matrix = renderVm;
+    else if (renderTurns.length) payload.view_turns = renderTurns;
+    fetch("{{ url_for('api_trajectory_volumes') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (myGen !== volumeGeneration) return;
+        if (!res.ok) {
+          if (res.j.need_chimerax) {
+            window.alert(res.j.error || "Set CHIMERAX_PATH and try again.");
+          }
+          setTrajStatus(res.j.error || "ChimeraX re-render failed.", false);
+          if (trajVolDisplay) {
+            trajVolDisplay.setChimeraxRendering(false);
+            trajVolDisplay.setStatus(res.j.error || "ChimeraX re-render failed.", false);
+          }
+          return;
+        }
+        if (trajVolDisplay) {
+          trajVolDisplay.setChimeraxRendering(false);
+          trajVolDisplay.setStatus("", false);
+        }
+        applyVolumePayloadDisplay(res.j, "chimerax");
+        applyChimeraxIsoMetadata(res.j);
+        noteChimeraxRenderViewMatrix(res.j.view_matrix || payload.view_matrix || "");
+        noteChimeraxRenderViewTurns(res.j.view_turns || payload.view_turns || []);
+        syncTrajChimeraxViewControls();
+        syncTrajGlyphOverlay();
+        var cxShown = chimeraxImagesFromPayload(res.j).length;
+        if (cxShown > 0) {
+          setTrajStatus(cxShown + " ChimeraX images ready.", false);
+        } else {
+          setTrajStatus("ChimeraX returned no displayable images.", false);
+        }
+      })
+      .catch(function(err) {
+        if (myGen !== volumeGeneration) return;
+        console.error(err);
+        setTrajStatus("ChimeraX re-render failed.", false);
+        if (trajVolDisplay) {
+          trajVolDisplay.setChimeraxRendering(false);
+          trajVolDisplay.setStatus("ChimeraX re-render failed.", false);
+        }
+      });
   }
 
   function applyTrajChimeraxViewMatrixFromField() {
@@ -1891,27 +2119,295 @@
     return lastVolumePayload;
   }
 
+  function volumeObjectFromBatchEntry(volId, entry, index) {
+    return {
+      index: index,
+      D: entry.D,
+      source_D: entry.source_D,
+      downsample: entry.downsample,
+      volume_b64: entry.volume_b64,
+      volume_dtype: entry.volume_dtype || "float32",
+      vol_id: volId
+    };
+  }
+
+  function mergeBatchIntoVolumeSlots(ids, slots, batchVolumes) {
+    var out = slots && slots.length === ids.length
+      ? slots.slice()
+      : ids.map(function() { return null; });
+    for (var i = 0; i < ids.length; i++) {
+      var entry = batchVolumes[ids[i]];
+      if (entry && entry.volume_b64) {
+        out[i] = volumeObjectFromBatchEntry(ids[i], entry, i);
+      }
+    }
+    return out;
+  }
+
+  function loadedManualVolumeCount(slots) {
+    if (!slots || !slots.length) return 0;
+    var n = 0;
+    for (var i = 0; i < slots.length; i++) {
+      if (slots[i] && slots[i].volume_b64) n++;
+    }
+    return n;
+  }
+
+  function fetchAnalyzeVolumesBatch(volIds) {
+    return fetch("{{ url_for('api_volume_viewer_analyze_volumes_batch') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: volIds, target_d: VTK_TRANSFER_TARGET_D })
+    }).then(function(r) {
+      return r.json().then(function(j) { return { ok: r.ok, j: j }; });
+    });
+  }
+
+  function applyManualVolumeSlots(slots, ids, opts) {
+    opts = opts || {};
+    var prevIds = manualVolumeDisplayIds.slice();
+    manualVolumeSlots = slots.slice();
+    manualVolumeDisplayIds = ids.slice();
+    manualAnalyzeVolumesReady = loadedManualVolumeCount(slots) > 0;
+    var idsUnchanged = prevIds.length === ids.length
+      && prevIds.every(function(id, idx) { return String(id) === String(ids[idx]); });
+    var keptImages = idsUnchanged && manualAnalyzeVolumePayload && manualAnalyzeVolumePayload.images
+      ? manualAnalyzeVolumePayload.images.slice()
+      : [];
+    manualAnalyzeVolumePayload = {
+      volumes: slots.slice(),
+      slots: slots.slice(),
+      ids: ids.slice(),
+      images: keptImages,
+      expectedVolumeCount: ids.length
+    };
+    syncTrajVolBackendChrome();
+    if (!hasGeneratedTrajectoryVolumes() && manualAnalyzeVolumesReady) {
+      var curBackend = isManualTraversalMode()
+        ? preferredManualVolumeBackend()
+        : currentVolumeRenderBackend();
+      if (curBackend === "chimerax") {
+        if (keptImages.length) {
+          selectTrajVolumeBackend("chimerax");
+          applyVolumePayloadDisplay(manualAnalyzeVolumePayload, "chimerax");
+        } else if (!opts.deferDisplay) {
+          selectTrajVolumeBackend("chimerax");
+          syncManualChimeraxDisplay();
+        }
+      } else if (!opts.deferDisplay) {
+        selectTrajVolumeBackend(curBackend);
+        applyManualAnalyzeVolumeDisplay(curBackend);
+      }
+    }
+    if (!opts.skipHighlight) syncManualVolumeScatterHighlight();
+  }
+
+  function prefetchAllManualVolumeData(ids, slots, gen) {
+    if (gen !== manualVolumeLoadGeneration) return;
+    if (!ids.length) return;
+    var prefetchGen = ++manualVolumePrefetchGeneration;
+    fetchAnalyzeVolumesBatch(ids)
+      .then(function(res) {
+        if (gen !== manualVolumeLoadGeneration || prefetchGen !== manualVolumePrefetchGeneration) return;
+        if (!res.ok || !res.j || !res.j.ok) return;
+        var merged = mergeBatchIntoVolumeSlots(ids, manualVolumeSlots || slots, res.j.volumes || {});
+        applyManualVolumeSlots(merged, ids, { deferDisplay: true, skipHighlight: true });
+        if (trajVolDisplay && trajVolDisplay.backend === "vtk") {
+          trajVolDisplay.loadPayload({
+            volumes: merged.slice(),
+            images: keptImagesFromManualPayload(),
+            expectedVolumeCount: ids.length
+          });
+        }
+      })
+      .catch(function() {});
+  }
+
+  function beginManualChimeraxVolumeLoad(ids, gen) {
+    manualVolumeDisplayIds = ids.slice();
+    manualVolumeSlots = ids.map(function() { return null; });
+    manualAnalyzeVolumePayload = {
+      volumes: manualVolumeSlots.slice(),
+      slots: manualVolumeSlots.slice(),
+      ids: ids.slice(),
+      images: [],
+      expectedVolumeCount: ids.length
+    };
+    syncTrajVolBackendChrome();
+    selectTrajVolumeBackend("chimerax");
+    if (trajVolDisplay) {
+      trajVolDisplay.loadPayload({
+        volumes: manualVolumeSlots.slice(),
+        images: [],
+        expectedVolumeCount: ids.length
+      }, { deferRender: true });
+      trajVolDisplay.setBackend("chimerax");
+      trajVolDisplay.setChimeraxRendering(true);
+    }
+    syncManualChimeraxDisplay();
+  }
+
+  function showManualPickerLoadingShell() {
+    var rowsEl = document.getElementById("vslice-volume-picker-rows");
+    if (!rowsEl) return;
+    rowsEl.innerHTML = "";
+    var row = document.createElement("div");
+    row.className = "cryo-vslice-volume-row cryo-traj-manual-picker-loading";
+    row.id = "traj-manual-picker-loading";
+    var head = document.createElement("div");
+    head.className = "cryo-vslice-volume-row-head";
+    head.textContent = "PC";
+    row.appendChild(head);
+    var btns = document.createElement("div");
+    btns.className = "cryo-vslice-volume-row-btns";
+    for (var i = 0; i < 10; i++) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-secondary cryo-vslice-vol-btn cryo-vslice-vol-btn--placeholder";
+      btn.disabled = true;
+      btn.textContent = "PC1·" + String(i + 1);
+      btns.appendChild(btn);
+    }
+    row.appendChild(btns);
+    rowsEl.appendChild(row);
+  }
+
+  function syncManualModeInitialVolumeChrome() {
+    if (!isManualTraversalMode() || !trajVolDisplay) return;
+    selectTrajVolumeBackend("chimerax");
+    trajVolDisplay.loadPayload({
+      volumes: [],
+      images: [],
+      expectedVolumeCount: 10
+    }, { deferRender: true });
+    trajVolDisplay.setBackend("chimerax");
+    trajVolDisplay.setChimeraxRendering(true);
+    trajVolDisplay.setStatus("Loading volumes…", true);
+  }
+
+  function syncManualVolumeSliderPreview() {
+    if (!trajVolDisplay || !manualSelectedVolIds.length) return;
+    trajVolDisplay.loadPayload({
+      volumes: manualSelectedVolIds.map(function() { return null; }),
+      images: [],
+      expectedVolumeCount: manualSelectedVolIds.length
+    }, { deferRender: true });
+    if (trajVolDisplay.backend === "chimerax") {
+      trajVolDisplay.setChimeraxRendering(true);
+    }
+  }
+
+  function finishManualBootstrap() {
+    if (!isManualTraversalMode() || manualSelectedVolIds.length < 2) return;
+    if (manualBootstrapDone) return;
+    if (!trajScatterRenderingEverCompleted) {
+      manualBootstrapPending = true;
+      return;
+    }
+    if (!manualCatalogLoaded || !manualMarkersReady()) return;
+    manualBootstrapPending = false;
+    manualBootstrapDone = true;
+    syncManualSelectionToAnchors();
+    window.setTimeout(function() {
+      syncManualVolumeDisplay();
+    }, 0);
+  }
+
+  function prefetchRemainingManualVolumes(ids, slots, gen) {
+    if (gen !== manualVolumeLoadGeneration) return;
+    var pendingIds = [];
+    for (var i = 0; i < ids.length; i++) {
+      if (slots[i] && slots[i].volume_b64) continue;
+      pendingIds.push(String(ids[i]));
+    }
+    if (!pendingIds.length) return;
+    prefetchManualVolumeChunk(ids, slots, gen, pendingIds, 0);
+  }
+
+  function prefetchManualVolumeChunk(ids, slots, gen, pendingIds, offset) {
+    if (gen !== manualVolumeLoadGeneration) return;
+    if (offset >= pendingIds.length) return;
+    var chunk = pendingIds.slice(offset, offset + MANUAL_VOLUME_PREFETCH_CHUNK);
+    if (!chunk.length) return;
+    var prefetchGen = ++manualVolumePrefetchGeneration;
+    fetchAnalyzeVolumesBatch(chunk)
+      .then(function(res) {
+        if (gen !== manualVolumeLoadGeneration || prefetchGen !== manualVolumePrefetchGeneration) return;
+        if (!res.ok || !res.j || !res.j.ok) return;
+        var merged = mergeBatchIntoVolumeSlots(ids, manualVolumeSlots, res.j.volumes || {});
+        applyManualVolumeSlots(merged, ids, { deferDisplay: true, skipHighlight: true });
+        if (trajVolDisplay && trajVolDisplay.backend === "vtk") {
+          trajVolDisplay.loadPayload({
+            volumes: merged.slice(),
+            images: keptImagesFromManualPayload(),
+            expectedVolumeCount: ids.length
+          });
+          var focusIdx = currentVolumeFocusIndex();
+          if (focusIdx >= 0 && merged[focusIdx] && merged[focusIdx].volume_b64) {
+            trajVolDisplay._renderVtk();
+          }
+        }
+        prefetchManualVolumeChunk(ids, merged, gen, pendingIds, offset + chunk.length);
+      })
+      .catch(function() {});
+  }
+
+  function keptImagesFromManualPayload() {
+    return manualAnalyzeVolumePayload && manualAnalyzeVolumePayload.images
+      ? manualAnalyzeVolumePayload.images.slice()
+      : [];
+  }
+
+  function ensureManualVolumeAtFocusLoaded() {
+    if (!isManualTraversalMode() || !manualVolumeSlots || !manualSelectedVolIds.length) return;
+    var idx = currentVolumeFocusIndex();
+    if (idx < 0 || idx >= manualVolumeSlots.length) return;
+    if (manualVolumeSlots[idx] && manualVolumeSlots[idx].volume_b64) return;
+    var volId = manualSelectedVolIds[idx];
+    if (!volId) return;
+    var gen = manualVolumeLoadGeneration;
+    if (trajVolDisplay && trajVolDisplay.statusEl) {
+      trajVolDisplay.statusEl.textContent = "Loading volume…";
+    }
+    fetchAnalyzeVolumesBatch([String(volId)])
+      .then(function(res) {
+        if (gen !== manualVolumeLoadGeneration) return;
+        if (trajVolDisplay && trajVolDisplay.statusEl) trajVolDisplay.statusEl.textContent = "";
+        if (!res.ok || !res.j || !res.j.ok) return;
+        var merged = mergeBatchIntoVolumeSlots(
+          manualSelectedVolIds.slice(),
+          manualVolumeSlots,
+          res.j.volumes || {}
+        );
+        applyManualVolumeSlots(merged, manualSelectedVolIds.slice(), { skipHighlight: true });
+        if (trajVolDisplay) {
+          trajVolDisplay.loadPayload({
+            volumes: merged.slice(),
+            images: keptImagesFromManualPayload(),
+            expectedVolumeCount: manualSelectedVolIds.length
+          });
+          applyManualAnalyzeVolumeDisplay(currentVolumeRenderBackend());
+        }
+      })
+      .catch(function() {
+        if (gen !== manualVolumeLoadGeneration) return;
+        if (trajVolDisplay && trajVolDisplay.statusEl) trajVolDisplay.statusEl.textContent = "";
+      });
+  }
+
   function analyzeBatchToVolumeList(volIds, batchVolumes) {
     if (!volIds.length || !batchVolumes) return null;
-    var out = [];
-    for (var i = 0; i < volIds.length; i++) {
-      var entry = batchVolumes[volIds[i]];
-      if (!entry || !entry.volume_b64) return null;
-      out.push({
-        index: i,
-        D: entry.D,
-        volume_b64: entry.volume_b64,
-        volume_dtype: "float32",
-        vol_id: volIds[i]
-      });
-    }
-    return out.length === volIds.length ? out : null;
+    var slots = mergeBatchIntoVolumeSlots(volIds, null, batchVolumes);
+    if (!loadedManualVolumeCount(slots)) return null;
+    return slots;
   }
 
   function clearManualAnalyzeVolumeDisplay() {
     manualAnalyzeVolumesReady = false;
     manualAnalyzeVolumePayload = null;
     manualVolumeDisplayIds = [];
+    manualVolumeSlots = null;
+    manualVolumePrefetchGeneration++;
     resetVolumeDisplayFocusEngaged();
     if (!hasGeneratedTrajectoryVolumes()) {
       lastVolumePayload = null;
@@ -1941,7 +2437,7 @@
     if (!hasGeneratedTrajectoryVolumes()) {
       lastVolumePayload = mergeVolumePayload(manualAnalyzeVolumePayload);
     }
-    backend = backend || preferredManualVolumeBackend() || (isManualTraversalMode() ? "vtk" : "slice");
+    backend = backend || preferredManualVolumeBackend() || (isManualTraversalMode() ? "chimerax" : "slice");
     if (backend === "chimerax") {
       selectTrajVolumeBackend("chimerax");
       if (chimeraxImagesFromPayload(manualAnalyzeVolumePayload).length) {
@@ -1968,69 +2464,56 @@
       return;
     }
     var gen = ++manualVolumeLoadGeneration;
+    manualVolumePrefetchGeneration++;
+    var backend = preferredManualVolumeBackend();
+    if (backend === "chimerax" && !hasGeneratedTrajectoryVolumes()) {
+      beginManualChimeraxVolumeLoad(ids, gen);
+      return;
+    }
     if (trajVolDisplay) trajVolDisplay.setStatus("Loading analyze volumes…", true);
-    fetch("{{ url_for('api_volume_viewer_analyze_volumes_batch') }}", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: ids })
-    })
-      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+    fetchAnalyzeVolumesBatch(ids)
       .then(function(res) {
         if (gen !== manualVolumeLoadGeneration) return;
         if (trajVolDisplay) trajVolDisplay.setStatus("", false);
         if (!res.ok || !res.j || !res.j.ok) {
           manualAnalyzeVolumesReady = false;
           manualAnalyzeVolumePayload = null;
+          manualVolumeSlots = null;
           syncTrajVolBackendChrome();
           return;
         }
-        var list = analyzeBatchToVolumeList(ids, res.j.volumes || {});
-        if (!list) {
+        var slots = mergeBatchIntoVolumeSlots(ids, null, res.j.volumes || {});
+        if (!loadedManualVolumeCount(slots)) {
           manualAnalyzeVolumesReady = false;
           manualAnalyzeVolumePayload = null;
+          manualVolumeSlots = null;
           syncTrajVolBackendChrome();
           return;
         }
-        var prevIds = manualVolumeDisplayIds.slice();
-        manualVolumeDisplayIds = ids.slice();
-        manualAnalyzeVolumesReady = true;
-        var idsUnchanged = prevIds.length === ids.length
-          && prevIds.every(function(id, idx) { return String(id) === String(ids[idx]); });
-        var keptImages = idsUnchanged && manualAnalyzeVolumePayload && manualAnalyzeVolumePayload.images
-          ? manualAnalyzeVolumePayload.images.slice()
-          : [];
-        manualAnalyzeVolumePayload = { volumes: list, images: keptImages };
-        syncTrajVolBackendChrome();
+        applyManualVolumeSlots(slots, ids);
         if (!hasGeneratedTrajectoryVolumes()) {
           var curBackend = isManualTraversalMode()
             ? preferredManualVolumeBackend()
             : currentVolumeRenderBackend();
-          if (curBackend === "chimerax") {
-            if (keptImages.length) {
-              selectTrajVolumeBackend("chimerax");
-              applyVolumePayloadDisplay(manualAnalyzeVolumePayload, "chimerax");
-            } else {
-              selectTrajVolumeBackend("chimerax");
-              syncManualChimeraxDisplay();
-            }
-          } else {
+          if (curBackend !== "chimerax") {
             selectTrajVolumeBackend(curBackend);
             applyManualAnalyzeVolumeDisplay(curBackend);
           }
         }
-        syncManualVolumeScatterHighlight();
       })
       .catch(function() {
         if (gen !== manualVolumeLoadGeneration) return;
         if (trajVolDisplay) trajVolDisplay.setStatus("", false);
         manualAnalyzeVolumesReady = false;
         manualAnalyzeVolumePayload = null;
+        manualVolumeSlots = null;
         syncTrajVolBackendChrome();
       });
   }
 
   function ensureSliceBackendWhenVolumesMissing() {
     if (canUseVtkOrChimeraxBackend()) return;
+    if (isManualTraversalMode()) return;
     var sliceEl = document.getElementById("traj-vol-backend-slice");
     var backend = currentVolumeRenderBackend();
     if (backend === "slice") return;
@@ -2156,6 +2639,9 @@
     if (manualAnalyzeVolumesReady && manualAnalyzeVolumePayload) {
       manualAnalyzeVolumePayload = Object.assign({}, manualAnalyzeVolumePayload, payload);
     }
+    if (isManualTraversalMode() && !hasGeneratedTrajectoryVolumes()) {
+      manualAnalyzeVolumesReady = true;
+    }
     lastVolumePayload = mergeVolumePayload(payload);
     selectTrajVolumeBackend("chimerax");
     if (trajVolDisplay) {
@@ -2182,7 +2668,7 @@
 
   function syncManualChimeraxDisplay(opts) {
     opts = opts || {};
-    if (!isManualTraversalMode() || !manualAnalyzeVolumesReady) return false;
+    if (!isManualTraversalMode()) return false;
     if (hasGeneratedTrajectoryVolumes()) return false;
     var ids = manualVolumeDisplayIds.length
       ? manualVolumeDisplayIds.slice()
@@ -2193,6 +2679,7 @@
     syncTrajChimeraxViewControls();
     setTrajStatus("Rendering ChimeraX images…", true);
     var body = { ids: ids, chimerax_cpus: trajChimeraxCpus };
+    appendChimeraxIsoPayloadFields(body);
     var renderTurns = chimeraxViewTurnsForRender();
     var renderVm = chimeraxViewMatrixForRender();
     if (renderVm) body.view_matrix = renderVm;
@@ -2222,6 +2709,7 @@
         });
         noteChimeraxRenderViewMatrix(res.j.view_matrix || renderVm);
         noteChimeraxRenderViewTurns(res.j.view_turns || renderTurns);
+        applyChimeraxIsoMetadata(res.j);
         var shown = showChimeraxVolumeGallery(cxPayload);
         if (shown > 0) {
           setTrajStatus(shown + " ChimeraX images ready.", false);
@@ -2241,18 +2729,23 @@
   function applyVolumePayloadDisplay(j, backend) {
     if (!j) j = {};
     mergeVolumePayload(j);
+    applyChimeraxIsoMetadata(j);
     backend = backend || (j && j.render_backend) || currentVolumeRenderBackend();
     var chimeraxImgs = backend === "chimerax" ? chimeraxImagesFromPayload(lastVolumePayload) : [];
-    var volumes = backend === "chimerax" ? [] : (lastVolumePayload.volumes || []);
-    if (backend !== "chimerax" && (!volumes || !volumes.length)
+    var volumes = lastVolumePayload.volumes || [];
+    if ((!volumes || !volumes.length)
         && manualAnalyzeVolumePayload && manualAnalyzeVolumePayload.volumes) {
       volumes = manualAnalyzeVolumePayload.volumes;
     }
     if (trajVolDisplay) {
-      trajVolDisplay.loadPayload({
+      var payload = {
         volumes: volumes,
         images: chimeraxImgs.length ? chimeraxImgs : (lastVolumePayload.images || [])
-      }, { deferRender: true });
+      };
+      if (manualAnalyzeVolumePayload && manualAnalyzeVolumePayload.expectedVolumeCount) {
+        payload.expectedVolumeCount = manualAnalyzeVolumePayload.expectedVolumeCount;
+      }
+      trajVolDisplay.loadPayload(payload, { deferRender: true });
       trajVolDisplay.setBackend(backend);
       if (backend === "chimerax") trajVolDisplay.setChimeraxRendering(false);
     }
@@ -2298,7 +2791,7 @@
       if (needsRerender) {
         if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true);
         syncTrajChimeraxViewControls();
-        if (isManualTraversalMode() && manualAnalyzeVolumesReady && !hasGeneratedTrajectoryVolumes()) {
+        if (isManualTraversalMode() && manualVolumeSelectionActive() && !hasGeneratedTrajectoryVolumes()) {
           if (syncManualChimeraxDisplay()) return;
         }
         if (lastTrajectoryVolumeCacheId || hasAnchorIndices()) {
@@ -2328,6 +2821,31 @@
     if (trajVolDisplay) trajVolDisplay.setBackend(backend);
   }
 
+  function volumeNavTickLabels(total) {
+    total = Number(total);
+    if (!isFinite(total) || total < 1) return [];
+    if (isManualTraversalMode()) {
+      var ids = manualVolumeDisplayIds.length
+        ? manualVolumeDisplayIds.slice()
+        : manualSelectedVolIds.slice();
+      if (ids.length) {
+        return ids.map(function(id, idx) {
+          var entry = manualCatalogById[id];
+          if (entry) return manualVolButtonLabel(entry);
+          return String(idx + 1);
+        });
+      }
+      if (total === 10 && !manualCatalogLoaded) {
+        var placeholders = [];
+        for (var pi = 0; pi < total; pi++) placeholders.push("PC1·" + String(pi + 1));
+        return placeholders;
+      }
+    }
+    var labels = [];
+    for (var i = 0; i < total; i++) labels.push(String(i + 1));
+    return labels;
+  }
+
   var trajVolDisplay = null;
   if (window.CryoTrajectoryVolumeDisplay) {
     trajVolDisplay = new CryoTrajectoryVolumeDisplay({
@@ -2351,8 +2869,9 @@
       sliceContrastEl: document.getElementById("vslice-slice-contrast"),
       volumeNavEl: document.getElementById("traj-vol-volume-nav"),
       volumeNavLabelEl: document.getElementById("traj-vol-volume-nav-label"),
-      btnVolPrev: document.getElementById("btn-traj-vol-prev"),
-      btnVolNext: document.getElementById("btn-traj-vol-next"),
+      volumeSliderEl: document.getElementById("traj-vol-volume-slider"),
+      volumeSliderTicksEl: document.getElementById("traj-vol-volume-slider-ticks"),
+      getVolumeNavLabels: volumeNavTickLabels,
       expandedHostEl: trajVolExpandedHost,
       btnPanUp: document.getElementById("btn-vslice-pan-up"),
       btnPanDown: document.getElementById("btn-vslice-pan-down"),
@@ -2370,10 +2889,12 @@
       onBackendChange: onTrajVolumeBackendChange,
       onDockBelowClick: toggleTrajVolBottomDisplay,
       onFocusChange: function() {
-        if (currentVolumeFocusIndex() !== 0) engageVolumeDisplayFocus();
-        manualScatterHighlightKey = "";
-        syncManualVolumeScatterHighlight();
+        ensureManualVolumeAtFocusLoaded();
         syncTrajGlyphOverlay();
+      },
+      onChimeraxIsoChange: function(level) {
+        chimeraxIsoLevel = level;
+        requestTrajChimeraxViewRerender("Updating ChimeraX isosurface…");
       }
     });
     trajVolDisplay.onExpandedBelowChange = function(expanded) {
@@ -2425,18 +2946,11 @@
     if (tag === "input" || tag === "textarea" || tag === "select") return;
     if (ev.target && ev.target.isContentEditable) return;
     ev.preventDefault();
-    if (ev.key === "ArrowLeft" && trajVolDisplay.btnVolPrev) trajVolDisplay.btnVolPrev.click();
-    else if (ev.key === "ArrowRight" && trajVolDisplay.btnVolNext) trajVolDisplay.btnVolNext.click();
+    if (!trajVolDisplay || typeof trajVolDisplay.getFocusIndex !== "function") return;
+    var cur = trajVolDisplay.getFocusIndex();
+    if (ev.key === "ArrowLeft") trajVolDisplay.setFocusIndex(cur - 1);
+    else trajVolDisplay.setFocusIndex(cur + 1);
   });
-
-  var manualCatalog = [];
-  var manualCatalogById = {};
-  var manualMarkersByVolId = {};
-  var manualSelectedVolIds = [];
-  var manualCatalogLoaded = false;
-  var manualCatalogLoading = false;
-  var manualDefaultSelectionApplied = false;
-  var manualCoordsInFlight = false;
 
   function scatterTrajectoryDragEnabled() {
     return !isManualTraversalMode();
@@ -2453,14 +2967,39 @@
   function applyDefaultManualPc1Selection(force) {
     if (!isManualTraversalMode()) return;
     if (manualDefaultSelectionApplied && !force) return;
+    if (force) {
+      manualBootstrapDone = false;
+      manualBootstrapPending = false;
+    }
     manualDefaultSelectionApplied = true;
     var pc1 = pc1VolumeEntries(manualCatalog);
     if (!pc1.length) return;
     manualSelectedVolIds = pc1.map(function(e) { return String(e.id); });
     buildManualPickerRows();
-    if (pc1.length >= 2) syncManualSelectionToAnchors();
+    syncManualVolumeSliderPreview();
+    if (pc1.length >= 2) scheduleManualBootstrap();
     else setTrajStatus("Select at least two k-means or PC volumes.", false);
-    syncManualVolumeDisplay();
+  }
+
+  function scheduleManualBootstrap() {
+    if (!isManualTraversalMode() || manualSelectedVolIds.length < 2) return;
+    if (manualBootstrapDone) return;
+    if (!manualCatalogLoaded || !manualMarkersReady()) return;
+    if (!trajScatterRenderingEverCompleted) {
+      manualBootstrapPending = true;
+      return;
+    }
+    manualBootstrapPending = false;
+    window.setTimeout(function() {
+      finishManualBootstrap();
+    }, 0);
+  }
+
+  function manualMarkersReady() {
+    for (var i = 0; i < manualSelectedVolIds.length; i++) {
+      if (manualMarkersByVolId[manualSelectedVolIds[i]]) return true;
+    }
+    return Object.keys(manualMarkersByVolId).length > 0;
   }
 
   var scatterControlsCard = document.getElementById("scatter-controls-card");
@@ -2531,6 +3070,20 @@
     var hasColor = sc.value && sc.value !== "none";
     var suppress = rendering || !hasColor || trajColorByIsDiscrete();
     paletteFieldset.classList.toggle("traj-palette-radios--suppressed", suppress);
+  }
+
+  function cancelPendingTrajScatterAfterPlot() {
+    if (pendingTrajScatterAfterPlot && gd) {
+      gd.removeListener("plotly_afterplot", pendingTrajScatterAfterPlot);
+      pendingTrajScatterAfterPlot = null;
+    }
+  }
+
+  function clearTrajScatterPlotWatchdog() {
+    if (trajScatterPlotWatchdog) {
+      clearTimeout(trajScatterPlotWatchdog);
+      trajScatterPlotWatchdog = null;
+    }
   }
 
   function setRendering(on) {
@@ -2628,9 +3181,8 @@
         btnAnchorRemove.classList.toggle("cryo-traj-remove--visible", hasAnchorIndices());
       }
     } else {
-      syncManualVolumeScatterHighlight();
+      if (manualSelectedVolIds.length) syncManualVolumeScatterHighlight();
     }
-    if (manual && !manualCatalogLoaded && !manualCatalogLoading) loadManualVolumeCatalog();
   }
 
   function manualVolButtonLabel(entry) {
@@ -2653,6 +3205,10 @@
     var specs = [];
     if (km.length) specs.push({ head: "K-means", entries: km });
     if (pc.length) specs.push({ head: "PC", entries: pc });
+    if (!specs.length) {
+      showManualPickerLoadingShell();
+      return;
+    }
     specs.forEach(function(spec) {
       var row = document.createElement("div");
       row.className = "cryo-vslice-volume-row";
@@ -2750,19 +3306,25 @@
   function loadManualVolumeCatalog() {
     if (manualCatalogLoaded || manualCatalogLoading) return;
     manualCatalogLoading = true;
-    fetch("{{ url_for('api_volume_viewer_analyze_volumes') }}?include_markers=1")
+    setTrajStatus("Loading analyze volumes…", false);
+    fetch("{{ url_for('api_volume_viewer_analyze_volumes') }}?include_markers=0")
       .then(function(r) { return r.json(); })
       .then(function(j) {
         manualCatalog = (j && j.catalog) ? j.catalog.slice() : [];
         manualCatalogById = {};
         manualCatalog.forEach(function(e) { manualCatalogById[e.id] = e; });
+        buildManualPickerRows();
+        applyDefaultManualPc1Selection(false);
+        return fetch("{{ url_for('api_volume_viewer_analyze_markers') }}");
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(j) {
         var markers = (j && j.markers) ? j.markers : [];
         manualMarkersByVolId = {};
         markers.forEach(function(m) { manualMarkersByVolId[m.vol_id] = m; });
         manualCatalogLoaded = true;
         manualCatalogLoading = false;
-        buildManualPickerRows();
-        applyDefaultManualPc1Selection(false);
+        scheduleManualBootstrap();
       })
       .catch(function() {
         manualCatalogLoaded = false;
@@ -3273,6 +3835,8 @@
     anchorTrajXY = null;
     editableTrajXY = null;
     manualSelectedVolIds = [];
+    manualBootstrapDone = false;
+    manualBootstrapPending = false;
     buildManualPickerRows();
     if (nPointsEl) nPointsEl.disabled = false;
     setTrajectoryModesLockedForAnchors(false);
@@ -3324,6 +3888,34 @@
     return out;
   }
 
+  function currentTrajectoryEndpoints() {
+    if (editableTrajXY && editableTrajXY.length >= 2) {
+      return {
+        start: editableTrajXY[0].slice(),
+        end: editableTrajXY[editableTrajXY.length - 1].slice()
+      };
+    }
+    if (startXY && endXY) {
+      return { start: startXY.slice(), end: endXY.slice() };
+    }
+    return null;
+  }
+
+  function resetDirectTraversalFromCurrentEndpoints() {
+    var endpoints = currentTrajectoryEndpoints();
+    if (!endpoints) return false;
+    var linearPath = makeLinearEditablePath(
+      endpoints.start,
+      endpoints.end,
+      currentNPoints()
+    );
+    if (!linearPath || linearPath.length < 2) return false;
+    startXY = linearPath[0].slice();
+    endXY = linearPath[linearPath.length - 1].slice();
+    editableTrajXY = linearPath;
+    return true;
+  }
+
   /* ── Mode toggle (also refreshes latent z via coords API) ── */
   function setMode(mode) {
     var prevMode = trajectoryMode;
@@ -3357,21 +3949,9 @@
       manualSelectedVolIds = [];
       buildManualPickerRows();
     }
-    if (!hasAnchors && prevMode === "nearest" && mode === "direct") {
-      var nLinear = (editableTrajXY && editableTrajXY.length >= 2)
-        ? editableTrajXY.length
-        : currentNPoints();
-      var firstPt = (editableTrajXY && editableTrajXY.length >= 2)
-        ? editableTrajXY[0]
-        : startXY;
-      var lastPt = (editableTrajXY && editableTrajXY.length >= 2)
-        ? editableTrajXY[editableTrajXY.length - 1]
-        : endXY;
-      var linearPath = makeLinearEditablePath(firstPt, lastPt, nLinear);
-      if (linearPath && linearPath.length >= 2) {
-        editableTrajXY = linearPath;
-      } else {
-        editableTrajXY = null;
+    if (!hasAnchors && mode === "direct" && prevMode !== "direct") {
+      if (!resetDirectTraversalFromCurrentEndpoints() && (!startXY || !endXY)) {
+        initDefaultTrajectory(scatterLoadGeneration);
       }
     }
     syncTraversalModeButtonStates();
@@ -4060,7 +4640,7 @@
       var hasManualDisplay = manualAnalyzeVolumesReady
         || (trajVolDisplay && trajVolDisplay.hasChimeraxImages && trajVolDisplay.hasChimeraxImages())
         || (trajVolDisplay && trajVolDisplay.hasInteractiveVolumes && trajVolDisplay.hasInteractiveVolumes());
-      if (hasManualDisplay) {
+      if (hasManualDisplay && volumeDisplayFocusEngaged) {
         var plotRow = focusedManualPlotRow();
         if (plotRow != null) {
           var focusedTi = scatterRowToTraceIndex(plotRow);
@@ -4081,17 +4661,26 @@
     return manualVolumeHighlightTraceIndicesAllSelected();
   }
 
+  function trajectoryVolumeFocusIndexForGlyphs() {
+    if (!trajectoryVolumeNavActive()) return -1;
+    var idx = currentVolumeFocusIndex();
+    if (isManualTraversalMode()) {
+      if (anchorTrajXY && anchorTrajXY.length >= 2) {
+        return Math.max(0, Math.min(anchorTrajXY.length - 1, idx));
+      }
+      return -1;
+    }
+    if (!hasVolumeFocusDisplay()) return -1;
+    return Math.max(0, idx);
+  }
+
   function shouldSyncManualVolumeScatterHighlight() {
-    if (!gd || !gd.data || !gd.data[0]) return false;
-    var backend = volumeDisplayBackendActive();
-    if (backend !== "vtk" && backend !== "chimerax") return false;
-    if (isManualTraversalMode()) return true;
-    if (hasGeneratedTrajectoryVolumes() && hasVolumeFocusDisplay()) return true;
+    /* Trajectory creator: path focus uses HTML glyph overlay only, never Plotly restyle. */
     return false;
   }
 
   function volumeScatterHighlightDimsBackground() {
-    return isManualTraversalMode();
+    return volumeDisplayFocusEngaged;
   }
 
   function scheduleTrajScatterglPaintFlush() {
@@ -4346,8 +4935,7 @@
       } else if (glyphXY.length > 40) {
         return specs;
       }
-      var focusIdx = -1;
-      if (hasVolumeFocusDisplay()) focusIdx = effectiveVolumeFocusIndex();
+      var focusIdx = trajectoryVolumeFocusIndexForGlyphs();
       var anchorMk = buildTrajectoryMarkerArrays(glyphXY.length, null, { focusIdx: focusIdx });
       for (var ai = 0; ai < glyphXY.length; ai++) {
         specs.push({
@@ -4367,14 +4955,9 @@
     if (!hasAnchorIndices() && editableTrajXY && editableTrajXY.length >= 2) {
       var n = editableTrajXY.length;
       var labels = buildTrajectoryPointLabels(n);
-      var mkOpts = {};
-      if (hasVolumeFocusDisplay()) {
-        mkOpts.focusIdx = effectiveVolumeFocusIndex();
-      } else {
-        mkOpts.endpointStyle = true;
-      }
+      var glyphFocusIdx = trajectoryVolumeFocusIndexForGlyphs();
+      var mkOpts = glyphFocusIdx >= 0 ? { focusIdx: glyphFocusIdx } : { endpointStyle: true };
       var mk = buildTrajectoryMarkerArrays(n, null, mkOpts);
-      var glyphFocusIdx = mkOpts.focusIdx != null ? mkOpts.focusIdx : -1;
       for (var ei = 0; ei < n; ei++) {
         specs.push({
           x: editableTrajXY[ei][0],
@@ -4384,7 +4967,7 @@
           symbol: mk.symbol[ei],
           size: mk.size[ei],
           labelSize: TRAJ_TEXTFONT_SIZE,
-          focused: hasVolumeFocusDisplay() && ei === glyphFocusIdx
+          focused: glyphFocusIdx >= 0 && ei === glyphFocusIdx
         });
       }
       return specs;
@@ -4736,6 +5319,7 @@
       var renderVm = chimeraxViewMatrixForRender();
       if (renderVm) payload.view_matrix = renderVm;
       else if (renderTurns.length) payload.view_turns = renderTurns;
+      appendChimeraxIsoPayloadFields(payload);
     }
     fetch("{{ url_for('api_trajectory_volumes') }}", {
       method: "POST",
@@ -4887,8 +5471,18 @@
     var preserveTrajectoryState = !!(opts && opts.preserveTrajectoryState);
     var gen = ++scatterLoadGeneration;
     dragEndpoint = null;
+    cancelPendingTrajScatterAfterPlot();
+    clearTrajScatterPlotWatchdog();
     setRendering(true);
     if (plotStatus) plotStatus.textContent = "";
+    trajScatterPlotWatchdog = setTimeout(function() {
+      trajScatterPlotWatchdog = null;
+      if (gen !== scatterLoadGeneration) return;
+      if (!overlay || !overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
+      cancelPendingTrajScatterAfterPlot();
+      setRendering(false);
+      if (plotStatus) plotStatus.textContent = "Plot took too long — try a hard refresh.";
+    }, TRAJ_SCATTER_PLOT_TIMEOUT_MS);
     var x = sx.value, y = sy.value, c = sc.value;
     var q = "x=" + encodeURIComponent(x)
       + "&y=" + encodeURIComponent(y)
@@ -4896,107 +5490,132 @@
       + "&marker_size=2"
       + "&max_points=60000"
       + "&palette=" + encodeURIComponent(selectedTrajPalette());
-    fetch("{{ url_for('api_scatter') }}?" + q)
-      .then(function(r) {
-        return r.text().then(function(text) {
-          var j;
-          try { j = JSON.parse(text); }
-          catch (e) { throw new Error("Scatter API did not return JSON"); }
-          if (!r.ok) throw new Error(j.error || r.statusText);
-          return j;
-        });
-      })
-      .then(function(fig) {
-        if (gen !== scatterLoadGeneration) return;
-        fig.layout.title = "";
-        fig.layout.margin = Object.assign(fig.layout.margin || {}, {t: 16});
-        fig.layout.dragmode = "pan";
-        var axFont = {size: 15, family: "Barlow, sans-serif", color: "#243b53"};
-        fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {title: {text: x, font: axFont}});
-        fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {title: {text: y, font: axFont}});
-        if (/^umap/i.test(x)) fig.layout.xaxis.showticklabels = false;
-        if (/^umap/i.test(y)) fig.layout.yaxis.showticklabels = false;
-        var opts = {responsive: true};
-        var p;
-        if (!gd.data || gd.data.length === 0) {
-          p = Plotly.newPlot(gd, fig.data, fig.layout, opts);
-        } else {
-          p = Plotly.react(gd, fig.data, fig.layout, opts);
-        }
-        function afterPlot() {
-          if (gen !== scatterLoadGeneration) return;
-          trajScatterRenderingEverCompleted = true;
-          setRendering(false);
-          wireUpPlotDrag();
-          wireTrajectoryGlyphOverlayHook();
-          syncTrajGlyphOverlay();
-          syncScatterControlsAlignment();
-          var canReuseTrajectory = false;
-          if (preserveTrajectoryState) {
-            if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
-              canReuseTrajectory = !!(anchorTrajXY && anchorTrajXY.length >= 2);
-            } else {
-              canReuseTrajectory = !!(
-                (editableTrajXY && editableTrajXY.length >= 2) ||
-                (startXY && endXY)
-              );
-            }
-          }
-          if (canReuseTrajectory) {
-            if (trajectoryMode === "nearest" && sc.value && sc.value !== "none") {
-              fetchTrajectoryCoords();
-            } else {
-              redrawTrajectoryOverlay();
-            }
-            requestAnimationFrame(function() {
-              try { Plotly.Plots.resize(gd); } catch (e) {}
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        fetch("{{ url_for('api_scatter') }}?" + q)
+          .then(function(r) {
+            return r.text().then(function(text) {
+              var j;
+              try { j = JSON.parse(text); }
+              catch (e) { throw new Error("Scatter API did not return JSON"); }
+              if (!r.ok) throw new Error(j.error || r.statusText);
+              return j;
             });
-            return;
-          }
-          if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
-            if (anchorTrajXY && anchorTrajXY.length >= 2) {
-              redrawTrajectoryOverlay();
-              syncTrajGlyphOverlay();
-            } else if (!isManualTraversalMode()) {
-              fetchTrajectoryCoords();
-            } else if (!manualCoordsInFlight && manualSelectedVolIds.length >= 2) {
-              syncManualSelectionToAnchors();
+          })
+          .then(function(fig) {
+            if (gen !== scatterLoadGeneration) return;
+            fig.layout.title = "";
+            fig.layout.margin = Object.assign(fig.layout.margin || {}, {t: 16});
+            fig.layout.dragmode = "pan";
+            var axFont = {size: 15, family: "Barlow, sans-serif", color: "#243b53"};
+            fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {title: {text: x, font: axFont}});
+            fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {title: {text: y, font: axFont}});
+            if (/^umap/i.test(x)) fig.layout.xaxis.showticklabels = false;
+            if (/^umap/i.test(y)) fig.layout.yaxis.showticklabels = false;
+            function afterPlot() {
+              if (gen !== scatterLoadGeneration) return;
+              cancelPendingTrajScatterAfterPlot();
+              clearTrajScatterPlotWatchdog();
+              trajScatterRenderingEverCompleted = true;
+              setRendering(false);
+              window.setTimeout(function() {
+                if (gen !== scatterLoadGeneration) return;
+                wireUpPlotDrag();
+                wireTrajectoryGlyphOverlayHook();
+                syncTrajGlyphOverlay();
+                syncScatterControlsAlignment();
+                if (isManualTraversalMode()) {
+                  syncManualModeInitialVolumeChrome();
+                }
+                var canReuseTrajectory = false;
+                if (preserveTrajectoryState) {
+                  if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
+                    canReuseTrajectory = !!(anchorTrajXY && anchorTrajXY.length >= 2);
+                  } else {
+                    canReuseTrajectory = !!(
+                      (editableTrajXY && editableTrajXY.length >= 2) ||
+                      (startXY && endXY)
+                    );
+                  }
+                }
+                if (canReuseTrajectory) {
+                  if (trajectoryMode === "nearest" && sc.value && sc.value !== "none") {
+                    fetchTrajectoryCoords();
+                  } else {
+                    redrawTrajectoryOverlay();
+                  }
+                  requestAnimationFrame(function() {
+                    try { Plotly.Plots.resize(gd); } catch (e) {}
+                  });
+                  return;
+                }
+                if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
+                  if (anchorTrajXY && anchorTrajXY.length >= 2) {
+                    redrawTrajectoryOverlay();
+                    syncTrajGlyphOverlay();
+                  } else if (!isManualTraversalMode()) {
+                    fetchTrajectoryCoords();
+                  } else if (manualBootstrapPending || (!manualBootstrapDone && manualSelectedVolIds.length >= 2)) {
+                    scheduleManualBootstrap();
+                  } else if (!manualCoordsInFlight && manualSelectedVolIds.length >= 2) {
+                    syncManualSelectionToAnchors();
+                  }
+                } else if (isManualTraversalMode()) {
+                  startXY = null;
+                  endXY = null;
+                  editableTrajXY = null;
+                  if (!manualCatalogLoaded && !manualCatalogLoading) {
+                    loadManualVolumeCatalog();
+                  } else if (manualBootstrapPending || (!manualBootstrapDone && manualSelectedVolIds.length >= 2)) {
+                    scheduleManualBootstrap();
+                  } else if (anchorTrajXY && anchorTrajXY.length >= 2) {
+                    redrawTrajectoryOverlay();
+                    syncTrajGlyphOverlay();
+                  }
+                } else {
+                  initDefaultTrajectory(gen);
+                }
+                requestAnimationFrame(function() {
+                  try { Plotly.Plots.resize(gd); } catch (e) {}
+                  syncTrajGlyphOverlay();
+                  if (manualBootstrapDone || manualSelectedVolIds.length) {
+                    syncManualVolumeScatterHighlight();
+                  }
+                });
+              }, 0);
             }
-          } else if (isManualTraversalMode()) {
-            startXY = null;
-            endXY = null;
-            editableTrajXY = null;
-            if (anchorTrajXY && anchorTrajXY.length >= 2) {
-              redrawTrajectoryOverlay();
-              syncTrajGlyphOverlay();
-            } else if (!manualCoordsInFlight && manualSelectedVolIds.length >= 2) {
-              syncManualSelectionToAnchors();
-            } else if (!manualCatalogLoaded && !manualCatalogLoading) {
-              loadManualVolumeCatalog();
+            var plotOpts = {responsive: true};
+            var p;
+            try {
+              if (!gd.data || gd.data.length === 0) {
+                p = Plotly.newPlot(gd, fig.data, fig.layout, plotOpts);
+              } else {
+                p = Plotly.react(gd, fig.data, fig.layout, plotOpts);
+              }
+            } catch (err) { throw err; }
+            pendingTrajScatterAfterPlot = afterPlot;
+            gd.on("plotly_afterplot", pendingTrajScatterAfterPlot);
+            setTimeout(function() {
+              if (gen !== scatterLoadGeneration) return;
+              if (pendingTrajScatterAfterPlot && gd.data && gd.data.length) afterPlot();
+            }, 800);
+            if (p && typeof p.then === "function") {
+              return p.catch(function(err) {
+                cancelPendingTrajScatterAfterPlot();
+                throw err;
+              });
             }
-          } else {
-            initDefaultTrajectory(gen);
-          }
-          requestAnimationFrame(function() {
-            try { Plotly.Plots.resize(gd); } catch (e) {}
-            syncTrajGlyphOverlay();
-            syncManualVolumeScatterHighlight();
+            return Promise.resolve();
+          })
+          .catch(function(e) {
+            console.error(e);
+            cancelPendingTrajScatterAfterPlot();
+            clearTrajScatterPlotWatchdog();
+            if (gen === scatterLoadGeneration) setRendering(false);
+            if (plotStatus) plotStatus.textContent = e.message || "Could not load scatter.";
           });
-        }
-        if (p && typeof p.then === "function") {
-          p.then(afterPlot).catch(function(err) {
-            setRendering(false);
-            if (plotStatus) plotStatus.textContent = err.message || "Could not load scatter.";
-          });
-        } else {
-          afterPlot();
-        }
-      })
-      .catch(function(e) {
-        console.error(e);
-        setRendering(false);
-        if (plotStatus) plotStatus.textContent = e.message || "Could not load scatter.";
       });
+    });
   }
 
   /* ── Drag handles (Start / End) ── */
@@ -5130,7 +5749,13 @@
       fetchTrajectoryCoords();
       return;
     }
-    editableTrajXY = null;
+    if (trajectoryMode === "direct" && startXY && endXY) {
+      resetDirectTraversalFromCurrentEndpoints();
+      redrawTrajectoryOverlay();
+      syncTrajGlyphOverlay();
+    } else {
+      editableTrajXY = null;
+    }
     if (startXY && endXY) {
       fetchTrajectoryCoords();
     }
@@ -5154,7 +5779,11 @@
   syncAnchorIndicesUI();
   syncTraversalModeButtonStates();
   syncScatterControlsAlignment();
-  loadPlot();
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      loadPlot();
+    });
+  });
 })();
 </script>
 {% endblock %}

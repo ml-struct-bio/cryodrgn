@@ -63,6 +63,17 @@ class TestChimeraxRenderCmds:
         assert any("save " in c for c in cmds)
         assert any("view #1 orient" in c for c in cmds)
 
+    def test_volume_level_override(self) -> None:
+        cmds = _chimerax_render_cmds(
+            "/tmp/x.mrc",
+            "/tmp/x.png",
+            100,
+            vol_name="vol000",
+            turn_y=None,
+            volume_level=0.42,
+        )
+        assert any("volume #1 level 0.42" in c for c in cmds)
+
     def test_rotated_view_injects_turn(self) -> None:
         cmds = _chimerax_render_cmds(
             "/tmp/x.mrc", "/tmp/x.png", 100, vol_name="vol000", turn_y=45.0
@@ -624,31 +635,75 @@ class TestParticleExplorerVolumeGeneration:
                 paths.append(p)
             return paths
 
-        def _fake_parallel(tasks, chimerax_cpus=1):
+        def _fake_cycle(views, chimerax_cpus=1):
             from PIL import Image
 
-            return [
-                (lambda png: (Image.new("RGB", (4, 4)).save(png), png)[1])(t[2])
-                for t in tasks
-            ]
+            paths = []
+            for view in views:
+                Image.new("RGB", (4, 4)).save(view.out_png)
+                paths.append(view.out_png)
+            return (
+                paths,
+                "camera matrix" if views and views[0].report_view_matrix else None,
+            )
 
         monkeypatch.setattr(
             "cryodrgn.dashboard.particle_explorer._decode_z_values_to_vol_paths",
             _fake_decode,
         )
         monkeypatch.setattr(
-            "cryodrgn.dashboard.particle_explorer.parallel_chimerax_static_pngs",
-            _fake_parallel,
+            "cryodrgn.dashboard.particle_explorer.render_landscape_cycle_static_views",
+            _fake_cycle,
         )
         pngs, token = generate_trajectory_volume_pngs(
             dashboard_experiment, z_traj, chimerax_cpus=2
         )
         assert len(pngs) == 3
         assert token
+        pngs2, _vm = generate_trajectory_volume_pngs(
+            dashboard_experiment,
+            z_traj,
+            chimerax_cpus=4,
+            view_turns=[("y", 15.0)],
+        )
+        assert len(pngs2) == 3
         with pytest.raises(ValueError, match="must be"):
             generate_trajectory_volume_pngs(
                 dashboard_experiment, np.zeros((2, zdim + 1))
             )
+
+    def test_rerender_chimerax_pngs_from_volume_cache(
+        self,
+        dashboard_experiment: DashboardExperiment,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cryodrgn.dashboard.particle_explorer import (
+            _register_vol_mrc_cache,
+            rerender_chimerax_pngs_from_volume_cache,
+        )
+
+        calls: list[int] = []
+
+        def _fake_cycle(views, chimerax_cpus=1):
+            calls.append(int(chimerax_cpus))
+            from PIL import Image
+
+            paths = []
+            for view in views:
+                Image.new("RGB", (4, 4)).save(view.out_png)
+                paths.append(view.out_png)
+            return paths, None
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.render_landscape_cycle_static_views",
+            _fake_cycle,
+        )
+        token = _register_vol_mrc_cache("/tmp/fake", ["/tmp/a.mrc", "/tmp/b.mrc"], ())
+        blobs, _ = rerender_chimerax_pngs_from_volume_cache(
+            token, chimerax_cpus=6, view_turns=[("x", 30.0)]
+        )
+        assert len(blobs) == 2
+        assert calls == [6]
 
     def test_generate_montage_rejects_invalid_rows(
         self, dashboard_experiment: DashboardExperiment

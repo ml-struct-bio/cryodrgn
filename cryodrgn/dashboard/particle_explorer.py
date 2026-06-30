@@ -354,7 +354,7 @@ def generate_trajectory_volume_b64_list(
     """
     from cryodrgn.dashboard.volume_slice_viewer import (
         apply_reconstruction_window,
-        volume_array_b64,
+        vtk_transfer_volume_payload,
     )
     from cryodrgn.mrcfile import parse_mrc
 
@@ -371,13 +371,11 @@ def generate_trajectory_volume_b64_list(
         for i, vf in enumerate(vol_files):
             vol, _ = parse_mrc(vf)
             vol = apply_reconstruction_window(np.asarray(vol, dtype=np.float32), exp)
-            d = int(vol.shape[0])
+            transfer = vtk_transfer_volume_payload(vol)
             payloads.append(
                 {
                     "index": int(i),
-                    "D": d,
-                    "volume_b64": volume_array_b64(vol),
-                    "volume_dtype": "float32",
+                    **transfer,
                 }
             )
         token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
@@ -387,6 +385,79 @@ def generate_trajectory_volume_b64_list(
         raise
 
 
+def _chimerax_png_bytes_from_mrc_paths(
+    vol_files: list[str],
+    *,
+    chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
+    view_matrix_camera: str | None = None,
+    view_turns: list[tuple[str, float]] | None = None,
+    volume_level: float | None = None,
+) -> tuple[list[bytes], str | None]:
+    """Render ChimeraX PNG bytes from cached ``.mrc`` paths (parallel when ``cpus > 1``)."""
+    if not vol_files:
+        return [], None
+    from cryodrgn.dashboard.chimerax_animation import resolve_chimerax_volume_level
+
+    level = resolve_chimerax_volume_level(vol_files[0], volume_level)
+    cc = max(1, min(int(chimerax_cpus), 32))
+    with tempfile.TemporaryDirectory(prefix="cryodrgn_trajectory_png_") as png_dir:
+        views = [
+            LandscapeStaticView(
+                mrc_path=vf,
+                out_png=os.path.join(png_dir, f"cell_{i}.png"),
+                volume_level=level,
+                view_turns=view_turns,
+                view_matrix_camera=view_matrix_camera,
+                report_view_matrix=(i == 0),
+            )
+            for i, vf in enumerate(vol_files)
+        ]
+        paths, view_matrix = render_landscape_cycle_static_views(
+            views, chimerax_cpus=cc
+        )
+        png_bytes_list: list[bytes] = []
+        for pth in paths:
+            with open(pth, "rb") as fh:
+                png_bytes_list.append(fh.read())
+    return png_bytes_list, view_matrix
+
+
+def rerender_chimerax_pngs_from_volume_cache(
+    token: str,
+    *,
+    chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
+    view_matrix_camera: str | None = None,
+    view_turns: list[tuple[str, float]] | None = None,
+    volume_level: float | None = None,
+) -> tuple[list[bytes], str | None]:
+    """Re-render ChimeraX PNGs from a prior trajectory/montage decode cache."""
+    with _VOL_CACHE_LOCK:
+        meta = _VOL_MRC_CACHE.get(token)
+        if not meta:
+            raise ValueError("Unknown or expired volume cache id.")
+        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
+            _vol_cache_evict_unlocked(token)
+            raise ValueError("Volume cache expired. Generate volumes again.")
+        vol_files = list(meta["vol_files"])
+    return _chimerax_png_bytes_from_mrc_paths(
+        vol_files,
+        chimerax_cpus=chimerax_cpus,
+        view_matrix_camera=view_matrix_camera,
+        view_turns=view_turns,
+        volume_level=volume_level,
+    )
+
+
+def primary_mrc_path_from_volume_cache(token: str) -> str | None:
+    """First cached ``.mrc`` path for a volume cache token, if any."""
+    with _VOL_CACHE_LOCK:
+        meta = _VOL_MRC_CACHE.get(token)
+        if not meta:
+            return None
+        vol_files = meta.get("vol_files") or []
+        return str(vol_files[0]) if vol_files else None
+
+
 def generate_trajectory_volume_pngs(
     exp: DashboardExperiment,
     z_values: np.ndarray,
@@ -394,6 +465,7 @@ def generate_trajectory_volume_pngs(
     chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
+    volume_level: float | None = None,
 ) -> tuple[list[bytes], str]:
     """Decode volumes along a z-space trajectory and render ChimeraX static PNGs.
 
@@ -410,30 +482,13 @@ def generate_trajectory_volume_pngs(
     mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_trajectory_mrc_")
     try:
         vol_files = _decode_z_values_to_vol_paths(exp, z_values, mrc_dir)
-        cc = max(1, min(int(chimerax_cpus), 32))
-        with tempfile.TemporaryDirectory(prefix="cryodrgn_trajectory_png_") as png_dir:
-            if view_matrix_camera or view_turns:
-                paths = []
-                for i, vf in enumerate(vol_files):
-                    out_png = os.path.join(png_dir, f"cell_{i}.png")
-                    mrc_to_static_png(
-                        vf,
-                        out_png,
-                        dpi=100,
-                        view_matrix_camera=view_matrix_camera,
-                        view_turns=view_turns,
-                    )
-                    paths.append(out_png)
-            else:
-                tasks = [
-                    (i, vf, os.path.join(png_dir, f"cell_{i}.png"), 100)
-                    for i, vf in enumerate(vol_files)
-                ]
-                paths = parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc)
-            png_bytes_list: list[bytes] = []
-            for pth in paths:
-                with open(pth, "rb") as fh:
-                    png_bytes_list.append(fh.read())
+        png_bytes_list, _view_matrix = _chimerax_png_bytes_from_mrc_paths(
+            vol_files,
+            chimerax_cpus=chimerax_cpus,
+            view_matrix_camera=view_matrix_camera,
+            view_turns=view_turns,
+            volume_level=volume_level,
+        )
         token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
         return png_bytes_list, token
     except Exception:

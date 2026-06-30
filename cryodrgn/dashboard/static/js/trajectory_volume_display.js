@@ -1,5 +1,5 @@
 /**
- * Trajectory creator integrated volume panel: VTK 3D (default for manual analyze volumes), 2D slice, or ChimeraX PNGs.
+ * Trajectory creator integrated volume panel: VTK 3D, 2D slice, or ChimeraX PNGs.
  */
 (function (global) {
   "use strict";
@@ -27,6 +27,8 @@
     this.rotationLockToolbarEl = options.rotationLockToolbarEl;
     this.volumeNavEl = options.volumeNavEl;
     this.volumeNavLabelEl = options.volumeNavLabelEl;
+    this.volumeSliderEl = options.volumeSliderEl;
+    this.volumeSliderTicksEl = options.volumeSliderTicksEl;
     this.btnVolPrev = options.btnVolPrev;
     this.btnVolNext = options.btnVolNext;
     this.btnResetView = options.btnResetView;
@@ -55,7 +57,14 @@
     this.raycastVolIndex = null;
     this.expandedBelow = false;
     this.chimeraxRendering = false;
+    this.expectedVolumeCount = null;
+    this.chimeraxIsoLevel = null;
+    this.isoPercentileSamples = null;
+    this.isoSliderRange = null;
+    this.onChimeraxIsoChange = options.onChimeraxIsoChange || null;
+    this._chimeraxIsoRerenderTimer = null;
     this.onFocusChange = options.onFocusChange || null;
+    this.getVolumeNavLabels = options.getVolumeNavLabels || null;
     this._viewportHomeParent = null;
     this._viewportHomeNext = null;
     this._displayRowHomeParent = null;
@@ -106,6 +115,20 @@
     if (options.sliceContrastEl && this.sliceViewer) {
       options.sliceContrastEl.addEventListener("input", function () {
         self.sliceViewer.setContrast(Number(options.sliceContrastEl.value));
+      });
+    }
+    if (this.volumeSliderEl) {
+      this.volumeSliderEl.addEventListener("input", function () {
+        self._applySliderFocus();
+      });
+    }
+    if (this.volumeSliderTicksEl) {
+      this.volumeSliderTicksEl.addEventListener("click", function (ev) {
+        var tick = ev.target.closest("[data-vol-index]");
+        if (!tick) return;
+        var idx = Number(tick.getAttribute("data-vol-index"));
+        if (!Number.isFinite(idx)) return;
+        self.setFocusIndex(idx);
       });
     }
     if (this.btnVolPrev) {
@@ -361,36 +384,223 @@
     opts = opts || {};
     this.volumes = (payload && payload.volumes) ? payload.volumes.slice() : [];
     this.chimeraxImages = (payload && payload.images) ? payload.images.slice() : [];
+    if (payload && payload.expectedVolumeCount != null) {
+      this.expectedVolumeCount = Number(payload.expectedVolumeCount);
+    } else if (!this.volumes.length) {
+      this.expectedVolumeCount = null;
+    }
     if (this.vtkFocusIndex >= this.volumes.length) this.vtkFocusIndex = 0;
     if (this.vtkFocusIndex < 0) this.vtkFocusIndex = 0;
     if (this.chimeraxFocusIndex >= this.chimeraxImages.length) this.chimeraxFocusIndex = 0;
     if (this.chimeraxFocusIndex < 0) this.chimeraxFocusIndex = 0;
+    this._refreshIsoSamplesFromVolumes();
     if (!opts.deferRender) this._renderCurrent();
   };
 
+  TrajectoryVolumeDisplay.prototype._refreshIsoSamplesFromVolumes = function () {
+    if (!global.CryoVolume3dUtils) return;
+    var vol = null;
+    for (var i = 0; i < this.volumes.length; i++) {
+      if (this.volumes[i] && this.volumes[i].volume_b64) {
+        vol = this.volumes[i];
+        break;
+      }
+    }
+    if (!vol) return;
+    try {
+      var U = global.CryoVolume3dUtils;
+      var values = U.decodeFloat32Volume(vol.volume_b64, vol.D);
+      this.isoPercentileSamples = U.volumePercentileSamples(values);
+      this.isoSliderRange = U.isoSliderDataRange(this.isoPercentileSamples);
+      if (this.chimeraxIsoLevel == null) {
+        this.chimeraxIsoLevel = U.suggestIsoDataValue(this.isoPercentileSamples);
+      }
+      this._syncIsoSliderFromState();
+    } catch (err) {
+      // Keep prior iso state if volume decode fails.
+    }
+  };
+
+  TrajectoryVolumeDisplay.prototype.setChimeraxIsoRange = function (min, max, level) {
+    min = Number(min);
+    max = Number(max);
+    if (isFinite(min) && isFinite(max) && max > min) {
+      this.isoSliderRange = { min: min, max: max };
+    }
+    if (level != null && isFinite(Number(level))) {
+      this.chimeraxIsoLevel = Number(level);
+    }
+    this._syncIsoSliderFromState();
+  };
+
+  TrajectoryVolumeDisplay.prototype.getChimeraxIsoLevel = function () {
+    if (this.chimeraxIsoLevel != null && isFinite(this.chimeraxIsoLevel)) {
+      return this.chimeraxIsoLevel;
+    }
+    if (this.raycastView && typeof this.raycastView.getIsoLevel === "function") {
+      return this.raycastView.getIsoLevel();
+    }
+    return null;
+  };
+
   TrajectoryVolumeDisplay.prototype.hasInteractiveVolumes = function () {
-    return this.volumes.length > 0;
+    return this.volumes.some(function (v) { return v && v.volume_b64; });
   };
 
   TrajectoryVolumeDisplay.prototype.hasChimeraxImages = function () {
     return this.chimeraxImages.length > 0;
   };
 
+  TrajectoryVolumeDisplay.prototype.setFocusIndex = function (index) {
+    var i = Number(index);
+    if (!Number.isFinite(i)) return;
+    i = Math.floor(i);
+    if (this.backend === "chimerax") {
+      var cxTotal = this._volumeNavCount();
+      if (cxTotal < 1) return;
+      i = Math.max(0, Math.min(cxTotal - 1, i));
+      if (this.chimeraxFocusIndex === i && this.chimeraxImages.length > i) {
+        this._syncVolumeNavChrome();
+        return;
+      }
+      this.chimeraxFocusIndex = i;
+      if (this.chimeraxImages.length > i) {
+        this._ensureChimeraxPreview();
+        if (this.chimeraxPreviewEl) {
+          this.chimeraxPreviewEl.src = this._chimeraxImageSrc(
+            this.chimeraxImages[this.chimeraxFocusIndex]
+          );
+          this.chimeraxPreviewEl.hidden = false;
+        }
+        if (this.viewportEl) this.viewportEl.hidden = false;
+      } else {
+        this._renderChimerax();
+      }
+      this._notifyFocusChange();
+      this._syncVolumeNavChrome();
+      return;
+    }
+    if (this.backend !== "vtk" || !this.volumes.length) return;
+    var n = this.expectedVolumeCount != null && this.expectedVolumeCount > 0
+      ? this.expectedVolumeCount
+      : this.volumes.length;
+    if (n < 1) return;
+    i = Math.max(0, Math.min(n - 1, i));
+    if (this.vtkFocusIndex === i && this.raycastVolIndex === i) {
+      this._syncVolumeNavChrome();
+      return;
+    }
+    this.vtkFocusIndex = i;
+    this.raycastVolIndex = null;
+    this._syncVolumeNavChrome();
+    this._renderVtk();
+    this._notifyFocusChange();
+  };
+
+  TrajectoryVolumeDisplay.prototype._applySliderFocus = function () {
+    if (!this.volumeSliderEl) return;
+    this.setFocusIndex(Number(this.volumeSliderEl.value));
+  };
+
+  TrajectoryVolumeDisplay.prototype._volumeNavCount = function () {
+    var isVtk = this.backend === "vtk";
+    var isChimeraX = this.backend === "chimerax";
+    if (isChimeraX) {
+      if (this.expectedVolumeCount != null && this.expectedVolumeCount > 0) {
+        return this.expectedVolumeCount;
+      }
+      return this.chimeraxImages.length;
+    }
+    if (isVtk) {
+      if (this.expectedVolumeCount != null && this.expectedVolumeCount > 0) {
+        return this.expectedVolumeCount;
+      }
+      return this.volumes.length;
+    }
+    return 0;
+  };
+
+  TrajectoryVolumeDisplay.prototype._volumeNavLabels = function () {
+    var total = this._volumeNavCount();
+    if (typeof this.getVolumeNavLabels === "function") {
+      var custom = this.getVolumeNavLabels(total);
+      if (Array.isArray(custom) && custom.length) return custom;
+    }
+    var labels = [];
+    for (var i = 0; i < total; i++) labels.push(String(i + 1));
+    return labels;
+  };
+
+  TrajectoryVolumeDisplay.prototype._syncVolumeSliderTicks = function (focus, total) {
+    if (!this.volumeSliderTicksEl) return;
+    var labels = this._volumeNavLabels();
+    if (total < 1) {
+      this.volumeSliderTicksEl.innerHTML = "";
+      return;
+    }
+    if (this.volumeSliderTicksEl.childElementCount !== total) {
+      this.volumeSliderTicksEl.innerHTML = "";
+      for (var ti = 0; ti < total; ti++) {
+        var tick = document.createElement("button");
+        tick.type = "button";
+        tick.className = "cryo-vslice-volume-slider-tick";
+        tick.setAttribute("data-vol-index", String(ti));
+        tick.setAttribute("aria-label", "Volume " + String(labels[ti] || ti + 1));
+        var mark = document.createElement("span");
+        mark.className = "cryo-vslice-volume-slider-tick-mark";
+        mark.setAttribute("aria-hidden", "true");
+        tick.appendChild(mark);
+        var lbl = document.createElement("span");
+        lbl.className = "cryo-vslice-volume-slider-tick-label";
+        lbl.textContent = String(labels[ti] != null ? labels[ti] : ti + 1);
+        tick.appendChild(lbl);
+        this.volumeSliderTicksEl.appendChild(tick);
+      }
+    } else {
+      var tickBtns = this.volumeSliderTicksEl.querySelectorAll(".cryo-vslice-volume-slider-tick");
+      for (var uj = 0; uj < tickBtns.length; uj++) {
+        var lblEl = tickBtns[uj].querySelector(".cryo-vslice-volume-slider-tick-label");
+        if (lblEl) lblEl.textContent = String(labels[uj] != null ? labels[uj] : uj + 1);
+      }
+    }
+    var ticks = this.volumeSliderTicksEl.querySelectorAll(".cryo-vslice-volume-slider-tick");
+    for (var tj = 0; tj < ticks.length; tj++) {
+      ticks[tj].classList.toggle("cryo-vslice-volume-slider-tick--active", tj === focus);
+      ticks[tj].disabled = focus < 0;
+    }
+  };
+
   TrajectoryVolumeDisplay.prototype._syncVolumeNavChrome = function () {
     var isVtk = this.backend === "vtk";
     var isChimeraX = this.backend === "chimerax";
-    var multi = (isVtk && this.volumes.length > 1)
-      || (isChimeraX && this.chimeraxImages.length > 1);
+    var total = this._volumeNavCount();
+    var multi = total > 1;
     var active = multi;
+    if (isChimeraX && this.chimeraxRendering) active = false;
     if (this.volumeNavEl) {
       this.volumeNavEl.classList.toggle("cryo-vslice-volume-nav--inactive", !active);
       this.volumeNavEl.setAttribute("aria-disabled", active ? "false" : "true");
-      this.volumeNavEl.hidden = !(isVtk || (isChimeraX && this.chimeraxImages.length > 0));
+      this.volumeNavEl.hidden = !(isVtk || isChimeraX) || total < 1;
     }
+    var focus = isChimeraX ? this.chimeraxFocusIndex : this.vtkFocusIndex;
+    var total = this._volumeNavCount();
     if (this.btnVolPrev) this.btnVolPrev.disabled = !active;
     if (this.btnVolNext) this.btnVolNext.disabled = !active;
+    if (this.volumeSliderEl) {
+      this.volumeSliderEl.disabled = !active;
+      this.volumeSliderEl.min = "0";
+      this.volumeSliderEl.max = String(Math.max(0, total - 1));
+      this.volumeSliderEl.step = "1";
+      if (active) {
+        var clamped = Math.max(0, Math.min(total - 1, focus));
+        if (String(this.volumeSliderEl.value) !== String(clamped)) {
+          this.volumeSliderEl.value = String(clamped);
+        }
+      }
+    }
+    this._syncVolumeSliderTicks(active ? focus : -1, total);
     if (this.volumeNavLabelEl) {
-      if (!isVtk && !(isChimeraX && this.chimeraxImages.length > 0)) {
+      if (!isVtk && !(isChimeraX && total > 0)) {
         this.volumeNavLabelEl.textContent = "—";
         this.volumeNavLabelEl.classList.add("cryo-vslice-volume-nav-label--inactive");
       } else if (!active) {
@@ -398,10 +608,10 @@
         this.volumeNavLabelEl.classList.add("cryo-vslice-volume-nav-label--inactive");
       } else {
         this.volumeNavLabelEl.classList.remove("cryo-vslice-volume-nav-label--inactive");
-        var focus = isChimeraX ? this.chimeraxFocusIndex : this.vtkFocusIndex;
-        var total = isChimeraX ? this.chimeraxImages.length : this.volumes.length;
+        var labels = this._volumeNavLabels();
+        var labelText = labels[focus] != null ? String(labels[focus]) : String(focus + 1);
         this.volumeNavLabelEl.textContent =
-          String(focus + 1) + " / " + String(total);
+          labelText + " (" + String(focus + 1) + " / " + String(total) + ")";
       }
     }
   };
@@ -410,7 +620,7 @@
     var isChimeraX = this.backend === "chimerax";
     var isVtk = this.backend === "vtk";
     var isSlice = this.backend === "slice";
-    var hasVol = this.volumes.length > 0;
+    var hasVol = this.volumes.some(function (v) { return v && v.volume_b64; });
     var hasCxImages = this.chimeraxImages.length > 0;
     var showChimeraxLoading = isChimeraX && this.chimeraxRendering;
     var showInteractive = !isChimeraX && hasVol;
@@ -438,7 +648,9 @@
     if (this.padColumnEl) {
       this.padColumnEl.hidden = isChimeraX || !hasVol || showChimeraxLoading;
     }
-    if (this.isoControlsEl) this.isoControlsEl.hidden = !isVtk;
+    if (this.isoControlsEl) {
+      this.isoControlsEl.hidden = !(isVtk || (isChimeraX && (hasCxImages || showChimeraxLoading)));
+    }
     if (this.sliceControlsRowEl) {
       this.sliceControlsRowEl.hidden = !isSlice || !hasVol;
     }
@@ -509,15 +721,18 @@
       return;
     }
     this._destroyRaycast();
-    var layers = this.volumes.map(function (v, i) {
-      return {
+    var layers = [];
+    for (var i = 0; i < this.volumes.length; i++) {
+      var v = this.volumes[i];
+      if (!v || !v.volume_b64) continue;
+      layers.push({
         id: "traj:" + i,
         b64: v.volume_b64,
         d: v.D,
         label: String(i + 1),
         manual: false
-      };
-    });
+      });
+    }
     if (this.viewportEl) this.viewportEl.hidden = false;
     this._syncChrome();
     if (this.sliceViewer) {
@@ -582,7 +797,10 @@
     var self = this;
     var idx = Math.max(0, Math.min(this.vtkFocusIndex, this.volumes.length - 1));
     var vol = this.volumes[idx];
-    if (!vol || !vol.volume_b64) return;
+    if (!vol || !vol.volume_b64) {
+      this.setStatus("Loading volume…", true);
+      return;
+    }
     this.vtkFocusIndex = idx;
     this.setStatus("Loading 3D viewer…", true);
     if (this.viewportEl) this.viewportEl.hidden = false;
@@ -641,6 +859,28 @@
     this.raycastVolIndex = null;
   };
 
+  TrajectoryVolumeDisplay.prototype._getIsoDataRange = function () {
+    if (this.raycastView && typeof this.raycastView.getIsoDataRange === "function") {
+      return this.raycastView.getIsoDataRange();
+    }
+    if (this.isoSliderRange) return this.isoSliderRange;
+    return { min: 0, max: 1 };
+  };
+
+  TrajectoryVolumeDisplay.prototype._syncIsoSliderFromState = function () {
+    if (!this.isoSliderEl || !global.CryoVolume3dUtils) return;
+    var range = this._getIsoDataRange();
+    var level = this.chimeraxIsoLevel;
+    if (this.backend === "vtk" && this.raycastView && typeof this.raycastView.getIsoLevel === "function") {
+      level = this.raycastView.getIsoLevel();
+    }
+    if (level == null || !isFinite(Number(level))) return;
+    var slider = global.CryoVolume3dUtils.isoDataValueToSlider(
+      Number(level), range.min, range.max
+    );
+    this.isoSliderEl.value = String(Math.round(slider));
+  };
+
   TrajectoryVolumeDisplay.prototype._syncIsoSlider = function (view) {
     if (!view || !this.isoSliderEl || !global.CryoVolume3dUtils) return;
     var range = view.getIsoDataRange();
@@ -648,15 +888,32 @@
       view.getIsoLevel(), range.min, range.max
     );
     this.isoSliderEl.value = String(Math.round(slider));
+    if (this.backend === "chimerax") {
+      this.chimeraxIsoLevel = view.getIsoLevel();
+    }
   };
 
   TrajectoryVolumeDisplay.prototype._onIsoInput = function () {
-    if (!this.raycastView || !this.isoSliderEl || !global.CryoVolume3dUtils) return;
-    var range = this.raycastView.getIsoDataRange();
+    if (!this.isoSliderEl || !global.CryoVolume3dUtils) return;
+    var range = this._getIsoDataRange();
     var level = global.CryoVolume3dUtils.isoSliderToDataValue(
       Number(this.isoSliderEl.value), range.min, range.max
     );
+    if (this.backend === "chimerax") {
+      this.chimeraxIsoLevel = level;
+      if (typeof this.onChimeraxIsoChange === "function") {
+        var self = this;
+        if (self._chimeraxIsoRerenderTimer) clearTimeout(self._chimeraxIsoRerenderTimer);
+        self._chimeraxIsoRerenderTimer = setTimeout(function () {
+          self._chimeraxIsoRerenderTimer = null;
+          self.onChimeraxIsoChange(level);
+        }, 400);
+      }
+      return;
+    }
+    if (!this.raycastView) return;
     this.raycastView.setIsoLevel(level);
+    this.chimeraxIsoLevel = level;
   };
 
   TrajectoryVolumeDisplay.prototype._pan = function (dx, dy) {

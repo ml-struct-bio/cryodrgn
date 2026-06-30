@@ -19,12 +19,16 @@ from typing import Optional
 import numpy as np
 
 from cryodrgn.dashboard.data import DashboardExperiment
-from cryodrgn.dashboard.chimerax_animation import normalize_chimerax_view_turns
+from cryodrgn.dashboard.chimerax_animation import (
+    LandscapeStaticView,
+    chimerax_iso_response_fields,
+    normalize_chimerax_view_turns,
+    render_landscape_cycle_static_views,
+    resolve_chimerax_volume_level,
+)
 from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
     _decode_z_values_to_vol_paths,
-    mrc_to_static_png,
-    parallel_chimerax_static_pngs,
 )
 from cryodrgn.mrcfile import parse_mrc
 from cryodrgn import analysis as cryo_analysis
@@ -32,6 +36,8 @@ from cryodrgn import analysis as cryo_analysis
 _VOL_MRC_RE = re.compile(r"^vol_(\d+)\.mrc$", re.IGNORECASE)
 _PC_DIR_RE = re.compile(r"^pc(\d+)$", re.IGNORECASE)
 _RECON_WINDOW_OUT_RAD = 0.99
+# Matches ``CryoVolume3dUtils.PLOT3D_TARGET_D`` / client box-average downsample.
+PLOT3D_TARGET_D = 128
 
 
 def spherical_window_mask_3d(
@@ -131,19 +137,83 @@ def volume_array_b64(vol: np.ndarray) -> str:
     return base64.standard_b64encode(vol.tobytes()).decode("ascii")
 
 
+def downsample_volume_box_average(
+    vol: np.ndarray,
+    target_d: int | None = None,
+) -> np.ndarray:
+    """Box-average downsample to ``target_d``³ (matches ``volume_3d_utils.js``)."""
+    vol = np.asarray(vol, dtype=np.float32)
+    src_d = int(vol.shape[0])
+    if target_d is None:
+        target_d = PLOT3D_TARGET_D
+    target_d = int(target_d)
+    if src_d == target_d:
+        return vol
+    if target_d < 1:
+        raise ValueError("target_d must be positive.")
+    scale = src_d / target_d
+    out = np.zeros((target_d, target_d, target_d), dtype=np.float32)
+    for iz in range(target_d):
+        z0 = int(np.floor(iz * scale))
+        z1 = int(min(src_d, np.ceil((iz + 1) * scale)))
+        for iy in range(target_d):
+            y0 = int(np.floor(iy * scale))
+            y1 = int(min(src_d, np.ceil((iy + 1) * scale)))
+            for ix in range(target_d):
+                x0 = int(np.floor(ix * scale))
+                x1 = int(min(src_d, np.ceil((ix + 1) * scale)))
+                block = vol[x0:x1, y0:y1, z0:z1]
+                out[ix, iy, iz] = float(block.mean()) if block.size else 0.0
+    return out
+
+
+def prepare_vtk_transfer_volume(
+    vol: np.ndarray,
+    *,
+    target_d: int | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Downsample large cubes before browser transfer (matches client VTK prefilter)."""
+    vol = np.asarray(vol, dtype=np.float32)
+    source_d = int(vol.shape[0])
+    if target_d is None:
+        target_d = PLOT3D_TARGET_D
+    target_d = int(target_d)
+    if source_d > target_d:
+        vol = downsample_volume_box_average(vol, target_d)
+    d = int(vol.shape[0])
+    meta = {
+        "D": d,
+        "source_D": source_d,
+        "downsample": "box_average" if source_d > d else "none",
+    }
+    return vol, meta
+
+
+def vtk_transfer_volume_payload(
+    vol: np.ndarray,
+    *,
+    target_d: int | None = None,
+) -> dict:
+    """Float32 volume blob metadata for client VTK / slice backends."""
+    vol, meta = prepare_vtk_transfer_volume(vol, target_d=target_d)
+    return {
+        **meta,
+        "volume_b64": volume_array_b64(vol),
+        "volume_dtype": "float32",
+    }
+
+
 def decode_volume_payload(exp: DashboardExperiment, row: int) -> dict:
     """Decode one particle volume and return array data for client-side slicing."""
     vol = _decode_volume_array(exp, row)
-    d = int(vol.shape[0])
+    transfer = vtk_transfer_volume_payload(vol)
     ds_idx = int(exp.all_indices[int(row)])
     return {
         "ok": True,
         "row": int(row),
-        "D": d,
-        "volume_b64": volume_array_b64(vol),
-        "volume_dtype": "float32",
+        **transfer,
         "dataset_index": ds_idx,
-        "default_slice_z": d // 2,
+        "default_slice_z": int(transfer["D"]) // 2,
     }
 
 
@@ -430,10 +500,23 @@ def analyze_volume_markers_payload(exp: DashboardExperiment) -> dict:
     return {"ok": True, "markers": markers}
 
 
-def analyze_volume_by_id_payload(exp: DashboardExperiment, vol_id: str) -> dict:
+def analyze_volume_by_id_payload(
+    exp: DashboardExperiment,
+    vol_id: str,
+    *,
+    target_d: int | None = None,
+) -> dict:
     """Load one analyze volume by catalog id (e.g. ``kmeans:0``, ``pc1:3``)."""
     vol_id = str(vol_id)
-    cache_key = (exp.workdir, int(exp.epoch), int(exp.kmeans_folder_id), vol_id)
+    if target_d is None:
+        target_d = PLOT3D_TARGET_D
+    cache_key = (
+        exp.workdir,
+        int(exp.epoch),
+        int(exp.kmeans_folder_id),
+        vol_id,
+        int(target_d),
+    )
     with _ANALYZE_VOL_CACHE_LOCK:
         cached = _ANALYZE_VOL_ENTRY_CACHE.get(cache_key)
         if cached is not None:
@@ -444,7 +527,7 @@ def analyze_volume_by_id_payload(exp: DashboardExperiment, vol_id: str) -> dict:
     if entry is None:
         raise ValueError(f"Unknown analyze volume id: {vol_id}")
 
-    _, vol_payload = _load_catalog_volume(entry, exp)
+    _, vol_payload = _load_catalog_volume(entry, exp, target_d=target_d)
     meta = next(e for e in _catalog_public(catalog) if e["id"] == vol_id)
     payload = {
         "ok": True,
@@ -465,8 +548,11 @@ def analyze_volumes_batch_payload(
     vol_ids: list[str],
     *,
     n_cpus: int = 1,
+    target_d: int | None = None,
 ) -> dict:
     """Load several analyze volumes in parallel (for background prefetch)."""
+    if target_d is None:
+        target_d = PLOT3D_TARGET_D
     catalog = discover_analyze_volume_catalog(exp)
     by_id = {entry["id"]: entry for entry in catalog}
     entries = []
@@ -474,8 +560,10 @@ def analyze_volumes_batch_payload(
         entry = by_id.get(str(vol_id))
         if entry is not None:
             entries.append(entry)
-    volumes = _load_catalog_volumes_parallel(entries, exp=exp, n_cpus=n_cpus)
-    return {"ok": True, "volumes": volumes}
+    volumes = _load_catalog_volumes_parallel(
+        entries, exp=exp, n_cpus=n_cpus, target_d=target_d
+    )
+    return {"ok": True, "volumes": volumes, "target_d": int(target_d)}
 
 
 def _png_is_mostly_blank(path: str, *, min_std: float = 0.5) -> bool:
@@ -490,6 +578,19 @@ def _png_is_mostly_blank(path: str, *, min_std: float = 0.5) -> bool:
         return float(gray.std()) < min_std
     except Exception:
         return True
+
+
+def parse_iso_level_from_request(data: dict) -> float | None:
+    """Parse optional ``iso_level`` (map data units) from dashboard JSON."""
+    if data.get("iso_level") is None:
+        return None
+    try:
+        level = float(data["iso_level"])
+    except (TypeError, ValueError) as err:
+        raise ValueError("iso_level must be a finite number.") from err
+    if not np.isfinite(level):
+        raise ValueError("iso_level must be a finite number.")
+    return level
 
 
 def parse_chimerax_view_turns_from_request(raw_turns) -> list[tuple[str, float]] | None:
@@ -515,6 +616,7 @@ def analyze_volumes_chimerax_batch_payload(
     chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
+    volume_level: float | None = None,
 ) -> dict:
     """Render ChimeraX PNGs from pre-generated analyze ``.mrc`` files (no GPU decode)."""
     catalog = discover_analyze_volume_catalog(exp)
@@ -528,6 +630,7 @@ def analyze_volumes_chimerax_batch_payload(
     if not entries:
         raise ValueError("ids must be a non-empty list of volume ids.")
 
+    level = resolve_chimerax_volume_level(entries[0]["path"], volume_level)
     cc = max(1, min(int(chimerax_cpus), 32))
     attempts: list[tuple[str | None, list[tuple[str, float]] | None]] = []
     if view_turns:
@@ -544,42 +647,20 @@ def analyze_volumes_chimerax_batch_payload(
     for attempt_idx, (attempt_vm, attempt_turns) in enumerate(attempts):
         view_matrix_text: str | None = None
         with tempfile.TemporaryDirectory(prefix="cryodrgn_analyze_cx_png_") as png_dir:
-            if attempt_vm or attempt_turns:
-                paths: list[str] = []
-                for i, entry in enumerate(entries):
-                    out_png = os.path.join(png_dir, f"cell_{i}.png")
-                    vm = mrc_to_static_png(
-                        entry["path"],
-                        out_png,
-                        dpi=100,
-                        view_matrix_camera=attempt_vm,
-                        view_turns=attempt_turns,
-                        report_view_matrix=(i == 0),
-                    )
-                    if i == 0 and vm:
-                        view_matrix_text = vm
-                    paths.append(out_png)
-            else:
-                paths = []
-                first_png = os.path.join(png_dir, "cell_0.png")
-                view_matrix_text = mrc_to_static_png(
-                    entries[0]["path"],
-                    first_png,
-                    dpi=100,
-                    report_view_matrix=True,
+            views = [
+                LandscapeStaticView(
+                    mrc_path=entry["path"],
+                    out_png=os.path.join(png_dir, f"cell_{i}.png"),
+                    volume_level=level,
+                    view_turns=attempt_turns,
+                    view_matrix_camera=attempt_vm,
+                    report_view_matrix=(i == 0),
                 )
-                paths.append(first_png)
-                if len(entries) > 1:
-                    tasks = [
-                        (
-                            i,
-                            entry["path"],
-                            os.path.join(png_dir, f"cell_{i}.png"),
-                            100,
-                        )
-                        for i, entry in enumerate(entries[1:], 1)
-                    ]
-                    paths.extend(parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc))
+                for i, entry in enumerate(entries)
+            ]
+            paths, view_matrix_text = render_landscape_cycle_static_views(
+                views, chimerax_cpus=cc
+            )
             images: list[str] = []
             blank_count = 0
             for pth in paths:
@@ -596,6 +677,9 @@ def analyze_volumes_chimerax_batch_payload(
             "images": images,
             "ids": [str(v) for v in vol_ids],
         }
+        out.update(
+            chimerax_iso_response_fields(entries[0]["path"], iso_level=volume_level)
+        )
         if view_matrix_text:
             out["view_matrix"] = view_matrix_text
         if attempt_turns:
@@ -606,14 +690,16 @@ def analyze_volumes_chimerax_batch_payload(
     raise ValueError(last_blank_err)
 
 
-def _load_catalog_volume(entry: dict, exp: DashboardExperiment) -> tuple[str, dict]:
+def _load_catalog_volume(
+    entry: dict,
+    exp: DashboardExperiment,
+    *,
+    target_d: int | None = None,
+) -> tuple[str, dict]:
     """Load one analyze ``.mrc`` volume (module-level for process pools)."""
     vol, _ = parse_mrc(entry["path"])
     vol = apply_reconstruction_window(np.asarray(vol, dtype=np.float32), exp)
-    return entry["id"], {
-        "D": int(vol.shape[0]),
-        "volume_b64": volume_array_b64(vol),
-    }
+    return entry["id"], vtk_transfer_volume_payload(vol, target_d=target_d)
 
 
 def _load_catalog_volumes_parallel(
@@ -621,20 +707,24 @@ def _load_catalog_volumes_parallel(
     *,
     exp: DashboardExperiment,
     n_cpus: int,
+    target_d: int | None = None,
 ) -> dict[str, dict]:
     """Load catalog volumes using up to ``n_cpus`` worker threads."""
     n_cpus = max(1, int(n_cpus))
     if len(catalog) <= 1:
         volumes: dict[str, dict] = {}
         for entry in catalog:
-            vol_id, payload = _load_catalog_volume(entry, exp)
+            vol_id, payload = _load_catalog_volume(entry, exp, target_d=target_d)
             volumes[vol_id] = payload
         return volumes
 
     max_workers = min(n_cpus, len(catalog))
     volumes = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [pool.submit(_load_catalog_volume, entry, exp) for entry in catalog]
+        futures = [
+            pool.submit(_load_catalog_volume, entry, exp, target_d=target_d)
+            for entry in catalog
+        ]
         for fut in as_completed(futures):
             vol_id, payload = fut.result()
             volumes[vol_id] = payload

@@ -310,6 +310,133 @@ def _mpl_retrim_png(out_png: str, dpi: int, *, corner_label: str | None = None) 
     plt.close(fig)
 
 
+_DEFAULT_ISO_PERCENTILE = 42.0
+_ISO_SLIDER_RANK_LO = 2.0
+_ISO_SLIDER_RANK_HI = 99.5
+
+
+def volume_percentile_samples(
+    values: np.ndarray, max_samples: int = 65536
+) -> np.ndarray:
+    """Sorted subsample of finite voxel values (matches dashboard JS helper)."""
+    flat = np.asarray(values, dtype=np.float64).ravel()
+    flat = flat[np.isfinite(flat)]
+    if flat.size == 0:
+        return np.array([0.0, 1.0], dtype=np.float64)
+    step = max(1, flat.size // max(1, int(max_samples)))
+    samples = flat[::step]
+    return np.sort(samples)
+
+
+def iso_slider_data_range(samples: np.ndarray) -> tuple[float, float]:
+    """Map-data range spanned by the iso slider (2nd–99.5th percentile)."""
+    samples = np.asarray(samples, dtype=np.float64)
+    if samples.size < 2:
+        return 0.0, 1.0
+    lo, hi = np.percentile(samples, (_ISO_SLIDER_RANK_LO, _ISO_SLIDER_RANK_HI))
+    lo, hi = float(lo), float(hi)
+    if hi <= lo:
+        lo, hi = float(samples[0]), float(samples[-1])
+    return lo, hi
+
+
+def _percentile_value(samples: np.ndarray, pct: float) -> float:
+    samples = np.asarray(samples, dtype=np.float64)
+    if samples.size == 0:
+        return 0.0
+    pct = float(np.clip(pct, 0.0, 100.0))
+    idx = (pct / 100.0) * (samples.size - 1)
+    lo = int(np.floor(idx))
+    hi = int(np.ceil(idx))
+    if lo == hi:
+        return float(samples[lo])
+    frac = idx - lo
+    return float(samples[lo] * (1.0 - frac) + samples[hi] * frac)
+
+
+def suggest_iso_data_value(samples: np.ndarray) -> float:
+    """Heuristic default contour level (mirrors ``volume_3d_utils.js``)."""
+    samples = np.asarray(samples, dtype=np.float64)
+    if samples.size < 8:
+        return _percentile_value(samples, _DEFAULT_ISO_PERCENTILE)
+    vmin = float(samples[0])
+    vmax = float(samples[-1])
+    span = vmax - vmin
+    if not (span > 0):
+        return _percentile_value(samples, _DEFAULT_ISO_PERCENTILE)
+    p10 = _percentile_value(samples, 10.0)
+    p25 = _percentile_value(samples, 25.0)
+    p50 = _percentile_value(samples, 50.0)
+    p90 = _percentile_value(samples, 90.0)
+    p99 = _percentile_value(samples, 99.0)
+    baseline = p10 + (p25 - p10) * 0.35
+    signal = p99 - baseline
+    if not (signal > 0):
+        return _percentile_value(samples, _DEFAULT_ISO_PERCENTILE)
+    median_frac = (p50 - vmin) / span
+    tail_frac = (vmax - p90) / span
+    alpha = 0.24
+    if median_frac < 0.12:
+        alpha = 0.18
+    elif median_frac < 0.22:
+        alpha = 0.21
+    elif median_frac > 0.4:
+        alpha = 0.32
+    if tail_frac < 0.08:
+        alpha += 0.06
+    target = baseline + signal * alpha
+    for p in range(5, 99):
+        if _percentile_value(samples, float(p)) >= target:
+            return _percentile_value(samples, float(np.clip(round(p), 12, 94)))
+    return _percentile_value(samples, 88.0)
+
+
+def mrc_iso_metadata(
+    mrc_path: str,
+    *,
+    iso_level: float | None = None,
+) -> dict[str, float]:
+    """Iso slider range and effective ChimeraX contour level for one map."""
+    from cryodrgn.mrcfile import parse_mrc
+
+    vol, _ = parse_mrc(mrc_path)
+    samples = volume_percentile_samples(np.asarray(vol, dtype=np.float64))
+    lo, hi = iso_slider_data_range(samples)
+    level = (
+        float(iso_level) if iso_level is not None else suggest_iso_data_value(samples)
+    )
+    if not np.isfinite(level):
+        level = suggest_iso_data_value(samples)
+    return {"min": lo, "max": hi, "level": level}
+
+
+def resolve_chimerax_volume_level(
+    mrc_path: str | None,
+    iso_level: float | None,
+) -> float | None:
+    """Effective ``volume #1 level`` for ChimeraX rendering."""
+    if iso_level is not None and np.isfinite(float(iso_level)):
+        return float(iso_level)
+    if mrc_path:
+        return mrc_iso_metadata(mrc_path)["level"]
+    return None
+
+
+def chimerax_iso_response_fields(
+    mrc_path: str | None,
+    *,
+    iso_level: float | None = None,
+) -> dict[str, object]:
+    """JSON fields ``iso_range`` and ``iso_level`` for dashboard clients."""
+    if not mrc_path:
+        return {}
+    meta = mrc_iso_metadata(mrc_path, iso_level=iso_level)
+    return {
+        "iso_range": {"min": meta["min"], "max": meta["max"]},
+        "iso_level": meta["level"],
+    }
+
+
 def chimerax_render_cmds(
     mrc_path: str,
     out_png: str,
@@ -318,6 +445,7 @@ def chimerax_render_cmds(
     vol_name: str,
     turn_y: float | None,
     volume_color: str | None = None,
+    volume_level: float | None = None,
     view_turns: Sequence[tuple[str, float]] | None = None,
     view_matrix_camera: str | None = None,
     report_view_matrix: bool = False,
@@ -332,9 +460,9 @@ def chimerax_render_cmds(
         "set bgColor white ",
         "volume center #1",
         f"volume color {vc} ",
-        # Do not use ``camera ortho`` here: ``--offscreen`` uses OffScreenRenderingContext,
-        # which lacks attributes the ortho camera path expects (e.g. stereo).
     ]
+    if volume_level is not None and np.isfinite(float(volume_level)):
+        cmds.append(f"volume #1 level {float(volume_level):g} ")
     if view_matrix_camera:
         # VTK exports an absolute camera matrix; skip ``view orient`` so it is not composed
         # on top of a default orientation (which would mismatch the VTK view).
@@ -360,6 +488,7 @@ def render_static_png(
     dpi: int = 100,
     *,
     volume_color: str | None = None,
+    volume_level: float | None = None,
     corner_label: str | None = None,
     view_turns: Sequence[tuple[str, float]] | None = None,
     view_matrix_camera: str | None = None,
@@ -374,6 +503,7 @@ def render_static_png(
         vol_name="vol000",
         turn_y=None,
         volume_color=volume_color,
+        volume_level=volume_level,
         view_turns=view_turns,
         view_matrix_camera=view_matrix_camera,
         report_view_matrix=report_view_matrix,
@@ -907,6 +1037,7 @@ class LandscapeStaticView:
     mrc_path: str
     out_png: str
     volume_color: str | None = None
+    volume_level: float | None = None
     view_turns: Sequence[ChimeraxViewTurn] | None = None
     view_matrix_camera: str | None = None
     report_view_matrix: bool = False
@@ -928,6 +1059,7 @@ def render_landscape_cycle_static_views(
             view.out_png,
             dpi=100,
             volume_color=view.volume_color,
+            volume_level=view.volume_level,
             view_turns=view.view_turns,
             view_matrix_camera=view.view_matrix_camera,
             report_view_matrix=view.report_view_matrix,

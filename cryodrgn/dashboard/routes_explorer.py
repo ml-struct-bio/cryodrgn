@@ -538,8 +538,18 @@ def api_volume_viewer_analyze_volumes_batch():
     if not isinstance(raw_ids, list) or not raw_ids:
         return jsonify(error="ids must be a non-empty list of volume ids."), 400
     vol_ids = [str(v) for v in raw_ids]
+    target_d = data.get("target_d")
+    if target_d is not None:
+        try:
+            target_d = int(target_d)
+        except (TypeError, ValueError):
+            return jsonify(error="target_d must be an integer."), 400
+        if target_d < 1:
+            return jsonify(error="target_d must be positive."), 400
     try:
-        payload = analyze_volumes_batch_payload(e, vol_ids, n_cpus=cpus)
+        payload = analyze_volumes_batch_payload(
+            e, vol_ids, n_cpus=cpus, target_d=target_d
+        )
         return jsonify(payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -569,15 +579,18 @@ def api_volume_viewer_analyze_volumes_chimerax_batch():
             except ValueError as err:
                 return jsonify(error=str(err)), 400
     view_turns = None
-    if data.get("view_turns") is not None:
-        try:
-            from cryodrgn.dashboard.volume_slice_viewer import (
-                parse_chimerax_view_turns_from_request,
-            )
+    iso_level = None
+    try:
+        from cryodrgn.dashboard.volume_slice_viewer import (
+            parse_chimerax_view_turns_from_request,
+            parse_iso_level_from_request,
+        )
 
+        if data.get("view_turns") is not None:
             view_turns = parse_chimerax_view_turns_from_request(data.get("view_turns"))
-        except ValueError as err:
-            return jsonify(error=str(err)), 400
+        iso_level = parse_iso_level_from_request(data)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
     try:
         payload = analyze_volumes_chimerax_batch_payload(
             e,
@@ -585,6 +598,7 @@ def api_volume_viewer_analyze_volumes_chimerax_batch():
             chimerax_cpus=cc,
             view_matrix_camera=view_matrix_camera,
             view_turns=view_turns,
+            volume_level=iso_level,
         )
         return jsonify(payload)
     except EnvironmentError as err:

@@ -399,6 +399,32 @@ def discover_analyze_volume_markers(
     return [dict(m) for m in markers]
 
 
+def kmeans_volume_ids_for_anchor_indices(
+    exp: DashboardExperiment, anchor_indices: list[int]
+) -> list[str] | None:
+    """Map path-ordered anchor rows to pre-decoded ``kmeans:*`` catalog ids."""
+    if len(anchor_indices) < 2:
+        return None
+    markers = discover_analyze_volume_markers(exp)
+    row_to_vol: dict[int, str] = {}
+    for marker in markers:
+        if marker.get("kind") != "kmeans":
+            continue
+        plot_row = marker.get("plot_row")
+        if plot_row is None:
+            continue
+        row_to_vol[int(plot_row)] = str(marker["vol_id"])
+    if not row_to_vol:
+        return None
+    vol_ids: list[str] = []
+    for anchor in anchor_indices:
+        vol_id = row_to_vol.get(int(anchor))
+        if vol_id is None:
+            return None
+        vol_ids.append(vol_id)
+    return vol_ids
+
+
 def _catalog_public(catalog: list[dict]) -> list[dict]:
     return [{k: v for k, v in entry.items() if k != "path"} for entry in catalog]
 

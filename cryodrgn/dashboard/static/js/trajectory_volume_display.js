@@ -45,6 +45,7 @@
     this._pendingApplyViewMatrixToVtk = false;
     this._pendingApplyViewTurnsToVtk = null;
     this.vtkCameraUserAdjusted = false;
+    this.vtkSessionViewMatrix = "";
     this.chimeraxRenderedViewMatrix = "";
     this._vtkViewMatrixBeforeChimerax = "";
     this._vtkViewTurnsBeforeChimerax = [];
@@ -352,14 +353,42 @@
     return this.getSharedViewMatrix();
   };
 
-  TrajectoryVolumeDisplay.prototype._captureVtkViewMatrix = function () {
-    if (!this.vtkCameraUserAdjusted) return;
+  TrajectoryVolumeDisplay.prototype.resetVtkNavigationCamera = function () {
+    this.vtkSessionViewMatrix = "";
+    this.vtkCameraUserAdjusted = false;
+    this.sharedViewMatrix = "";
+    this.lastVtkViewMatrix = "";
+    this.raycastVolIndex = null;
+  };
+
+  TrajectoryVolumeDisplay.prototype._captureVtkSessionViewMatrix = function (view) {
+    if (view && typeof view.getChimeraxViewMatrixCamera === "function") {
+      var live = view.getChimeraxViewMatrixCamera();
+      if (live) {
+        this.setSharedViewMatrix(live);
+        this.vtkSessionViewMatrix = live;
+        return;
+      }
+    }
     this.getChimeraxViewMatrix();
+    var vm = this.getSharedViewMatrix();
+    if (vm) this.vtkSessionViewMatrix = vm;
+  };
+
+  TrajectoryVolumeDisplay.prototype._applyVtkNavigationViewMatrix = function (view) {
+    if (!view) return;
+    var vm = this.vtkCameraUserAdjusted
+      ? this.getSharedViewMatrix()
+      : (this.vtkSessionViewMatrix || this.getSharedViewMatrix());
+    if (!vm || typeof view.setChimeraxViewMatrixCamera !== "function") return;
+    view.setChimeraxViewMatrixCamera(vm);
   };
 
   TrajectoryVolumeDisplay.prototype._markVtkCameraUserAdjusted = function () {
     this.vtkCameraUserAdjusted = true;
     this.getChimeraxViewMatrix();
+    var vm = this.getSharedViewMatrix();
+    if (vm) this.vtkSessionViewMatrix = vm;
   };
 
   TrajectoryVolumeDisplay.prototype._applyPendingViewTurnsToVtk = function (view) {
@@ -820,10 +849,12 @@
         self._scheduleVtkResize();
         return;
       }
+      var preserveView = !!(self.raycastView && self.raycastView.volume
+        && (self.vtkSessionViewMatrix || self.getSharedViewMatrix()));
       var pendingTurns = !!(self._pendingApplyViewTurnsToVtk && self._pendingApplyViewTurnsToVtk.length);
       var pendingMatrix = !!self._pendingApplyViewMatrixToVtk;
       self._suppressVtkCameraCapture = true;
-      view.setVolumeFromB64(vol.volume_b64, vol.D, { skipDefaultCamera: false });
+      view.setVolumeFromB64(vol.volume_b64, vol.D, { skipDefaultCamera: preserveView });
       if (typeof view.setInteractionEnabled === "function") view.setInteractionEnabled(true);
       if (self.vtkContainerEl) self.vtkContainerEl.hidden = false;
       self.raycastVolIndex = idx;
@@ -836,8 +867,14 @@
           && typeof view.applyChimeraxViewTurns === "function") {
           view.applyChimeraxViewTurns(self._vtkViewTurnsBeforeChimerax);
         }
+        self._captureVtkSessionViewMatrix(view);
       } else if (pendingTurns) {
         self._applyPendingViewTurnsToVtk(view);
+        self._captureVtkSessionViewMatrix(view);
+      } else if (preserveView) {
+        self._applyVtkNavigationViewMatrix(view);
+      } else {
+        self._captureVtkSessionViewMatrix(view);
       }
       self._suppressVtkCameraCapture = false;
       if (self.vtkContainerEl) self.vtkContainerEl.hidden = false;

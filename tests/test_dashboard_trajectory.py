@@ -22,7 +22,12 @@ from cryodrgn.dashboard.trajectory import (
     _dijkstra_path_from_neighbors,
     _graph_neighbor_arrays,
     _graph_neighbor_max_dist,
+    _path_has_crossings,
     _round_direct_mode_traj_xy,
+    order_anchor_indices_for_direct_path,
+    order_points_noncrossing_path_heuristic,
+    order_points_shortest_noncrossing_path,
+    parse_anchor_path_order,
     _trajectory_xy_ok_for_direct,
     _TRAJ_GRAPH_NEIGHBOR_CACHE,
     compute_trajectory_latent_path,
@@ -462,22 +467,68 @@ class TestGraphNeighborArrays:
         assert nb2 is nb and d2 is d
 
 
+class TestOrderPointsShortestNoncrossingPath:
+    def test_square_visits_all_without_crossings_exact(self) -> None:
+        # Corners of a unit square; optimal non-crossing path has length 3.
+        points = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        order = order_points_shortest_noncrossing_path(points, path_order="exact")
+        assert sorted(order) == [0, 1, 2, 3]
+        assert not _path_has_crossings(order, points)
+        length = sum(
+            np.linalg.norm(points[order[i + 1]] - points[order[i]])
+            for i in range(len(order) - 1)
+        )
+        assert length == pytest.approx(3.0)
+
+    def test_heuristic_is_fast_and_noncrossing(self) -> None:
+        points = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        order = order_points_noncrossing_path_heuristic(points)
+        assert sorted(order) == [0, 1, 2, 3]
+        assert not _path_has_crossings(order, points)
+
+    def test_reorders_for_direct_anchors(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        anchors = [0, 10, 20, 30]
+        ordered = order_anchor_indices_for_direct_path(
+            dashboard_experiment, anchors, "z0", "z1", path_order="heuristic"
+        )
+        assert sorted(ordered) == sorted(anchors)
+        coords = dashboard_experiment.plot_df[["z0", "z1"]].values.astype(np.float64)
+        local = np.vstack([coords[int(a)] for a in ordered])
+        local_order = list(range(len(ordered)))
+        assert not _path_has_crossings(local_order, local)
+
+
+class TestParseAnchorPathOrder:
+    def test_defaults_to_heuristic(self) -> None:
+        assert parse_anchor_path_order({}) == "heuristic"
+        assert parse_anchor_path_order({"anchor_path_order": ""}) == "heuristic"
+
+    def test_accepts_exact_aliases(self) -> None:
+        assert parse_anchor_path_order({"anchor_path_order": "exact"}) == "exact"
+        assert parse_anchor_path_order({"anchor_path_order": "held-karp"}) == "exact"
+
+
 class TestComputeDirectAnchorTrajectory:
     def test_endpoints_and_interpolation_count(
         self, dashboard_experiment: DashboardExperiment
     ) -> None:
         anchors = [0, 10, 20]
+        ordered = order_anchor_indices_for_direct_path(
+            dashboard_experiment, anchors, "z0", "z1", path_order="heuristic"
+        )
         interp = 3
         z_traj, traj_rows, traj_xy = _compute_direct_anchor_trajectory(
-            dashboard_experiment, anchors, "z0", "z1", interp
+            dashboard_experiment, ordered, "z0", "z1", interp
         )
         assert traj_rows is None
         # (len(anchors) - 1) * (interp + 1) + 1 = 2 * 4 + 1 = 9 rows.
         assert z_traj.shape[0] == 9
         assert traj_xy.shape == (9, 2)
-        # Endpoints match the anchor latents exactly.
-        np.testing.assert_allclose(z_traj[0], dashboard_experiment.z[0])
-        np.testing.assert_allclose(z_traj[-1], dashboard_experiment.z[20])
+        # Endpoints match the ordered anchor latents exactly.
+        np.testing.assert_allclose(z_traj[0], dashboard_experiment.z[ordered[0]])
+        np.testing.assert_allclose(z_traj[-1], dashboard_experiment.z[ordered[-1]])
 
     def test_requires_two_anchors(
         self, dashboard_experiment: DashboardExperiment
@@ -972,8 +1023,35 @@ class TestTrajectoryVolumeApis:
         assert all(isinstance(b64, str) and b64 for b64 in j["images"])
         assert len(j["z_traj"]) >= 2
 
+    def test_trajectory_volumes_from_cache_api_mocked(
+        self,
+        flask_client_volumes_eligible,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fake_payloads = [
+            {"index": 0, "volume_b64": "AAA=", "D": 32},
+            {"index": 1, "volume_b64": "BBB=", "D": 32},
+        ]
 
-class TestTrajectoryPlotlyBrowserSmoke:
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_analysis.trajectory_volume_b64_list_from_cache",
+            lambda token, exp: fake_payloads,
+        )
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_volumes",
+            json={
+                "volume_cache_id": "cache-tok",
+                "volumes_from_cache": True,
+                "render_backend": "vtk",
+            },
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:500]
+        j = r.get_json()
+        assert j["ok"] is True
+        assert j["volume_cache_id"] == "cache-tok"
+        assert j["render_backend"] == "vtk"
+        assert j["volumes"] == fake_payloads
+
     """Headless Chromium: default trajectory overlay and random anchor coords."""
 
     def test_default_trajectory_and_random_anchors(

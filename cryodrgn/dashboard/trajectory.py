@@ -154,6 +154,14 @@ def parse_traj_neighbor_value(data: dict, key: str, default: int) -> int:
     return parse_int_from_dict(data, key, default=default, lo=2, hi=200)
 
 
+def parse_anchor_path_order(data: dict) -> str:
+    """``heuristic`` (default) or ``exact`` (Held–Karp / brute force when small)."""
+    raw = str(data.get("anchor_path_order", "heuristic") or "heuristic").strip().lower()
+    if raw in ("exact", "held_karp", "held-karp", "optimal"):
+        return "exact"
+    return "heuristic"
+
+
 def trajectory_anchor_mode_params(data: dict) -> tuple[str, int, int, int]:
     mode = str(data.get("mode", "direct") or "direct")
     if mode.strip().lower() == "direct":
@@ -214,6 +222,266 @@ def _plot_row_particle_index(exp: DashboardExperiment, row_index: int) -> int:
     if "index" in exp.plot_df.columns:
         return int(exp.plot_df.iloc[ri]["index"])
     return ri
+
+
+# ---------------------------------------------------------------------------
+# Shortest non-crossing path through anchor scatter coordinates
+# ---------------------------------------------------------------------------
+
+
+def _orientation_2d(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
+    return float((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+
+
+def _on_segment_2d(a: np.ndarray, b: np.ndarray, c: np.ndarray, eps: float) -> bool:
+    return (
+        min(a[0], b[0]) - eps <= c[0] <= max(a[0], b[0]) + eps
+        and min(a[1], b[1]) - eps <= c[1] <= max(a[1], b[1]) + eps
+    )
+
+
+def _segments_cross(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> bool:
+    """True when segments ``ab`` and ``cd`` intersect (including collinear overlap)."""
+    eps = 1e-12
+    o1 = _orientation_2d(a, b, c)
+    o2 = _orientation_2d(a, b, d)
+    o3 = _orientation_2d(c, d, a)
+    o4 = _orientation_2d(c, d, b)
+    if o1 * o2 < -eps and o3 * o4 < -eps:
+        return True
+    if abs(o1) <= eps and _on_segment_2d(a, c, b, eps):
+        return True
+    if abs(o2) <= eps and _on_segment_2d(a, d, b, eps):
+        return True
+    if abs(o3) <= eps and _on_segment_2d(c, a, d, eps):
+        return True
+    if abs(o4) <= eps and _on_segment_2d(c, b, d, eps):
+        return True
+    return False
+
+
+def _segments_cross_proper(
+    a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray
+) -> bool:
+    """Crossing excluding shared endpoints (adjacent path edges)."""
+    eps = 1e-12
+    for p in (a, b):
+        for q in (c, d):
+            if float(np.linalg.norm(p - q)) <= eps:
+                return False
+    return _segments_cross(a, b, c, d)
+
+
+def _path_has_crossings(order: list[int], points: np.ndarray) -> bool:
+    n = len(order)
+    if n < 4:
+        return False
+    for i in range(n - 1):
+        a = points[order[i]]
+        b = points[order[i + 1]]
+        for j in range(i + 2, n - 1):
+            c = points[order[j]]
+            d = points[order[j + 1]]
+            if _segments_cross_proper(a, b, c, d):
+                return True
+    return False
+
+
+def _path_length(order: list[int], points: np.ndarray) -> float:
+    total = 0.0
+    for i in range(len(order) - 1):
+        total += float(np.linalg.norm(points[order[i]] - points[order[i + 1]]))
+    return total
+
+
+def _uncross_path_order(order: list[int], points: np.ndarray) -> list[int]:
+    """Remove segment crossings by reversing subpaths (2-opt uncross)."""
+    order = list(order)
+    if len(order) < 4:
+        return order
+    changed = True
+    while changed:
+        changed = False
+        n = len(order)
+        for i in range(n - 1):
+            for j in range(i + 2, n - 1):
+                a = points[order[i]]
+                b = points[order[i + 1]]
+                c = points[order[j]]
+                d = points[order[j + 1]]
+                if _segments_cross_proper(a, b, c, d):
+                    order[i + 1 : j + 1] = reversed(order[i + 1 : j + 1])
+                    changed = True
+                    break
+            if changed:
+                break
+    return order
+
+
+def _held_karp_open_path(dist: np.ndarray) -> list[int]:
+    """Shortest open Hamiltonian path (exact, ``O(n^2 2^n)``)."""
+    n = int(dist.shape[0])
+    if n == 0:
+        return []
+    if n == 1:
+        return [0]
+    size = 1 << n
+    inf = float("inf")
+    dp = np.full((size, n), inf, dtype=np.float64)
+    parent = np.full((size, n), -1, dtype=np.int32)
+    for i in range(n):
+        dp[1 << i, i] = 0.0
+    for mask in range(size):
+        for j in range(n):
+            if not (mask & (1 << j)):
+                continue
+            cost_j = dp[mask, j]
+            if cost_j == inf:
+                continue
+            rem = (~mask) & (size - 1)
+            k = rem
+            while k:
+                lsb = k & -k
+                kk = lsb.bit_length() - 1
+                nmask = mask | lsb
+                nd = cost_j + dist[j, kk]
+                if nd < dp[nmask, kk]:
+                    dp[nmask, kk] = nd
+                    parent[nmask, kk] = j
+                k -= lsb
+    full = size - 1
+    end = int(np.argmin(dp[full]))
+    order = [end]
+    mask = full
+    cur = end
+    while len(order) < n:
+        prev = int(parent[mask, cur])
+        order.append(prev)
+        mask ^= 1 << cur
+        cur = prev
+    order.reverse()
+    return order
+
+
+def _nearest_neighbor_open_path(dist: np.ndarray, points: np.ndarray) -> list[int]:
+    n = int(dist.shape[0])
+    best_order: list[int] | None = None
+    best_dist = float("inf")
+    for start in range(n):
+        unvisited = set(range(n))
+        order = [start]
+        unvisited.remove(start)
+        cur = start
+        while unvisited:
+            nxt = min(unvisited, key=lambda j: dist[cur, j])
+            order.append(nxt)
+            unvisited.remove(nxt)
+            cur = nxt
+        order = _uncross_path_order(order, points)
+        d = _path_length(order, points)
+        if d < best_dist:
+            best_dist = d
+            best_order = order
+    return best_order if best_order is not None else list(range(n))
+
+
+def _improve_noncrossing_path(order: list[int], points: np.ndarray) -> list[int]:
+    order = list(order)
+    n = len(order)
+    improved = True
+    while improved:
+        improved = False
+        for i in range(n - 1):
+            for j in range(i + 2, n):
+                if j == n - 1 and i == 0:
+                    continue
+                candidate = (
+                    order[: i + 1]
+                    + list(reversed(order[i + 1 : j + 1]))
+                    + order[j + 1 :]
+                )
+                if _path_has_crossings(candidate, points):
+                    continue
+                if _path_length(candidate, points) + 1e-12 < _path_length(
+                    order, points
+                ):
+                    order = candidate
+                    improved = True
+    return order
+
+
+def order_points_noncrossing_path_heuristic(points: np.ndarray) -> list[int]:
+    """Fast multi-start nearest-neighbour tour, uncrossed (non-optimal length)."""
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 2)
+    n = int(pts.shape[0])
+    if n <= 1:
+        return list(range(n))
+    if n == 2:
+        return [0, 1]
+    dist = np.linalg.norm(pts[:, None, :] - pts[None, :, :], axis=2)
+    return _nearest_neighbor_open_path(dist, pts)
+
+
+def order_points_noncrossing_path_exact(points: np.ndarray) -> list[int]:
+    """Exact minimum-length open Hamiltonian path among non-crossing permutations."""
+    import itertools
+
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 2)
+    n = int(pts.shape[0])
+    if n <= 1:
+        return list(range(n))
+    if n == 2:
+        return [0, 1]
+
+    dist = np.linalg.norm(pts[:, None, :] - pts[None, :, :], axis=2)
+    order: list[int] | None = None
+
+    if n <= 9:
+        best_dist = float("inf")
+        for perm in itertools.permutations(range(n)):
+            cand = list(perm)
+            if _path_has_crossings(cand, pts):
+                continue
+            d = _path_length(cand, pts)
+            if d < best_dist:
+                best_dist = d
+                order = cand
+
+    if order is None and n <= 20:
+        order = _held_karp_open_path(dist)
+
+    if order is None:
+        order = _nearest_neighbor_open_path(dist, pts)
+
+    order = _uncross_path_order(order, pts)
+    order = _improve_noncrossing_path(order, pts)
+    return order
+
+
+def order_points_shortest_noncrossing_path(
+    points: np.ndarray, *, path_order: str = "heuristic"
+) -> list[int]:
+    """Permutation visiting each point once with no crossing segments."""
+    if path_order == "exact":
+        return order_points_noncrossing_path_exact(points)
+    return order_points_noncrossing_path_heuristic(points)
+
+
+def order_anchor_indices_for_direct_path(
+    e: DashboardExperiment,
+    anchor_indices: list[int],
+    xcol: str,
+    ycol: str,
+    *,
+    path_order: str = "heuristic",
+) -> list[int]:
+    """Reorder anchors for a direct traversal with no crossing scatter segments."""
+    if len(anchor_indices) <= 2:
+        return list(anchor_indices)
+    coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
+    points = np.vstack([coords[int(a)] for a in anchor_indices])
+    order = order_points_shortest_noncrossing_path(points, path_order=path_order)
+    return [anchor_indices[i] for i in order]
 
 
 # ---------------------------------------------------------------------------
@@ -455,6 +723,7 @@ def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
         avg_neighbors = parse_traj_neighbor_value(
             data, "avg_neighbors", default=max(2, n_points)
         )
+        anchor_path_order = parse_anchor_path_order(data)
         return {
             "use_anchors": True,
             "anchor_indices": anchor_indices,
@@ -464,6 +733,7 @@ def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
             "n_points": n_points,
             "max_neighbors": max_neighbors,
             "avg_neighbors": avg_neighbors,
+            "anchor_path_order": anchor_path_order,
         }
 
     mode = str(data.get("mode", "direct")).strip().lower()
@@ -527,9 +797,18 @@ def compute_trajectory_latent_path(
     """Return ``(z_traj, traj_rows_or_None, traj_xy)`` for the parsed body ``p``."""
     if p.get("use_anchors"):
         if p["mode"] == "direct":
-            return _compute_direct_anchor_trajectory(
+            path_order = str(p.get("anchor_path_order", "heuristic"))
+            ordered = order_anchor_indices_for_direct_path(
                 e,
                 p["anchor_indices"],
+                p["xcol"],
+                p["ycol"],
+                path_order=path_order,
+            )
+            p["anchor_indices"] = ordered
+            return _compute_direct_anchor_trajectory(
+                e,
+                ordered,
                 p["xcol"],
                 p["ycol"],
                 int(p["n_points"]),
@@ -685,6 +964,7 @@ def trajectory_anchor_payload_from_indices(
     n_points: int = 4,
     max_neighbors: int | None = None,
     avg_neighbors: int | None = None,
+    anchor_path_order: str = "heuristic",
 ) -> dict:
     """Build coords/volume JSON for a list of dataset indices (``z.N.pkl`` rows)."""
     mode = str(mode).strip().lower()
@@ -709,6 +989,9 @@ def trajectory_anchor_payload_from_indices(
         "n_points": n_points,
         "max_neighbors": max_neighbors,
         "avg_neighbors": avg_neighbors,
+        "anchor_path_order": parse_anchor_path_order(
+            {"anchor_path_order": anchor_path_order}
+        ),
     }
     z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(e, p)
     payload = trajectory_shared_json_payload(
@@ -723,13 +1006,14 @@ def trajectory_anchor_payload_from_indices(
     )
     if "traj_particle_indices" not in payload and mode == "direct":
         pidx = direct_anchor_particle_indices_payload(
-            anchor_indices=anchor_indices,
+            anchor_indices=p["anchor_indices"],
             interpolation_points=n_points,
             n_total=int(np.asarray(z_traj).shape[0]),
         )
         if pidx is not None:
             payload["traj_particle_indices"] = pidx
-    payload["anchor_indices"] = anchor_indices
+    payload["anchor_indices"] = p["anchor_indices"]
+    payload["anchor_path_order"] = p.get("anchor_path_order", "heuristic")
     return payload
 
 

@@ -243,6 +243,7 @@ def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:
     )
     if pidx is not None:
         payload["traj_particle_indices"] = pidx
+    payload["anchor_path_order"] = p.get("anchor_path_order", "heuristic")
 
 
 def _api_try(fn: callable, msg: str, *, logger: Any = None) -> tuple:

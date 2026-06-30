@@ -58,6 +58,10 @@
   #btn-generate-volumes[hidden] {
     display: none !important;
   }
+  #btn-generate-volumes:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+  }
   .cryo-traj-anchor-row .cryo-traj-manual-picker {
     flex: 0 0 auto;
     width: 100%;
@@ -1040,6 +1044,18 @@
     padding: 0.28rem 0.45rem;
     white-space: nowrap;
   }
+  .cryo-traj-anchor-path-order-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+  }
+  .cryo-traj-anchor-path-order-row[hidden] {
+    display: none !important;
+  }
+  .cryo-traj-anchor-path-order-row .btn {
+    align-self: flex-start;
+  }
   .cryo-traj-file-browser-panel {
     width: 100%;
     box-sizing: border-box;
@@ -1220,6 +1236,14 @@
           </div>
         </div>
         <p class="cryo-traj-hint" style="margin:0.35rem 0 0;">Select two or more k-means or PC volumes to define the path.</p>
+      </div>
+      <div class="cryo-traj-anchor-path-order-row" id="traj-anchor-path-order-row" hidden>
+        <p class="cryo-traj-hint" id="traj-anchor-path-order-label" style="margin:0;">
+          Anchor visit order: fast non-crossing path.
+        </p>
+        <button type="button" class="btn btn-secondary" id="btn-anchor-path-exact">
+          Recalculate exact shortest path
+        </button>
       </div>
       <div class="cryo-traj-anchor-manual-row" id="traj-anchor-manual-row" hidden>
         <input
@@ -1514,6 +1538,11 @@
   var anchorIndicesManualEl = document.getElementById("anchor-indices-manual");
   var btnAnchorManualLoad = document.getElementById("btn-anchor-manual-load");
   var btnAnchorRemove = document.getElementById("btn-anchor-remove");
+  var trajAnchorPathOrderRow = document.getElementById("traj-anchor-path-order-row");
+  var trajAnchorPathOrderLabel = document.getElementById("traj-anchor-path-order-label");
+  var btnAnchorPathExact = document.getElementById("btn-anchor-path-exact");
+  var anchorPathOrderActive = "heuristic";
+  var pendingAnchorPathOrder = null;
   var trajFileBrowserPanel = document.getElementById("traj-file-browser-panel");
   var serverFileBrowser = document.getElementById("server-file-browser");
   var fbList = document.getElementById("fb-list");
@@ -1543,6 +1572,7 @@
   var manualCatalogById = {};
   var manualMarkersByVolId = {};
   var manualSelectedVolIds = [];
+  var anchorKmeansVolumeIds = [];
   var lastManualSelectedVolIds = [];
   var manualCatalogLoaded = false;
   var manualCatalogLoading = false;
@@ -1555,6 +1585,36 @@
 
   function manualVolumeSelectionActive() {
     return isManualTraversalMode() && manualSelectedVolIds.length > 0;
+  }
+
+  function analyzeVolumeCatalogSelectionActive() {
+    return manualVolumeSelectionActive()
+      || anchorKmeansVolumeIds.length >= 2;
+  }
+
+  function activeAnalyzeVolumeIds() {
+    if (isManualTraversalMode() && manualSelectedVolIds.length) {
+      return manualSelectedVolIds.slice();
+    }
+    if (anchorKmeansVolumeIds.length >= 2) {
+      return anchorKmeansVolumeIds.slice();
+    }
+    return [];
+  }
+
+  function preferredAnalyzeVolumeBackend() {
+    if (isManualTraversalMode()) return preferredManualVolumeBackend();
+    return preferredVolumeBackend();
+  }
+
+  function analyzeVolumeNavLabel(volId) {
+    var entry = manualCatalogById[volId];
+    if (entry) return manualVolButtonLabel(entry);
+    var km = /^kmeans:(\d+)$/.exec(String(volId));
+    if (km) return "K" + String(Number(km[1]) + 1);
+    var pc = /^pc(\d+):(\d+)$/.exec(String(volId));
+    if (pc) return "PC" + pc[1] + "·" + String(Number(pc[2]) + 1);
+    return String(volId);
   }
 
   var lastVolumePayload = null;
@@ -1570,7 +1630,7 @@
   function canUseVtkOrChimeraxBackend() {
     return hasGeneratedTrajectoryVolumes()
       || manualAnalyzeVolumesReady
-      || manualVolumeSelectionActive()
+      || analyzeVolumeCatalogSelectionActive()
       || scatterTrajectoryPathReady();
   }
 
@@ -1607,6 +1667,7 @@
   function shouldAutoGenerateTrajectoryVolumes() {
     if (isManualTraversalMode()) return false;
     if (isScatterDirectOrNearestMode()) return false;
+    if (hasAnchorIndices()) return false;
     if (!scatterTrajectoryPathReady()) return false;
     if (volumeBackendUserSet && currentVolumeRenderBackend() === "slice") return false;
     var backend = preferredVolumeBackend();
@@ -1614,14 +1675,84 @@
   }
 
   function shouldTriggerVolumeGenerationOnBackendSwitch() {
-    if (lastTrajectoryVolumeCacheId) return true;
-    if (hasAnchorIndices()) return true;
+    if (analyzeVolumeCatalogSelectionActive()) return false;
+    if (lastTrajectoryVolumeCacheId) return false;
     if (isScatterDirectOrNearestMode()) return false;
     return scatterTrajectoryPathReady();
   }
 
+  function payloadHasVolumeB64(payload) {
+    var vols = payload && payload.volumes;
+    if (!vols || !vols.length) return false;
+    for (var i = 0; i < vols.length; i++) {
+      if (vols[i] && vols[i].volume_b64) return true;
+    }
+    return false;
+  }
+
+  function resetVtkNavigationCamera() {
+    if (trajVolDisplay && typeof trajVolDisplay.resetVtkNavigationCamera === "function") {
+      trajVolDisplay.resetVtkNavigationCamera();
+    }
+  }
+
+  function fetchTrajectoryVolumesFromCache(backend) {
+    if (!lastTrajectoryVolumeCacheId) return false;
+    backend = String(backend || currentVolumeRenderBackend()).toLowerCase();
+    if (backend !== "vtk" && backend !== "slice") return false;
+    var myGen = ++volumeGeneration;
+    if (trajVolDisplay) trajVolDisplay.setStatus("Loading volumes from cache…", true);
+    fetch("{{ url_for('api_trajectory_volumes') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        volume_cache_id: lastTrajectoryVolumeCacheId,
+        volumes_from_cache: true,
+        render_backend: backend
+      })
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (myGen !== volumeGeneration) return;
+        if (!res.ok || !res.j || !res.j.ok) {
+          var errText = (res.j && res.j.error) || "Could not load cached volumes.";
+          setTrajStatus(errText, false);
+          if (trajVolDisplay) trajVolDisplay.setStatus(errText, false);
+          return;
+        }
+        applyVolumePayloadDisplay(res.j, backend);
+        setGeneratedVolumesState(
+          String(res.j.volume_cache_id || lastTrajectoryVolumeCacheId),
+          (res.j.volumes || []).length
+        );
+        var count = (res.j.volumes || []).length;
+        setTrajStatus(count + " volumes ready.", false);
+        if (trajVolDisplay) trajVolDisplay.setStatus("", false);
+      })
+      .catch(function() {
+        if (myGen !== volumeGeneration) return;
+        setTrajStatus("Cached volume request failed.", false);
+        if (trajVolDisplay) trajVolDisplay.setStatus("", false);
+      });
+    return true;
+  }
+
   function syncTrajectoryVolumeChrome() {
     if (!trajVolDisplay) return;
+    if (shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()) {
+      var preserveCount = currentVolumeCount();
+      if (isManualTraversalMode() && manualSelectedVolIds.length >= 2) {
+        preserveCount = manualSelectedVolIds.length;
+      } else if (anchorKmeansVolumeIds.length >= 2) {
+        preserveCount = anchorKmeansVolumeIds.length;
+      }
+      if (manualAnalyzeVolumePayload && manualAnalyzeVolumePayload.expectedVolumeCount !== preserveCount) {
+        manualAnalyzeVolumePayload.expectedVolumeCount = preserveCount;
+      }
+      trajVolDisplay.setChimeraxRendering(false);
+      trajVolDisplay.setStatus("", false);
+      return;
+    }
     var backend = preferredVolumeBackend();
     var expectedCount = currentVolumeCount();
     if (isManualTraversalMode()) {
@@ -1630,6 +1761,8 @@
       } else if (expectedCount < 2) {
         expectedCount = 10;
       }
+    } else if (anchorKmeansVolumeIds.length >= 2) {
+      expectedCount = anchorKmeansVolumeIds.length;
     } else if (!scatterTrajectoryPathReady()) {
       return;
     }
@@ -1673,11 +1806,27 @@
 
   function onTrajectoryPathCoordsReady() {
     if (isManualTraversalMode()) return;
+    if (refreshPreservedAnalyzeVolumeDisplay()) {
+      if (hasAnchorIndices() && analyzeVolumeCatalogFullyCoversPath()) {
+        setTrajStatus("Anchor path and volumes ready.", false);
+      } else {
+        setTrajStatus("Selection and volumes ready.", false);
+      }
+      return;
+    }
     syncTrajectoryVolumeChrome();
     syncTrajVolBackendChrome();
     syncGenerateVolumesButtonVisibility();
     if (shouldAutoGenerateTrajectoryVolumes()) {
       maybeAutoGenerateTrajectoryVolumes();
+      return;
+    }
+    if (hasAnchorIndices()) {
+      if (analyzeVolumeCatalogFullyCoversPath()) {
+        setTrajStatus("Anchor path and volumes ready.", false);
+      } else {
+        setTrajStatus("Anchor path ready — press Generate to decode volumes.", false);
+      }
       return;
     }
     if (isScatterDirectOrNearestMode()) {
@@ -1989,7 +2138,7 @@
   function requestTrajChimeraxViewRerender(statusMsg) {
     if (!trajChimeraxViewControlsReady() && !trajVolDisplay) return;
     if (statusMsg) setTrajStatus(statusMsg, true);
-    if (isManualTraversalMode() && manualAnalyzeVolumesReady && !hasGeneratedTrajectoryVolumes()) {
+    if (analyzeVolumeCatalogSelectionActive() && manualAnalyzeVolumesReady && !hasGeneratedTrajectoryVolumes()) {
       if (syncManualChimeraxDisplay()) return;
     }
     if (lastTrajectoryVolumeCacheId && currentVolumeRenderBackend() === "chimerax") {
@@ -2295,11 +2444,13 @@
     var prevIds = manualVolumeDisplayIds.slice();
     manualVolumeSlots = slots.slice();
     manualVolumeDisplayIds = ids.slice();
-    manualAnalyzeVolumesReady = loadedManualVolumeCount(slots) > 0;
+    var hadChimeraxImages = chimeraxImagesFromPayload(manualAnalyzeVolumePayload).length > 0;
+    manualAnalyzeVolumesReady = loadedManualVolumeCount(slots) > 0
+      || (hadChimeraxImages && analyzeVolumeCatalogSelectionActive() && !hasGeneratedTrajectoryVolumes());
     var idsUnchanged = prevIds.length === ids.length
       && prevIds.every(function(id, idx) { return String(id) === String(ids[idx]); });
-    var keptImages = idsUnchanged && manualAnalyzeVolumePayload && manualAnalyzeVolumePayload.images
-      ? manualAnalyzeVolumePayload.images.slice()
+    var keptImages = idsUnchanged && manualAnalyzeVolumePayload
+      ? chimeraxImagesFromPayload(manualAnalyzeVolumePayload)
       : [];
     manualAnalyzeVolumePayload = {
       volumes: slots.slice(),
@@ -2310,8 +2461,8 @@
     };
     syncTrajVolBackendChrome();
     if (!hasGeneratedTrajectoryVolumes() && manualAnalyzeVolumesReady) {
-      var curBackend = isManualTraversalMode()
-        ? preferredManualVolumeBackend()
+      var curBackend = analyzeVolumeCatalogSelectionActive()
+        ? preferredAnalyzeVolumeBackend()
         : currentVolumeRenderBackend();
       if (curBackend === "chimerax") {
         if (keptImages.length) {
@@ -2327,6 +2478,7 @@
       }
     }
     if (!opts.skipHighlight) syncManualVolumeScatterHighlight();
+    if (!isManualTraversalMode()) updateGenerateVolumesButtonLabel();
   }
 
   function prefetchAllManualVolumeData(ids, slots, gen) {
@@ -2471,17 +2623,23 @@
   }
 
   function keptImagesFromManualPayload() {
-    return manualAnalyzeVolumePayload && manualAnalyzeVolumePayload.images
-      ? manualAnalyzeVolumePayload.images.slice()
+    return manualAnalyzeVolumePayload
+      ? chimeraxImagesFromPayload(manualAnalyzeVolumePayload)
       : [];
   }
 
   function ensureManualVolumeAtFocusLoaded() {
-    if (!isManualTraversalMode() || !manualVolumeSlots || !manualSelectedVolIds.length) return;
+    if (!analyzeVolumeCatalogSelectionActive() || !manualVolumeSlots) return;
+    var ids = activeAnalyzeVolumeIds();
+    if (!ids.length) return;
     var idx = currentVolumeFocusIndex();
     if (idx < 0 || idx >= manualVolumeSlots.length) return;
+    if (currentVolumeRenderBackend() === "chimerax") {
+      var cxImages = chimeraxImagesFromPayload(manualAnalyzeVolumePayload || lastVolumePayload);
+      if (cxImages.length > idx) return;
+    }
     if (manualVolumeSlots[idx] && manualVolumeSlots[idx].volume_b64) return;
-    var volId = manualSelectedVolIds[idx];
+    var volId = ids[idx];
     if (!volId) return;
     var gen = manualVolumeLoadGeneration;
     if (trajVolDisplay && trajVolDisplay.statusEl) {
@@ -2493,16 +2651,16 @@
         if (trajVolDisplay && trajVolDisplay.statusEl) trajVolDisplay.statusEl.textContent = "";
         if (!res.ok || !res.j || !res.j.ok) return;
         var merged = mergeBatchIntoVolumeSlots(
-          manualSelectedVolIds.slice(),
+          ids.slice(),
           manualVolumeSlots,
           res.j.volumes || {}
         );
-        applyManualVolumeSlots(merged, manualSelectedVolIds.slice(), { skipHighlight: true });
+        applyManualVolumeSlots(merged, ids.slice(), { skipHighlight: true });
         if (trajVolDisplay) {
           trajVolDisplay.loadPayload({
             volumes: merged.slice(),
             images: keptImagesFromManualPayload(),
-            expectedVolumeCount: manualSelectedVolIds.length
+            expectedVolumeCount: ids.length
           });
           applyManualAnalyzeVolumeDisplay(currentVolumeRenderBackend());
         }
@@ -2571,21 +2729,25 @@
     syncManualVolumeScatterHighlight();
   }
 
-  function syncManualVolumeDisplay() {
-    if (!isManualTraversalMode()) {
-      clearManualAnalyzeVolumeDisplay();
-      return;
-    }
-    var ids = manualSelectedVolIds.slice();
+  function syncAnalyzeVolumeDisplay() {
+    var ids = activeAnalyzeVolumeIds();
     if (!ids.length) {
       clearManualAnalyzeVolumeDisplay();
       return;
     }
     var gen = ++manualVolumeLoadGeneration;
     manualVolumePrefetchGeneration++;
-    var backend = preferredManualVolumeBackend();
+    var backend = preferredAnalyzeVolumeBackend();
     if (backend === "chimerax" && !hasGeneratedTrajectoryVolumes()) {
       beginManualChimeraxVolumeLoad(ids, gen);
+      return;
+    }
+    if (manualVolumeSlots && loadedManualVolumeCount(manualVolumeSlots) >= ids.length) {
+      applyManualVolumeSlots(manualVolumeSlots, ids);
+      if (!hasGeneratedTrajectoryVolumes()) {
+        selectTrajVolumeBackend(backend);
+        applyManualAnalyzeVolumeDisplay(backend);
+      }
       return;
     }
     if (trajVolDisplay) trajVolDisplay.setStatus("Loading analyze volumes…", true);
@@ -2610,9 +2772,7 @@
         }
         applyManualVolumeSlots(slots, ids);
         if (!hasGeneratedTrajectoryVolumes()) {
-          var curBackend = isManualTraversalMode()
-            ? preferredManualVolumeBackend()
-            : currentVolumeRenderBackend();
+          var curBackend = preferredAnalyzeVolumeBackend();
           if (curBackend !== "chimerax") {
             selectTrajVolumeBackend(curBackend);
             applyManualAnalyzeVolumeDisplay(curBackend);
@@ -2627,6 +2787,11 @@
         manualVolumeSlots = null;
         syncTrajVolBackendChrome();
       });
+  }
+
+  function syncManualVolumeDisplay() {
+    if (!isManualTraversalMode()) return;
+    syncAnalyzeVolumeDisplay();
   }
 
   function ensureSliceBackendWhenVolumesMissing() {
@@ -2755,11 +2920,14 @@
       images: rawImages && rawImages.length ? rawImages : imgs,
       render_backend: "chimerax"
     });
-    if (manualAnalyzeVolumesReady && manualAnalyzeVolumePayload) {
-      manualAnalyzeVolumePayload = Object.assign({}, manualAnalyzeVolumePayload, payload);
-    }
     if (isManualTraversalMode() && !hasGeneratedTrajectoryVolumes()) {
       manualAnalyzeVolumesReady = true;
+    }
+    if (!isManualTraversalMode() && anchorKmeansVolumeIds.length >= 2 && !hasGeneratedTrajectoryVolumes()) {
+      manualAnalyzeVolumesReady = true;
+    }
+    if (manualAnalyzeVolumesReady && manualAnalyzeVolumePayload) {
+      manualAnalyzeVolumePayload = Object.assign({}, manualAnalyzeVolumePayload, payload);
     }
     lastVolumePayload = mergeVolumePayload(payload);
     selectTrajVolumeBackend("chimerax");
@@ -2782,16 +2950,17 @@
     syncTrajVolBackendChrome();
     syncManualVolumeScatterHighlight();
     syncTrajChimeraxViewControls();
+    if (!isManualTraversalMode()) updateGenerateVolumesButtonLabel();
     return imgs.length;
   }
 
   function syncManualChimeraxDisplay(opts) {
     opts = opts || {};
-    if (!isManualTraversalMode()) return false;
+    if (!analyzeVolumeCatalogSelectionActive()) return false;
     if (hasGeneratedTrajectoryVolumes()) return false;
     var ids = manualVolumeDisplayIds.length
       ? manualVolumeDisplayIds.slice()
-      : manualSelectedVolIds.slice();
+      : activeAnalyzeVolumeIds();
     if (!ids.length) return false;
     var gen = ++manualChimeraxLoadGeneration;
     if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true);
@@ -2911,7 +3080,7 @@
       if (needsRerender) {
         if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true);
         syncTrajChimeraxViewControls();
-        if (isManualTraversalMode() && manualVolumeSelectionActive() && !hasGeneratedTrajectoryVolumes()) {
+        if (analyzeVolumeCatalogSelectionActive() && !hasGeneratedTrajectoryVolumes()) {
           if (syncManualChimeraxDisplay()) return;
         }
         if (shouldTriggerVolumeGenerationOnBackendSwitch()) {
@@ -2929,7 +3098,19 @@
     }
     if (backend === "vtk" || backend === "slice") {
       var volPayload = activeVolumePayload() || {};
-      if (!volPayload.volumes || !volPayload.volumes.length) {
+      if (analyzeVolumeCatalogSelectionActive()) {
+        selectTrajVolumeBackend(backend);
+        syncAnalyzeVolumeDisplay();
+        syncGenerateVolumesButtonVisibility();
+        return;
+      }
+      if (!payloadHasVolumeB64(volPayload) && lastTrajectoryVolumeCacheId) {
+        if (fetchTrajectoryVolumesFromCache(backend)) {
+          syncGenerateVolumesButtonVisibility();
+          return;
+        }
+      }
+      if (!payloadHasVolumeB64(volPayload)) {
         if (shouldTriggerVolumeGenerationOnBackendSwitch()) {
           generateTrajectory();
           return;
@@ -2963,6 +3144,9 @@
         for (var pi = 0; pi < total; pi++) placeholders.push("PC1·" + String(pi + 1));
         return placeholders;
       }
+    }
+    if (anchorKmeansVolumeIds.length >= 2 && !isManualTraversalMode()) {
+      return anchorKmeansVolumeIds.map(function(id) { return analyzeVolumeNavLabel(id); });
     }
     var labels = [];
     for (var i = 0; i < total; i++) labels.push(String(i + 1));
@@ -3012,7 +3196,9 @@
       onBackendChange: onTrajVolumeBackendChange,
       onDockBelowClick: toggleTrajVolBottomDisplay,
       onFocusChange: function() {
+        engageVolumeDisplayFocus();
         ensureManualVolumeAtFocusLoaded();
+        syncManualVolumeScatterHighlight();
         syncTrajGlyphOverlay();
       },
       onChimeraxIsoChange: function(level) {
@@ -3385,17 +3571,59 @@
     return (v === "chimerax" || v === "slice") ? v : "vtk";
   }
 
+  function analyzeVolumeCatalogFullyCoversPath() {
+    if (!analyzeVolumeCatalogSelectionActive()) return false;
+    if (!analyzeVolumeCatalogDisplayReady()) return false;
+    var ids = activeAnalyzeVolumeIds();
+    if (ids.length < 2) return false;
+    if (currentVolumeCount() !== ids.length) return false;
+    if (hasAnchorIndices() && currentAnchorTraversalMode() === "direct") {
+      return currentNPoints() === 0;
+    }
+    return false;
+  }
+
+  function shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh() {
+    return analyzeVolumeCatalogSelectionActive()
+      && analyzeVolumeCatalogDisplayReady()
+      && !hasGeneratedTrajectoryVolumes();
+  }
+
+  function refreshPreservedAnalyzeVolumeDisplay() {
+    if (!shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()) return false;
+    syncTrajVolBackendChrome();
+    syncGenerateVolumesButtonVisibility();
+    resetVolumeDisplayFocusEngaged();
+    resetVolumeScatterMarkerAesthetics();
+    syncTrajGlyphOverlay();
+    applyManualAnalyzeVolumeDisplay(preferredAnalyzeVolumeBackend());
+    return true;
+  }
+
+  function trajectoryVolumeGenerationNeeded() {
+    if (isManualTraversalMode()) return false;
+    if (!scatterTrajectoryPathReady()) return false;
+    if (lastTrajectoryVolumeCacheId) return true;
+    if (analyzeVolumeCatalogFullyCoversPath()) return false;
+    return true;
+  }
+
   function syncGenerateVolumesButtonVisibility() {
     if (!btnGenerateVolumesEl) return;
     if (isManualTraversalMode()) {
       btnGenerateVolumesEl.hidden = true;
+      btnGenerateVolumesEl.disabled = false;
+      btnGenerateVolumesEl.title = "";
       return;
     }
-    if (lastTrajectoryVolumeCacheId) {
-      btnGenerateVolumesEl.hidden = false;
-      return;
-    }
-    btnGenerateVolumesEl.hidden = !scatterTrajectoryPathReady();
+    var show = scatterTrajectoryPathReady();
+    if (lastTrajectoryVolumeCacheId) show = true;
+    btnGenerateVolumesEl.hidden = !show;
+    var enabled = show && trajectoryVolumeGenerationNeeded();
+    btnGenerateVolumesEl.disabled = !enabled;
+    btnGenerateVolumesEl.title = (show && !enabled && !lastTrajectoryVolumeCacheId)
+      ? "Volumes for the current selection are already loaded."
+      : "";
   }
 
   function syncManualModeChrome() {
@@ -3489,6 +3717,8 @@
   function clearInteractiveAnchorState() {
     anchorIndicesActive = null;
     anchorTrajXY = null;
+    anchorKmeansVolumeIds = [];
+    resetAnchorPathOrderToHeuristic();
     if (nPointsEl) nPointsEl.disabled = false;
     setTrajectoryModesLockedForAnchors(false);
     syncAnchorIndicesUI();
@@ -3582,14 +3812,234 @@
     else manualSelectedVolIds.push(volId);
     persistManualVolumeSelection();
     resetVolumeDisplayFocusEngaged();
+    resetAnchorPathOrderToHeuristic();
     buildManualPickerRows();
     syncManualVolumeScatterHighlight();
     syncManualSelectionToAnchors();
     syncManualVolumeDisplay();
   }
 
+  function scatterXYForPlotRow(plotRow) {
+    var ti = scatterRowToTraceIndex(plotRow);
+    if (ti < 0 || !gd || !gd.data || !gd.data[0]) return null;
+    var tr = gd.data[0];
+    var x = isPlotlyArray(tr.x) ? Number(plotlyAt(tr.x, ti)) : Number(tr.x);
+    var y = isPlotlyArray(tr.y) ? Number(plotlyAt(tr.y, ti)) : Number(tr.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return [x, y];
+  }
+
+  function manualVolumeIsKmeans(volId) {
+    var entry = manualCatalogById[volId];
+    return !!(entry && entry.kind === "kmeans");
+  }
+
+  function manualSelectionAllKmeans() {
+    if (!manualSelectedVolIds.length) return false;
+    for (var i = 0; i < manualSelectedVolIds.length; i++) {
+      if (!manualVolumeIsKmeans(manualSelectedVolIds[i])) return false;
+    }
+    return true;
+  }
+
+  function trajOrientation2d(a, b, c) {
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  }
+
+  function trajOnSegment2d(a, b, c, eps) {
+    return Math.min(a[0], b[0]) - eps <= c[0] && c[0] <= Math.max(a[0], b[0]) + eps &&
+      Math.min(a[1], b[1]) - eps <= c[1] && c[1] <= Math.max(a[1], b[1]) + eps;
+  }
+
+  function trajSegmentsCross(a, b, c, d) {
+    var eps = 1e-12;
+    var o1 = trajOrientation2d(a, b, c);
+    var o2 = trajOrientation2d(a, b, d);
+    var o3 = trajOrientation2d(c, d, a);
+    var o4 = trajOrientation2d(c, d, b);
+    if (o1 * o2 < -eps && o3 * o4 < -eps) return true;
+    if (Math.abs(o1) <= eps && trajOnSegment2d(a, c, b, eps)) return true;
+    if (Math.abs(o2) <= eps && trajOnSegment2d(a, d, b, eps)) return true;
+    if (Math.abs(o3) <= eps && trajOnSegment2d(c, a, d, eps)) return true;
+    if (Math.abs(o4) <= eps && trajOnSegment2d(c, b, d, eps)) return true;
+    return false;
+  }
+
+  function trajSegmentsCrossProper(a, b, c, d) {
+    var eps = 1e-12;
+    var pairs = [[a, c], [a, d], [b, c], [b, d]];
+    for (var i = 0; i < pairs.length; i++) {
+      var dx = pairs[i][0][0] - pairs[i][1][0];
+      var dy = pairs[i][0][1] - pairs[i][1][1];
+      if (dx * dx + dy * dy <= eps * eps) return false;
+    }
+    return trajSegmentsCross(a, b, c, d);
+  }
+
+  function trajPathHasCrossings(order, points) {
+    var n = order.length;
+    if (n < 4) return false;
+    for (var i = 0; i < n - 1; i++) {
+      var a = points[order[i]];
+      var b = points[order[i + 1]];
+      for (var j = i + 2; j < n - 1; j++) {
+        var c = points[order[j]];
+        var d = points[order[j + 1]];
+        if (trajSegmentsCrossProper(a, b, c, d)) return true;
+      }
+    }
+    return false;
+  }
+
+  function trajPathLength(order, points) {
+    var total = 0;
+    for (var i = 0; i < order.length - 1; i++) {
+      var dx = points[order[i + 1]][0] - points[order[i]][0];
+      var dy = points[order[i + 1]][1] - points[order[i]][1];
+      total += Math.sqrt(dx * dx + dy * dy);
+    }
+    return total;
+  }
+
+  function trajUncrossPathOrder(order, points) {
+    order = order.slice();
+    if (order.length < 4) return order;
+    var changed = true;
+    while (changed) {
+      changed = false;
+      var n = order.length;
+      for (var i = 0; i < n - 1; i++) {
+        for (var j = i + 2; j < n - 1; j++) {
+          var a = points[order[i]];
+          var b = points[order[i + 1]];
+          var c = points[order[j]];
+          var d = points[order[j + 1]];
+          if (trajSegmentsCrossProper(a, b, c, d)) {
+            var mid = order.slice(i + 1, j + 1);
+            mid.reverse();
+            order = order.slice(0, i + 1).concat(mid, order.slice(j + 1));
+            changed = true;
+            break;
+          }
+        }
+        if (changed) break;
+      }
+    }
+    return order;
+  }
+
+  function orderPointsShortestNoncrossingPath(points) {
+    var n = points.length;
+    if (n <= 1) return [0];
+    if (n === 2) return [0, 1];
+
+    function distMatrix() {
+      var d = [];
+      for (var i = 0; i < n; i++) {
+        d[i] = [];
+        for (var j = 0; j < n; j++) {
+          var dx = points[j][0] - points[i][0];
+          var dy = points[j][1] - points[i][1];
+          d[i][j] = Math.sqrt(dx * dx + dy * dy);
+        }
+      }
+      return d;
+    }
+
+    var order = null;
+    if (n <= 9) {
+      var idx = [];
+      for (var p = 0; p < n; p++) idx.push(p);
+      var bestDist = Infinity;
+      function permute(start) {
+        if (start === n) {
+          if (trajPathHasCrossings(idx, points)) return;
+          var d = trajPathLength(idx, points);
+          if (d < bestDist) {
+            bestDist = d;
+            order = idx.slice();
+          }
+          return;
+        }
+        for (var k = start; k < n; k++) {
+          var tmp = idx[start];
+          idx[start] = idx[k];
+          idx[k] = tmp;
+          permute(start + 1);
+          tmp = idx[start];
+          idx[start] = idx[k];
+          idx[k] = tmp;
+        }
+      }
+      permute(0);
+    }
+
+    if (!order) {
+      var dist = distMatrix();
+      var bestNn = null;
+      var bestNnDist = Infinity;
+      for (var start = 0; start < n; start++) {
+        var unvisited = {};
+        for (var u = 0; u < n; u++) unvisited[u] = true;
+        delete unvisited[start];
+        var path = [start];
+        var cur = start;
+        while (Object.keys(unvisited).length) {
+          var nxt = -1;
+          var nd = Infinity;
+          for (var key in unvisited) {
+            var j = Number(key);
+            if (dist[cur][j] < nd) {
+              nd = dist[cur][j];
+              nxt = j;
+            }
+          }
+          path.push(nxt);
+          delete unvisited[nxt];
+          cur = nxt;
+        }
+        path = trajUncrossPathOrder(path, points);
+        var pd = trajPathLength(path, points);
+        if (pd < bestNnDist) {
+          bestNnDist = pd;
+          bestNn = path;
+        }
+      }
+      order = bestNn || [0];
+      for (var fill = 1; fill < n; fill++) {
+        if (order.indexOf(fill) < 0) order.push(fill);
+      }
+    }
+
+    order = trajUncrossPathOrder(order, points);
+    return order;
+  }
+
+  function reorderManualKmeansSelectionForDirectPath() {
+    if (!manualSelectionAllKmeans() || manualSelectedVolIds.length < 3) return;
+    var points = [];
+    for (var i = 0; i < manualSelectedVolIds.length; i++) {
+      var marker = manualMarkersByVolId[manualSelectedVolIds[i]];
+      if (!marker || marker.plot_row == null) return;
+      var xy = scatterXYForPlotRow(marker.plot_row);
+      if (!xy) return;
+      points.push(xy);
+    }
+    if (points.length !== manualSelectedVolIds.length) return;
+    var order = orderPointsShortestNoncrossingPath(points);
+    var reordered = [];
+    for (var j = 0; j < order.length; j++) {
+      reordered.push(manualSelectedVolIds[order[j]]);
+    }
+    manualSelectedVolIds = reordered;
+    buildManualPickerRows();
+  }
+
   function syncManualSelectionToAnchors() {
     if (!isManualTraversalMode()) return;
+    if (currentAnchorPathOrderRequest() !== "exact") {
+      reorderManualKmeansSelectionForDirectPath();
+    }
     var rows = [];
     for (var i = 0; i < manualSelectedVolIds.length; i++) {
       var marker = manualMarkersByVolId[manualSelectedVolIds[i]];
@@ -3621,7 +4071,7 @@
         n_points: 0,
         x: sx.value,
         y: sy.value
-      }, trajColorPayloadFields()))
+      }, trajColorPayloadFields(), trajAnchorPathOrderFields()))
     })
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
@@ -3674,6 +4124,62 @@
 
   function currentAnchorTraversalMode() {
     return trajectoryMode === "graph" ? "graph" : "direct";
+  }
+
+  function currentAnchorPathOrderRequest() {
+    return pendingAnchorPathOrder || anchorPathOrderActive || "heuristic";
+  }
+
+  function trajAnchorPathOrderFields() {
+    return { anchor_path_order: currentAnchorPathOrderRequest() };
+  }
+
+  function resetAnchorPathOrderToHeuristic() {
+    anchorPathOrderActive = "heuristic";
+    pendingAnchorPathOrder = null;
+    syncAnchorPathOrderUI();
+  }
+
+  function directAnchorPathOrderEligible() {
+    if (!anchorIndicesActive || anchorIndicesActive.length < 3) return false;
+    if (isManualTraversalMode()) return true;
+    return hasAnchorIndices() && currentAnchorTraversalMode() === "direct";
+  }
+
+  function syncAnchorPathOrderUI() {
+    if (!trajAnchorPathOrderRow) return;
+    var show = directAnchorPathOrderEligible();
+    trajAnchorPathOrderRow.hidden = !show;
+    if (!show) return;
+    var exact = anchorPathOrderActive === "exact";
+    if (trajAnchorPathOrderLabel) {
+      trajAnchorPathOrderLabel.textContent = exact
+        ? "Anchor visit order: exact shortest non-crossing path."
+        : "Anchor visit order: fast non-crossing path (default).";
+    }
+    if (btnAnchorPathExact) {
+      btnAnchorPathExact.disabled = !!pendingAnchorPathOrder;
+    }
+  }
+
+  function onAnchorPathOrderResponse(res) {
+    pendingAnchorPathOrder = null;
+    if (res && (res.anchor_path_order === "exact" || res.anchor_path_order === "heuristic")) {
+      anchorPathOrderActive = res.anchor_path_order;
+    }
+    syncAnchorPathOrderUI();
+  }
+
+  function requestExactAnchorPathOrder() {
+    if (!directAnchorPathOrderEligible()) return;
+    pendingAnchorPathOrder = "exact";
+    syncAnchorPathOrderUI();
+    setTrajStatus("Computing exact anchor path order…", false);
+    if (isManualTraversalMode()) {
+      syncManualSelectionToAnchors();
+      return;
+    }
+    fetchTrajectoryCoords();
   }
 
   function trajectoryModeAxisPairLabel() {
@@ -3751,6 +4257,7 @@
       } else {
         btnGenerateVolumesEl.textContent = saveLabel;
       }
+      syncGenerateVolumesButtonVisibility();
       return;
     }
     btnGenerateVolumesEl.removeAttribute("data-cryo-save-icon");
@@ -3759,6 +4266,7 @@
       "cryo-btn-with-save-icon--icon-only"
     );
     btnGenerateVolumesEl.textContent = "Generate " + n + " volumes";
+    syncGenerateVolumesButtonVisibility();
   }
 
   function setGeneratedVolumesState(cacheId, nGenerated) {
@@ -3773,6 +4281,7 @@
         );
         return;
       }
+      resetVtkNavigationCamera();
       lastVolumePayload = null;
       bottomVolExpanded = false;
       if (trajVolColumn) trajVolColumn.innerHTML = "";
@@ -4152,6 +4661,7 @@
 
   function syncAnchorIndicesUI() {
     syncManualModeChrome();
+    syncAnchorPathOrderUI();
     if (isManualTraversalMode()) {
       if (btnAnchorRemove) {
         btnAnchorRemove.classList.remove("cryo-traj-remove--visible");
@@ -4173,6 +4683,7 @@
 
   function clearAnchorMode() {
     clearInteractiveAnchorState();
+    clearManualAnalyzeVolumeDisplay();
     manualSelectedVolIds = [];
     manualBootstrapDone = false;
     manualBootstrapPending = false;
@@ -4198,15 +4709,31 @@
     if (nPointsEl && currentAnchorTraversalMode() === "direct") {
       nPointsEl.value = "0";
     }
-    setGeneratedVolumesState("", 0);
+    if (!shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()) {
+      setGeneratedVolumesState("", 0);
+    }
     updateGenerateVolumesButtonLabel();
     syncAnchorIndicesUI();
     applyTrajectoryCoordsPayload(res);
     redrawTrajectoryOverlay();
     scheduleTrajectoryOverlayRefresh();
     syncTrajGlyphOverlay();
+    if (res.kmeans_volume_ids && res.kmeans_volume_ids.length >= 2) {
+      anchorKmeansVolumeIds = res.kmeans_volume_ids.slice();
+    } else if (!isManualTraversalMode()) {
+      anchorKmeansVolumeIds = [];
+    }
     if (isManualTraversalMode()) {
+      refreshPreservedAnalyzeVolumeDisplay();
       setTrajStatus("Manual selection ready.", false);
+    } else if (anchorKmeansVolumeIds.length >= 2) {
+      if (refreshPreservedAnalyzeVolumeDisplay()) {
+        setTrajStatus("Anchor path and volumes ready.", false);
+      } else {
+        syncTrajectoryVolumeChrome();
+        syncTrajVolBackendChrome();
+        syncAnalyzeVolumeDisplay();
+      }
     } else {
       onTrajectoryPathCoordsReady();
     }
@@ -4373,6 +4900,7 @@
   });
   if (btnGenerateVolumesEl) {
     btnGenerateVolumesEl.addEventListener("click", function() {
+      if (btnGenerateVolumesEl.disabled) return;
       if (lastTrajectoryVolumeCacheId) {
         saveTrajectoryVolumes();
       } else {
@@ -4412,20 +4940,21 @@
   }
   function postTrajectoryIndices(url, statusMsg, errPrefix) {
     closeFileBrowser();
+    resetAnchorPathOrderToHeuristic();
     setTrajStatus(statusMsg, false);
     var anchorMode = currentAnchorTraversalMode();
     var nPointsReq = requestedAnchorNPoints(anchorMode);
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(Object.assign({
         x: sx.value,
         y: sy.value,
         mode: anchorMode,
         n_points: nPointsReq,
         max_neighbors: currentMaxNeighbors(),
         avg_neighbors: currentAvgNeighbors()
-      })
+      }, trajAnchorPathOrderFields()))
     })
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
@@ -4599,12 +5128,13 @@
 
   function importServerPklFile(serverPath) {
     setTrajStatus("Loading anchor indices…", false);
+    resetAnchorPathOrderToHeuristic();
     var anchorMode = currentAnchorTraversalMode();
     var nPointsReq = requestedAnchorNPoints(anchorMode);
     fetch("{{ url_for('api_trajectory_import_anchors') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(Object.assign({
         server_path: serverPath,
         x: sx.value,
         y: sy.value,
@@ -4612,7 +5142,7 @@
         n_points: nPointsReq,
         max_neighbors: currentMaxNeighbors(),
         avg_neighbors: currentAvgNeighbors()
-      })
+      }, trajAnchorPathOrderFields()))
     })
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
@@ -4677,6 +5207,11 @@
       );
     });
   }
+  if (btnAnchorPathExact) {
+    btnAnchorPathExact.addEventListener("click", function() {
+      requestExactAnchorPathOrder();
+    });
+  }
   if (btnAnchorManualLoad) {
     btnAnchorManualLoad.addEventListener("click", loadManualAnchorIndices);
   }
@@ -4705,8 +5240,10 @@
 
   /* ── Before reloading scatter (axes / color): cancel in-flight requests, clear stale 2D state ── */
   function preparePlotReload() {
-    volumeGeneration++;
-    stopDecodeProgressPoll();
+    if (!shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()) {
+      volumeGeneration++;
+      stopDecodeProgressPoll();
+    }
     coordsRequestId++;
     dragEndpoint = null;
     dragPointIndex = -1;
@@ -4858,41 +5395,33 @@
     return -1;
   }
 
-  var TRAJ_MANUAL_SCATTER_BASE_OP = 0.6;
   var TRAJ_MANUAL_SCATTER_DIM_OP = 0.12;
   var TRAJ_MANUAL_SCATTER_FOCUS_SIZE = 9;
+  var trajScatterBaseMarkerSize = 2;
 
-  function traceBaseMarkerSize(trace) {
-    if (!trace || !trace.marker) return 2;
+  function captureTrajScatterBaseMarkerSize(trace) {
+    if (!trace || !trace.marker) return;
     var s = trace.marker.size;
     if (isPlotlyArray(s)) {
       var v = plotlyAt(s, 0);
-      return Number.isFinite(Number(v)) ? Number(v) : 2;
+      if (Number.isFinite(Number(v))) trajScatterBaseMarkerSize = Number(v);
+      return;
     }
-    return Number.isFinite(Number(s)) ? Number(s) : 2;
+    if (Number.isFinite(Number(s))) trajScatterBaseMarkerSize = Number(s);
   }
 
-  function buildVolumeFocusMarkerArrays(indices, n, baseSize, opts) {
-    opts = opts || {};
-    var dimOthers = opts.dimOthers !== false;
-    var sizes = new Array(n);
-    var opacities = new Array(n);
-    var focus = {};
-    for (var fi = 0; fi < indices.length; fi++) focus[indices[fi]] = true;
-    for (var i = 0; i < n; i++) {
-      if (focus[i]) {
-        sizes[i] = TRAJ_MANUAL_SCATTER_FOCUS_SIZE;
-        opacities[i] = 1;
-      } else {
-        sizes[i] = baseSize;
-        opacities[i] = dimOthers ? TRAJ_MANUAL_SCATTER_DIM_OP : 1;
-      }
+  function traceBaseMarkerSize(trace) {
+    if (trajScatterBaseMarkerSize != null && Number.isFinite(trajScatterBaseMarkerSize)) {
+      return trajScatterBaseMarkerSize;
     }
-    return { sizes: sizes, opacities: opacities };
+    captureTrajScatterBaseMarkerSize(trace);
+    return trajScatterBaseMarkerSize || 2;
   }
+
   var manualScatterHighlightKey = "";
   var manualScatterHighlightActive = false;
   var volumeDisplayFocusEngaged = false;
+  var volumeScatterHighlightRestyleGen = 0;
 
   function resetVolumeDisplayFocusEngaged() {
     volumeDisplayFocusEngaged = false;
@@ -4915,17 +5444,54 @@
     return 0;
   }
 
-  function focusedManualPlotRow() {
-    if (!isManualTraversalMode()) return null;
-    var ids = manualVolumeDisplayIds.length
-      ? manualVolumeDisplayIds
-      : manualSelectedVolIds;
+  function plotRowForAnalyzeVolumeId(volId) {
+    volId = String(volId);
+    if (isManualTraversalMode()) {
+      var marker = manualMarkersByVolId[volId];
+      if (!marker || marker.plot_row == null || !isFinite(Number(marker.plot_row))) return null;
+      return Number(marker.plot_row);
+    }
+    if (anchorKmeansVolumeIds.length >= 2 && anchorIndicesActive) {
+      for (var i = 0; i < anchorKmeansVolumeIds.length; i++) {
+        if (String(anchorKmeansVolumeIds[i]) === volId && i < anchorIndicesActive.length) {
+          return Number(anchorIndicesActive[i]);
+        }
+      }
+    }
+    return null;
+  }
+
+  function focusedAnalyzeVolumePlotRow() {
+    var ids = activeAnalyzeVolumeIds();
     if (!ids.length) return null;
     var idx = effectiveVolumeFocusIndex();
     if (idx < 0 || idx >= ids.length) return null;
-    var marker = manualMarkersByVolId[ids[idx]];
-    if (!marker || marker.plot_row == null || !isFinite(Number(marker.plot_row))) return null;
-    return Number(marker.plot_row);
+    return plotRowForAnalyzeVolumeId(ids[idx]);
+  }
+
+  function analyzeVolumeCatalogDisplayReady() {
+    return manualAnalyzeVolumesReady
+      || (trajVolDisplay && trajVolDisplay.hasChimeraxImages && trajVolDisplay.hasChimeraxImages())
+      || (trajVolDisplay && trajVolDisplay.hasInteractiveVolumes && trajVolDisplay.hasInteractiveVolumes());
+  }
+
+  function analyzeVolumeHighlightTraceIndicesAllSelected() {
+    var indices = [];
+    var seen = {};
+    var ids = activeAnalyzeVolumeIds();
+    for (var i = 0; i < ids.length; i++) {
+      var plotRow = plotRowForAnalyzeVolumeId(ids[i]);
+      if (plotRow == null) continue;
+      var ti = scatterRowToTraceIndex(plotRow);
+      if (ti < 0 || seen[ti]) continue;
+      seen[ti] = true;
+      indices.push(ti);
+    }
+    return indices;
+  }
+
+  function focusedManualPlotRow() {
+    return focusedAnalyzeVolumePlotRow();
   }
 
   function focusedManualVolumeId() {
@@ -4957,17 +5523,7 @@
   }
 
   function manualVolumeHighlightTraceIndicesAllSelected() {
-    var indices = [];
-    var seen = {};
-    for (var i = 0; i < manualSelectedVolIds.length; i++) {
-      var marker = manualMarkersByVolId[manualSelectedVolIds[i]];
-      if (!marker || marker.plot_row == null || !isFinite(Number(marker.plot_row))) continue;
-      var ti = scatterRowToTraceIndex(marker.plot_row);
-      if (ti < 0 || seen[ti]) continue;
-      seen[ti] = true;
-      indices.push(ti);
-    }
-    return indices;
+    return analyzeVolumeHighlightTraceIndicesAllSelected();
   }
 
   function trajectoryVolumeHighlightTraceIndices() {
@@ -5030,6 +5586,7 @@
     var nav = document.getElementById("traj-vol-volume-nav");
     if (!nav || nav.hidden || nav.getAttribute("aria-disabled") === "true") return false;
     if (isManualTraversalMode()) return true;
+    if (analyzeVolumeCatalogSelectionActive() && hasVolumeFocusDisplay()) return true;
     return hasGeneratedTrajectoryVolumes() && hasVolumeFocusDisplay();
   }
 
@@ -5037,12 +5594,9 @@
     var backend = volumeDisplayBackendActive();
     if (backend !== "vtk" && backend !== "chimerax") return null;
     if (!hasVolumeFocusDisplay()) return null;
-    if (isManualTraversalMode()) {
-      var hasManualDisplay = manualAnalyzeVolumesReady
-        || (trajVolDisplay && trajVolDisplay.hasChimeraxImages && trajVolDisplay.hasChimeraxImages())
-        || (trajVolDisplay && trajVolDisplay.hasInteractiveVolumes && trajVolDisplay.hasInteractiveVolumes());
-      if (hasManualDisplay && volumeDisplayFocusEngaged) {
-        var plotRow = focusedManualPlotRow();
+    if (analyzeVolumeCatalogSelectionActive()) {
+      if (analyzeVolumeCatalogDisplayReady() && volumeDisplayFocusEngaged) {
+        var plotRow = focusedAnalyzeVolumePlotRow();
         if (plotRow != null) {
           var focusedTi = scatterRowToTraceIndex(plotRow);
           if (focusedTi >= 0) return [focusedTi];
@@ -5050,7 +5604,7 @@
         return [];
       }
     }
-    if (hasGeneratedTrajectoryVolumes()) {
+    if (hasGeneratedTrajectoryVolumes() && volumeDisplayFocusEngaged) {
       return trajectoryVolumeHighlightTraceIndices();
     }
     return null;
@@ -5059,14 +5613,22 @@
   function manualVolumeHighlightTraceIndices() {
     var focused = volumeFocusHighlightTraceIndices();
     if (focused !== null) return focused;
-    return manualVolumeHighlightTraceIndicesAllSelected();
+    if (isManualTraversalMode() && volumeDisplayFocusEngaged) {
+      return manualVolumeHighlightTraceIndicesAllSelected();
+    }
+    return [];
   }
 
   function trajectoryVolumeFocusIndexForGlyphs() {
     if (!trajectoryVolumeNavActive()) return -1;
     var idx = currentVolumeFocusIndex();
-    if (isManualTraversalMode()) {
+    if (isManualTraversalMode() || anchorKmeansVolumeIds.length >= 2) {
       if (anchorTrajXY && anchorTrajXY.length >= 2) {
+        if (anchorKmeansVolumeIds.length >= 2 && anchorIndicesActive && anchorIndicesActive.length >= 2
+            && idx < anchorIndicesActive.length
+            && anchorTrajXY.length > anchorIndicesActive.length) {
+          return Math.max(0, Math.min(anchorIndicesActive.length - 1, idx));
+        }
         return Math.max(0, Math.min(anchorTrajXY.length - 1, idx));
       }
       return -1;
@@ -5076,17 +5638,78 @@
   }
 
   function shouldSyncManualVolumeScatterHighlight() {
-    /* Trajectory creator: path focus uses HTML glyph overlay only, never Plotly restyle. */
+    if (!volumeDisplayFocusEngaged) return false;
+    if (!trajectoryVolumeNavActive()) return false;
+    var backend = volumeDisplayBackendActive();
+    if (backend !== "vtk" && backend !== "chimerax") return false;
+    if (analyzeVolumeCatalogSelectionActive()) return analyzeVolumeCatalogDisplayReady();
+    if (hasGeneratedTrajectoryVolumes()) return hasVolumeFocusDisplay();
     return false;
   }
 
-  function volumeScatterHighlightDimsBackground() {
-    return volumeDisplayFocusEngaged;
+  function volumeScatterHighlightSelectionRestyle(indices) {
+    var baseSize = traceBaseMarkerSize(gd.data[0]);
+    return {
+      selectedpoints: [indices.slice()],
+      "marker.opacity": [1],
+      "marker.size": [baseSize],
+      "unselected.marker.opacity": [TRAJ_MANUAL_SCATTER_DIM_OP],
+      "selected.marker.opacity": [1],
+      "selected.marker.size": [TRAJ_MANUAL_SCATTER_FOCUS_SIZE]
+    };
+  }
+
+  function resetVolumeScatterMarkerAesthetics() {
+    volumeScatterHighlightRestyleGen++;
+    manualScatterHighlightKey = "";
+    manualScatterHighlightActive = false;
+    if (!gd || !gd.data || !gd.data[0]) return;
+    var trace = gd.data[0];
+    var baseSize = traceBaseMarkerSize(trace);
+    var restyle = {
+      selectedpoints: [null],
+      "marker.opacity": [1],
+      "marker.size": [baseSize],
+      "unselected.marker.opacity": [1],
+      "selected.marker.opacity": [1],
+      "selected.marker.size": [baseSize]
+    };
+    if (trace.type === "scattergl") {
+      var n = plotlyArrayLength(trace.x);
+      if (n) {
+        var mo = trace.marker && trace.marker.opacity;
+        var ms = trace.marker && trace.marker.size;
+        var perPointOp = mo && isPlotlyArray(mo) && plotlyArrayLength(mo) === n;
+        var perPointSize = ms && isPlotlyArray(ms) && plotlyArrayLength(ms) === n;
+        if (perPointOp) {
+          var ops = new Array(n);
+          for (var oi = 0; oi < n; oi++) ops[oi] = 1;
+          restyle["marker.opacity"] = [ops];
+        }
+        if (perPointSize) {
+          var sizes = new Array(n);
+          for (var si = 0; si < n; si++) sizes[si] = baseSize;
+          restyle["marker.size"] = [sizes];
+        }
+      }
+    }
+    try {
+      var p = Plotly.restyle(gd, restyle, [0]);
+      if (p && typeof p.then === "function") {
+        p.then(function() { scheduleTrajScatterglPaintFlush(); });
+      } else {
+        scheduleTrajScatterglPaintFlush();
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function clearManualVolumeScatterHighlight() {
+    resetVolumeScatterMarkerAesthetics();
   }
 
   function scheduleTrajScatterglPaintFlush() {
     if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== "scattergl") return;
-    var dm = gd.layout && gd.layout.dragmode != null ? gd.layout.dragmode : "lasso";
+    var dm = gd.layout && gd.layout.dragmode != null ? gd.layout.dragmode : "pan";
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         try {
@@ -5102,44 +5725,17 @@
     });
   }
 
-  function clearManualVolumeScatterHighlight() {
-    if (!manualScatterHighlightActive) {
-      manualScatterHighlightKey = "";
-      return;
-    }
-    manualScatterHighlightKey = "";
-    manualScatterHighlightActive = false;
-    if (!gd || !gd.data || !gd.data[0]) return;
-    try {
-      var p = Plotly.restyle(gd, {
-        selectedpoints: [null],
-        "marker.opacity": [1],
-        "marker.size": [traceBaseMarkerSize(gd.data[0])],
-        "unselected.marker.opacity": [1]
-      }, [0]);
-      if (p && typeof p.then === "function") {
-        p.then(function() { scheduleTrajScatterglPaintFlush(); });
-      } else {
-        scheduleTrajScatterglPaintFlush();
-      }
-    } catch (e) { /* ignore */ }
-  }
-
   function applyVolumeFocusScatterHighlight(restyle) {
     if (!gd || !gd.data || !gd.data[0]) return;
-    var isGl = gd.data[0].type === "scattergl";
+    var gen = ++volumeScatterHighlightRestyleGen;
     try {
-      if (!isGl) {
-        Plotly.restyle(gd, restyle, [0]);
-        return;
-      }
-      var p = Plotly.restyle(gd, { selectedpoints: [null] }, [0]);
+      var p = Plotly.restyle(gd, restyle, [0]);
       if (p && typeof p.then === "function") {
-        p.then(function() { return Plotly.restyle(gd, restyle, [0]); })
-          .then(function() { scheduleTrajScatterglPaintFlush(); })
-          .catch(function() { /* ignore */ });
+        p.then(function() {
+          if (gen !== volumeScatterHighlightRestyleGen) return null;
+          scheduleTrajScatterglPaintFlush();
+        }).catch(function() { /* ignore */ });
       } else {
-        Plotly.restyle(gd, restyle, [0]);
         scheduleTrajScatterglPaintFlush();
       }
     } catch (e) { /* ignore */ }
@@ -5147,37 +5743,20 @@
 
   function syncManualVolumeScatterHighlight() {
     if (!shouldSyncManualVolumeScatterHighlight()) {
-      clearManualVolumeScatterHighlight();
+      resetVolumeScatterMarkerAesthetics();
       return;
     }
     var indices = manualVolumeHighlightTraceIndices();
     var focus = effectiveVolumeFocusIndex();
     var key = String(focus) + ":" + indices.slice().sort(function(a, b) { return a - b; }).join(",");
     if (key === manualScatterHighlightKey) return;
+    if (!indices.length) {
+      resetVolumeScatterMarkerAesthetics();
+      return;
+    }
     manualScatterHighlightKey = key;
     manualScatterHighlightActive = true;
-    var trace = gd.data[0];
-    var n = plotlyArrayLength(trace.x);
-    if (!n) return;
-    var baseSize = traceBaseMarkerSize(trace);
-    var restyle;
-    if (!indices.length) {
-      restyle = {
-        selectedpoints: [null],
-        "marker.size": [baseSize],
-        "marker.opacity": [TRAJ_MANUAL_SCATTER_BASE_OP]
-      };
-    } else {
-      var mk = buildVolumeFocusMarkerArrays(indices, n, baseSize, {
-        dimOthers: volumeScatterHighlightDimsBackground()
-      });
-      restyle = {
-        selectedpoints: [null],
-        "marker.size": [mk.sizes],
-        "marker.opacity": [mk.opacities]
-      };
-    }
-    applyVolumeFocusScatterHighlight(restyle);
+    applyVolumeFocusScatterHighlight(volumeScatterHighlightSelectionRestyle(indices));
   }
 
   function plotlyAt(arr, idx) {
@@ -5501,6 +6080,7 @@
 
   function applyTrajectoryCoordsPayload(j) {
     if (!j || !j.ok) return;
+    onAnchorPathOrderResponse(j);
     removeTrajectorySampleMarkersOnly();
     if (j.traj_rows && j.traj_rows.length) {
       trajPlotRows = j.traj_rows.map(function(r) { return Number(r); });
@@ -5552,7 +6132,9 @@
   }
 
   function fetchTrajectoryCoords() {
-    setGeneratedVolumesState("", 0);
+    if (!shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()) {
+      setGeneratedVolumesState("", 0);
+    }
     if (hasAnchorIndices()) {
       var myIdA = ++coordsRequestId;
       setTrajStatus("Computing latent z…", false);
@@ -5567,7 +6149,7 @@
           avg_neighbors: currentAvgNeighbors(),
           x: sx.value,
           y: sy.value
-        }, trajColorPayloadFields()))
+        }, trajColorPayloadFields(), trajAnchorPathOrderFields()))
       })
         .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
         .then(function(res) {
@@ -5675,6 +6257,7 @@
     }
     var myGen = ++volumeGeneration;
     resetVolumeDisplayFocusEngaged();
+    resetVtkNavigationCamera();
     var n = currentVolumeCount();
     var renderBackend = currentVolumeRenderBackend();
     bottomVolExpanded = false;
@@ -5706,7 +6289,7 @@
           avg_neighbors: currentAvgNeighbors(),
           x: sx.value,
           y: sy.value
-        }, trajColorPayloadFields())
+        }, trajColorPayloadFields(), trajAnchorPathOrderFields())
       : Object.assign({
           mode: trajectoryMode,
           start: startXY,
@@ -5927,6 +6510,9 @@
               clearTrajScatterPlotWatchdog();
               trajScatterRenderingEverCompleted = true;
               setRendering(false);
+              if (gd && gd.data && gd.data[0]) {
+                captureTrajScatterBaseMarkerSize(gd.data[0]);
+              }
               window.setTimeout(function() {
                 if (gen !== scatterLoadGeneration) return;
                 wireUpPlotDrag();
@@ -6136,6 +6722,9 @@
   /* ── Axis/color change ── */
   function triggerRedraw() {
     preparePlotReload();
+    if (hasAnchorIndices() || (isManualTraversalMode() && manualSelectedVolIds.length >= 3)) {
+      resetAnchorPathOrderToHeuristic();
+    }
     syncTraversalModeButtonStates();
     loadPlot();
   }

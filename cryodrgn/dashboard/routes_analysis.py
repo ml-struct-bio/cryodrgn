@@ -45,6 +45,7 @@ from cryodrgn.dashboard.particle_explorer import (
     primary_mrc_path_from_volume_cache,
     rerender_chimerax_pngs_from_volume_cache,
     save_cached_volumes_to_dir,
+    trajectory_volume_b64_list_from_cache,
 )
 from cryodrgn.dashboard.preload import particle_thumbnail_b64_from_row
 from cryodrgn.dashboard.plots import (
@@ -68,6 +69,7 @@ from cryodrgn.dashboard.trajectory import (
     has_umap_columns,
     load_kmeans_center_indices,
     parse_anchor_indices_txt,
+    parse_anchor_path_order,
     parse_trajectory_request_body,
     random_dataset_indices,
     trajectory_anchor_mode_params,
@@ -341,6 +343,7 @@ def _trajectory_anchor_driven_json(
     """Shared tail for k-means/random/import anchor endpoints."""
     xcol, ycol = trajectory_axes_from_payload(e, data)
     mode, n_points, max_neighbors, avg_neighbors = trajectory_anchor_mode_params(data)
+    anchor_path_order = parse_anchor_path_order(data)
     return jsonify(
         trajectory_anchor_payload_from_indices(
             e,
@@ -351,6 +354,7 @@ def _trajectory_anchor_driven_json(
             n_points=n_points,
             max_neighbors=max_neighbors,
             avg_neighbors=avg_neighbors,
+            anchor_path_order=anchor_path_order,
         )
     )
 
@@ -422,9 +426,30 @@ def api_trajectory_kmeans_centers():
         return err
 
     try:
-        return _trajectory_anchor_driven_json(
-            e, load_kmeans_center_indices(e), _request_json_dict()
+        from cryodrgn.dashboard.volume_slice_viewer import (
+            kmeans_volume_ids_for_anchor_indices,
         )
+
+        data = _request_json_dict()
+        xcol, ycol = trajectory_axes_from_payload(e, data)
+        mode, n_points, max_neighbors, avg_neighbors = trajectory_anchor_mode_params(
+            data
+        )
+        payload = trajectory_anchor_payload_from_indices(
+            e,
+            load_kmeans_center_indices(e),
+            xcol,
+            ycol,
+            mode=mode,
+            n_points=n_points,
+            max_neighbors=max_neighbors,
+            avg_neighbors=avg_neighbors,
+            anchor_path_order=parse_anchor_path_order(data),
+        )
+        vol_ids = kmeans_volume_ids_for_anchor_indices(e, payload["anchor_indices"])
+        if vol_ids:
+            payload["kmeans_volume_ids"] = vol_ids
+        return jsonify(payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:
@@ -517,6 +542,24 @@ def api_trajectory_volumes():
         if render_backend not in ("vtk", "slice", "chimerax"):
             return jsonify(error="render_backend must be vtk, slice, or chimerax."), 400
         cache_token = str(data.get("volume_cache_id", "") or "").strip()
+        if data.get("volumes_from_cache") and render_backend in ("vtk", "slice"):
+            if not cache_token:
+                return (
+                    jsonify(error="Missing volume_cache_id. Generate volumes first."),
+                    400,
+                )
+            try:
+                vol_payloads = trajectory_volume_b64_list_from_cache(cache_token, e)
+            except ValueError as err:
+                return jsonify(error=str(err)), 400
+            return jsonify(
+                {
+                    "ok": True,
+                    "volumes": vol_payloads,
+                    "volume_cache_id": cache_token,
+                    "render_backend": render_backend,
+                }
+            )
         if data.get("chimerax_rerender_only") and render_backend == "chimerax":
             if not cache_token:
                 return (

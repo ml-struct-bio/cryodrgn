@@ -189,6 +189,22 @@ class TestVolumeSliceViewerRoutes:
         assert all(m["label"].startswith("K") for m in km)
         assert all(int(m["label"][1:]) >= 1 for m in km)
 
+    def test_kmeans_volume_ids_for_anchor_indices(self, dashboard_experiment) -> None:
+        from cryodrgn.dashboard.volume_slice_viewer import (
+            kmeans_volume_ids_for_anchor_indices,
+        )
+
+        markers = discover_analyze_volume_markers(dashboard_experiment)
+        km = [m for m in markers if m["kind"] == "kmeans"]
+        assert len(km) >= 2
+        anchor_rows = [int(m["plot_row"]) for m in km[:3]]
+        vol_ids = kmeans_volume_ids_for_anchor_indices(
+            dashboard_experiment, anchor_rows
+        )
+        assert vol_ids is not None
+        assert len(vol_ids) == len(anchor_rows)
+        assert all(v.startswith("kmeans:") for v in vol_ids)
+
     def test_analyze_volume_by_id(self, dashboard_experiment) -> None:
         catalog = discover_analyze_volume_catalog(dashboard_experiment)
         assert catalog

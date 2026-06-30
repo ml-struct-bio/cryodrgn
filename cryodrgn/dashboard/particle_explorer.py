@@ -763,6 +763,39 @@ def primary_mrc_path_from_volume_cache(token: str) -> str | None:
         return str(vol_files[0]) if vol_files else None
 
 
+def trajectory_volume_b64_list_from_cache(
+    token: str,
+    exp: DashboardExperiment,
+) -> list[dict[str, object]]:
+    """Build VTK/slice ``volume_b64`` payloads from a prior decode cache."""
+    from cryodrgn.dashboard.volume_slice_viewer import (
+        apply_reconstruction_window,
+        vtk_transfer_volume_payload,
+    )
+    from cryodrgn.mrcfile import parse_mrc
+
+    with _VOL_CACHE_LOCK:
+        meta = _VOL_MRC_CACHE.get(token)
+        if not meta:
+            raise ValueError("Unknown or expired volume cache id.")
+        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
+            _vol_cache_evict_unlocked(token)
+            raise ValueError("Volume cache expired. Generate volumes again.")
+        vol_files = list(meta["vol_files"])
+
+    payloads: list[dict[str, object]] = []
+    for i, vf in enumerate(vol_files):
+        if not os.path.isfile(vf):
+            raise ValueError(
+                "Cached volume files are no longer available. Regenerate first."
+            )
+        vol, _ = parse_mrc(vf)
+        vol = apply_reconstruction_window(np.asarray(vol, dtype=np.float32), exp)
+        transfer = vtk_transfer_volume_payload(vol)
+        payloads.append({"index": int(i), **transfer})
+    return payloads
+
+
 def generate_trajectory_volume_pngs(
     exp: DashboardExperiment,
     z_values: np.ndarray,

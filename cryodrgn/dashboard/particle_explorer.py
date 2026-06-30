@@ -343,11 +343,57 @@ def _decode_z_values_to_vol_paths(
     return _sorted_vol_mrc_paths(mrc_dir, len(z_values))
 
 
+def generate_trajectory_volume_b64_list(
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+) -> tuple[list[dict[str, object]], str]:
+    """Decode trajectory z values and return float32 volume blobs for client VTK/slice.
+
+    Returns ``(volume_payloads, cache_token)`` where each payload has
+    ``volume_b64``, ``D``, and ``index``.
+    """
+    from cryodrgn.dashboard.volume_slice_viewer import (
+        apply_reconstruction_window,
+        volume_array_b64,
+    )
+    from cryodrgn.mrcfile import parse_mrc
+
+    z_values = np.asarray(z_values, dtype=np.float64)
+    if z_values.ndim != 2 or z_values.shape[1] != exp.z.shape[1]:
+        raise ValueError(
+            f"z_values must be (n, {exp.z.shape[1]}); got shape {z_values.shape}"
+        )
+
+    mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_trajectory_mrc_")
+    try:
+        vol_files = _decode_z_values_to_vol_paths(exp, z_values, mrc_dir)
+        payloads: list[dict[str, object]] = []
+        for i, vf in enumerate(vol_files):
+            vol, _ = parse_mrc(vf)
+            vol = apply_reconstruction_window(np.asarray(vol, dtype=np.float32), exp)
+            d = int(vol.shape[0])
+            payloads.append(
+                {
+                    "index": int(i),
+                    "D": d,
+                    "volume_b64": volume_array_b64(vol),
+                    "volume_dtype": "float32",
+                }
+            )
+        token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
+        return payloads, token
+    except Exception:
+        shutil.rmtree(mrc_dir, ignore_errors=True)
+        raise
+
+
 def generate_trajectory_volume_pngs(
     exp: DashboardExperiment,
     z_values: np.ndarray,
     *,
     chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
+    view_matrix_camera: str | None = None,
+    view_turns: list[tuple[str, float]] | None = None,
 ) -> tuple[list[bytes], str]:
     """Decode volumes along a z-space trajectory and render ChimeraX static PNGs.
 
@@ -366,11 +412,24 @@ def generate_trajectory_volume_pngs(
         vol_files = _decode_z_values_to_vol_paths(exp, z_values, mrc_dir)
         cc = max(1, min(int(chimerax_cpus), 32))
         with tempfile.TemporaryDirectory(prefix="cryodrgn_trajectory_png_") as png_dir:
-            tasks = [
-                (i, vf, os.path.join(png_dir, f"cell_{i}.png"), 100)
-                for i, vf in enumerate(vol_files)
-            ]
-            paths = parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc)
+            if view_matrix_camera or view_turns:
+                paths = []
+                for i, vf in enumerate(vol_files):
+                    out_png = os.path.join(png_dir, f"cell_{i}.png")
+                    mrc_to_static_png(
+                        vf,
+                        out_png,
+                        dpi=100,
+                        view_matrix_camera=view_matrix_camera,
+                        view_turns=view_turns,
+                    )
+                    paths.append(out_png)
+            else:
+                tasks = [
+                    (i, vf, os.path.join(png_dir, f"cell_{i}.png"), 100)
+                    for i, vf in enumerate(vol_files)
+                ]
+                paths = parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc)
             png_bytes_list: list[bytes] = []
             for pth in paths:
                 with open(pth, "rb") as fh:

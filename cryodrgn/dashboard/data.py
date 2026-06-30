@@ -177,7 +177,8 @@ def load_experiment(
             trans = trans[indices, :]
 
     pc, _ = analysis.run_pca(z)
-    umap = utils.load_pkl(os.path.join(anlzdir, "umap.pkl"))
+    umap_path = os.path.join(anlzdir, "umap.pkl")
+    umap = utils.load_pkl(umap_path) if os.path.isfile(umap_path) else None
 
     if kmeans == -1:
         kmeans_dirs = [

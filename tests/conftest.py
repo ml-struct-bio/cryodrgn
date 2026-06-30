@@ -1634,10 +1634,10 @@ def _dashboard_smoke_volume_viewer_ready(
     *,
     timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
 ) -> dict | None:
-    """Navigate to volume viewer and wait for catalog + first slice render."""
+    """Navigate to trajectory creator (integrated volume viewer) and wait for manual picker."""
     base = base_url.rstrip("/")
     page.goto(
-        f"{base}/volume-viewer",
+        f"{base}/trajectory",
         wait_until="domcontentloaded",
         timeout=timeout_ms,
     )
@@ -1653,17 +1653,11 @@ def _dashboard_smoke_volume_viewer_ready(
     )
     page.wait_for_function(
         """() => {
+          var manual = document.getElementById('traj-mode-manual');
           var picker = document.getElementById('vslice-volume-picker-rows');
+          if (!manual || !manual.checked) return false;
           if (!picker) return false;
           return picker.querySelectorAll('.cryo-vslice-vol-btn').length > 0;
-        }""",
-        timeout=timeout_ms,
-    )
-    page.wait_for_function(
-        """() => {
-          var viewport = document.getElementById('vslice-viewport');
-          var dock = document.getElementById('vslice-controls-dock');
-          return !!(viewport && !viewport.hidden && dock && !dock.hidden);
         }""",
         timeout=timeout_ms,
     )
@@ -1678,7 +1672,7 @@ def _dashboard_smoke_volume_viewer_ready(
     return {
         "scatter_points": scatter_info.get("n"),
         "volume_picker_buttons": int(picker_count),
-        "canvas_visible": page.locator("#vslice-canvas").count() > 0,
+        "canvas_present": page.locator("#vslice-canvas").count() > 0,
     }
 
 
@@ -1688,135 +1682,8 @@ def dashboard_smoke_volume_viewer(
     *,
     timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
 ) -> dict | None:
-    """Volume viewer: scatter plot, analyze catalog, and slice canvas."""
+    """Trajectory creator: manual k-means/PC picker and slice canvas."""
     return _dashboard_smoke_volume_viewer_ready(page, base_url, timeout_ms=timeout_ms)
-
-
-def _dashboard_smoke_volume_viewer_set_3d_mode(page, *, enabled: bool) -> dict:
-    """Toggle 2D/3D via the switch input (aside may be off-screen in headless layout)."""
-    return page.evaluate(
-        """(enabled) => {
-          var el = document.getElementById('vslice-view-mode-3d');
-          if (!el) throw new Error('missing #vslice-view-mode-3d');
-          if (el.checked !== enabled) {
-            el.checked = enabled;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-          var vtk = document.getElementById('vslice-vtk-container');
-          var sliceCanvas = document.getElementById('vslice-canvas');
-          var iso = document.getElementById('vslice-iso-controls');
-          var sliceRow = document.getElementById('vslice-slice-controls-row');
-          var resetBtn = document.getElementById('btn-vslice-reset-view');
-          return {
-            mode3d: !!el.checked,
-            vtk_visible: !!(vtk && !vtk.hidden),
-            slice_canvas_hidden: !!(sliceCanvas && sliceCanvas.hidden),
-            iso_visible: !!(iso && !iso.hidden),
-            slice_controls_hidden: !!(sliceRow && sliceRow.hidden),
-            reset_label: resetBtn ? resetBtn.textContent.trim() : '',
-          };
-        }""",
-        enabled,
-    )
-
-
-def dashboard_smoke_volume_viewer_3d_chrome(
-    page,
-    base_url: str,
-    *,
-    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-) -> dict | None:
-    """Volume viewer: 2D/3D toggle updates aside chrome and lazy-loads vtk bundle."""
-    ready = _dashboard_smoke_volume_viewer_ready(page, base_url, timeout_ms=timeout_ms)
-    if ready is None:
-        return None
-
-    with page.expect_response(
-        lambda r: "volume_raycast_vtk.bundle.js" in r.url and r.status == 200,
-        timeout=timeout_ms,
-    ):
-        chrome = _dashboard_smoke_volume_viewer_set_3d_mode(page, enabled=True)
-
-    page.wait_for_function(
-        "() => !!window.CryoVolumeRaycastView",
-        timeout=timeout_ms,
-    )
-    return {**ready, **chrome, "bundle_loaded": True}
-
-
-def dashboard_smoke_volume_viewer_3d_render(
-    page,
-    base_url: str,
-    *,
-    timeout_ms: int = 30_000,
-) -> dict | None:
-    """Volume viewer: vtk.js raycast canvas when WebGL is available."""
-    chrome = dashboard_smoke_volume_viewer_3d_chrome(
-        page, base_url, timeout_ms=timeout_ms
-    )
-    if chrome is None:
-        return None
-
-    try:
-        page.wait_for_function(
-            """() => {
-              var mode3d = document.getElementById('vslice-view-mode-3d');
-              var vtk = document.getElementById('vslice-vtk-container');
-              if (!mode3d || !mode3d.checked) return false;
-              if (!vtk || vtk.hidden) return false;
-              return !!vtk.querySelector('canvas');
-            }""",
-            timeout=timeout_ms,
-        )
-    except Exception as exc:
-        status = page.evaluate(
-            "() => (document.getElementById('vslice-status') || {}).textContent || ''"
-        )
-        if "webgl" in status.lower() or "proxy" in status.lower():
-            return {**chrome, "vtk_canvas": False, "webgl_unavailable": True}
-        raise RuntimeError(
-            f"3D raycast did not render within {timeout_ms}ms: {status or exc}"
-        ) from exc
-
-    iso_level = page.evaluate(
-        """() => {
-          var slider = document.getElementById('vslice-iso-level');
-          return slider ? Number(slider.value) : null;
-        }"""
-    )
-    return {**chrome, "vtk_canvas": True, "iso_level": iso_level}
-
-
-def dashboard_smoke_volume_viewer_3d_roundtrip(
-    page,
-    base_url: str,
-    *,
-    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-) -> dict | None:
-    """Volume viewer: 3D chrome then back to 2D slice controls."""
-    out = dashboard_smoke_volume_viewer_3d_chrome(page, base_url, timeout_ms=timeout_ms)
-    if out is None:
-        return None
-
-    _dashboard_smoke_volume_viewer_set_3d_mode(page, enabled=False)
-    page.wait_for_function(
-        """() => {
-          var mode3d = document.getElementById('vslice-view-mode-3d');
-          var vtk = document.getElementById('vslice-vtk-container');
-          var sliceCanvas = document.getElementById('vslice-canvas');
-          var iso = document.getElementById('vslice-iso-controls');
-          var sliceRow = document.getElementById('vslice-slice-controls-row');
-          if (mode3d && mode3d.checked) return false;
-          if (!vtk || !vtk.hidden) return false;
-          if (!sliceCanvas || sliceCanvas.hidden) return false;
-          if (!iso || !iso.hidden) return false;
-          if (!sliceRow || sliceRow.hidden) return false;
-          return true;
-        }""",
-        timeout=timeout_ms,
-    )
-    reset_label = page.locator("#btn-vslice-reset-view").inner_text()
-    return {**out, "back_to_2d": True, "reset_button_label_2d": reset_label}
 
 
 def dashboard_smoke_volume_viewer_picker_switch(
@@ -1825,112 +1692,66 @@ def dashboard_smoke_volume_viewer_picker_switch(
     *,
     timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
 ) -> dict | None:
-    """Volume viewer: switch active volume via picker buttons."""
+    """Trajectory creator: switch active volume via manual picker buttons."""
     ready = _dashboard_smoke_volume_viewer_ready(page, base_url, timeout_ms=timeout_ms)
     if ready is None:
         return None
     if ready["volume_picker_buttons"] < 2:
         return {**ready, "switched": False, "reason": "fewer_than_two_volumes"}
 
-    first_active = page.evaluate(
-        """() => {
-          var btn = document.querySelector('.cryo-vslice-vol-btn--active');
-          return btn ? btn.textContent.trim() : '';
-        }"""
-    )
-    target_idx = page.evaluate(
+    pick_state = page.evaluate(
         """() => {
           var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          if (buttons.length < 2) return -1;
-          var activeIdx = -1;
-          for (var i = 0; i < buttons.length; i++) {
-            if (buttons[i].classList.contains('cryo-vslice-vol-btn--active')) {
-              activeIdx = i;
-              break;
-            }
-          }
-          var targetIdx = activeIdx === 0 ? 1 : 0;
-          window.__vslicePickerTargetIdx = targetIdx;
-          if (activeIdx >= 0) buttons[activeIdx].click();
-          buttons[targetIdx].click();
-          return targetIdx;
+          if (buttons.length < 2) return { ok: false };
+          buttons[0].click();
+          return {
+            ok: true,
+            fromLabel: buttons[0].textContent.trim(),
+            targetIdx: 1
+          };
         }"""
     )
-    if target_idx < 0:
+    if not pick_state.get("ok"):
         return {**ready, "switched": False, "reason": "fewer_than_two_volumes"}
     page.wait_for_function(
         """() => {
-          var targetIdx = window.__vslicePickerTargetIdx;
           var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          if (buttons.length < 2 || targetIdx == null) return false;
-          var active = document.querySelectorAll('.cryo-vslice-vol-btn--active');
-          return active.length === 1
-            && buttons[targetIdx].classList.contains('cryo-vslice-vol-btn--active');
+          return buttons.length >= 2
+            && buttons[0].classList.contains('cryo-vslice-vol-btn--active');
+        }""",
+        timeout=timeout_ms,
+    )
+    page.evaluate(
+        """() => {
+          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
+          if (buttons.length < 2) return;
+          if (buttons[0].classList.contains('cryo-vslice-vol-btn--active')) {
+            buttons[0].click();
+          }
+          buttons[1].click();
+        }"""
+    )
+    page.wait_for_function(
+        """() => {
+          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
+          if (buttons.length < 2) return false;
+          return !buttons[0].classList.contains('cryo-vslice-vol-btn--active')
+            && buttons[1].classList.contains('cryo-vslice-vol-btn--active');
         }""",
         timeout=timeout_ms,
     )
     second_label = page.evaluate(
         """() => {
-          var btn = document.querySelector('.cryo-vslice-vol-btn--active');
-          return btn ? btn.textContent.trim() : '';
+          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
+          return buttons.length >= 2 ? buttons[1].textContent.trim() : '';
         }"""
     )
     return {
         **ready,
         "switched": True,
-        "from_label": first_active,
+        "from_label": pick_state.get("fromLabel", ""),
         "to_label": second_label,
     }
-
-
-def dashboard_smoke_volume_viewer_nav_3d(
-    page,
-    base_url: str,
-    *,
-    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-) -> dict | None:
-    """Volume viewer: nav bar appears between grid and viewport in 3D multi-select."""
-    ready = _dashboard_smoke_volume_viewer_ready(page, base_url, timeout_ms=timeout_ms)
-    if ready is None:
-        return None
-    if ready["volume_picker_buttons"] < 2:
-        return {**ready, "nav_active": False, "reason": "fewer_than_two_volumes"}
-
-    page.evaluate(
-        """() => {
-          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          if (buttons.length < 2) return false;
-          if (!buttons[0].classList.contains('cryo-vslice-vol-btn--active')) {
-            buttons[0].click();
-          }
-          if (!buttons[1].classList.contains('cryo-vslice-vol-btn--active')) {
-            buttons[1].click();
-          }
-          return true;
-        }"""
-    )
-    page.wait_for_function(
-        """() => document.querySelectorAll('.cryo-vslice-vol-btn--active').length === 2""",
-        timeout=timeout_ms,
-    )
-    _dashboard_smoke_volume_viewer_set_3d_mode(page, enabled=True)
-    nav_info = page.evaluate(
-        """() => {
-          var nav = document.getElementById('vslice-volume-nav');
-          var navRow = document.getElementById('vslice-volume-nav-row');
-          var label = document.getElementById('vslice-volume-nav-label');
-          var mode3d = document.getElementById('vslice-view-mode-3d');
-          return {
-            mode3d: !!(mode3d && mode3d.checked),
-            active_buttons: document.querySelectorAll('.cryo-vslice-vol-btn--active').length,
-            nav_row_height: navRow ? navRow.getBoundingClientRect().height : 0,
-            nav_active: !!(nav && !nav.classList.contains('cryo-vslice-volume-nav--inactive')),
-            nav_height: nav ? nav.getBoundingClientRect().height : 0,
-            nav_label: label ? label.textContent.trim() : '',
-          };
-        }"""
-    )
-    return {**ready, **nav_info}
 
 
 def dashboard_smoke_particle_explorer_panels(
@@ -2304,12 +2125,6 @@ def run_dashboard_plotly_smoke(
                 ),
             ),
             (
-                "volume_viewer",
-                lambda: dashboard_smoke_volume_viewer(
-                    page, base_url, timeout_ms=timeout_ms
-                ),
-            ),
-            (
                 "particle_explorer",
                 lambda: dashboard_smoke_particle_explorer(
                     page, base_url, timeout_ms=timeout_ms, cache_size=cache_size
@@ -2341,7 +2156,6 @@ def run_dashboard_plotly_smoke(
 
         skip_labels = {
             "trajectory": "trajectory (no CUDA GPU / weights)",
-            "volume_viewer": "volume_viewer (no CUDA GPU / weights)",
             "landscape_volpca": "landscape_volpca (no analyze_landscape outputs)",
             "landscape_full_3d": "landscape_full_3d (no analyze_landscape_full outputs)",
         }

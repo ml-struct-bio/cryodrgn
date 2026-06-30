@@ -230,8 +230,11 @@ def _parse_optional_discrete_label_colors(
 
 
 def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:
-    """Merge direct-anchor particle IDs into ``payload`` when applicable."""
-    if not (p.get("use_anchors") and p["mode"] == "direct"):
+    """Merge anchor indices and direct-anchor particle IDs into ``payload``."""
+    if not p.get("use_anchors"):
+        return
+    payload["anchor_indices"] = p["anchor_indices"]
+    if p["mode"] != "direct":
         return
     pidx = direct_anchor_particle_indices_payload(
         anchor_indices=p["anchor_indices"],

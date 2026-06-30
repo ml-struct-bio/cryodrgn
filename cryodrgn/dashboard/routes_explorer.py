@@ -77,11 +77,13 @@ from cryodrgn.dashboard.preload import (
     montage_bytes,
     sample_plot_df_rows_for_preload,
 )
+from cryodrgn.dashboard.chimerax_animation import chimerax_view_matrix_camera_arg
 from cryodrgn.dashboard.volume_slice_viewer import (
     analyze_volume_by_id_payload,
     analyze_volume_markers_payload,
     analyze_volumes_batch_payload,
     analyze_volumes_catalog_payload,
+    analyze_volumes_chimerax_batch_payload,
     decode_volume_payload,
 )
 from cryodrgn.dashboard.route_helpers import (
@@ -147,7 +149,6 @@ def index():
             can_images=False,
             zdim=0,
             show_trajectory_creator=False,
-            show_volume_viewer=False,
             landscape_volpca_active=False,
             landscape_full_3d_active=False,
             exp_epoch=0,
@@ -161,7 +162,6 @@ def index():
         can_images=e.can_preview_particles,
         zdim=zdim,
         show_trajectory_creator=explorer_volumes_eligible(e),
-        show_volume_viewer=explorer_volumes_eligible(e),
         landscape_volpca_active=landscape_analysis_ready(e.workdir, e.epoch),
         landscape_full_3d_active=landscape_full_3d_active,
         exp_epoch=int(e.epoch),
@@ -396,42 +396,10 @@ def explorer():
 
 
 def volume_viewer_page():
-    """Scatter covariate explorer with 2D slices and vtk.js 3D volume raycast."""
-    e: DashboardExperiment = g.dashboard_exp
-    if not explorer_volumes_eligible(e):
-        return (
-            render_template(
-                "no_images.html",
-                reason=(
-                    "Volume viewer needs a CUDA GPU and model weights for the "
-                    "current epoch."
-                ),
-            ),
-            200,
-        )
-    cols = e.numeric_columns
-    dx, dy = _default_xy_cols(cols)
-    initial_rows = load_plot_df_rows_from_plot_inds_file(
-        e, current_app.config.get("FILTER_PLOT_INDS")
-    )
-    scatter_cap = _particle_explorer_scatter_max_points()
-    scatter_plotted_n = min(int(len(e.plot_df)), scatter_cap)
-    pc = int(current_app.config["PRELOAD_CPUS"])
-    return render_template(
-        "volume_viewer.html",
-        numeric_cols=cols,
-        covariate_display_map=_covariate_display_map(cols),
-        default_x=dx,
-        default_y=dy,
-        initial_rows=initial_rows,
-        total_particles=int(len(e.all_indices)),
-        workdir=e.workdir,
-        preload_cpus=pc,
-        explorer_scatter_max_points=_particle_explorer_scatter_max_points(),
-        explorer_scatter_cap_from_env=_particle_explorer_scatter_cap_from_env(),
-        scatter_plotted_n=scatter_plotted_n,
-        exp_epoch=int(e.epoch),
-    )
+    """Redirect to trajectory creator (volume viewing is integrated there)."""
+    from flask import redirect, url_for
+
+    return redirect(url_for("trajectory_creator_page"))
 
 
 def api_explorer_volume_media():
@@ -577,6 +545,54 @@ def api_volume_viewer_analyze_volumes_batch():
         return jsonify(error=str(err)), 400
     except Exception as err:
         logger.exception("analyze volume batch load failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_viewer_analyze_volumes_chimerax_batch():
+    """Render ChimeraX PNGs from analyze ``.mrc`` files (manual trajectory selection)."""
+    e: DashboardExperiment = g.dashboard_exp
+    data = _request_json_dict()
+    raw_ids = data.get("ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify(error="ids must be a non-empty list of volume ids."), 400
+    vol_ids = [str(v) for v in raw_ids]
+    cc = max(1, min(int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL)), 32))
+    view_matrix_camera = None
+    raw_vm = data.get("view_matrix")
+    if raw_vm is not None:
+        if not isinstance(raw_vm, str):
+            return jsonify(error="view_matrix must be a string."), 400
+        raw_vm = raw_vm.strip()
+        if raw_vm:
+            try:
+                view_matrix_camera = chimerax_view_matrix_camera_arg(raw_vm)
+            except ValueError as err:
+                return jsonify(error=str(err)), 400
+    view_turns = None
+    if data.get("view_turns") is not None:
+        try:
+            from cryodrgn.dashboard.volume_slice_viewer import (
+                parse_chimerax_view_turns_from_request,
+            )
+
+            view_turns = parse_chimerax_view_turns_from_request(data.get("view_turns"))
+        except ValueError as err:
+            return jsonify(error=str(err)), 400
+    try:
+        payload = analyze_volumes_chimerax_batch_payload(
+            e,
+            vol_ids,
+            chimerax_cpus=cc,
+            view_matrix_camera=view_matrix_camera,
+            view_turns=view_turns,
+        )
+        return jsonify(payload)
+    except EnvironmentError as err:
+        return jsonify(error=str(err), need_chimerax=True), 503
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume chimeraX batch failed")
         return jsonify(error=str(err)), 500
 
 

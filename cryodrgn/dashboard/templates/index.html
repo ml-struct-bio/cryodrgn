@@ -327,7 +327,6 @@
   {% set latent3d_active = (zdim >= 3) and (not command_builder_only) %}
   {% set vol_landscape_3d_active = landscape_full_3d_active and (not command_builder_only) %}
   {% set trajectory_active = show_trajectory_creator and not command_builder_only %}
-  {% set volume_viewer_active = show_volume_viewer and not command_builder_only %}
   {% set landscape_card_active = landscape_volpca_active and not command_builder_only %}
 
   {# Active interfaces first #}
@@ -402,18 +401,8 @@
     <h2 class="landing-card-title">Trajectory creator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_trajectory.png') }}"/>
     <div class="landing-card-text-scroll" tabindex="0">
-      <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or
-            nearest-neighbor mode — with ChimeraX previews.</p>
-    </div>
-  </a>
-  {% endif %}
-  {% if volume_viewer_active %}
-  <a class="landing-card landing-card-link" href="{{ url_for('volume_viewer_page') }}">
-    <h2 class="landing-card-title">Volume viewer</h2>
-    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
-    <div class="landing-card-text-scroll" tabindex="0">
-      <p>Scatter particles by analysis covariates, click to decode a single volume, and inspect an
-            interactive XY slice — drag to rotate, scroll to zoom.</p>
+      <p>Draw a path through latent space, generate volumes along a trajectory, and inspect them in the
+            right-hand panel with VTK 3D (default), 2D slices, or ChimeraX — including manual k-means/PC selection.</p>
     </div>
   </a>
   {% endif %}
@@ -475,23 +464,6 @@
       <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
       {% else %}
       <p class="muted">Activate this interface by running <code>dashboard</code> on a CUDA-enabled machine.</p>
-      {% endif %}
-    </div>
-  </article>
-  {% endif %}
-  {% if not volume_viewer_active %}
-  <article class="landing-card landing-card--inactive">
-    <span class="landing-inactive-badge">Inactive</span>
-    <h2 class="landing-card-title">Volume viewer</h2>
-    <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_viewer.png') }}"/>
-    <div class="landing-card-text-scroll" tabindex="0">
-      <p>Scatter particles by covariates, decode a selected particle volume on the GPU, and browse a
-        single rotatable slice with pan and zoom — no ChimeraX required.</p>
-      {% if command_builder_only %}
-      <p class="muted">Activate this interface by running<br /><code>cryodrgn dashboard &lt;outdir&gt;</code>.</p>
-      {% else %}
-      <p class="muted">Activate this interface by running <code>dashboard</code> on a CUDA-enabled machine with
-        weights for the current epoch.</p>
       {% endif %}
     </div>
   </article>

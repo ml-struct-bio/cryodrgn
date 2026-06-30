@@ -122,6 +122,26 @@ class TestChimeraxRenderCmds:
         )
         assert any("view matrix camera 1,0,0,0,0,1,0,0,0,0,1,0" in c for c in cmds)
         assert not any(c.startswith("turn x") for c in cmds)
+        assert not any("view #1 orient" in c for c in cmds)
+
+    def test_vector_axis_turn_emits_single_turn_cmd(self) -> None:
+        cmds = _chimerax_render_cmds(
+            "/tmp/x.mrc",
+            "/tmp/x.png",
+            100,
+            vol_name="vol000",
+            turn_y=None,
+            view_turns=[("0.4,0.8,0.4472", 27.0)],
+        )
+        assert any("view #1 orient" in c for c in cmds)
+        turn_cmds = [c for c in cmds if c.startswith("turn ")]
+        assert len(turn_cmds) == 1, turn_cmds
+        # Axis is renormalised to a unit vector and kept as a comma-separated triple.
+        assert turn_cmds[0].startswith("turn ")
+        axis = turn_cmds[0].split()[1]
+        comps = [float(v) for v in axis.split(",")]
+        assert len(comps) == 3
+        assert abs(sum(c * c for c in comps) - 1.0) < 1e-4
 
 
 class TestPreloadTimeHints:

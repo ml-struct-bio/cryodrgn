@@ -157,6 +157,7 @@ EXP_REQUIRED_ENDPOINTS = frozenset(
         "api_volume_viewer_analyze_markers",
         "api_volume_viewer_analyze_volume",
         "api_volume_viewer_analyze_volumes_batch",
+        "api_volume_viewer_analyze_volumes_chimerax_batch",
         "api_volume_viewer_decode",
         "api_scatter",
         "latent_3d_page",

@@ -235,6 +235,7 @@ class TestDashboardTrajectoryCoords:
         if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
             return
         js = r.get_json()
+        assert js.get("anchor_indices") == [0, 5, 10]
         assert js.get("traj_particle_indices"), "missing anchor particle indices"
 
     def test_kmeans_centers(
@@ -943,7 +944,7 @@ class TestTrajectoryVolumeApis:
         def _fake_compute(exp, params):
             return z_traj, None, np.zeros((3, 2), dtype=np.float64)
 
-        def _fake_pngs(exp, z_values, chimerax_cpus=1):
+        def _fake_pngs(exp, z_values, chimerax_cpus=1, view_matrix_camera=None):
             blobs = []
             for _ in range(len(z_values)):
                 buf = io.BytesIO()
@@ -961,7 +962,7 @@ class TestTrajectoryVolumeApis:
         )
         r = flask_client_volumes_eligible.post(
             "/api/trajectory_volumes",
-            json=self._DIRECT_BODY,
+            json={**self._DIRECT_BODY, "render_backend": "chimerax"},
         )
         assert r.status_code == 200, r.get_data(as_text=True)[:500]
         j = r.get_json()

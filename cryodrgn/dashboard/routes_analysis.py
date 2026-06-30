@@ -9,6 +9,7 @@ import time
 
 from flask import (
     Response,
+    current_app,
     g,
     jsonify,
     render_template,
@@ -29,9 +30,11 @@ from cryodrgn.dashboard.landscape_volpca import (
     meta_for_api,
     save_landscape_animations,
 )
+from cryodrgn.dashboard.chimerax_animation import chimerax_view_matrix_camera_arg
 from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
     explorer_volumes_eligible,
+    generate_trajectory_volume_b64_list,
     generate_trajectory_volume_pngs,
     save_cached_volumes_to_dir,
 )
@@ -253,6 +256,8 @@ def trajectory_creator_page():
         default_y=dy,
         zdim=zdim,
         exp_workdir=e.workdir,
+        exp_epoch=int(e.epoch),
+        preload_cpus=int(current_app.config.get("PRELOAD_CPUS", 4)),
         chimerax_cpus_default=DEFAULT_CHIMERAX_PARALLEL,
     )
 
@@ -485,9 +490,32 @@ def api_trajectory_volumes():
     try:
         z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(e, p)
         cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
-        blobs, cache_token = generate_trajectory_volume_pngs(
-            e, z_traj, chimerax_cpus=cc
-        )
+        render_backend = str(data.get("render_backend", "vtk") or "vtk").strip().lower()
+        if render_backend not in ("vtk", "slice", "chimerax"):
+            return jsonify(error="render_backend must be vtk, slice, or chimerax."), 400
+        view_matrix_camera = None
+        raw_vm = data.get("view_matrix")
+        if raw_vm is not None:
+            if not isinstance(raw_vm, str):
+                return jsonify(error="view_matrix must be a string."), 400
+            raw_vm = raw_vm.strip()
+            if raw_vm:
+                try:
+                    view_matrix_camera = chimerax_view_matrix_camera_arg(raw_vm)
+                except ValueError as err:
+                    return jsonify(error=str(err)), 400
+        view_turns = None
+        if data.get("view_turns") is not None:
+            try:
+                from cryodrgn.dashboard.volume_slice_viewer import (
+                    parse_chimerax_view_turns_from_request,
+                )
+
+                view_turns = parse_chimerax_view_turns_from_request(
+                    data.get("view_turns")
+                )
+            except ValueError as err:
+                return jsonify(error=str(err)), 400
         payload = trajectory_shared_json_payload(
             e,
             z_traj,
@@ -501,10 +529,24 @@ def api_trajectory_volumes():
             continuous_palette=data.get("palette"),
         )
         _add_direct_anchor_pidx(payload, p, z_traj)
-        payload["images"] = [
-            base64.standard_b64encode(b).decode("ascii") for b in blobs
-        ]
-        payload["volume_cache_id"] = cache_token
+        if render_backend == "chimerax":
+            blobs, cache_token = generate_trajectory_volume_pngs(
+                e,
+                z_traj,
+                chimerax_cpus=cc,
+                view_matrix_camera=view_matrix_camera,
+                view_turns=view_turns,
+            )
+            payload["images"] = [
+                base64.standard_b64encode(b).decode("ascii") for b in blobs
+            ]
+            payload["volume_cache_id"] = cache_token
+            payload["render_backend"] = "chimerax"
+        else:
+            vol_payloads, cache_token = generate_trajectory_volume_b64_list(e, z_traj)
+            payload["volumes"] = vol_payloads
+            payload["volume_cache_id"] = cache_token
+            payload["render_backend"] = render_backend
         if traj_rows is not None and p["mode"] in ("nearest", "graph"):
             payload["particle_thumbs"] = [
                 particle_thumbnail_b64_from_row(e, int(r)) for r in traj_rows

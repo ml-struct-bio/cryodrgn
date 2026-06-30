@@ -97,6 +97,11 @@ _ROUTES = (
         re.api_volume_viewer_analyze_volumes_batch,
         "POST",
     ),
+    (
+        "/api/volume_viewer/analyze_volumes_chimerax_batch",
+        re.api_volume_viewer_analyze_volumes_chimerax_batch,
+        "POST",
+    ),
     ("/api/volume_viewer/decode", re.api_volume_viewer_decode, "POST"),
     ("/api/scatter", re.api_scatter, "GET"),
     ("/latent-3d", re.latent_3d_page, "GET"),

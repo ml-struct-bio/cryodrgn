@@ -31,7 +31,7 @@ from cryodrgn.dashboard.context import (
     epochs_for_workdir,
     resolve_epoch,
 )
-from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs
+from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs, load_experiment
 from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
 from tests.conftest import (
     _DASHBOARD_DEFAULT_TEST_CACHE,
@@ -87,6 +87,20 @@ class TestDashboardExperiment:
         for col in ("UMAP1", "UMAP2", "PC1", "z0", "znorm", "labels"):
             assert col in e.plot_df.columns, col
 
+    def test_load_experiment_without_umap(
+        self, dashboard_workdir_plain_copy: str
+    ) -> None:
+        umap_path = os.path.join(
+            dashboard_workdir_plain_copy,
+            f"analyze.{ANALYZE_EPOCH}",
+            "umap.pkl",
+        )
+        os.remove(umap_path)
+        e = load_experiment(dashboard_workdir_plain_copy)
+        assert e.umap is None
+        assert "UMAP1" not in e.plot_df.columns
+        assert "z0" in e.plot_df.columns
+
 
 class TestLegacyRedirects:
     """Old bookmark URLs should still land on the right shell."""
@@ -116,13 +130,17 @@ class TestDashboardPages:
             "/trajectory",
             "/command-builder",
             "/landscape-volpca",
-            "/volume-viewer",
         ],
     )
     def test_page_renders(self, flask_client, path: str) -> None:
         r = flask_client.get(path)
         assert r.status_code == 200, f"{path} returned {r.status_code}"
         assert r.data, f"{path} returned empty body"
+
+    def test_volume_viewer_url_redirects_to_trajectory(self, flask_client) -> None:
+        r = flask_client.get("/volume-viewer", follow_redirects=False)
+        assert r.status_code in (301, 302, 303, 307, 308)
+        assert "/trajectory" in (r.headers.get("Location") or "")
 
 
 class TestDashboardScatterApis:

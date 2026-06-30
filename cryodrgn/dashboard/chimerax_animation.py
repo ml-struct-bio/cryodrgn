@@ -152,6 +152,34 @@ def chimerax_volume_color_spec(color: str | None) -> str:
     return s
 
 
+def _normalize_chimerax_turn_axis(axis_raw) -> str:
+    """Validate a ChimeraX ``turn`` axis: ``x``/``y``/``z`` or a ``ax,ay,az`` vector.
+
+    A custom axis lets the dashboard send an exact axis-angle rotation (matching the
+    VTK camera) as a single ``turn`` command, avoiding lossy Euler decomposition.
+    """
+    axis = str(axis_raw).strip().lower()
+    if axis in ("x", "y", "z"):
+        return axis
+    parts = [p for p in re.split(r"[,\s]+", axis) if p]
+    if len(parts) != 3:
+        raise ValueError(f"Invalid ChimeraX view rotation axis: {axis_raw!r}.")
+    comps: list[float] = []
+    for p in parts:
+        try:
+            val = float(p)
+        except ValueError:
+            raise ValueError(f"Invalid ChimeraX view rotation axis: {axis_raw!r}.")
+        if not np.isfinite(val):
+            raise ValueError("ChimeraX view rotation axis must be finite.")
+        comps.append(val)
+    norm = float(np.sqrt(sum(c * c for c in comps)))
+    if norm < 1e-9:
+        raise ValueError("ChimeraX view rotation axis must be non-zero.")
+    comps = [c / norm for c in comps]
+    return ",".join(f"{c:.6f}" for c in comps)
+
+
 def normalize_chimerax_view_turns(
     view_turns: Sequence[tuple[str, float]] | None,
 ) -> list[ChimeraxViewTurn]:
@@ -160,9 +188,7 @@ def normalize_chimerax_view_turns(
     if not view_turns:
         return out
     for axis_raw, degrees_raw in view_turns:
-        axis = str(axis_raw).strip().lower()
-        if axis not in ("x", "y", "z"):
-            raise ValueError(f"Invalid ChimeraX view rotation axis: {axis_raw!r}.")
+        axis = _normalize_chimerax_turn_axis(axis_raw)
         degrees = float(degrees_raw)
         if not np.isfinite(degrees):
             raise ValueError("ChimeraX view rotation degrees must be finite.")
@@ -306,14 +332,15 @@ def chimerax_render_cmds(
         "set bgColor white ",
         "volume center #1",
         f"volume color {vc} ",
-        # Standard orientation + zoom-to-fit for consistent framing.  Do not use
-        # ``camera ortho`` here: ``--offscreen`` uses OffScreenRenderingContext,
+        # Do not use ``camera ortho`` here: ``--offscreen`` uses OffScreenRenderingContext,
         # which lacks attributes the ortho camera path expects (e.g. stereo).
-        "view #1 orient ",
     ]
     if view_matrix_camera:
+        # VTK exports an absolute camera matrix; skip ``view orient`` so it is not composed
+        # on top of a default orientation (which would mismatch the VTK view).
         cmds.append(f"view matrix camera {view_matrix_camera} ")
     else:
+        cmds.append("view #1 orient ")
         for axis, degrees in normalize_chimerax_view_turns(view_turns):
             cmds.append(f"turn {axis} {degrees} ")
     if turn_y is not None:
@@ -465,12 +492,12 @@ def chimerax_rotation_session_cmds(
         "set bgColor white ",
         "volume center #1",
         f"volume color {vc} ",
-        "view #1 orient ",
     ]
     matrix_log: str | None = None
     if view_matrix_camera:
         cmds.append(f"view matrix camera {view_matrix_camera} ")
     else:
+        cmds.append("view #1 orient ")
         for axis, degrees in normalize_chimerax_view_turns(view_turns):
             cmds.append(f"turn {axis} {degrees} ")
     for i, (png, rot, frame_color) in enumerate(frame_pngs):

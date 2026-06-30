@@ -200,7 +200,8 @@ def main(args: argparse.Namespace) -> None:
     # Load PCA and UMAP clusterings of z-latent-space embeddings of particles, and the
     # k-means segmentations of these clusterings
     pc, pca = analysis.run_pca(z)
-    umap = utils.load_pkl(os.path.join(anlzdir, "umap.pkl"))
+    umap_path = os.path.join(anlzdir, "umap.pkl")
+    umap = utils.load_pkl(umap_path) if os.path.isfile(umap_path) else None
 
     if kmeans == -1:
         kmeans_dirs = [

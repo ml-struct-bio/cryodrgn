@@ -1,4 +1,4 @@
-"""Volume decode and analyze-volume catalog for the dashboard volume viewer.
+"""Volume decode and analyze-volume catalog for the dashboard trajectory creator.
 
 Decodes latent ``z`` vectors to 3-D volumes (reusing the particle explorer decoder)
 and returns float32 arrays for client-side slicing in the browser canvas.
@@ -19,7 +19,13 @@ from typing import Optional
 import numpy as np
 
 from cryodrgn.dashboard.data import DashboardExperiment
-from cryodrgn.dashboard.particle_explorer import _decode_z_values_to_vol_paths
+from cryodrgn.dashboard.chimerax_animation import normalize_chimerax_view_turns
+from cryodrgn.dashboard.particle_explorer import (
+    DEFAULT_CHIMERAX_PARALLEL,
+    _decode_z_values_to_vol_paths,
+    mrc_to_static_png,
+    parallel_chimerax_static_pngs,
+)
 from cryodrgn.mrcfile import parse_mrc
 from cryodrgn import analysis as cryo_analysis
 
@@ -470,6 +476,134 @@ def analyze_volumes_batch_payload(
             entries.append(entry)
     volumes = _load_catalog_volumes_parallel(entries, exp=exp, n_cpus=n_cpus)
     return {"ok": True, "volumes": volumes}
+
+
+def _png_is_mostly_blank(path: str, *, min_std: float = 0.5) -> bool:
+    """True when a PNG is essentially uniform (failed/off-screen ChimeraX render)."""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            gray = np.asarray(im.convert("L"), dtype=np.float32)
+        if gray.size == 0:
+            return True
+        return float(gray.std()) < min_std
+    except Exception:
+        return True
+
+
+def parse_chimerax_view_turns_from_request(raw_turns) -> list[tuple[str, float]] | None:
+    """Parse ``view_turns`` JSON from dashboard API requests."""
+    if raw_turns is None:
+        return None
+    if not isinstance(raw_turns, list):
+        raise ValueError("view_turns must be a list of {axis, degrees} objects.")
+    parsed: list[tuple[str, float]] = []
+    for item in raw_turns:
+        if not isinstance(item, dict):
+            raise ValueError(
+                "view_turns entries must be objects with axis and degrees."
+            )
+        parsed.append((str(item.get("axis", "")), float(item.get("degrees", 0))))
+    return normalize_chimerax_view_turns(parsed)
+
+
+def analyze_volumes_chimerax_batch_payload(
+    exp: DashboardExperiment,
+    vol_ids: list[str],
+    *,
+    chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
+    view_matrix_camera: str | None = None,
+    view_turns: list[tuple[str, float]] | None = None,
+) -> dict:
+    """Render ChimeraX PNGs from pre-generated analyze ``.mrc`` files (no GPU decode)."""
+    catalog = discover_analyze_volume_catalog(exp)
+    by_id = {entry["id"]: entry for entry in catalog}
+    entries = []
+    for vol_id in vol_ids:
+        entry = by_id.get(str(vol_id))
+        if entry is None:
+            raise ValueError(f"Unknown analyze volume id: {vol_id}")
+        entries.append(entry)
+    if not entries:
+        raise ValueError("ids must be a non-empty list of volume ids.")
+
+    cc = max(1, min(int(chimerax_cpus), 32))
+    attempts: list[tuple[str | None, list[tuple[str, float]] | None]] = []
+    if view_turns:
+        attempts.append((None, list(view_turns)))
+    elif view_matrix_camera:
+        attempts.append((view_matrix_camera, None))
+        attempts.append((None, None))
+    else:
+        attempts.append((None, None))
+    last_blank_err = (
+        "ChimeraX produced blank volume images. "
+        "Check CHIMERAX_PATH and that analyze .mrc files are valid."
+    )
+    for attempt_idx, (attempt_vm, attempt_turns) in enumerate(attempts):
+        view_matrix_text: str | None = None
+        with tempfile.TemporaryDirectory(prefix="cryodrgn_analyze_cx_png_") as png_dir:
+            if attempt_vm or attempt_turns:
+                paths: list[str] = []
+                for i, entry in enumerate(entries):
+                    out_png = os.path.join(png_dir, f"cell_{i}.png")
+                    vm = mrc_to_static_png(
+                        entry["path"],
+                        out_png,
+                        dpi=100,
+                        view_matrix_camera=attempt_vm,
+                        view_turns=attempt_turns,
+                        report_view_matrix=(i == 0),
+                    )
+                    if i == 0 and vm:
+                        view_matrix_text = vm
+                    paths.append(out_png)
+            else:
+                paths = []
+                first_png = os.path.join(png_dir, "cell_0.png")
+                view_matrix_text = mrc_to_static_png(
+                    entries[0]["path"],
+                    first_png,
+                    dpi=100,
+                    report_view_matrix=True,
+                )
+                paths.append(first_png)
+                if len(entries) > 1:
+                    tasks = [
+                        (
+                            i,
+                            entry["path"],
+                            os.path.join(png_dir, f"cell_{i}.png"),
+                            100,
+                        )
+                        for i, entry in enumerate(entries[1:], 1)
+                    ]
+                    paths.extend(parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc))
+            images: list[str] = []
+            blank_count = 0
+            for pth in paths:
+                if _png_is_mostly_blank(pth):
+                    blank_count += 1
+                with open(pth, "rb") as fh:
+                    images.append(base64.standard_b64encode(fh.read()).decode("ascii"))
+            if blank_count == len(paths):
+                if attempt_idx + 1 < len(attempts):
+                    continue
+                raise ValueError(last_blank_err)
+        out: dict = {
+            "ok": True,
+            "images": images,
+            "ids": [str(v) for v in vol_ids],
+        }
+        if view_matrix_text:
+            out["view_matrix"] = view_matrix_text
+        if attempt_turns:
+            out["view_turns"] = [
+                {"axis": axis, "degrees": degrees} for axis, degrees in attempt_turns
+            ]
+        return out
+    raise ValueError(last_blank_err)
 
 
 def _load_catalog_volume(entry: dict, exp: DashboardExperiment) -> tuple[str, dict]:

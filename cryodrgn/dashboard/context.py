@@ -175,6 +175,7 @@ EXP_REQUIRED_ENDPOINTS = frozenset(
         "api_save_pairplot_png",
         "trajectory_creator_page",
         "api_trajectory_volumes",
+        "api_trajectory_volumes_decode_progress",
         "api_trajectory_coords",
         "api_trajectory_save_volumes",
         "api_trajectory_save_zpath",

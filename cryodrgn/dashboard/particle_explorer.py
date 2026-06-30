@@ -234,11 +234,194 @@ def _is_drgnai_config(train_configs: dict) -> bool:
     return "data_norm_mean" in train_configs
 
 
+_DECODE_PROGRESS_LOCK = threading.Lock()
+_VOLUME_JOB_PROGRESS: dict[str, dict[str, object]] = {}
+_VOLUME_JOB_PROGRESS_TTL_S = 600.0
+
+
+def cuda_gpu_count_for_decode() -> int:
+    """CUDA devices available for parallel trajectory volume decoding."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return max(1, int(torch.cuda.device_count()))
+    except Exception:
+        pass
+    return 1
+
+
+def volume_job_progress_register(
+    token: str,
+    total: int,
+    workers: int,
+    phase: str,
+    *,
+    rerender: bool = False,
+) -> None:
+    with _DECODE_PROGRESS_LOCK:
+        _VOLUME_JOB_PROGRESS[token] = {
+            "total": max(0, int(total)),
+            "done": 0,
+            "workers": max(1, int(workers)),
+            "phase": str(phase),
+            "rerender": bool(rerender),
+            "t0": time.monotonic(),
+        }
+
+
+def volume_job_progress_set_done(token: str, done: int) -> None:
+    with _DECODE_PROGRESS_LOCK:
+        entry = _VOLUME_JOB_PROGRESS.get(token)
+        if not entry:
+            return
+        total = int(entry["total"])
+        entry["done"] = max(0, min(total, int(done)))
+
+
+def volume_job_progress_snapshot(token: str) -> dict[str, object] | None:
+    with _DECODE_PROGRESS_LOCK:
+        entry = _VOLUME_JOB_PROGRESS.get(token)
+        if not entry:
+            return None
+        if time.monotonic() - float(entry["t0"]) > _VOLUME_JOB_PROGRESS_TTL_S:
+            _VOLUME_JOB_PROGRESS.pop(token, None)
+            return None
+        total = int(entry["total"])
+        done = int(entry["done"])
+        pct = (100.0 * done / total) if total else 0.0
+        phase = str(entry.get("phase") or "decode")
+        workers = int(entry["workers"])
+        snap: dict[str, object] = {
+            "total": total,
+            "done": done,
+            "workers": workers,
+            "percent": round(pct, 1),
+            "phase": phase,
+            "rerender": bool(entry.get("rerender")),
+        }
+        if phase == "decode":
+            snap["n_gpus"] = workers
+        else:
+            snap["n_cpus"] = workers
+        return snap
+
+
+def volume_job_progress_unregister(token: str) -> None:
+    with _DECODE_PROGRESS_LOCK:
+        _VOLUME_JOB_PROGRESS.pop(token, None)
+
+
+def decode_progress_register(token: str, total: int, n_gpus: int) -> None:
+    volume_job_progress_register(token, total, n_gpus, "decode")
+
+
+def decode_progress_set_done(token: str, done: int) -> None:
+    volume_job_progress_set_done(token, done)
+
+
+def decode_progress_snapshot(token: str) -> dict[str, object] | None:
+    return volume_job_progress_snapshot(token)
+
+
+def decode_progress_unregister(token: str) -> None:
+    volume_job_progress_unregister(token)
+
+
+def _count_vol_mrc_in_dir(mrc_dir: str) -> int:
+    if not os.path.isdir(mrc_dir):
+        return 0
+    n = 0
+    with os.scandir(mrc_dir) as it:
+        for entry in it:
+            if entry.is_file() and re.search(r"vol_\d+", entry.name):
+                n += 1
+    return n
+
+
+def _run_decode_with_mrc_progress(
+    mrc_dir: str,
+    n_total: int,
+    progress_token: str | None,
+    decode_fn,
+) -> None:
+    if not progress_token:
+        decode_fn()
+        return
+
+    stop = threading.Event()
+
+    def _watch() -> None:
+        while not stop.is_set():
+            decode_progress_set_done(progress_token, _count_vol_mrc_in_dir(mrc_dir))
+            if _count_vol_mrc_in_dir(mrc_dir) >= n_total:
+                break
+            time.sleep(0.15)
+        decode_progress_set_done(progress_token, n_total)
+
+    watcher = threading.Thread(target=_watch, daemon=True)
+    watcher.start()
+    try:
+        decode_fn()
+    finally:
+        stop.set()
+        watcher.join(timeout=2.0)
+        decode_progress_set_done(progress_token, n_total)
+
+
+def _count_png_in_dir(png_dir: str) -> int:
+    if not os.path.isdir(png_dir):
+        return 0
+    n = 0
+    with os.scandir(png_dir) as it:
+        for entry in it:
+            if entry.is_file() and entry.name.lower().endswith(".png"):
+                n += 1
+    return n
+
+
+def _run_chimerax_render_with_png_progress(
+    png_dir: str,
+    n_total: int,
+    progress_token: str | None,
+    *,
+    n_cpus: int,
+    rerender: bool,
+    render_fn,
+) -> None:
+    if not progress_token:
+        render_fn()
+        return
+
+    volume_job_progress_register(
+        progress_token, n_total, n_cpus, "chimerax", rerender=rerender
+    )
+    stop = threading.Event()
+
+    def _watch() -> None:
+        while not stop.is_set():
+            volume_job_progress_set_done(progress_token, _count_png_in_dir(png_dir))
+            if _count_png_in_dir(png_dir) >= n_total:
+                break
+            time.sleep(0.15)
+        volume_job_progress_set_done(progress_token, n_total)
+
+    watcher = threading.Thread(target=_watch, daemon=True)
+    watcher.start()
+    try:
+        render_fn()
+    finally:
+        stop.set()
+        watcher.join(timeout=2.0)
+        volume_job_progress_set_done(progress_token, n_total)
+
+
 def _decode_z_values_classic(
     exp: DashboardExperiment,
     z_values: np.ndarray,
     out_dir: str,
     device: int = 0,
+    vol_start_index: int = 1,
 ) -> None:
     """Decode arbitrary z-values to ``.mrc`` volumes using classic cryoDRGN."""
     from cryodrgn import analysis
@@ -255,11 +438,11 @@ def _decode_z_values_classic(
         out_dir,
         device=device,
         Apix=1.0,
-        vol_start_index=1,
+        vol_start_index=vol_start_index,
     )
 
 
-def _drgnai_volume_generator(exp: DashboardExperiment):
+def _drgnai_volume_generator(exp: DashboardExperiment, device_id: int = 0):
     """Build a DRGN-AI ``VolumeGenerator`` from checkpoint + train config."""
     import torch
 
@@ -276,7 +459,10 @@ def _drgnai_volume_generator(exp: DashboardExperiment):
     hypervolume = models.HyperVolume(**hypervolume_params)
     hypervolume.load_state_dict(checkpoint["hypervolume_state_dict"])
     hypervolume.eval()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{int(device_id)}")
+    else:
+        device = torch.device("cpu")
     hypervolume.to(device)
 
     lattice = Lattice(
@@ -308,11 +494,89 @@ def _decode_z_values_drgnai(
     exp: DashboardExperiment,
     z_values: np.ndarray,
     out_dir: str,
+    *,
+    device: int = 0,
+    vol_start_index: int = 1,
 ) -> None:
     """Decode arbitrary z-values to ``.mrc`` volumes using DRGN-AI."""
+    from cryodrgn import models_ai as models
+    from cryodrgn.mrcfile import write_mrc
+
     os.makedirs(out_dir, exist_ok=True)
-    vg = _drgnai_volume_generator(exp)
-    vg.gen_volumes(out_dir, z_values)
+    vg = _drgnai_volume_generator(exp, device_id=device)
+    vol_start_index = int(vol_start_index)
+    for i, z in enumerate(z_values):
+        out_mrc = "{}/{}{:03d}.mrc".format(out_dir, "vol_", i + vol_start_index)
+        vol = models.eval_volume_method(
+            vg.hypervolume,
+            vg.lattice,
+            vg.zdim,
+            vg.data_norm,
+            zval=z,
+            radius=vg.radius_mask,
+        )
+        if vg.invert:
+            vol *= -1
+        write_mrc(out_mrc, vol.cpu().numpy().astype(np.float32), Apix=vg.apix)
+
+
+def _decode_z_values_worker(
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+    out_dir: str,
+    *,
+    device: int = 0,
+    vol_start_index: int = 1,
+) -> None:
+    if _is_drgnai_config(exp.train_configs):
+        _decode_z_values_drgnai(
+            exp,
+            z_values,
+            out_dir,
+            device=device,
+            vol_start_index=vol_start_index,
+        )
+    else:
+        _decode_z_values_classic(
+            exp,
+            z_values,
+            out_dir,
+            device=device,
+            vol_start_index=vol_start_index,
+        )
+
+
+def _decode_z_values_parallel_impl(
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+    mrc_dir: str,
+    n_gpus: int,
+) -> None:
+    import joblib
+
+    z_values = np.asarray(z_values)
+    chunks = [c for c in np.array_split(z_values, n_gpus) if len(c)]
+    if len(chunks) <= 1:
+        _decode_z_values_worker(exp, z_values, mrc_dir, device=0, vol_start_index=1)
+        return
+
+    os.makedirs(mrc_dir, exist_ok=True)
+    vol_start = 1
+    tasks: list[tuple[int, np.ndarray, int]] = []
+    for device_id, chunk in enumerate(chunks):
+        tasks.append((device_id, chunk, vol_start))
+        vol_start += len(chunk)
+
+    joblib.Parallel(n_jobs=len(tasks))(
+        joblib.delayed(_decode_z_values_worker)(
+            exp,
+            chunk,
+            mrc_dir,
+            device=device_id,
+            vol_start_index=vol_start_index,
+        )
+        for device_id, chunk, vol_start_index in tasks
+    )
 
 
 def _sorted_vol_mrc_paths(mrc_dir: str, n_take: int) -> list[str]:
@@ -334,18 +598,35 @@ def _sorted_vol_mrc_paths(mrc_dir: str, n_take: int) -> list[str]:
 
 
 def _decode_z_values_to_vol_paths(
-    exp: DashboardExperiment, z_values: np.ndarray, mrc_dir: str
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+    mrc_dir: str,
+    *,
+    progress_token: str | None = None,
 ) -> list[str]:
-    if _is_drgnai_config(exp.train_configs):
-        _decode_z_values_drgnai(exp, z_values, mrc_dir)
+    z_values = np.asarray(z_values)
+    n_total = len(z_values)
+    n_gpus = cuda_gpu_count_for_decode()
+
+    def _decode() -> None:
+        if n_gpus <= 1:
+            _decode_z_values_worker(exp, z_values, mrc_dir, device=0, vol_start_index=1)
+        else:
+            _decode_z_values_parallel_impl(exp, z_values, mrc_dir, n_gpus)
+
+    if progress_token:
+        decode_progress_register(progress_token, n_total, n_gpus)
+        _run_decode_with_mrc_progress(mrc_dir, n_total, progress_token, _decode)
     else:
-        _decode_z_values_classic(exp, z_values, mrc_dir, device=0)
-    return _sorted_vol_mrc_paths(mrc_dir, len(z_values))
+        _decode()
+    return _sorted_vol_mrc_paths(mrc_dir, n_total)
 
 
 def generate_trajectory_volume_b64_list(
     exp: DashboardExperiment,
     z_values: np.ndarray,
+    *,
+    progress_token: str | None = None,
 ) -> tuple[list[dict[str, object]], str]:
     """Decode trajectory z values and return float32 volume blobs for client VTK/slice.
 
@@ -366,7 +647,9 @@ def generate_trajectory_volume_b64_list(
 
     mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_trajectory_mrc_")
     try:
-        vol_files = _decode_z_values_to_vol_paths(exp, z_values, mrc_dir)
+        vol_files = _decode_z_values_to_vol_paths(
+            exp, z_values, mrc_dir, progress_token=progress_token
+        )
         payloads: list[dict[str, object]] = []
         for i, vf in enumerate(vol_files):
             vol, _ = parse_mrc(vf)
@@ -392,6 +675,8 @@ def _chimerax_png_bytes_from_mrc_paths(
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
+    progress_token: str | None = None,
+    rerender: bool = False,
 ) -> tuple[list[bytes], str | None]:
     """Render ChimeraX PNG bytes from cached ``.mrc`` paths (parallel when ``cpus > 1``)."""
     if not vol_files:
@@ -400,7 +685,9 @@ def _chimerax_png_bytes_from_mrc_paths(
 
     level = resolve_chimerax_volume_level(vol_files[0], volume_level)
     cc = max(1, min(int(chimerax_cpus), 32))
-    with tempfile.TemporaryDirectory(prefix="cryodrgn_trajectory_png_") as png_dir:
+    n_total = len(vol_files)
+
+    def _render(png_dir: str) -> tuple[list[str], str | None]:
         views = [
             LandscapeStaticView(
                 mrc_path=vf,
@@ -412,8 +699,23 @@ def _chimerax_png_bytes_from_mrc_paths(
             )
             for i, vf in enumerate(vol_files)
         ]
-        paths, view_matrix = render_landscape_cycle_static_views(
-            views, chimerax_cpus=cc
+        return render_landscape_cycle_static_views(views, chimerax_cpus=cc)
+
+    with tempfile.TemporaryDirectory(prefix="cryodrgn_trajectory_png_") as png_dir:
+        paths: list[str] = []
+        view_matrix: str | None = None
+
+        def _do_render() -> None:
+            nonlocal paths, view_matrix
+            paths, view_matrix = _render(png_dir)
+
+        _run_chimerax_render_with_png_progress(
+            png_dir,
+            n_total,
+            progress_token,
+            n_cpus=cc,
+            rerender=rerender,
+            render_fn=_do_render,
         )
         png_bytes_list: list[bytes] = []
         for pth in paths:
@@ -429,6 +731,7 @@ def rerender_chimerax_pngs_from_volume_cache(
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
+    progress_token: str | None = None,
 ) -> tuple[list[bytes], str | None]:
     """Re-render ChimeraX PNGs from a prior trajectory/montage decode cache."""
     with _VOL_CACHE_LOCK:
@@ -445,6 +748,8 @@ def rerender_chimerax_pngs_from_volume_cache(
         view_matrix_camera=view_matrix_camera,
         view_turns=view_turns,
         volume_level=volume_level,
+        progress_token=progress_token,
+        rerender=True,
     )
 
 
@@ -466,6 +771,7 @@ def generate_trajectory_volume_pngs(
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
+    progress_token: str | None = None,
 ) -> tuple[list[bytes], str]:
     """Decode volumes along a z-space trajectory and render ChimeraX static PNGs.
 
@@ -481,13 +787,17 @@ def generate_trajectory_volume_pngs(
 
     mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_trajectory_mrc_")
     try:
-        vol_files = _decode_z_values_to_vol_paths(exp, z_values, mrc_dir)
+        vol_files = _decode_z_values_to_vol_paths(
+            exp, z_values, mrc_dir, progress_token=progress_token
+        )
         png_bytes_list, _view_matrix = _chimerax_png_bytes_from_mrc_paths(
             vol_files,
             chimerax_cpus=chimerax_cpus,
             view_matrix_camera=view_matrix_camera,
             view_turns=view_turns,
             volume_level=volume_level,
+            progress_token=progress_token,
+            rerender=False,
         )
         token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
         return png_bytes_list, token

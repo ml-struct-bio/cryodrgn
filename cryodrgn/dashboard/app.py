@@ -131,6 +131,11 @@ _ROUTES = (
     ("/api/save_pairplot_png", ra.api_save_pairplot_png, "POST"),
     ("/trajectory", ra.trajectory_creator_page, "GET"),
     ("/api/trajectory_volumes", ra.api_trajectory_volumes, "POST"),
+    (
+        "/api/trajectory_volumes_decode_progress",
+        ra.api_trajectory_volumes_decode_progress,
+        "GET",
+    ),
     ("/api/trajectory_coords", ra.api_trajectory_coords, "POST"),
     ("/api/trajectory_save_zpath", ra.api_trajectory_save_zpath, "POST"),
     ("/api/trajectory_save_volumes", ra.api_trajectory_save_volumes, "POST"),

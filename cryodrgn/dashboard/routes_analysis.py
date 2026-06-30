@@ -36,6 +36,9 @@ from cryodrgn.dashboard.chimerax_animation import (
 )
 from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
+    cuda_gpu_count_for_decode,
+    decode_progress_snapshot,
+    decode_progress_unregister,
     explorer_volumes_eligible,
     generate_trajectory_volume_b64_list,
     generate_trajectory_volume_pngs,
@@ -264,6 +267,7 @@ def trajectory_creator_page():
         exp_epoch=int(e.epoch),
         preload_cpus=int(current_app.config.get("PRELOAD_CPUS", 4)),
         chimerax_cpus_default=DEFAULT_CHIMERAX_PARALLEL,
+        traj_decode_gpu_count=cuda_gpu_count_for_decode(),
     )
 
 
@@ -481,14 +485,34 @@ def api_trajectory_coords():
         return jsonify(error=str(err)), 500
 
 
+def api_trajectory_volumes_decode_progress():
+    """Poll GPU volume-decode progress for an in-flight trajectory request."""
+    from flask import request
+
+    token = str(request.args.get("job_id", "") or "").strip()
+    if not token:
+        return jsonify(ok=False, error="Missing job_id."), 400
+    snap = decode_progress_snapshot(token)
+    if snap is None:
+        return jsonify(ok=False, error="Unknown or expired decode job."), 404
+    return jsonify(ok=True, **snap)
+
+
 def api_trajectory_volumes():
     e: DashboardExperiment = g.dashboard_exp
     err = _trajectory_eligibility_error(e)
     if err is not None:
         return err
 
+    progress_token: str | None = None
     try:
         data = _request_json_dict()
+        raw_job = data.get("decode_job_id")
+        if raw_job is not None:
+            if not isinstance(raw_job, str):
+                return jsonify(error="decode_job_id must be a string."), 400
+            progress_token = raw_job.strip() or None
+
         render_backend = str(data.get("render_backend", "vtk") or "vtk").strip().lower()
         if render_backend not in ("vtk", "slice", "chimerax"):
             return jsonify(error="render_backend must be vtk, slice, or chimerax."), 400
@@ -532,6 +556,7 @@ def api_trajectory_volumes():
                 view_matrix_camera=view_matrix_camera,
                 view_turns=view_turns,
                 volume_level=iso_level,
+                progress_token=progress_token,
             )
             payload = {
                 "ok": True,
@@ -551,15 +576,10 @@ def api_trajectory_volumes():
                     {"axis": axis, "degrees": degrees} for axis, degrees in view_turns
                 ]
             return jsonify(payload)
+
         p = parse_trajectory_request_body(e, data)
-    except ValueError as err:
-        return jsonify(error=str(err)), 400
-    try:
         z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(e, p)
         cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
-        render_backend = str(data.get("render_backend", "vtk") or "vtk").strip().lower()
-        if render_backend not in ("vtk", "slice", "chimerax"):
-            return jsonify(error="render_backend must be vtk, slice, or chimerax."), 400
         view_matrix_camera = None
         raw_vm = data.get("view_matrix")
         if raw_vm is not None:
@@ -607,6 +627,7 @@ def api_trajectory_volumes():
                 view_matrix_camera=view_matrix_camera,
                 view_turns=view_turns,
                 volume_level=iso_level,
+                progress_token=progress_token,
             )
             payload["images"] = [
                 base64.standard_b64encode(b).decode("ascii") for b in blobs
@@ -619,7 +640,9 @@ def api_trajectory_volumes():
                     chimerax_iso_response_fields(mrc_path, iso_level=iso_level)
                 )
         else:
-            vol_payloads, cache_token = generate_trajectory_volume_b64_list(e, z_traj)
+            vol_payloads, cache_token = generate_trajectory_volume_b64_list(
+                e, z_traj, progress_token=progress_token
+            )
             payload["volumes"] = vol_payloads
             payload["volume_cache_id"] = cache_token
             payload["render_backend"] = render_backend
@@ -635,6 +658,9 @@ def api_trajectory_volumes():
     except Exception as err:
         logger.exception("trajectory volume generation failed")
         return jsonify(error=str(err)), 500
+    finally:
+        if progress_token:
+            decode_progress_unregister(progress_token)
 
 
 # ---------------------------------------------------------------------------

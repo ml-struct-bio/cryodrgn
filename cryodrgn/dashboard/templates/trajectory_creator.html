@@ -1422,7 +1422,7 @@
         <button type="button" class="btn btn-secondary cryo-traj-vol-popout-btn" id="btn-traj-vol-dock-below"
           title="Show volume display in the region below the plot" hidden>Expand below</button>
         <p id="traj-vol-backend-hint" class="cryo-traj-vol-backend-hint" aria-live="polite">
-          VTK 3D and ChimeraX are unavailable until trajectory volumes are generated. Manual mode uses pre-generated analyze volumes when available.
+          VTK 3D and ChimeraX appear once trajectory volumes are decoded. Manual mode can also use pre-generated analyze volumes.
         </p>
       </div>
     </div>
@@ -1455,7 +1455,9 @@
   var trajAnalyzeEpoch = {{ exp_epoch | tojson }};
   var trajPrefetchCpus = {{ preload_cpus | tojson }};
   var trajChimeraxCpus = {{ chimerax_cpus_default | tojson }};
+  var trajDecodeGpuCount = {{ traj_decode_gpu_count | tojson }};
   var TRAJ_VTK_BUNDLE_URL = {{ url_for('static', filename='js/volume_raycast_vtk.bundle.js') | tojson }};
+  var TRAJ_DECODE_PROGRESS_URL = {{ url_for('api_trajectory_volumes_decode_progress') | tojson }};
 
   var trajectoryMode = "manual";
   var anchorIndicesActive = null;
@@ -1534,12 +1536,14 @@
   var manualChimeraxLoadGeneration = 0;
   var manualVolumeLoadGeneration = 0;
   var manualVolumeBackendUserSet = false;
+  var volumeBackendUserSet = false;
   var manualVolumeSlots = null;
   var manualVolumePrefetchGeneration = 0;
   var manualCatalog = [];
   var manualCatalogById = {};
   var manualMarkersByVolId = {};
   var manualSelectedVolIds = [];
+  var lastManualSelectedVolIds = [];
   var manualCatalogLoaded = false;
   var manualCatalogLoading = false;
   var manualDefaultSelectionApplied = false;
@@ -1566,16 +1570,121 @@
   function canUseVtkOrChimeraxBackend() {
     return hasGeneratedTrajectoryVolumes()
       || manualAnalyzeVolumesReady
-      || manualVolumeSelectionActive();
+      || manualVolumeSelectionActive()
+      || scatterTrajectoryPathReady();
   }
 
-  function defaultManualVolumeBackend() {
+  function defaultVolumeBackend() {
     return "chimerax";
   }
 
+  function defaultManualVolumeBackend() {
+    return defaultVolumeBackend();
+  }
+
+  function preferredVolumeBackend() {
+    if (volumeBackendUserSet || manualVolumeBackendUserSet) {
+      return currentVolumeRenderBackend();
+    }
+    return defaultVolumeBackend();
+  }
+
   function preferredManualVolumeBackend() {
-    if (manualVolumeBackendUserSet) return currentVolumeRenderBackend();
-    return defaultManualVolumeBackend();
+    return preferredVolumeBackend();
+  }
+
+  function scatterTrajectoryPathReady() {
+    if (isManualTraversalMode()) return false;
+    if (hasAnchorIndices()) return true;
+    return !!(startXY && endXY);
+  }
+
+  function isScatterDirectOrNearestMode() {
+    if (isManualTraversalMode() || hasAnchorIndices()) return false;
+    return trajectoryMode === "direct" || trajectoryMode === "nearest";
+  }
+
+  function shouldAutoGenerateTrajectoryVolumes() {
+    if (isManualTraversalMode()) return false;
+    if (isScatterDirectOrNearestMode()) return false;
+    if (!scatterTrajectoryPathReady()) return false;
+    if (volumeBackendUserSet && currentVolumeRenderBackend() === "slice") return false;
+    var backend = preferredVolumeBackend();
+    return backend === "chimerax" || backend === "vtk";
+  }
+
+  function shouldTriggerVolumeGenerationOnBackendSwitch() {
+    if (lastTrajectoryVolumeCacheId) return true;
+    if (hasAnchorIndices()) return true;
+    if (isScatterDirectOrNearestMode()) return false;
+    return scatterTrajectoryPathReady();
+  }
+
+  function syncTrajectoryVolumeChrome() {
+    if (!trajVolDisplay) return;
+    var backend = preferredVolumeBackend();
+    var expectedCount = currentVolumeCount();
+    if (isManualTraversalMode()) {
+      if (manualSelectedVolIds.length >= 2) {
+        expectedCount = manualSelectedVolIds.length;
+      } else if (expectedCount < 2) {
+        expectedCount = 10;
+      }
+    } else if (!scatterTrajectoryPathReady()) {
+      return;
+    }
+    if (isScatterDirectOrNearestMode() && !hasGeneratedTrajectoryVolumes()) {
+      selectTrajVolumeBackend(backend);
+      trajVolDisplay.loadPayload({
+        volumes: [],
+        images: [],
+        expectedVolumeCount: expectedCount
+      }, { deferRender: true });
+      trajVolDisplay.setBackend(backend);
+      trajVolDisplay.setChimeraxRendering(false);
+      trajVolDisplay.setStatus("", false);
+      return;
+    }
+    selectTrajVolumeBackend(backend);
+    trajVolDisplay.loadPayload({
+      volumes: [],
+      images: [],
+      expectedVolumeCount: expectedCount
+    }, { deferRender: true });
+    trajVolDisplay.setBackend(backend);
+    if (backend === "chimerax") {
+      trajVolDisplay.setChimeraxRendering(true);
+      trajVolDisplay.setStatus(
+        isManualTraversalMode() ? "Loading volumes…" : "Generating volumes…",
+        true
+      );
+    } else if (backend === "vtk" || backend === "slice") {
+      trajVolDisplay.setStatus("Decoding volumes…", true);
+    }
+  }
+
+  function maybeAutoGenerateTrajectoryVolumes() {
+    if (!shouldAutoGenerateTrajectoryVolumes()) return;
+    if (currentVolumeRenderBackend() !== preferredVolumeBackend()) {
+      selectTrajVolumeBackend(preferredVolumeBackend());
+    }
+    generateTrajectory();
+  }
+
+  function onTrajectoryPathCoordsReady() {
+    if (isManualTraversalMode()) return;
+    syncTrajectoryVolumeChrome();
+    syncTrajVolBackendChrome();
+    syncGenerateVolumesButtonVisibility();
+    if (shouldAutoGenerateTrajectoryVolumes()) {
+      maybeAutoGenerateTrajectoryVolumes();
+      return;
+    }
+    if (isScatterDirectOrNearestMode()) {
+      setTrajStatus("Latent z ready — press Generate to decode volumes.", false);
+      return;
+    }
+    setTrajStatus("Latent z ready.", false);
   }
 
   function volumeDisplayBackendHint() {
@@ -1590,7 +1699,10 @@
     var el = document.getElementById("traj-vol-backend-" + backend);
     if (el && !el.disabled) el.checked = true;
     if (trajVolDisplay) trajVolDisplay.setBackend(backend);
-    if (opts.userInitiated) manualVolumeBackendUserSet = true;
+    if (opts.userInitiated) {
+      volumeBackendUserSet = true;
+      manualVolumeBackendUserSet = true;
+    }
   }
 
   function activeVolumePayload() {
@@ -1894,15 +2006,26 @@
   function rerenderTrajectoryChimeraxViews(statusMsg) {
     if (!lastTrajectoryVolumeCacheId) return;
     var myGen = ++volumeGeneration;
+    var n = generatedTrajectoryVolumeCount > 0
+      ? generatedTrajectoryVolumeCount
+      : currentVolumeCount();
+    var renderJobId = newDecodeJobId();
     if (trajVolDisplay) {
       trajVolDisplay.setChimeraxRendering(true);
-      if (statusMsg) trajVolDisplay.setStatus(statusMsg, true);
     }
+    startVolumeJobProgressPoll(renderJobId, {
+      nVolumes: n,
+      nCpus: trajChimeraxCpus,
+      rerender: true,
+      initialPhase: "chimerax"
+    });
+    if (trajProgress) trajProgress.hidden = false;
     var payload = {
       volume_cache_id: lastTrajectoryVolumeCacheId,
       chimerax_rerender_only: true,
       chimerax_cpus: trajChimeraxCpus,
-      render_backend: "chimerax"
+      render_backend: "chimerax",
+      decode_job_id: renderJobId
     };
     appendChimeraxIsoPayloadFields(payload);
     var renderTurns = chimeraxViewTurnsForRender();
@@ -1917,6 +2040,8 @@
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
         if (myGen !== volumeGeneration) return;
+        stopDecodeProgressPoll();
+        if (trajProgress) trajProgress.hidden = true;
         if (!res.ok) {
           if (res.j.need_chimerax) {
             window.alert(res.j.error || "Set CHIMERAX_PATH and try again.");
@@ -1947,6 +2072,8 @@
       })
       .catch(function(err) {
         if (myGen !== volumeGeneration) return;
+        stopDecodeProgressPoll();
+        if (trajProgress) trajProgress.hidden = true;
         console.error(err);
         setTrajStatus("ChimeraX re-render failed.", false);
         if (trajVolDisplay) {
@@ -2273,16 +2400,7 @@
   }
 
   function syncManualModeInitialVolumeChrome() {
-    if (!isManualTraversalMode() || !trajVolDisplay) return;
-    selectTrajVolumeBackend("chimerax");
-    trajVolDisplay.loadPayload({
-      volumes: [],
-      images: [],
-      expectedVolumeCount: 10
-    }, { deferRender: true });
-    trajVolDisplay.setBackend("chimerax");
-    trajVolDisplay.setChimeraxRendering(true);
-    trajVolDisplay.setStatus("Loading volumes…", true);
+    syncTrajectoryVolumeChrome();
   }
 
   function syncManualVolumeSliderPreview() {
@@ -2514,6 +2632,7 @@
   function ensureSliceBackendWhenVolumesMissing() {
     if (canUseVtkOrChimeraxBackend()) return;
     if (isManualTraversalMode()) return;
+    if (scatterTrajectoryPathReady()) return;
     var sliceEl = document.getElementById("traj-vol-backend-slice");
     var backend = currentVolumeRenderBackend();
     if (backend === "slice") return;
@@ -2531,11 +2650,11 @@
     if (vtkEl) vtkEl.disabled = !hasVol;
     if (cxEl) cxEl.disabled = !hasVol;
     if (vtkLabel) {
-      vtkLabel.title = hasVol ? "" : "Generate trajectory volumes first";
+      vtkLabel.title = hasVol ? "" : "Set a trajectory path first";
       vtkLabel.setAttribute("aria-disabled", hasVol ? "false" : "true");
     }
     if (cxLabel) {
-      cxLabel.title = hasVol ? "" : "Generate trajectory volumes first";
+      cxLabel.title = hasVol ? "" : "Set a trajectory path first";
       cxLabel.setAttribute("aria-disabled", hasVol ? "false" : "true");
     }
     if (hintEl) hintEl.hidden = hasVol;
@@ -2774,6 +2893,7 @@
 
   function onTrajVolumeBackendChange(backend) {
     backend = String(backend || "slice").toLowerCase();
+    volumeBackendUserSet = true;
     manualVolumeBackendUserSet = true;
     if (trajVolDisplay && backend !== "chimerax") {
       trajVolDisplay.setChimeraxRendering(false);
@@ -2794,7 +2914,7 @@
         if (isManualTraversalMode() && manualVolumeSelectionActive() && !hasGeneratedTrajectoryVolumes()) {
           if (syncManualChimeraxDisplay()) return;
         }
-        if (lastTrajectoryVolumeCacheId || hasAnchorIndices()) {
+        if (shouldTriggerVolumeGenerationOnBackendSwitch()) {
           generateTrajectory();
           return;
         }
@@ -2804,21 +2924,24 @@
       }
       applyVolumePayloadDisplay(cxPayload, "chimerax");
       syncTrajChimeraxViewControls();
+      syncGenerateVolumesButtonVisibility();
       return;
     }
     if (backend === "vtk" || backend === "slice") {
       var volPayload = activeVolumePayload() || {};
       if (!volPayload.volumes || !volPayload.volumes.length) {
-        if (lastTrajectoryVolumeCacheId) {
+        if (shouldTriggerVolumeGenerationOnBackendSwitch()) {
           generateTrajectory();
           return;
         }
       }
       applyVolumePayloadDisplay(volPayload, backend);
       syncManualVolumeScatterHighlight();
+      syncGenerateVolumesButtonVisibility();
       return;
     }
     if (trajVolDisplay) trajVolDisplay.setBackend(backend);
+    syncGenerateVolumesButtonVisibility();
   }
 
   function volumeNavTickLabels(total) {
@@ -2903,7 +3026,7 @@
       syncTrajVolDockButton();
     };
     trajVolDisplay.setVtkBundleUrl(TRAJ_VTK_BUNDLE_URL);
-    selectTrajVolumeBackend(isManualTraversalMode() ? defaultManualVolumeBackend() : "slice");
+    selectTrajVolumeBackend(defaultVolumeBackend());
     syncTrajVolBottomRegion();
     syncTrajVolDockButton();
     syncTrajVolBackendChrome();
@@ -2975,6 +3098,7 @@
     var pc1 = pc1VolumeEntries(manualCatalog);
     if (!pc1.length) return;
     manualSelectedVolIds = pc1.map(function(e) { return String(e.id); });
+    persistManualVolumeSelection();
     buildManualPickerRows();
     syncManualVolumeSliderPreview();
     if (pc1.length >= 2) scheduleManualBootstrap();
@@ -3108,6 +3232,102 @@
     if (trajProgress) trajProgress.hidden = !showProgress;
   }
 
+  var decodeProgressPollTimer = 0;
+  var decodeProgressPollGen = 0;
+
+  function decodingStatusMessage(nVolumes, nGpus, pct) {
+    nVolumes = Math.max(0, parseInt(nVolumes, 10) || 0);
+    nGpus = Math.max(1, parseInt(nGpus, 10) || 1);
+    pct = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    var gpuWord = nGpus === 1 ? "GPU" : "GPUs";
+    return "Decoding " + nVolumes + " volumes with " + nGpus + " " + gpuWord + ", "
+      + pct + "% complete";
+  }
+
+  function setDecodingStatus(nVolumes, nGpus, pct) {
+    var msg = decodingStatusMessage(nVolumes, nGpus, pct);
+    setTrajStatus(msg, true);
+    if (trajVolDisplay) trajVolDisplay.setStatus(msg, true);
+  }
+
+  function stopDecodeProgressPoll() {
+    if (decodeProgressPollTimer) {
+      clearInterval(decodeProgressPollTimer);
+      decodeProgressPollTimer = 0;
+    }
+    decodeProgressPollGen++;
+  }
+
+  function chimeraxRenderingStatusMessage(nVolumes, nCpus, pct, rerender) {
+    nVolumes = Math.max(0, parseInt(nVolumes, 10) || 0);
+    nCpus = Math.max(1, parseInt(nCpus, 10) || 1);
+    pct = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    var cpuWord = nCpus === 1 ? "CPU" : "CPUs";
+    var verb = rerender ? "Re-rendering" : "Rendering";
+    return verb + " " + nVolumes + " volumes with " + nCpus + " " + cpuWord + ", "
+      + pct + "% complete";
+  }
+
+  function applyVolumeJobProgressSnapshot(j, defaults) {
+    defaults = defaults || {};
+    var phase = j && j.phase ? String(j.phase) : "decode";
+    var total = j && j.total != null ? j.total : defaults.nVolumes;
+    var pct = j && j.percent != null ? j.percent : 0;
+    if (phase === "chimerax") {
+      var cpus = j && j.n_cpus != null ? j.n_cpus
+        : (j && j.workers != null ? j.workers : defaults.nCpus);
+      var rerender = !!(j && j.rerender) || !!defaults.rerender;
+      var cxMsg = chimeraxRenderingStatusMessage(total, cpus, pct, rerender);
+      setTrajStatus(cxMsg, true);
+      if (trajVolDisplay) trajVolDisplay.setStatus(cxMsg, true);
+      return;
+    }
+    var gpus = j && j.n_gpus != null ? j.n_gpus
+      : (j && j.workers != null ? j.workers : defaults.nGpus);
+    setDecodingStatus(total, gpus, pct);
+  }
+
+  function startVolumeJobProgressPoll(jobId, defaults) {
+    stopDecodeProgressPoll();
+    if (!jobId) return;
+    defaults = defaults || {};
+    var myPoll = ++decodeProgressPollGen;
+    applyVolumeJobProgressSnapshot({
+      phase: defaults.initialPhase || "decode",
+      total: defaults.nVolumes,
+      percent: 0,
+      n_gpus: defaults.nGpus,
+      n_cpus: defaults.nCpus,
+      rerender: defaults.rerender
+    }, defaults);
+    decodeProgressPollTimer = setInterval(function() {
+      if (myPoll !== decodeProgressPollGen) return;
+      fetch(TRAJ_DECODE_PROGRESS_URL + "?job_id=" + encodeURIComponent(jobId))
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (myPoll !== decodeProgressPollGen) return;
+          if (!res.ok || !res.j || !res.j.ok) return;
+          applyVolumeJobProgressSnapshot(res.j, defaults);
+        })
+        .catch(function() {});
+    }, 400);
+  }
+
+  function startDecodeProgressPoll(jobId, nVolumes, nGpus) {
+    startVolumeJobProgressPoll(jobId, {
+      nVolumes: nVolumes,
+      nGpus: nGpus,
+      initialPhase: "decode"
+    });
+  }
+
+  function newDecodeJobId() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return "dj-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+  }
+
   function currentNPoints() {
     var n = parseInt(nPointsEl.value, 10);
     if (!Number.isFinite(n)) n = 4;
@@ -3165,6 +3385,19 @@
     return (v === "chimerax" || v === "slice") ? v : "vtk";
   }
 
+  function syncGenerateVolumesButtonVisibility() {
+    if (!btnGenerateVolumesEl) return;
+    if (isManualTraversalMode()) {
+      btnGenerateVolumesEl.hidden = true;
+      return;
+    }
+    if (lastTrajectoryVolumeCacheId) {
+      btnGenerateVolumesEl.hidden = false;
+      return;
+    }
+    btnGenerateVolumesEl.hidden = !scatterTrajectoryPathReady();
+  }
+
   function syncManualModeChrome() {
     var manual = isManualTraversalMode();
     var trajAnchorWrap = document.getElementById("traj-anchor-wrap");
@@ -3173,7 +3406,7 @@
     if (trajAnchorPick) trajAnchorPick.hidden = manual || hasAnchorIndices();
     if (trajAnchorManualRow) trajAnchorManualRow.hidden = manual || hasAnchorIndices();
     if (trajFileBrowserPanel && manual) trajFileBrowserPanel.hidden = true;
-    if (btnGenerateVolumesEl) btnGenerateVolumesEl.hidden = manual;
+    syncGenerateVolumesButtonVisibility();
     if (trajAnchorWrap) trajAnchorWrap.hidden = false;
     if (!manual) {
       clearManualVolumeScatterHighlight();
@@ -3237,11 +3470,117 @@
     });
   }
 
+  function persistManualVolumeSelection() {
+    if (manualSelectedVolIds.length >= 2) {
+      lastManualSelectedVolIds = manualSelectedVolIds.slice();
+    }
+  }
+
+  function restoreLastManualVolumeSelection() {
+    if (lastManualSelectedVolIds.length >= 2) {
+      manualSelectedVolIds = lastManualSelectedVolIds.slice();
+      manualDefaultSelectionApplied = true;
+      buildManualPickerRows();
+      return true;
+    }
+    return false;
+  }
+
+  function clearInteractiveAnchorState() {
+    anchorIndicesActive = null;
+    anchorTrajXY = null;
+    if (nPointsEl) nPointsEl.disabled = false;
+    setTrajectoryModesLockedForAnchors(false);
+    syncAnchorIndicesUI();
+  }
+
+  function endpointsFromCurrentPath() {
+    if (anchorTrajXY && anchorTrajXY.length >= 2) {
+      return {
+        start: [Number(anchorTrajXY[0][0]), Number(anchorTrajXY[0][1])],
+        end: [
+          Number(anchorTrajXY[anchorTrajXY.length - 1][0]),
+          Number(anchorTrajXY[anchorTrajXY.length - 1][1])
+        ]
+      };
+    }
+    return currentTrajectoryEndpoints();
+  }
+
+  function leaveManualForScatterMode(mode) {
+    persistManualVolumeSelection();
+    clearManualAnalyzeVolumeDisplay();
+    var endpoints = endpointsFromCurrentPath();
+    clearInteractiveAnchorState();
+    manualSelectedVolIds = [];
+    manualBootstrapDone = false;
+    manualBootstrapPending = false;
+    buildManualPickerRows();
+    trajectoryMode = mode;
+    if (endpoints) {
+      startXY = endpoints.start.slice();
+      endXY = endpoints.end.slice();
+    }
+    if (mode === "direct") {
+      if (!resetDirectTraversalFromCurrentEndpoints()) {
+        if (!endpoints && (!startXY || !endXY)) {
+          initDefaultTrajectory(scatterLoadGeneration);
+          syncTraversalModeButtonStates();
+          updateGenerateVolumesButtonLabel();
+          return;
+        }
+      }
+    } else {
+      editableTrajXY = null;
+      if (!endpoints && (!startXY || !endXY)) {
+        initDefaultTrajectory(scatterLoadGeneration);
+        syncTraversalModeButtonStates();
+        updateGenerateVolumesButtonLabel();
+        return;
+      }
+    }
+    syncTraversalModeButtonStates();
+    updateGenerateVolumesButtonLabel();
+    redrawTrajectoryOverlay();
+    fetchTrajectoryCoords();
+  }
+
+  function enterManualMode(prevMode) {
+    trajectoryMode = "manual";
+    clearInteractiveAnchorState();
+    startXY = null;
+    endXY = null;
+    editableTrajXY = null;
+    removeOverlayTraces();
+    syncTraversalModeButtonStates();
+    updateGenerateVolumesButtonLabel();
+    if (prevMode !== "manual") {
+      if (restoreLastManualVolumeSelection()) {
+        syncManualVolumeScatterHighlight();
+        scheduleManualBootstrap();
+      } else if (manualCatalogLoaded) {
+        applyDefaultManualPc1Selection(true);
+      } else {
+        loadManualVolumeCatalog();
+      }
+      return;
+    }
+    if (manualSelectedVolIds.length >= 2) {
+      syncManualSelectionToAnchors();
+    } else if (manualCatalogLoaded) {
+      if (!restoreLastManualVolumeSelection()) applyDefaultManualPc1Selection(true);
+      else scheduleManualBootstrap();
+    } else {
+      loadManualVolumeCatalog();
+    }
+  }
+
   function toggleManualVolumeSelection(volId) {
     volId = String(volId);
     var idx = manualSelectedVolIds.indexOf(volId);
     if (idx >= 0) manualSelectedVolIds.splice(idx, 1);
     else manualSelectedVolIds.push(volId);
+    persistManualVolumeSelection();
     resetVolumeDisplayFocusEngaged();
     buildManualPickerRows();
     syncManualVolumeScatterHighlight();
@@ -3446,6 +3785,7 @@
       syncTrajVolBackendChrome();
     }
     updateGenerateVolumesButtonLabel();
+    syncGenerateVolumesButtonVisibility();
   }
 
   function scheduleTrajectoryOverlayRefresh() {
@@ -3489,6 +3829,7 @@
 
   function clearVolumeMontage() {
     volumeGeneration++;
+    stopDecodeProgressPoll();
     coordsRequestId++;
     if (trajVolColumn) trajVolColumn.innerHTML = "";
     setGeneratedVolumesState("", 0);
@@ -3831,17 +4172,12 @@
   }
 
   function clearAnchorMode() {
-    anchorIndicesActive = null;
-    anchorTrajXY = null;
-    editableTrajXY = null;
+    clearInteractiveAnchorState();
     manualSelectedVolIds = [];
     manualBootstrapDone = false;
     manualBootstrapPending = false;
     buildManualPickerRows();
-    if (nPointsEl) nPointsEl.disabled = false;
-    setTrajectoryModesLockedForAnchors(false);
     updateGenerateVolumesButtonLabel();
-    syncAnchorIndicesUI();
     closeFileBrowser();
   }
 
@@ -3869,7 +4205,11 @@
     redrawTrajectoryOverlay();
     scheduleTrajectoryOverlayRefresh();
     syncTrajGlyphOverlay();
-    setTrajStatus("Index trajectory ready — press Generate to decode volumes.", false);
+    if (isManualTraversalMode()) {
+      setTrajStatus("Manual selection ready.", false);
+    } else {
+      onTrajectoryPathCoordsReady();
+    }
   }
 
   function makeLinearEditablePath(firstPt, lastPt, nPoints) {
@@ -3886,6 +4226,68 @@
       out.push([x0 + t * (x1 - x0), y0 + t * (y1 - y0)]);
     }
     return out;
+  }
+
+  function currentTrajectoryPathXY(fallbackCount) {
+    if (editableTrajXY && editableTrajXY.length >= 2) {
+      return editableTrajXY.map(function(p) { return [Number(p[0]), Number(p[1])]; });
+    }
+    if (hasAnchorIndices() && anchorTrajXY && anchorTrajXY.length >= 2) {
+      return anchorTrajXY.map(function(p) { return [Number(p[0]), Number(p[1])]; });
+    }
+    var endpoints = currentTrajectoryEndpoints();
+    if (endpoints) {
+      var n = Math.max(2, parseInt(fallbackCount, 10) || currentVolumeCount());
+      return makeLinearEditablePath(endpoints.start, endpoints.end, n);
+    }
+    return null;
+  }
+
+  function resampleTrajectoryPath(path, newCount) {
+    if (!path || path.length < 2) return null;
+    newCount = Math.max(2, parseInt(newCount, 10) || 2);
+    if (path.length === newCount) {
+      return path.map(function(p) { return [Number(p[0]), Number(p[1])]; });
+    }
+    var segLens = [0];
+    var total = 0;
+    for (var i = 1; i < path.length; i++) {
+      var dx = Number(path[i][0]) - Number(path[i - 1][0]);
+      var dy = Number(path[i][1]) - Number(path[i - 1][1]);
+      total += Math.hypot(dx, dy);
+      segLens.push(total);
+    }
+    if (!(total > 0)) {
+      return makeLinearEditablePath(path[0], path[path.length - 1], newCount);
+    }
+    var out = [];
+    for (var j = 0; j < newCount; j++) {
+      var target = (newCount <= 1) ? 0 : (j / (newCount - 1)) * total;
+      var seg = 0;
+      while (seg < segLens.length - 1 && segLens[seg + 1] < target) seg++;
+      if (seg >= path.length - 1) {
+        out.push([Number(path[path.length - 1][0]), Number(path[path.length - 1][1])]);
+        continue;
+      }
+      var segStart = segLens[seg];
+      var segEnd = segLens[seg + 1];
+      var t = segEnd > segStart ? (target - segStart) / (segEnd - segStart) : 0;
+      var x0 = Number(path[seg][0]), y0 = Number(path[seg][1]);
+      var x1 = Number(path[seg + 1][0]), y1 = Number(path[seg + 1][1]);
+      out.push([x0 + t * (x1 - x0), y0 + t * (y1 - y0)]);
+    }
+    return out;
+  }
+
+  function applyResampledTrajectoryPath(newCount) {
+    var path = currentTrajectoryPathXY(newCount);
+    if (!path || path.length < 2) return false;
+    var resampled = resampleTrajectoryPath(path, newCount);
+    if (!resampled || resampled.length < 2) return false;
+    editableTrajXY = resampled;
+    startXY = resampled[0].slice();
+    endXY = resampled[resampled.length - 1].slice();
+    return true;
   }
 
   function currentTrajectoryEndpoints() {
@@ -3919,44 +4321,42 @@
   /* ── Mode toggle (also refreshes latent z via coords API) ── */
   function setMode(mode) {
     var prevMode = trajectoryMode;
-    var hasAnchors = hasAnchorIndices();
+    var importedAnchors = hasAnchorIndices() && !isManualTraversalMode();
+
     if (mode === "manual") {
-      trajectoryMode = "manual";
-      clearAnchorMode();
-      startXY = null;
-      endXY = null;
-      editableTrajXY = null;
-      removeOverlayTraces();
-      syncTraversalModeButtonStates();
-      updateGenerateVolumesButtonLabel();
-      if (manualCatalogLoaded) applyDefaultManualPc1Selection(true);
-      else loadManualVolumeCatalog();
+      enterManualMode(prevMode);
       return;
     }
-    if (prevMode === "manual" && mode !== "manual") {
-      clearManualAnalyzeVolumeDisplay();
+    if (prevMode === "manual") {
+      if (mode !== "direct" && mode !== "nearest") return;
+      leaveManualForScatterMode(mode);
+      return;
     }
-    if (hasAnchors && !isManualTraversalMode()) {
+    if (importedAnchors) {
       if (mode !== "direct" && mode !== "graph") return;
-    } else if (mode !== "direct" && mode !== "nearest" && mode !== "manual") {
+    } else if (mode !== "direct" && mode !== "nearest") {
       return;
     }
-    if (!hasAnchors && mode === "direct" && trajModeDirectRadio && trajModeDirectRadio.disabled) {
+    if (!importedAnchors && mode === "direct" && trajModeDirectRadio && trajModeDirectRadio.disabled) {
       return;
     }
     trajectoryMode = mode;
-    if (prevMode === "manual" && mode !== "manual") {
-      manualSelectedVolIds = [];
-      buildManualPickerRows();
-    }
-    if (!hasAnchors && mode === "direct" && prevMode !== "direct") {
-      if (!resetDirectTraversalFromCurrentEndpoints() && (!startXY || !endXY)) {
-        initDefaultTrajectory(scatterLoadGeneration);
+    if (!importedAnchors) {
+      if (mode === "direct" && prevMode !== "direct") {
+        if (!resetDirectTraversalFromCurrentEndpoints() && (!startXY || !endXY)) {
+          initDefaultTrajectory(scatterLoadGeneration);
+        }
+      } else if (mode === "nearest" && prevMode === "direct") {
+        editableTrajXY = null;
+      } else if (mode === "direct" && prevMode === "nearest") {
+        resetDirectTraversalFromCurrentEndpoints();
       }
+    } else if (mode === "graph" && prevMode === "direct") {
+      editableTrajXY = null;
     }
     syncTraversalModeButtonStates();
     updateGenerateVolumesButtonLabel();
-    if (hasAnchors) {
+    if (importedAnchors) {
       fetchTrajectoryCoords();
       return;
     }
@@ -4306,6 +4706,7 @@
   /* ── Before reloading scatter (axes / color): cancel in-flight requests, clear stale 2D state ── */
   function preparePlotReload() {
     volumeGeneration++;
+    stopDecodeProgressPoll();
     coordsRequestId++;
     dragEndpoint = null;
     dragPointIndex = -1;
@@ -5177,7 +5578,7 @@
           }
           applyTrajectoryCoordsPayload(res.j);
           redrawTrajectoryOverlay();
-          setTrajStatus("Latent z ready — press Generate to decode volumes.", false);
+          onTrajectoryPathCoordsReady();
         })
         .catch(function(err) {
           if (myIdA !== coordsRequestId) return;
@@ -5213,7 +5614,7 @@
           return;
         }
         applyTrajectoryCoordsPayload(res.j);
-        setTrajStatus("Latent z ready — press Generate to decode volumes.", false);
+        onTrajectoryPathCoordsReady();
       })
       .catch(function(err) {
         if (myId !== coordsRequestId) return;
@@ -5280,11 +5681,16 @@
     if (trajVolDisplay) trajVolDisplay.setExpandedBelow(false);
     syncTrajVolBottomRegion(renderBackend);
     syncTrajVolDockButton();
-    var backendLabel = renderBackend === "chimerax" ? "ChimeraX" : (renderBackend === "slice" ? "2D slices" : "VTK");
-    setTrajStatus("Decoding " + n + " volumes (" + backendLabel + ")…", true);
+    var decodeJobId = newDecodeJobId();
+    startVolumeJobProgressPoll(decodeJobId, {
+      nVolumes: n,
+      nGpus: trajDecodeGpuCount,
+      nCpus: trajChimeraxCpus,
+      rerender: false,
+      initialPhase: "decode"
+    });
     if (trajVolDisplay) {
       if (renderBackend === "chimerax") trajVolDisplay.setChimeraxRendering(true);
-      else trajVolDisplay.setStatus("Decoding volumes…", true);
     }
     if (plotStatus) plotStatus.textContent = "Generating trajectory…";
     if (trajProgress) trajProgress.hidden = false;
@@ -5314,6 +5720,7 @@
     }
     payload.chimerax_cpus = trajChimeraxCpus;
     payload.render_backend = renderBackend;
+    payload.decode_job_id = decodeJobId;
     if (renderBackend === "chimerax") {
       var renderTurns = chimeraxViewTurnsForRender();
       var renderVm = chimeraxViewMatrixForRender();
@@ -5329,6 +5736,7 @@
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
         if (myGen !== volumeGeneration) return;
+        stopDecodeProgressPoll();
         if (trajProgress) trajProgress.hidden = true;
         if (!res.ok) {
           if (res.j.need_chimerax) {
@@ -5381,6 +5789,7 @@
       })
       .catch(function(err) {
         if (myGen !== volumeGeneration) return;
+        stopDecodeProgressPoll();
         if (trajProgress) trajProgress.hidden = true;
         console.error(err);
         setTrajStatus("Request failed.", false);
@@ -5457,7 +5866,7 @@
         redrawTrajectoryOverlay();
         fetchTrajectoryCoords();
         if (plotStatus) {
-          plotStatus.textContent = "Default trajectory on long axis — choose mode for z, then Generate for volumes.";
+          plotStatus.textContent = "Default trajectory on long axis — press Generate to decode volumes.";
         }
       })
       .catch(function() {
@@ -5543,6 +5952,7 @@
                     fetchTrajectoryCoords();
                   } else {
                     redrawTrajectoryOverlay();
+                    if (!isManualTraversalMode()) onTrajectoryPathCoordsReady();
                   }
                   requestAnimationFrame(function() {
                     try { Plotly.Plots.resize(gd); } catch (e) {}
@@ -5745,18 +6155,19 @@
     updateGenerateVolumesButtonLabel();
     removeTrajectorySampleMarkersOnly();
     if (hasAnchorIndices() && currentAnchorTraversalMode() === "graph") return;
+    var newCount = currentNPoints();
     if (hasAnchorIndices()) {
       fetchTrajectoryCoords();
       return;
     }
-    if (trajectoryMode === "direct" && startXY && endXY) {
-      resetDirectTraversalFromCurrentEndpoints();
+    if (startXY && endXY) {
+      if (!applyResampledTrajectoryPath(newCount)
+          && trajectoryMode === "direct"
+          && resetDirectTraversalFromCurrentEndpoints()) {
+        /* Fallback when no prior path exists yet. */
+      }
       redrawTrajectoryOverlay();
       syncTrajGlyphOverlay();
-    } else {
-      editableTrajXY = null;
-    }
-    if (startXY && endXY) {
       fetchTrajectoryCoords();
     }
   });

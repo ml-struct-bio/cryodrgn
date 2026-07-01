@@ -1,5 +1,6 @@
 // Particle explorer inline script fragment (sidebar + scatter viewport).
   var cols = {{ numeric_cols | tojson }};
+  var colorCols = {{ color_cols | tojson }};
   var covariateDisplayMap = {{ covariate_display_map | tojson }};
   var dx = {{ default_x | tojson }};
   var dy = {{ default_y | tojson }};
@@ -1013,14 +1014,14 @@
     });
   }
 
-  function fillSelect(sel, includeNone) {
+  function fillSelect(sel, values, includeNone) {
     sel.innerHTML = "";
     if (includeNone) {
       var o = document.createElement("option");
       o.value = "none"; o.textContent = "None";
       sel.appendChild(o);
     }
-    cols.forEach(function(c) {
+    values.forEach(function(c) {
       var o = document.createElement("option");
       o.value = c;
       o.textContent = covariateDisplayMap[c] || c;
@@ -1031,9 +1032,9 @@
   var sx = document.getElementById("sx");
   var sy = document.getElementById("sy");
   var sc = document.getElementById("sc");
-  fillSelect(sx, false);
-  fillSelect(sy, false);
-  fillSelect(sc, true);
+  fillSelect(sx, cols, false);
+  fillSelect(sy, cols, false);
+  fillSelect(sc, colorCols, true);
   sx.value = cols.indexOf(dx) >= 0 ? dx : cols[0];
   sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
   var renderedScatterAxes = {x: sx.value, y: sy.value};

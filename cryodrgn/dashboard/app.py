@@ -72,6 +72,7 @@ _ROUTES = (
     ("/abinit-builder", re.abinit_builder_redirect, "GET"),
     ("/filter", re.filter_page_redirect, "GET"),
     ("/api/save_selection", re.api_save_selection, "POST"),
+    ("/api/load_covariate_pkl", re.api_load_covariate_pkl, "POST"),
     ("/api/covariate_threshold_rows", re.api_covariate_threshold_rows, "POST"),
     ("/api/covariate_legend_context", re.api_covariate_legend_context, "POST"),
     ("/explorer", re.explorer, "GET"),

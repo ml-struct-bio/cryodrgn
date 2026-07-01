@@ -14,6 +14,7 @@ from cryodrgn.dashboard.covariate_labels import (
 )
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
+from cryodrgn.dashboard.plots_color_covariate import _lower_color_series_is_discrete
 from cryodrgn.dashboard.palette_config import normalize_continuous_palette
 from cryodrgn.dashboard.preload import DEFAULT_PRELOAD_IMAGE_LIMIT
 from cryodrgn.dashboard.trajectory import (
@@ -22,7 +23,17 @@ from cryodrgn.dashboard.trajectory import (
     has_umap_columns,
 )
 
-__all__ = ["_covariate_display_map"]
+__all__ = ["_covariate_display_map", "discrete_color_columns_for_exp"]
+
+
+def discrete_color_columns_for_exp(exp: DashboardExperiment) -> list[str]:
+    """Colour columns that use discrete toggle legends rather than palettes."""
+    return [
+        c
+        for c in exp.color_covariate_columns
+        if c in exp.plot_df.columns and _lower_color_series_is_discrete(exp.plot_df[c])
+    ]
+
 
 _PAIR_DISCRETE_HEX6 = re.compile(r"^#[0-9a-fA-F]{6}$")
 

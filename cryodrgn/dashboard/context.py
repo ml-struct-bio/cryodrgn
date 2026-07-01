@@ -148,6 +148,7 @@ EXP_REQUIRED_ENDPOINTS = frozenset(
         "abinit_builder_redirect",
         "filter_page_redirect",
         "api_save_selection",
+        "api_load_covariate_pkl",
         "api_covariate_threshold_rows",
         "api_covariate_legend_context",
         "explorer",

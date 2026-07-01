@@ -1611,8 +1611,11 @@
 </div>
 {% endif %}
 
+{% include "_covariate_pkl_loader.html" %}
+
 <script src="{{ url_for('static', filename='js/cryo_cc_legend_primitives.js') }}"></script>
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+<script src="{{ url_for('static', filename='js/covariate_pkl_loader.js') }}"></script>
 <script src="{{ url_for('static', filename='js/plotly_scatter3d_scene.js') }}"></script>
 {% if show_vol_landscape_quick_actions %}
 <script src="{{ url_for('static', filename='js/latent3d_plot_gif.js') }}"></script>
@@ -2846,6 +2849,31 @@
     });
   }
 {% endif %}
+  if (window.CryoCovariatePklLoader && sc) {
+    var covariatePklLoader = CryoCovariatePklLoader.create({
+      listFilesUrl: "{{ url_for('api_list_server_files') }}",
+      loadCovariateUrl: "{{ url_for('api_load_covariate_pkl') }}",
+      applyLoaded: function(j) {
+        if (j.color_cols || j.numeric_cols) {
+          cols = (j.color_cols || j.numeric_cols).slice();
+        }
+        if (j.covariate_display_map) {
+          Object.assign(covariateDisplayMap, j.covariate_display_map);
+        }
+        fillColorSelect(sc);
+        covariatePklLoader.wireSelect(sc);
+        if (j.primary_column) sc.value = j.primary_column;
+      },
+      onLoaded: function() {
+        sc.dispatchEvent(new Event("change"));
+      },
+      onError: function(msg) {
+        var st = document.getElementById("z3-axis-status");
+        if (st) st.textContent = msg;
+      }
+    });
+    covariatePklLoader.wireSelect(sc);
+  }
   loadPlot();
 })();
 </script>

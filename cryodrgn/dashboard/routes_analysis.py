@@ -61,6 +61,7 @@ from cryodrgn.dashboard.route_helpers import (
     _parse_optional_discrete_label_colors,
     _parse_pairplot_request,
     _trajectory_eligibility_error,
+    discrete_color_columns_for_exp,
 )
 from cryodrgn.dashboard.trajectory import (
     compute_trajectory_latent_path,
@@ -106,7 +107,7 @@ def pairplot_page():
             200,
         )
     z_names = frozenset(f"z{i}" for i in range(zdim))
-    color_choices = [c for c in e.numeric_columns if c not in z_names]
+    color_choices = [c for c in e.color_covariate_columns if c not in z_names]
     if not color_choices:
         return (
             render_template("pair_grid_need_more_cols.html", kind="numeric", n=0),
@@ -120,6 +121,7 @@ def pairplot_page():
         "pair_grid.html",
         color_choices=color_choices,
         covariate_display_map=_covariate_display_map(color_choices),
+        discrete_color_columns=discrete_color_columns_for_exp(e),
         default_color=default_color,
         has_umap=has_umap_columns(e),
         zdim=zdim,
@@ -253,7 +255,7 @@ def trajectory_creator_page():
         )
     zdim = int(e.z.shape[1])
     traj_cols = trajectory_plot_axis_columns(e)
-    color_cols = e.numeric_columns
+    color_cols = e.color_covariate_columns
     dx, dy = trajectory_default_xy_cols(traj_cols, zdim)
     cov_keys = list(dict.fromkeys(traj_cols + color_cols))
 
@@ -261,6 +263,7 @@ def trajectory_creator_page():
         "trajectory_creator.html",
         traj_axis_cols=traj_cols,
         numeric_cols=color_cols,
+        discrete_color_columns=discrete_color_columns_for_exp(e),
         covariate_display_map=_covariate_display_map(cov_keys),
         default_x=dx,
         default_y=dy,
@@ -390,9 +393,21 @@ def api_trajectory_import_anchors():
 
 
 def api_list_server_files():
-    """List directories and ``.txt`` files for the server-side file browser."""
+    """List directories and files for the server-side file browser.
+
+    Query ``kinds`` (comma-separated) selects file extensions: ``txt`` (default),
+    ``pkl``, or both.
+    """
     e: DashboardExperiment = g.dashboard_exp
     req_dir = request.args.get("dir", "").strip()
+    kinds_raw = (request.args.get("kinds") or "txt").strip().lower()
+    allowed_exts: set[str] = set()
+    for part in kinds_raw.split(","):
+        part = part.strip()
+        if part in ("txt", "pkl"):
+            allowed_exts.add(f".{part}")
+    if not allowed_exts:
+        allowed_exts = {".txt"}
     root = os.path.abspath(e.workdir)
     if req_dir:
         browse = os.path.abspath(req_dir)
@@ -408,7 +423,7 @@ def api_list_server_files():
                 name = entry.name
                 if entry.is_dir():
                     entries.append({"name": name, "type": "dir"})
-                elif name.lower().endswith(".txt"):
+                elif any(name.lower().endswith(ext) for ext in allowed_exts):
                     entries.append({"name": name, "type": "file"})
         entries.sort(key=lambda row: row["name"])
     except PermissionError:

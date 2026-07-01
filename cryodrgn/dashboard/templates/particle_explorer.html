@@ -1967,8 +1967,11 @@
 </div>
 </div>
 
+{% include "_covariate_pkl_loader.html" %}
+
 <script src="{{ url_for('static', filename='js/cryo_cc_legend_primitives.js') }}"></script>
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+<script src="{{ url_for('static', filename='js/covariate_pkl_loader.js') }}"></script>
 <script>
 (function() {
 {% include "_particle_explorer_scatterjs.html" %}

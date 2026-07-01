@@ -340,7 +340,6 @@
     display: none !important;
   }
   .cryo-traj-manual-picker {
-    margin-top: 0.35rem;
     width: 100%;
     box-sizing: border-box;
   }
@@ -989,32 +988,24 @@
     width: 100%;
     box-sizing: border-box;
   }
-  .cryo-traj-anchor-import-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 21%) minmax(0, 1fr);
-    gap: 0.35rem 0.65rem;
-    align-items: center;
+  .cryo-traj-anchor-quick-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
     width: 100%;
     box-sizing: border-box;
   }
-  .cryo-traj-anchor-import-grid[hidden] {
+  .cryo-traj-anchor-quick-row[hidden] {
     display: none !important;
   }
-  .cryo-traj-anchor-import-grid .btn {
-    justify-self: start;
-    width: 100%;
-    max-width: 100%;
+  .cryo-traj-anchor-quick-row .btn {
+    flex: 1 1 calc(50% - 0.18rem);
+    min-width: 0;
     font-size: 0.72rem;
     padding: 0.32rem 0.4rem;
     line-height: 1.25;
     box-sizing: border-box;
     text-align: center;
-  }
-  .cryo-traj-anchor-desc-line {
-    margin: 0;
-    font-size: 0.72rem;
-    line-height: 1.38;
-    color: var(--muted, #5c6b7a);
   }
   .cryo-traj-anchor-manual-row {
     display: grid;
@@ -1208,17 +1199,6 @@
       </div>
     </fieldset>
     <div class="cryo-traj-anchor-row" id="traj-anchor-wrap">
-      <div class="cryo-traj-anchor-import-grid" id="traj-anchor-pick" hidden>
-        <button type="button" class="btn btn-secondary" id="btn-anchor-import-pkl">Import anchor .txt</button>
-        <p class="cryo-traj-anchor-desc-line">Open a server-side file picker to choose a <code>.txt</code> file
-          containing a whitespace-delimited list of particle indices.</p>
-        <button type="button" class="btn btn-secondary" id="btn-anchor-kmeans">K-means centers</button>
-        <p class="cryo-traj-anchor-desc-line">Build the path from cluster centers in
-          <code>kmeansK/centers_ind.txt</code> for the current analysis folder.</p>
-        <button type="button" class="btn btn-secondary" id="btn-anchor-random">10 random indices</button>
-        <p class="cryo-traj-anchor-desc-line">Sample ten random particles from the dataset as anchor points along the
-          trajectory.</p>
-      </div>
       <div class="cryo-traj-manual-picker" id="traj-manual-picker">
         <div id="vslice-volume-picker" class="cryo-vslice-volume-picker">
           <div class="cryo-vslice-volume-picker-scroll" id="vslice-volume-picker-scroll">
@@ -1236,6 +1216,11 @@
           </div>
         </div>
         <p class="cryo-traj-hint" style="margin:0.35rem 0 0;">Select two or more k-means or PC volumes to define the path.</p>
+      </div>
+      <div class="cryo-traj-anchor-quick-row" id="traj-anchor-pick">
+        <button type="button" class="btn btn-secondary" id="btn-anchor-import-pkl">Import anchor .txt</button>
+        <button type="button" class="btn btn-secondary" id="btn-anchor-random">10 random indices</button>
+        <button type="button" class="btn btn-secondary" id="btn-anchor-kmeans" hidden>K-means centers</button>
       </div>
       <div class="cryo-traj-anchor-path-order-row" id="traj-anchor-path-order-row" hidden>
         <p class="cryo-traj-hint" id="traj-anchor-path-order-label" style="margin:0;">
@@ -1462,8 +1447,11 @@
 </section>
 </div>
 
+{% include "_covariate_pkl_loader.html" %}
+
 <script src="{{ url_for('static', filename='js/cryo_cc_legend_primitives.js') }}"></script>
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+<script src="{{ url_for('static', filename='js/covariate_pkl_loader.js') }}"></script>
 <script src="{{ url_for('static', filename='js/volume_3d_utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/volume_slice_canvas.js') }}"></script>
 <script src="{{ url_for('static', filename='js/trajectory_volume_display.js') }}"></script>
@@ -1472,6 +1460,7 @@
   var trajAxisCols = {{ traj_axis_cols | tojson }};
   var colorCols = {{ numeric_cols | tojson }};
   var covariateDisplayMap = {{ covariate_display_map | tojson }};
+  var discreteColorCols = {{ discrete_color_columns | tojson }};
   var dx = {{ default_x | tojson }};
   var dy = {{ default_y | tojson }};
   var zdim = {{ zdim | tojson }};
@@ -3369,9 +3358,9 @@
   sx.value = trajAxisCols.indexOf(dx) >= 0 ? dx : trajAxisCols[0];
   sy.value = trajAxisCols.indexOf(dy) >= 0 ? dy : trajAxisCols[Math.min(1, trajAxisCols.length - 1)];
 
-  /* Matches scatter_json / particle explorer: only ``labels`` is discrete (no sequential palette). */
+  /* Matches scatter_json / particle explorer discrete colour covariates. */
   function trajColorByIsDiscrete() {
-    return sc.value === "labels";
+    return discreteColorCols.indexOf(sc.value) >= 0;
   }
 
   function syncTrajPaletteFieldset() {
@@ -6779,6 +6768,33 @@
   syncAnchorIndicesUI();
   syncTraversalModeButtonStates();
   syncScatterControlsAlignment();
+  if (window.CryoCovariatePklLoader && sc) {
+    var covariatePklLoader = CryoCovariatePklLoader.create({
+      listFilesUrl: "{{ url_for('api_list_server_files') }}",
+      loadCovariateUrl: "{{ url_for('api_load_covariate_pkl') }}",
+      applyLoaded: function(j) {
+        if (j.color_cols || j.numeric_cols) {
+          colorCols = (j.color_cols || j.numeric_cols).slice();
+        }
+        if (j.discrete_color_columns) {
+          discreteColorCols = j.discrete_color_columns.slice();
+        }
+        if (j.covariate_display_map) {
+          Object.assign(covariateDisplayMap, j.covariate_display_map);
+        }
+        fillSelect(sc, colorCols, true);
+        covariatePklLoader.wireSelect(sc);
+        if (j.primary_column) sc.value = j.primary_column;
+      },
+      onLoaded: function() {
+        sc.dispatchEvent(new Event("change"));
+      },
+      onError: function(msg) {
+        setTrajStatus(msg, true);
+      }
+    });
+    covariatePklLoader.wireSelect(sc);
+  }
   requestAnimationFrame(function() {
     requestAnimationFrame(function() {
       loadPlot();

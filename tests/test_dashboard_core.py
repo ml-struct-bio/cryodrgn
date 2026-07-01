@@ -1200,6 +1200,151 @@ class TestDashboardModules:
         assert palette_config.mpl_cmap_for_palette("Viridis") == "viridis"
         assert palette_config.mpl_cmap_for_palette("not_a_palette") == "viridis"
 
+    def test_merge_covariate_pkl_1d(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        from cryodrgn.dashboard.covariate_pkl import merge_covariate_pkl
+
+        e = dashboard_experiment
+        n = len(e.plot_df)
+        path = os.path.join(e.workdir, "test_covariate_1d.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump(np.arange(n, dtype=np.float64), fh)
+        cols, discrete = merge_covariate_pkl(e, path)
+        assert cols == ["test_covariate_1d"]
+        assert discrete == []
+        assert "test_covariate_1d" in e.numeric_columns
+        assert e.plot_df["test_covariate_1d"].shape == (n,)
+
+    def test_merge_covariate_pkl_wrong_length(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        from cryodrgn.dashboard.covariate_pkl import merge_covariate_pkl
+
+        e = dashboard_experiment
+        path = os.path.join(e.workdir, "bad_len.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump(np.zeros(3, dtype=np.float64), fh)
+        with pytest.raises(ValueError, match="does not match particle count"):
+            merge_covariate_pkl(e, path)
+
+    def test_merge_covariate_pkl_not_array(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        from cryodrgn.dashboard.covariate_pkl import merge_covariate_pkl
+
+        e = dashboard_experiment
+        path = os.path.join(e.workdir, "not_array.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump({"a": 1}, fh)
+        with pytest.raises(ValueError, match="Expected an array"):
+            merge_covariate_pkl(e, path)
+
+    def test_merge_covariate_pkl_string_labels(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        from cryodrgn.dashboard.covariate_pkl import merge_covariate_pkl
+        from cryodrgn.dashboard.plots_color_covariate import (
+            _lower_color_series_is_discrete,
+        )
+
+        e = dashboard_experiment
+        n = len(e.plot_df)
+        labels = np.array(
+            ["open", "closed"] * (n // 2) + ["open"] * (n % 2), dtype=object
+        )
+        path = os.path.join(e.workdir, "state_labels.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump(labels, fh)
+        cols, discrete = merge_covariate_pkl(e, path)
+        assert cols == ["state_labels"]
+        assert discrete == ["state_labels"]
+        assert "state_labels" in e.color_covariate_columns
+        assert "state_labels" not in e.numeric_columns
+        assert _lower_color_series_is_discrete(e.plot_df["state_labels"])
+
+    def test_merge_covariate_pkl_string_labels_2d(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        from cryodrgn.dashboard.covariate_pkl import merge_covariate_pkl
+
+        e = dashboard_experiment
+        n = len(e.plot_df)
+        arr = np.column_stack(
+            [
+                np.array(["a", "b"] * (n // 2) + ["a"] * (n % 2), dtype=object),
+                np.array(["x", "y"] * (n // 2) + ["x"] * (n % 2), dtype=object),
+            ]
+        )
+        path = os.path.join(e.workdir, "multi_labels.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump(arr, fh)
+        cols, discrete = merge_covariate_pkl(e, path)
+        assert cols == ["multi_labels_0", "multi_labels_1"]
+        assert discrete == cols
+        assert all(c in e.user_covariate_columns for c in cols)
+
+    def test_api_load_covariate_pkl_string_labels(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        e = dashboard_experiment
+        n = len(e.plot_df)
+        path = os.path.join(e.workdir, "api_labels.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump(
+                np.array(["type_a", "type_b"] * (n // 2) + ["type_a"] * (n % 2)), fh
+            )
+        r = flask_client.post("/api/load_covariate_pkl", json={"path": path})
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j["ok"] is True
+        assert j["discrete_columns"] == ["api_labels"]
+        assert "api_labels" in j["color_cols"]
+        r_scatter = flask_client.get(
+            "/api/scatter?x=UMAP1&y=UMAP2&color=api_labels&filter_ui=1"
+        )
+        assert r_scatter.status_code == 200
+
+    def test_api_load_covariate_pkl(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        e = dashboard_experiment
+        n = len(e.plot_df)
+        path = os.path.join(e.workdir, "api_cov.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump(np.linspace(0, 1, n), fh)
+        r = flask_client.post("/api/load_covariate_pkl", json={"path": path})
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j["ok"] is True
+        assert j["primary_column"] == "api_cov"
+        assert "api_cov" in j["numeric_cols"]
+
+    def test_api_load_covariate_pkl_bad_format(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        e = dashboard_experiment
+        path = os.path.join(e.workdir, "api_bad.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump([1, 2, 3], fh)
+        r = flask_client.post("/api/load_covariate_pkl", json={"path": path})
+        assert r.status_code == 400
+        assert "error" in r.get_json()
+
+    def test_api_list_server_files_lists_pkl(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        e = dashboard_experiment
+        path = os.path.join(e.workdir, "listed_cov.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump(np.zeros(len(e.plot_df)), fh)
+        r = flask_client.get("/api/list_server_files?kinds=pkl&dir=" + e.workdir)
+        assert r.status_code == 200
+        names = [
+            ent["name"] for ent in r.get_json()["entries"] if ent["type"] == "file"
+        ]
+        assert "listed_cov.pkl" in names
+
     def test_landscape_full_ready_false_without_outputs(self) -> None:
         from cryodrgn.dashboard import landscape_full_3d  # noqa: PLC0415
 

@@ -32,6 +32,7 @@ from cryodrgn.dashboard.context import (
     command_builder_template_kwargs,
     _request_json_dict,
 )
+from cryodrgn.dashboard.covariate_pkl import merge_covariate_pkl
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.covariate_labels import landscape_vol_pc_column_pretty_label
 from cryodrgn.dashboard.landscape_full_3d import (
@@ -98,6 +99,7 @@ from cryodrgn.dashboard.route_helpers import (
     _particle_explorer_scatter_cap_from_env,
     _particle_explorer_scatter_max_points,
     _redirect,
+    discrete_color_columns_for_exp,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,6 +246,44 @@ def api_save_selection():
     return jsonify(payload)
 
 
+def api_load_covariate_pkl():
+    """Load a particle-indexed numeric numpy array from a server-side ``.pkl`` file.
+
+    Merges one or more columns into ``plot_df`` so scatter colour selectors can use
+    them like built-in covariates.
+    """
+    e: DashboardExperiment = g.dashboard_exp
+    data = _request_json_dict()
+    server_path = str(data.get("path", "") or "").strip()
+    if not server_path:
+        return jsonify(error="No file path provided."), 400
+    if not server_path.lower().endswith(".pkl"):
+        return jsonify(error="Select a .pkl file."), 400
+    abs_path = os.path.abspath(server_path)
+    root = os.path.abspath(e.workdir)
+    if not (abs_path == root or abs_path.startswith(root + os.sep)):
+        return jsonify(error="Path must be under the experiment output folder."), 400
+    try:
+        new_cols, discrete_cols = merge_covariate_pkl(e, abs_path)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception:
+        logger.exception("load covariate pkl failed")
+        return jsonify(error="Could not load covariate file."), 500
+    color_cols = list(e.color_covariate_columns)
+    return jsonify(
+        ok=True,
+        columns=new_cols,
+        discrete_columns=discrete_cols,
+        primary_column=new_cols[0],
+        color_cols=color_cols,
+        numeric_cols=color_cols,
+        discrete_color_columns=discrete_color_columns_for_exp(e),
+        covariate_display_map=_covariate_display_map(color_cols),
+        path=abs_path,
+    )
+
+
 def api_covariate_threshold_rows():
     """All ``plot_df`` row indices where a numeric covariate passes a threshold.
 
@@ -365,8 +405,9 @@ def explorer():
             ),
             200,
         )
-    cols = e.numeric_columns
-    dx, dy = _default_xy_cols(cols)
+    axis_cols = e.numeric_columns
+    color_cols = e.color_covariate_columns
+    dx, dy = _default_xy_cols(axis_cols)
     initial_rows = load_plot_df_rows_from_plot_inds_file(
         e, current_app.config.get("FILTER_PLOT_INDS")
     )
@@ -377,8 +418,9 @@ def explorer():
     preload_cache_step = explorer_cache_size_power10_step(scatter_plotted_n)
     return render_template(
         "particle_explorer.html",
-        numeric_cols=cols,
-        covariate_display_map=_covariate_display_map(cols),
+        numeric_cols=axis_cols,
+        color_cols=color_cols,
+        covariate_display_map=_covariate_display_map(color_cols),
         default_x=dx,
         default_y=dy,
         initial_rows=initial_rows,
@@ -709,7 +751,7 @@ def latent_3d_page():
             200,
         )
     axis_cols = [f"z{i}" for i in range(zdim)]
-    cols = e.numeric_columns
+    cols = e.color_covariate_columns
     return render_template(
         "latent_3d.html",
         page_title="3D latent space visualizer · cryoDRGN",

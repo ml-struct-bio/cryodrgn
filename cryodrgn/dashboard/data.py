@@ -78,6 +78,9 @@ class DashboardExperiment:
     _image_dataset: ImageDataset | None = field(
         default=None, init=False, repr=False, compare=False
     )
+    user_covariate_columns: list[str] = field(
+        default_factory=list, init=False, repr=False, compare=False
+    )
 
     @cached_property
     def numeric_columns(self) -> list[str]:
@@ -90,6 +93,15 @@ class DashboardExperiment:
             for c in self.plot_df.select_dtypes(include=[np.number]).columns
             if c != "index"
         ]
+
+    @cached_property
+    def color_covariate_columns(self) -> list[str]:
+        """Columns available for scatter colour (numeric plus user-loaded labels)."""
+        out = list(self.numeric_columns)
+        for c in self.user_covariate_columns:
+            if c in self.plot_df.columns and c not in out:
+                out.append(c)
+        return out
 
     @property
     def can_preview_particles(self) -> bool:

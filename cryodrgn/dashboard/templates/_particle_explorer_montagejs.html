@@ -3540,4 +3540,28 @@
   window.addEventListener("resize", scheduleSyncMontageGridRegionLayout);
   window.addEventListener("resize", scheduleScatterRegionLabelChipsSync);
   syncScatterPaletteFieldset();
+  if (window.CryoCovariatePklLoader && sc) {
+    var covariatePklLoader = CryoCovariatePklLoader.create({
+      listFilesUrl: "{{ url_for('api_list_server_files') }}",
+      loadCovariateUrl: "{{ url_for('api_load_covariate_pkl') }}",
+      applyLoaded: function(j) {
+        if (j.color_cols || j.numeric_cols) {
+          colorCols = (j.color_cols || j.numeric_cols).slice();
+        }
+        if (j.covariate_display_map) {
+          Object.assign(covariateDisplayMap, j.covariate_display_map);
+        }
+        fillSelect(sc, colorCols, true);
+        covariatePklLoader.wireSelect(sc);
+        if (j.primary_column) sc.value = j.primary_column;
+      },
+      onLoaded: function() {
+        sc.dispatchEvent(new Event("change"));
+      },
+      onError: function(msg) {
+        if (plotStatus) plotStatus.textContent = msg;
+      }
+    });
+    covariatePklLoader.wireSelect(sc);
+  }
   initializeExplorerView();

@@ -155,10 +155,12 @@ def parse_traj_neighbor_value(data: dict, key: str, default: int) -> int:
 
 
 def parse_anchor_path_order(data: dict) -> str:
-    """``heuristic`` (default) or ``exact`` (Held–Karp / brute force when small)."""
+    """``heuristic`` (default), ``exact``, or ``preserve`` (keep request order)."""
     raw = str(data.get("anchor_path_order", "heuristic") or "heuristic").strip().lower()
     if raw in ("exact", "held_karp", "held-karp", "optimal"):
         return "exact"
+    if raw in ("preserve", "none", "selection", "natural"):
+        return "preserve"
     return "heuristic"
 
 
@@ -476,7 +478,7 @@ def order_anchor_indices_for_direct_path(
     path_order: str = "heuristic",
 ) -> list[int]:
     """Reorder anchors for a direct traversal with no crossing scatter segments."""
-    if len(anchor_indices) <= 2:
+    if path_order == "preserve" or len(anchor_indices) <= 2:
         return list(anchor_indices)
     coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
     points = np.vstack([coords[int(a)] for a in anchor_indices])

@@ -137,6 +137,11 @@ _ROUTES = (
         ra.api_trajectory_volumes_decode_progress,
         "GET",
     ),
+    (
+        "/api/trajectory_volumes_partial",
+        ra.api_trajectory_volumes_partial,
+        "GET",
+    ),
     ("/api/trajectory_coords", ra.api_trajectory_coords, "POST"),
     ("/api/trajectory_save_zpath", ra.api_trajectory_save_zpath, "POST"),
     ("/api/trajectory_save_volumes", ra.api_trajectory_save_volumes, "POST"),

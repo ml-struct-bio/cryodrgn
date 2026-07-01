@@ -46,6 +46,8 @@ from cryodrgn.dashboard.particle_explorer import (
     rerender_chimerax_pngs_from_volume_cache,
     save_cached_volumes_to_dir,
     trajectory_volume_b64_list_from_cache,
+    volume_job_partial_snapshot,
+    volume_job_partial_unregister,
 )
 from cryodrgn.dashboard.preload import particle_thumbnail_b64_from_row
 from cryodrgn.dashboard.plots import (
@@ -538,6 +540,19 @@ def api_trajectory_volumes_decode_progress():
     return jsonify(ok=True, **snap)
 
 
+def api_trajectory_volumes_partial():
+    """Poll partially rendered ChimeraX images during an in-flight volume job."""
+    from flask import request
+
+    token = str(request.args.get("job_id", "") or "").strip()
+    if not token:
+        return jsonify(ok=False, error="Missing job_id."), 400
+    snap = volume_job_partial_snapshot(token)
+    if snap is None:
+        return jsonify(ok=False, error="Unknown or expired volume job."), 404
+    return jsonify(ok=True, **snap)
+
+
 def api_trajectory_volumes():
     e: DashboardExperiment = g.dashboard_exp
     err = _trajectory_eligibility_error(e)
@@ -719,6 +734,7 @@ def api_trajectory_volumes():
     finally:
         if progress_token:
             decode_progress_unregister(progress_token)
+            volume_job_partial_unregister(progress_token)
 
 
 # ---------------------------------------------------------------------------

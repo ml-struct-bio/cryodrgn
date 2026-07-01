@@ -499,6 +499,15 @@ class TestOrderPointsShortestNoncrossingPath:
         local_order = list(range(len(ordered)))
         assert not _path_has_crossings(local_order, local)
 
+    def test_preserve_keeps_anchor_order(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        anchors = [12, 3, 8, 20]
+        ordered = order_anchor_indices_for_direct_path(
+            dashboard_experiment, anchors, "z0", "z1", path_order="preserve"
+        )
+        assert ordered == anchors
+
 
 class TestParseAnchorPathOrder:
     def test_defaults_to_heuristic(self) -> None:
@@ -508,6 +517,10 @@ class TestParseAnchorPathOrder:
     def test_accepts_exact_aliases(self) -> None:
         assert parse_anchor_path_order({"anchor_path_order": "exact"}) == "exact"
         assert parse_anchor_path_order({"anchor_path_order": "held-karp"}) == "exact"
+
+    def test_accepts_preserve_aliases(self) -> None:
+        assert parse_anchor_path_order({"anchor_path_order": "preserve"}) == "preserve"
+        assert parse_anchor_path_order({"anchor_path_order": "selection"}) == "preserve"
 
 
 class TestComputeDirectAnchorTrajectory:

@@ -625,7 +625,11 @@ class TestParticleExplorerVolumeGeneration:
         z_traj = dashboard_experiment.z[:3]
 
         def _fake_decode(
-            exp: DashboardExperiment, z_values: np.ndarray, mrc_dir: str
+            exp: DashboardExperiment,
+            z_values: np.ndarray,
+            mrc_dir: str,
+            *,
+            progress_token: str | None = None,
         ) -> list[str]:
             os.makedirs(mrc_dir, exist_ok=True)
             paths: list[str] = []
@@ -655,8 +659,12 @@ class TestParticleExplorerVolumeGeneration:
             "cryodrgn.dashboard.particle_explorer.render_landscape_cycle_static_views",
             _fake_cycle,
         )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.chimerax_animation.resolve_chimerax_volume_level",
+            lambda _path, level=None: 0.5 if level is None else float(level),
+        )
         pngs, token = generate_trajectory_volume_pngs(
-            dashboard_experiment, z_traj, chimerax_cpus=2
+            dashboard_experiment, z_traj, chimerax_cpus=2, pipeline=False
         )
         assert len(pngs) == 3
         assert token
@@ -665,6 +673,7 @@ class TestParticleExplorerVolumeGeneration:
             z_traj,
             chimerax_cpus=4,
             view_turns=[("y", 15.0)],
+            pipeline=False,
         )
         assert len(pngs2) == 3
         with pytest.raises(ValueError, match="must be"):

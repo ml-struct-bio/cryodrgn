@@ -180,14 +180,47 @@
     return "data:image/png;base64," + s;
   };
 
-  TrajectoryVolumeDisplay.prototype.setChimeraxFocusIndex = function (index) {
-    var n = this.chimeraxImages.length;
-    if (!n) return;
-    var i = Number(index);
-    if (!Number.isFinite(i)) i = 0;
-    this.chimeraxFocusIndex = Math.max(0, Math.min(n - 1, Math.floor(i)));
-    if (this.backend === "chimerax") this._renderChimerax();
-    this._notifyFocusChange();
+  TrajectoryVolumeDisplay.prototype._chimeraxImageReadyAt = function (index) {
+    var i = Math.floor(Number(index));
+    return i >= 0 && i < this.chimeraxImages.length && !!this.chimeraxImages[i];
+  };
+
+  TrajectoryVolumeDisplay.prototype._countRenderedChimeraxImages = function () {
+    var total = this._volumeNavCount();
+    var n = 0;
+    for (var i = 0; i < total; i++) {
+      if (this._chimeraxImageReadyAt(i)) n++;
+    }
+    return n;
+  };
+
+  TrajectoryVolumeDisplay.prototype._nearestRenderedChimeraxIndex = function (target) {
+    var total = this._volumeNavCount();
+    if (total < 1) return 0;
+    var t = Math.max(0, Math.min(total - 1, Math.floor(Number(target))));
+    if (this._chimeraxImageReadyAt(t)) return t;
+    for (var d = 1; d < total; d++) {
+      if (t - d >= 0 && this._chimeraxImageReadyAt(t - d)) return t - d;
+      if (t + d < total && this._chimeraxImageReadyAt(t + d)) return t + d;
+    }
+    return t;
+  };
+
+  TrajectoryVolumeDisplay.prototype.setChimeraxImageAt = function (index, b64) {
+    var i = Math.floor(Number(index));
+    if (!Number.isFinite(i) || i < 0 || !b64) return;
+    var total = this.expectedVolumeCount != null && this.expectedVolumeCount > 0
+      ? this.expectedVolumeCount
+      : Math.max(this.chimeraxImages.length, i + 1);
+    while (this.chimeraxImages.length < total) this.chimeraxImages.push(null);
+    this.chimeraxImages[i] = b64;
+    if (this.backend !== "chimerax") return;
+    if (!this._chimeraxImageReadyAt(this.chimeraxFocusIndex)) {
+      this.chimeraxFocusIndex = this._nearestRenderedChimeraxIndex(this.chimeraxFocusIndex);
+    }
+    this._renderChimerax();
+    this._syncChrome();
+    this._syncChimeraxRenderingOverlay();
   };
 
   TrajectoryVolumeDisplay.prototype.getFocusIndex = function () {
@@ -210,17 +243,17 @@
     this._ensureChimeraxPreview();
     this._destroyRaycast();
     if (this.sliceViewer) this.sliceViewer.setVolumes([], false);
-    var hasImages = this.chimeraxImages.length > 0;
-    if (this.chimeraxFocusIndex >= this.chimeraxImages.length) {
-      this.chimeraxFocusIndex = 0;
-    }
+    var hasImages = this._countRenderedChimeraxImages() > 0;
     if (this.chimeraxFocusIndex < 0) this.chimeraxFocusIndex = 0;
+    var displayIndex = hasImages
+      ? this._nearestRenderedChimeraxIndex(this.chimeraxFocusIndex)
+      : this.chimeraxFocusIndex;
     if (this.canvasEl) this.canvasEl.hidden = true;
     if (this.vtkContainerEl) this.vtkContainerEl.hidden = true;
     if (this.chimeraxPreviewEl) {
-      if (hasImages) {
+      if (this._chimeraxImageReadyAt(displayIndex)) {
         this.chimeraxPreviewEl.src = this._chimeraxImageSrc(
-          this.chimeraxImages[this.chimeraxFocusIndex]
+          this.chimeraxImages[displayIndex]
         );
         this.chimeraxPreviewEl.hidden = false;
       } else {
@@ -228,8 +261,8 @@
         this.chimeraxPreviewEl.hidden = true;
       }
     }
-    if (this.viewportEl) this.viewportEl.hidden = !hasImages && !this.chimeraxRendering;
     this._syncChrome();
+    this._syncChimeraxRenderingOverlay();
   };
 
   TrajectoryVolumeDisplay.prototype.setStatus = function (msg, busy) {
@@ -246,12 +279,25 @@
     }
   };
 
+  TrajectoryVolumeDisplay.prototype._expectedVolumeCount = function () {
+    var n = Number(this.expectedVolumeCount);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  };
+
+  TrajectoryVolumeDisplay.prototype._syncChimeraxRenderingOverlay = function () {
+    if (this.backend !== "chimerax") return;
+    var waiting = this.chimeraxRendering && this._countRenderedChimeraxImages() < 1;
+    this.setStatus(waiting ? "Rendering…" : "", waiting);
+  };
+
   TrajectoryVolumeDisplay.prototype.setChimeraxRendering = function (on) {
     this.chimeraxRendering = !!on;
-    if (on) this.setStatus("Rendering…", true);
-    else if (this.backend === "chimerax") this.setStatus("", false);
     if (this.backend === "chimerax") {
+      this._syncChrome();
       this._renderChimerax();
+      this._syncChimeraxRenderingOverlay();
+    } else if (!on) {
+      this.setStatus("", false);
     }
   };
 
@@ -415,7 +461,7 @@
     this.chimeraxImages = (payload && payload.images) ? payload.images.slice() : [];
     if (payload && payload.expectedVolumeCount != null) {
       this.expectedVolumeCount = Number(payload.expectedVolumeCount);
-    } else if (!this.volumes.length) {
+    } else if (!this.volumes.length && !(payload && payload.images && payload.images.length)) {
       this.expectedVolumeCount = null;
     }
     if (this.vtkFocusIndex >= this.volumes.length) this.vtkFocusIndex = 0;
@@ -477,7 +523,7 @@
   };
 
   TrajectoryVolumeDisplay.prototype.hasChimeraxImages = function () {
-    return this.chimeraxImages.length > 0;
+    return this._countRenderedChimeraxImages() > 0;
   };
 
   TrajectoryVolumeDisplay.prototype.setFocusIndex = function (index) {
@@ -488,23 +534,13 @@
       var cxTotal = this._volumeNavCount();
       if (cxTotal < 1) return;
       i = Math.max(0, Math.min(cxTotal - 1, i));
-      if (this.chimeraxFocusIndex === i && this.chimeraxImages.length > i) {
+      var displayIndex = this._nearestRenderedChimeraxIndex(i);
+      if (this.chimeraxFocusIndex === i && this._chimeraxImageReadyAt(displayIndex)) {
         this._syncVolumeNavChrome();
         return;
       }
       this.chimeraxFocusIndex = i;
-      if (this.chimeraxImages.length > i) {
-        this._ensureChimeraxPreview();
-        if (this.chimeraxPreviewEl) {
-          this.chimeraxPreviewEl.src = this._chimeraxImageSrc(
-            this.chimeraxImages[this.chimeraxFocusIndex]
-          );
-          this.chimeraxPreviewEl.hidden = false;
-        }
-        if (this.viewportEl) this.viewportEl.hidden = false;
-      } else {
-        this._renderChimerax();
-      }
+      this._renderChimerax();
       this._notifyFocusChange();
       this._syncVolumeNavChrome();
       return;
@@ -593,8 +629,14 @@
       }
     }
     var ticks = this.volumeSliderTicksEl.querySelectorAll(".cryo-vslice-volume-slider-tick");
+    var isChimeraX = this.backend === "chimerax";
+    var pipelineBusy = isChimeraX && this.chimeraxRendering;
     for (var tj = 0; tj < ticks.length; tj++) {
       ticks[tj].classList.toggle("cryo-vslice-volume-slider-tick--active", tj === focus);
+      ticks[tj].classList.toggle(
+        "cryo-vslice-volume-slider-tick--pending",
+        !!(pipelineBusy && !this._chimeraxImageReadyAt(tj))
+      );
       ticks[tj].disabled = focus < 0;
     }
   };
@@ -603,18 +645,21 @@
     var isVtk = this.backend === "vtk";
     var isChimeraX = this.backend === "chimerax";
     var total = this._volumeNavCount();
+    var renderedCount = isChimeraX ? this._countRenderedChimeraxImages() : total;
     var multi = total > 1;
     var active = multi;
-    if (isChimeraX && this.chimeraxRendering) active = false;
+    if (isChimeraX && this.chimeraxRendering && renderedCount < 1) {
+      active = false;
+    }
     if (this.volumeNavEl) {
       this.volumeNavEl.classList.toggle("cryo-vslice-volume-nav--inactive", !active);
       this.volumeNavEl.setAttribute("aria-disabled", active ? "false" : "true");
       this.volumeNavEl.hidden = !(isVtk || isChimeraX) || total < 1;
     }
     var focus = isChimeraX ? this.chimeraxFocusIndex : this.vtkFocusIndex;
-    var total = this._volumeNavCount();
-    if (this.btnVolPrev) this.btnVolPrev.disabled = !active;
-    if (this.btnVolNext) this.btnVolNext.disabled = !active;
+    var navStepEnabled = isChimeraX ? renderedCount > 1 : active;
+    if (this.btnVolPrev) this.btnVolPrev.disabled = !navStepEnabled;
+    if (this.btnVolNext) this.btnVolNext.disabled = !navStepEnabled;
     if (this.volumeSliderEl) {
       this.volumeSliderEl.disabled = !active;
       this.volumeSliderEl.min = "0";
@@ -650,22 +695,28 @@
     var isVtk = this.backend === "vtk";
     var isSlice = this.backend === "slice";
     var hasVol = this.volumes.some(function (v) { return v && v.volume_b64; });
-    var hasCxImages = this.chimeraxImages.length > 0;
-    var showChimeraxLoading = isChimeraX && this.chimeraxRendering;
-    var showInteractive = !isChimeraX && hasVol;
-    var showChimeraxPanel = isChimeraX && (hasCxImages || showChimeraxLoading);
+    var hasCxImages = this._countRenderedChimeraxImages() > 0;
+    var pendingCount = this._expectedVolumeCount();
+    var hasPendingVolumes = pendingCount > 0;
+    var showChimeraxLoading = isChimeraX && !hasCxImages
+      && (this.chimeraxRendering || hasPendingVolumes);
+    var showChimeraxPanel = isChimeraX;
+    var showInteractive = !isChimeraX && (hasVol || hasPendingVolumes);
+    var showInteractiveLoading = !isChimeraX && hasPendingVolumes && !hasVol;
     if (this.asideShellEl) {
       this.asideShellEl.hidden = isChimeraX ? !showChimeraxPanel : false;
     }
     if (this.displayRowEl) {
       this.displayRowEl.hidden = !(showInteractive || showChimeraxPanel);
     }
-    if (this.viewportEl && !isChimeraX) {
+    if (this.viewportEl && isChimeraX) {
+      this.viewportEl.hidden = !(hasCxImages || showChimeraxLoading);
+    } else if (this.viewportEl) {
       this.viewportEl.hidden = !hasVol;
     }
     if (this.controlsDockEl) {
       var showControls = (showInteractive || showChimeraxPanel)
-        && (hasVol || hasCxImages || showChimeraxLoading);
+        && (hasVol || hasCxImages || showChimeraxLoading || showInteractiveLoading);
       this.controlsDockEl.hidden = !showControls;
     }
     if (this.vtkSliceControlsEl) {
@@ -686,7 +737,9 @@
     if (this.canvasEl) this.canvasEl.hidden = isVtk || isChimeraX;
     if (this.vtkContainerEl) this.vtkContainerEl.hidden = !isVtk;
     if (this.chimeraxPreviewEl) {
-      this.chimeraxPreviewEl.hidden = !isChimeraX || !hasCxImages;
+      var showCxPreview = isChimeraX && hasCxImages
+        && this._chimeraxImageReadyAt(this._nearestRenderedChimeraxIndex(this.chimeraxFocusIndex));
+      this.chimeraxPreviewEl.hidden = !showCxPreview;
     }
     if (this.rotationLockToolbarEl) {
       this.rotationLockToolbarEl.hidden = isVtk || isChimeraX
@@ -701,6 +754,7 @@
       );
     }
     this._syncVolumeNavChrome();
+    if (isChimeraX) this._syncChimeraxRenderingOverlay();
     if (isVtk && this.raycastView) this._scheduleVtkResize();
   };
 
@@ -716,13 +770,23 @@
     this._renderInteractive();
   };
 
+  TrajectoryVolumeDisplay.prototype._stepChimeraxFocus = function (delta) {
+    var total = this._volumeNavCount();
+    if (total < 1) return;
+    var idx = this.chimeraxFocusIndex;
+    for (var attempt = 0; attempt < total; attempt++) {
+      idx = (idx + delta + total) % total;
+      if (this._chimeraxImageReadyAt(idx)) {
+        this.setFocusIndex(idx);
+        return;
+      }
+    }
+  };
+
   TrajectoryVolumeDisplay.prototype._cycleVtkFocus = function (delta) {
     if (this.backend === "chimerax") {
-      if (this.chimeraxImages.length < 2) return;
-      var cn = this.chimeraxImages.length;
-      this.chimeraxFocusIndex = (this.chimeraxFocusIndex + delta + cn) % cn;
-      this._renderChimerax();
-      this._notifyFocusChange();
+      if (this._countRenderedChimeraxImages() < 1) return;
+      this._stepChimeraxFocus(delta);
       return;
     }
     if (this.backend !== "vtk" || this.volumes.length < 2) return;

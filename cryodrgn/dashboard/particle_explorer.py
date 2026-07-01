@@ -7,6 +7,7 @@ trajectory creator).
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import secrets
@@ -14,6 +15,7 @@ import shutil
 import tempfile
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 import numpy as np
 from cryodrgn.dashboard import chimerax_animation as cx
 from cryodrgn.dashboard.data import DashboardExperiment
@@ -237,6 +239,9 @@ def _is_drgnai_config(train_configs: dict) -> bool:
 _DECODE_PROGRESS_LOCK = threading.Lock()
 _VOLUME_JOB_PROGRESS: dict[str, dict[str, object]] = {}
 _VOLUME_JOB_PROGRESS_TTL_S = 600.0
+_VOLUME_JOB_PARTIAL_LOCK = threading.Lock()
+_VOLUME_JOB_PARTIAL: dict[str, dict[str, object]] = {}
+_VOLUME_JOB_PARTIAL_TTL_S = 600.0
 
 
 def cuda_gpu_count_for_decode() -> int:
@@ -302,6 +307,11 @@ def volume_job_progress_snapshot(token: str) -> dict[str, object] | None:
         }
         if phase == "decode":
             snap["n_gpus"] = workers
+        elif phase == "pipeline":
+            snap["n_gpus"] = int(entry.get("n_gpus") or workers)
+            snap["n_cpus"] = int(entry.get("n_cpus") or 1)
+            snap["decode_done"] = int(entry.get("decode_done") or 0)
+            snap["render_done"] = int(entry.get("render_done") or done)
         else:
             snap["n_cpus"] = workers
         return snap
@@ -326,6 +336,174 @@ def decode_progress_snapshot(token: str) -> dict[str, object] | None:
 
 def decode_progress_unregister(token: str) -> None:
     volume_job_progress_unregister(token)
+
+
+def trajectory_volume_pipeline_enabled() -> bool:
+    """Whether decode and ChimeraX render overlap for trajectory volumes."""
+    raw = os.environ.get("CRYODRGN_DASHBOARD_VOLUME_PIPELINE", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def volume_job_progress_register_pipeline(
+    token: str,
+    total: int,
+    *,
+    n_gpus: int,
+    n_cpus: int,
+) -> None:
+    with _DECODE_PROGRESS_LOCK:
+        _VOLUME_JOB_PROGRESS[token] = {
+            "total": max(0, int(total)),
+            "done": 0,
+            "workers": max(1, int(n_gpus)),
+            "phase": "pipeline",
+            "rerender": False,
+            "n_gpus": max(1, int(n_gpus)),
+            "n_cpus": max(1, int(n_cpus)),
+            "decode_done": 0,
+            "render_done": 0,
+            "t0": time.monotonic(),
+        }
+
+
+def volume_job_progress_update_pipeline(
+    token: str,
+    *,
+    decode_done: int | None = None,
+    render_done: int | None = None,
+) -> None:
+    with _DECODE_PROGRESS_LOCK:
+        entry = _VOLUME_JOB_PROGRESS.get(token)
+        if not entry:
+            return
+        total = int(entry["total"])
+        if decode_done is not None:
+            entry["decode_done"] = max(0, min(total, int(decode_done)))
+        if render_done is not None:
+            rd = max(0, min(total, int(render_done)))
+            entry["render_done"] = rd
+            entry["done"] = rd
+        entry["phase"] = "pipeline"
+
+
+def volume_job_partial_register(token: str, total: int) -> None:
+    with _VOLUME_JOB_PARTIAL_LOCK:
+        _VOLUME_JOB_PARTIAL[token] = {
+            "total": max(0, int(total)),
+            "decode_done": 0,
+            "render_done": 0,
+            "images": {},
+            "view_matrix": None,
+            "complete": False,
+            "error": None,
+            "t0": time.monotonic(),
+        }
+
+
+def volume_job_partial_set_image(token: str, index: int, png_bytes: bytes) -> None:
+    b64 = base64.standard_b64encode(png_bytes).decode("ascii")
+    with _VOLUME_JOB_PARTIAL_LOCK:
+        entry = _VOLUME_JOB_PARTIAL.get(token)
+        if not entry:
+            return
+        images = entry.get("images")
+        if not isinstance(images, dict):
+            images = {}
+            entry["images"] = images
+        images[int(index)] = b64
+        entry["render_done"] = len(images)
+
+
+def volume_job_partial_update_decode(token: str, decode_done: int) -> None:
+    with _VOLUME_JOB_PARTIAL_LOCK:
+        entry = _VOLUME_JOB_PARTIAL.get(token)
+        if not entry:
+            return
+        total = int(entry["total"])
+        entry["decode_done"] = max(0, min(total, int(decode_done)))
+
+
+def volume_job_partial_mark_complete(
+    token: str, view_matrix: str | None = None
+) -> None:
+    with _VOLUME_JOB_PARTIAL_LOCK:
+        entry = _VOLUME_JOB_PARTIAL.get(token)
+        if not entry:
+            return
+        entry["complete"] = True
+        if view_matrix:
+            entry["view_matrix"] = view_matrix
+
+
+def volume_job_partial_snapshot(token: str) -> dict[str, object] | None:
+    with _VOLUME_JOB_PARTIAL_LOCK:
+        entry = _VOLUME_JOB_PARTIAL.get(token)
+        if not entry:
+            return None
+        if time.monotonic() - float(entry["t0"]) > _VOLUME_JOB_PARTIAL_TTL_S:
+            _VOLUME_JOB_PARTIAL.pop(token, None)
+            return None
+        total = int(entry["total"])
+        images_raw = entry.get("images")
+        images_list: list[dict[str, object]] = []
+        if isinstance(images_raw, dict):
+            for idx in sorted(images_raw):
+                images_list.append({"index": int(idx), "b64": str(images_raw[idx])})
+        return {
+            "total": total,
+            "decode_done": int(entry.get("decode_done") or 0),
+            "render_done": int(entry.get("render_done") or 0),
+            "complete": bool(entry.get("complete")),
+            "images": images_list,
+            "view_matrix": entry.get("view_matrix"),
+        }
+
+
+def volume_job_partial_unregister(token: str) -> None:
+    with _VOLUME_JOB_PARTIAL_LOCK:
+        _VOLUME_JOB_PARTIAL.pop(token, None)
+
+
+def _vol_mrc_index_from_name(name: str) -> int | None:
+    m = re.search(r"vol_(\d+)", name)
+    if not m:
+        return None
+    return int(m.group(1)) - 1
+
+
+def _scan_decoded_mrc_paths(mrc_dir: str) -> dict[int, str]:
+    out: dict[int, str] = {}
+    if not os.path.isdir(mrc_dir):
+        return out
+    with os.scandir(mrc_dir) as it:
+        for entry in it:
+            if not entry.is_file():
+                continue
+            idx = _vol_mrc_index_from_name(entry.name)
+            if idx is not None:
+                out[idx] = entry.path
+    return out
+
+
+_MRC_HEADER_BYTES = 1024
+
+
+def _ready_decoded_mrc_paths(
+    mrc_map: dict[int, str],
+    stable_sizes: dict[str, int],
+) -> tuple[dict[int, str], dict[str, int]]:
+    """Return MRC paths whose on-disk size has stabilized (decode finished writing)."""
+    ready: dict[int, str] = {}
+    next_sizes: dict[str, int] = {}
+    for idx, path in mrc_map.items():
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            continue
+        next_sizes[path] = size
+        if size >= _MRC_HEADER_BYTES and stable_sizes.get(path) == size:
+            ready[idx] = path
+    return ready, next_sizes
 
 
 def _count_vol_mrc_in_dir(mrc_dir: str) -> int:
@@ -796,6 +974,175 @@ def trajectory_volume_b64_list_from_cache(
     return payloads
 
 
+def _pipelined_decode_and_chimerax_pngs(
+    exp: DashboardExperiment,
+    z_values: np.ndarray,
+    mrc_dir: str,
+    png_dir: str,
+    *,
+    chimerax_cpus: int = DEFAULT_CHIMERAX_PARALLEL,
+    view_matrix_camera: str | None = None,
+    view_turns: list[tuple[str, float]] | None = None,
+    volume_level: float | None = None,
+    progress_token: str | None = None,
+) -> tuple[list[bytes], str | None, list[str]]:
+    """Decode trajectory z values while rendering ChimeraX PNGs as each .mrc appears."""
+    from cryodrgn.dashboard.chimerax_animation import resolve_chimerax_volume_level
+
+    z_values = np.asarray(z_values, dtype=np.float64)
+    n_total = len(z_values)
+    cc = max(1, min(int(chimerax_cpus), 32))
+    n_jobs = parallel_jobs(cc, n_total)
+    n_gpus = cuda_gpu_count_for_decode()
+    os.makedirs(mrc_dir, exist_ok=True)
+    os.makedirs(png_dir, exist_ok=True)
+
+    if progress_token:
+        volume_job_progress_register_pipeline(
+            progress_token, n_total, n_gpus=n_gpus, n_cpus=cc
+        )
+        volume_job_partial_register(progress_token, n_total)
+
+    decode_exc: list[BaseException] = []
+    decode_done = threading.Event()
+
+    def _decode() -> None:
+        try:
+            if n_gpus <= 1:
+                _decode_z_values_worker(
+                    exp, z_values, mrc_dir, device=0, vol_start_index=1
+                )
+            else:
+                _decode_z_values_parallel_impl(exp, z_values, mrc_dir, n_gpus)
+        except BaseException as err:
+            decode_exc.append(err)
+        finally:
+            decode_done.set()
+
+    decode_thread = threading.Thread(target=_decode, daemon=True)
+    decode_thread.start()
+
+    scheduled: set[int] = set()
+    rendered: dict[int, bytes] = {}
+    view_matrix: str | None = None
+    iso_level: float | None = None
+    render_lock = threading.Lock()
+
+    def _render_one(idx: int, mrc_path: str) -> tuple[int, bytes, str | None]:
+        out_png = os.path.join(png_dir, f"cell_{idx}.png")
+        vm = render_static_png(
+            mrc_path,
+            out_png,
+            dpi=100,
+            volume_level=iso_level,
+            view_turns=view_turns,
+            view_matrix_camera=view_matrix_camera,
+            report_view_matrix=(idx == 0),
+        )
+        with open(out_png, "rb") as fh:
+            data = fh.read()
+        return idx, data, vm
+
+    pending: dict[Future[tuple[int, bytes, str | None]], int] = {}
+    mrc_stable_sizes: dict[str, int] = {}
+
+    def _collect_finished(*, block: bool = False) -> None:
+        nonlocal view_matrix
+        if not pending:
+            return
+
+        done, _ = wait(
+            tuple(pending),
+            timeout=None if block else 0.1,
+            return_when="FIRST_COMPLETED",
+        )
+
+        for fut in done:
+            i, data, vm = fut.result()
+            with render_lock:
+                rendered[i] = data
+                if vm and view_matrix is None:
+                    view_matrix = vm
+
+            if progress_token:
+                volume_job_partial_set_image(progress_token, i, data)
+
+    with ThreadPoolExecutor(max_workers=n_jobs) as executor:
+        while len(rendered) < n_total:
+            if decode_exc:
+                raise decode_exc[0]
+
+            mrc_map = _scan_decoded_mrc_paths(mrc_dir)
+            ready_map, mrc_stable_sizes = _ready_decoded_mrc_paths(
+                mrc_map, mrc_stable_sizes
+            )
+            decode_count = len(ready_map)
+            if progress_token:
+                volume_job_progress_update_pipeline(
+                    progress_token,
+                    decode_done=decode_count,
+                    render_done=len(rendered),
+                )
+                volume_job_partial_update_decode(progress_token, decode_count)
+
+            if iso_level is None:
+                if volume_level is not None and np.isfinite(float(volume_level)):
+                    iso_level = float(volume_level)
+                elif 0 in ready_map:
+                    iso_level = resolve_chimerax_volume_level(
+                        ready_map[0], volume_level
+                    )
+
+            if iso_level is not None:
+                for idx, mrc_path in ready_map.items():
+                    if idx in scheduled or idx < 0 or idx >= n_total:
+                        continue
+                    scheduled.add(idx)
+                    fut = executor.submit(_render_one, idx, mrc_path)
+                    pending[fut] = idx
+
+            _collect_finished()
+
+            if len(rendered) >= n_total:
+                break
+
+            if decode_done.is_set() and not pending:
+                all_mrc = _scan_decoded_mrc_paths(mrc_dir)
+                if len(all_mrc) < n_total:
+                    missing_files = [i for i in range(n_total) if i not in all_mrc]
+                    if missing_files:
+                        raise RuntimeError(
+                            "Decode finished but volumes missing at indices: "
+                            f"{missing_files}"
+                        )
+
+            if not pending:
+                time.sleep(0.05)
+
+        decode_thread.join()
+        if decode_exc:
+            raise decode_exc[0]
+
+        while pending:
+            _collect_finished(block=True)
+            if progress_token:
+                mrc_map = _scan_decoded_mrc_paths(mrc_dir)
+                volume_job_progress_update_pipeline(
+                    progress_token,
+                    decode_done=len(mrc_map),
+                    render_done=len(rendered),
+                )
+
+    vol_files = _sorted_vol_mrc_paths(mrc_dir, n_total)
+    png_bytes_list = [rendered[i] for i in range(n_total)]
+
+    if progress_token:
+        volume_job_partial_mark_complete(progress_token, view_matrix)
+        volume_job_progress_set_done(progress_token, n_total)
+
+    return png_bytes_list, view_matrix, vol_files
+
+
 def generate_trajectory_volume_pngs(
     exp: DashboardExperiment,
     z_values: np.ndarray,
@@ -805,6 +1152,7 @@ def generate_trajectory_volume_pngs(
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
     progress_token: str | None = None,
+    pipeline: bool | None = None,
 ) -> tuple[list[bytes], str]:
     """Decode volumes along a z-space trajectory and render ChimeraX static PNGs.
 
@@ -819,19 +1167,51 @@ def generate_trajectory_volume_pngs(
         )
 
     mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_trajectory_mrc_")
+    use_pipeline = (
+        trajectory_volume_pipeline_enabled() if pipeline is None else bool(pipeline)
+    )
     try:
-        vol_files = _decode_z_values_to_vol_paths(
-            exp, z_values, mrc_dir, progress_token=progress_token
-        )
-        png_bytes_list, _view_matrix = _chimerax_png_bytes_from_mrc_paths(
-            vol_files,
-            chimerax_cpus=chimerax_cpus,
-            view_matrix_camera=view_matrix_camera,
-            view_turns=view_turns,
-            volume_level=volume_level,
-            progress_token=progress_token,
-            rerender=False,
-        )
+        if use_pipeline:
+            with tempfile.TemporaryDirectory(
+                prefix="cryodrgn_trajectory_png_"
+            ) as png_dir:
+                (
+                    png_bytes_list,
+                    _view_matrix,
+                    vol_files,
+                ) = _pipelined_decode_and_chimerax_pngs(
+                    exp,
+                    z_values,
+                    mrc_dir,
+                    png_dir,
+                    chimerax_cpus=chimerax_cpus,
+                    view_matrix_camera=view_matrix_camera,
+                    view_turns=view_turns,
+                    volume_level=volume_level,
+                    progress_token=progress_token,
+                )
+        else:
+            vol_files = _decode_z_values_to_vol_paths(
+                exp, z_values, mrc_dir, progress_token=progress_token
+            )
+            if progress_token:
+                cc = max(1, min(int(chimerax_cpus), 32))
+                volume_job_progress_register(
+                    progress_token,
+                    len(vol_files),
+                    cc,
+                    "chimerax",
+                    rerender=False,
+                )
+            png_bytes_list, _view_matrix = _chimerax_png_bytes_from_mrc_paths(
+                vol_files,
+                chimerax_cpus=chimerax_cpus,
+                view_matrix_camera=view_matrix_camera,
+                view_turns=view_turns,
+                volume_level=volume_level,
+                progress_token=progress_token,
+                rerender=False,
+            )
         token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
         return png_bytes_list, token
     except Exception:

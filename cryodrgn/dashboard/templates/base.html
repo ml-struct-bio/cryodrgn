@@ -1071,6 +1071,121 @@
       padding: 0.2rem 0.45rem;
       white-space: nowrap;
     }
+    /* Overlay file-browser modals (covariate .pkl load, indices save, trajectory GIF, …). */
+    .cryo-explorer-save-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 2147482000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      box-sizing: border-box;
+    }
+    .cryo-explorer-save-modal[hidden] {
+      display: none !important;
+    }
+    body.cryo-explorer-save-modal-open {
+      overflow: hidden;
+    }
+    .cryo-explorer-save-modal__backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(26, 32, 44, 0.45);
+      cursor: pointer;
+    }
+    .cryo-explorer-save-modal__dialog {
+      position: relative;
+      z-index: 1;
+      width: min(96vw, 28rem);
+      max-height: min(88vh, 26rem);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #fffdf8;
+      border-radius: 10px;
+      box-shadow: 0 8px 32px rgba(36, 59, 83, 0.22);
+      border: 1px solid rgba(36, 59, 83, 0.14);
+      box-sizing: border-box;
+    }
+    .cryo-explorer-save-modal--wide .cryo-explorer-save-modal__dialog {
+      width: min(96vw, 42rem);
+      max-height: min(92vh, 36rem);
+      overflow: auto;
+      padding: 1rem 1.1rem 1.15rem;
+    }
+    .cryo-explorer-save-modal__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.65rem 0.75rem 0.55rem;
+      border-bottom: 1px solid rgba(36, 59, 83, 0.1);
+      flex-shrink: 0;
+    }
+    .cryo-explorer-save-modal--wide .cryo-explorer-save-modal__header {
+      padding: 0;
+      border-bottom: none;
+    }
+    .cryo-explorer-save-modal__title {
+      margin: 0;
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: var(--nav-bg, #243b53);
+      line-height: 1.25;
+    }
+    .cryo-explorer-save-modal--wide .cryo-explorer-save-modal__title {
+      margin: 0 0 0.65rem;
+      font-size: 1.12rem;
+    }
+    .cryo-explorer-save-modal__close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.65rem;
+      height: 1.65rem;
+      padding: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: rgba(36, 59, 83, 0.72);
+      font-size: 1.35rem;
+      line-height: 1;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .cryo-explorer-save-modal__close:hover {
+      background: rgba(36, 59, 83, 0.08);
+      color: var(--nav-bg, #243b53);
+    }
+    .cryo-explorer-save-modal__close:focus-visible {
+      outline: 2px solid var(--accent, #c4703a);
+      outline-offset: 1px;
+    }
+    .cryo-explorer-save-modal__browser.cryo-file-browser {
+      border: none;
+      border-radius: 0;
+      background: #fff;
+      max-height: none;
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      font-size: 0.72rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .cryo-explorer-save-modal .cryo-file-browser-list {
+      max-height: min(42vh, 14rem);
+    }
+    .cryo-explorer-save-modal__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: flex-end;
+      margin-top: 0.75rem;
+      flex-shrink: 0;
+    }
     .layout-split {
       display: grid;
       grid-template-columns: 1fr 320px;
@@ -1784,6 +1899,7 @@
   </script>
   <script src="{{ url_for('static', filename='js/cryo_dashboard_icons.js') }}"></script>
   <script src="{{ url_for('static', filename='js/cryo_resize_observer_utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/cryo_file_browser.js') }}"></script>
   {% block head %}{% endblock %}
 </head>
 <body{% if command_builder_page_mode %} class="cmd-builder-github-pages"{% endif %}>
@@ -2412,10 +2528,20 @@ for volume rendering</button>
         return !!(btn && btn.classList && btn.classList.contains("cryo-vslice-volume-slider-tick"));
       }
 
+      function isDiscreteLegendSizeButton(btn) {
+        return !!(
+          btn
+          && btn.classList
+          && (btn.classList.contains("cryo-cc-discrete-size-btn")
+            || btn.classList.contains("cryo-traj-scatter-color-legend__size-btn"))
+        );
+      }
+
       function fitButtonLabel(btn) {
         if (!btn || btn.nodeType !== 1) return;
         if (btn.classList && btn.classList.contains("btn-copy")) return;
         if (isVolumeSliderTickButton(btn)) return;
+        if (isDiscreteLegendSizeButton(btn)) return;
         if (btn.dataset.cryoFitButtonsBusy === "1") return;
         if (btn.hidden) return;
         if (isPlotlyButton(btn)) return;

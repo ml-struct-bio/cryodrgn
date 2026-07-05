@@ -1480,6 +1480,67 @@
   .cryo-traj-scatter-interp-fieldset[hidden] {
     display: none !important;
   }
+  .cryo-traj-manual-interp-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-traj-manual-interp-stack[hidden] {
+    display: none !important;
+  }
+  .cryo-traj-manual-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-traj-manual-interp-btn {
+    flex: 1 1 0;
+    width: auto;
+    margin-top: 0;
+    min-height: calc(0.7 * (2 * (0.76rem + 0.65rem * 2.08)));
+    padding: 0.18rem 0.22rem;
+    font-size: 0.57rem;
+    line-height: 1.04;
+    white-space: normal;
+  }
+  .cryo-traj-manual-mode-row .cryo-traj-manual-npoints {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    color: var(--muted, #5c6b7a);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .cryo-traj-manual-mode-row .cryo-traj-manual-npoints select {
+    width: 3.25rem;
+    padding: 0.1rem 0.2rem;
+    font-size: 0.78rem;
+  }
+  .cryo-traj-manual-graph-neighbors {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+  }
+  .cryo-traj-manual-graph-neighbors label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+    white-space: nowrap;
+  }
+  .cryo-traj-manual-graph-neighbors select {
+    width: 3.25rem;
+    padding: 0.1rem 0.2rem;
+    font-size: 0.78rem;
+  }
   .cryo-traj-mode-seg input:focus-visible + label {
     outline: 2px solid var(--nav-bg, #243b53);
     outline-offset: -2px;
@@ -1831,19 +1892,46 @@
             {% endfor %}
           </select>
         </div>
-        <div class="cryo-traj-neighbor-row" id="traj-neighbor-row">
-          <label for="max-neighbors">Max neighbors</label>
-          <select id="max-neighbors">
-            {% for n in range(2, 21) %}
-            <option value="{{ n }}"{% if n == 10 %} selected{% endif %}>{{ n }}</option>
-            {% endfor %}
-          </select>
-          <label for="avg-neighbors">Avg. neighbors</label>
-          <select id="avg-neighbors">
-            {% for n in range(2, 21) %}
-            <option value="{{ n }}"{% if n == 5 %} selected{% endif %}>{{ n }}</option>
-            {% endfor %}
-          </select>
+        <div class="cryo-traj-manual-interp-stack" id="traj-manual-interp-stack" hidden role="group"
+          aria-label="Manual trajectory interpolation">
+          <div class="cryo-traj-manual-mode-row" id="traj-manual-volume-row">
+            <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn cryo-traj-alt-mode-btn--active"
+              id="btn-traj-manual-volume" aria-pressed="true">Snap to nearest<br />analyze volume points</button>
+            <label class="cryo-traj-manual-npoints" for="manual-snap-n-points">
+              <span>Points</span>
+              <select id="manual-snap-n-points" aria-label="Interpolation points for volume snap">
+                {% for n in range(1, 21) %}
+                <option value="{{ n }}"{% if n == 1 %} selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+          <div class="cryo-traj-manual-mode-row" id="traj-manual-graph-row">
+            <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn"
+              id="btn-traj-manual-graph" aria-pressed="false">Graph/nearest neighbor<br />interpolation</button>
+            <label class="cryo-traj-manual-npoints" for="manual-graph-n-points">
+              <span>Points</span>
+              <select id="manual-graph-n-points" aria-label="Interpolation points for graph traversal">
+                {% for n in range(1, 21) %}
+                <option value="{{ n }}"{% if n == 1 %} selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <div class="cryo-traj-manual-graph-neighbors">
+              <label for="max-neighbors">Max</label>
+              <select id="max-neighbors">
+                {% for n in range(2, 21) %}
+                <option value="{{ n }}"{% if n == 10 %} selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+              <label for="avg-neighbors">Avg.</label>
+              <select id="avg-neighbors">
+                {% for n in range(2, 21) %}
+                <option value="{{ n }}"{% if n == 5 %} selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
         </div>
         <fieldset class="cryo-traj-scatter-interp-fieldset" id="traj-scatter-interp-fieldset" hidden>
           <div class="volsketch-seg cryo-traj-mode-seg cryo-traj-mode-seg--stacked" role="radiogroup"
@@ -1854,8 +1942,6 @@
             <label for="traj-scatter-interp-direct" id="traj-scatter-interp-direct-label">Use direct interpolation<br />in space</label>
           </div>
         </fieldset>
-        <button type="button" class="btn btn-secondary cryo-traj-action-btn cryo-traj-alt-mode-btn"
-          id="btn-traj-graph" hidden aria-pressed="false">Graph trajectory</button>
         <p class="cryo-traj-hint" id="traj-settings-hint" style="margin-top:0.35rem;">Drag the orange and navy handles
           on the plot to edit the trajectory.</p>
         <button type="button" class="btn cryo-traj-action-btn" id="btn-reset">Reset trajectory points</button>

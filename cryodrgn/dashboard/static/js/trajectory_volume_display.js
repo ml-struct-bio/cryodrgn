@@ -26,7 +26,6 @@
     this.sliceControlsRowEl = options.sliceControlsRowEl;
     this.rotationLockToolbarEl = options.rotationLockToolbarEl;
     this.volumeNavEl = options.volumeNavEl;
-    this.volumeNavLabelEl = options.volumeNavLabelEl;
     this.volumeSliderEl = options.volumeSliderEl;
     this.volumeSliderTicksEl = options.volumeSliderTicksEl;
     this.btnVolPrev = options.btnVolPrev;
@@ -58,20 +57,26 @@
     this.raycastVolIndex = null;
     this.expandedBelow = false;
     this.chimeraxRendering = false;
+    this.chimeraxRerenderInFlight = false;
+    this.incompleteVolumeOverlay = false;
     this.expectedVolumeCount = null;
     this.chimeraxIsoLevel = null;
     this.isoPercentileSamples = null;
     this.isoSliderRange = null;
     this.onChimeraxIsoChange = options.onChimeraxIsoChange || null;
+    this.onResetViewClick = options.onResetViewClick || null;
+    this.canResetView = options.canResetView || null;
     this._chimeraxIsoRerenderTimer = null;
     this.onFocusChange = options.onFocusChange || null;
     this.getVolumeNavLabels = options.getVolumeNavLabels || null;
+    this._volumeSliderTickLabelFontPx = null;
     this._viewportHomeParent = null;
     this._viewportHomeNext = null;
     this._displayRowHomeParent = null;
     this._displayRowHomeNext = null;
     this._controlsHomeParent = null;
     this._controlsHomeNext = null;
+    this.stableBackendChrome = !!options.stableBackendChrome;
 
     if (this.canvasEl && global.CryoVolumeSliceCanvas) {
       this.sliceViewer = new global.CryoVolumeSliceCanvas({ canvas: this.canvasEl });
@@ -93,13 +98,11 @@
     if (options.btnZoomOut) options.btnZoomOut.addEventListener("click", function () { self._zoomSlice(-1); });
     if (options.btnResetView) {
       options.btnResetView.addEventListener("click", function () {
-        if (self.backend === "vtk" && self.raycastView) {
-          self._suppressVtkCameraCapture = true;
-          self.raycastView.resetCamera();
-          self._suppressVtkCameraCapture = false;
-          self.vtkCameraUserAdjusted = false;
-          self.setSharedViewMatrix("");
-        } else if (self.sliceViewer) self.sliceViewer.resetView();
+        if (typeof self.onResetViewClick === "function") {
+          self.onResetViewClick();
+          return;
+        }
+        self.resetInteractiveView();
       });
     }
     if (this.isoSliderEl) {
@@ -122,15 +125,34 @@
       this.volumeSliderEl.addEventListener("input", function () {
         self._applySliderFocus();
       });
+      this.volumeSliderEl.addEventListener("change", function () {
+        self._applySliderFocus();
+      });
     }
     if (this.volumeSliderTicksEl) {
       this.volumeSliderTicksEl.addEventListener("click", function (ev) {
         var tick = ev.target.closest("[data-vol-index]");
-        if (!tick) return;
+        if (!tick || tick.disabled) return;
         var idx = Number(tick.getAttribute("data-vol-index"));
         if (!Number.isFinite(idx)) return;
         self.setFocusIndex(idx);
       });
+      if (typeof ResizeObserver !== "undefined") {
+        var tickFitTimer = 0;
+        var sliderWrap = this.volumeSliderEl && this.volumeSliderEl.parentElement;
+        this._volumeSliderTicksResizeObserver = new ResizeObserver(function () {
+          if (tickFitTimer) clearTimeout(tickFitTimer);
+          tickFitTimer = setTimeout(function () {
+            tickFitTimer = 0;
+            self._fitVolumeSliderTickLabelFont();
+          }, 40);
+        });
+        if (sliderWrap) {
+          this._volumeSliderTicksResizeObserver.observe(sliderWrap);
+        } else if (this.volumeSliderTicksEl) {
+          this._volumeSliderTicksResizeObserver.observe(this.volumeSliderTicksEl);
+        }
+      }
     }
     if (this.btnVolPrev) {
       this.btnVolPrev.addEventListener("click", function () { self._cycleVtkFocus(-1); });
@@ -185,6 +207,14 @@
     return i >= 0 && i < this.chimeraxImages.length && !!this.chimeraxImages[i];
   };
 
+  TrajectoryVolumeDisplay.prototype._volumeReadyAt = function (index) {
+    if (this.backend === "chimerax") return this._chimeraxImageReadyAt(index);
+    var i = Math.floor(Number(index));
+    return i >= 0
+      && i < this.volumes.length
+      && !!(this.volumes[i] && this.volumes[i].volume_b64);
+  };
+
   TrajectoryVolumeDisplay.prototype._countRenderedChimeraxImages = function () {
     var total = this._volumeNavCount();
     var n = 0;
@@ -206,9 +236,50 @@
     return t;
   };
 
+  TrajectoryVolumeDisplay.prototype._nearestReadyVolumeIndex = function (target) {
+    var total = this._volumeNavCount();
+    if (total < 1) return 0;
+    var t = Math.max(0, Math.min(total - 1, Math.floor(Number(target))));
+    if (this._volumeReadyAt(t)) return t;
+    for (var d = 1; d < total; d++) {
+      if (t - d >= 0 && this._volumeReadyAt(t - d)) return t - d;
+      if (t + d < total && this._volumeReadyAt(t + d)) return t + d;
+    }
+    return t;
+  };
+
+  TrajectoryVolumeDisplay.prototype._snapFocusIndexToReady = function (target) {
+    var total = this._volumeNavCount();
+    if (total < 1) return -1;
+    var t = Math.max(0, Math.min(total - 1, Math.floor(Number(target))));
+    if (!this._volumeReadyAt(t)) {
+      t = this.backend === "chimerax"
+        ? this._nearestRenderedChimeraxIndex(t)
+        : this._nearestReadyVolumeIndex(t);
+    }
+    return this._volumeReadyAt(t) ? t : -1;
+  };
+
+  TrajectoryVolumeDisplay.prototype._stepReadyFocus = function (delta) {
+    var total = this._volumeNavCount();
+    if (total < 1) return;
+    var idx = this.backend === "chimerax" ? this.chimeraxFocusIndex : this.vtkFocusIndex;
+    for (var attempt = 0; attempt < total; attempt++) {
+      idx = (idx + delta + total) % total;
+      if (this._volumeReadyAt(idx)) {
+        this.setFocusIndex(idx);
+        return;
+      }
+    }
+  };
+
   TrajectoryVolumeDisplay.prototype.setChimeraxImageAt = function (index, b64) {
     var i = Math.floor(Number(index));
-    if (!Number.isFinite(i) || i < 0 || !b64) return;
+    if (!Number.isFinite(i) || i < 0) return;
+    if (!b64) {
+      this.clearVolumeAt(i);
+      return;
+    }
     var total = this.expectedVolumeCount != null && this.expectedVolumeCount > 0
       ? this.expectedVolumeCount
       : Math.max(this.chimeraxImages.length, i + 1);
@@ -219,6 +290,29 @@
       this.chimeraxFocusIndex = this._nearestRenderedChimeraxIndex(this.chimeraxFocusIndex);
     }
     this._renderChimerax();
+    this._syncChrome();
+    this._syncChimeraxRenderingOverlay();
+  };
+
+  TrajectoryVolumeDisplay.prototype.clearVolumeAt = function (index) {
+    var i = Math.floor(Number(index));
+    if (!Number.isFinite(i) || i < 0) return;
+    var total = this._expectedVolumeCount();
+    if (!total) {
+      total = Math.max(this.chimeraxImages.length, this.volumes.length, i + 1);
+    }
+    while (this.chimeraxImages.length < total) this.chimeraxImages.push(null);
+    while (this.volumes.length < total) this.volumes.push(null);
+    if (i < this.chimeraxImages.length) this.chimeraxImages[i] = null;
+    if (i < this.volumes.length) this.volumes[i] = null;
+    if (this.backend === "chimerax" && !this._chimeraxImageReadyAt(this.chimeraxFocusIndex)) {
+      this.chimeraxFocusIndex = this._nearestRenderedChimeraxIndex(this.chimeraxFocusIndex);
+    }
+    if (this.backend === "vtk" && !this._volumeReadyAt(this.vtkFocusIndex)) {
+      var snapped = this._snapFocusIndexToReady(this.vtkFocusIndex);
+      if (snapped >= 0) this.vtkFocusIndex = snapped;
+    }
+    this._renderCurrent();
     this._syncChrome();
     this._syncChimeraxRenderingOverlay();
   };
@@ -266,6 +360,10 @@
   };
 
   TrajectoryVolumeDisplay.prototype.setStatus = function (msg, busy) {
+    if (busy && !this._hasDisplayableVolumes()) {
+      busy = false;
+      msg = "";
+    }
     var label = busy ? (msg || "Rendering…") : "";
     if (this.statusEl) this.statusEl.textContent = label;
     if (this.renderingOverlayEl) {
@@ -284,17 +382,52 @@
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   };
 
-  TrajectoryVolumeDisplay.prototype._syncChimeraxRenderingOverlay = function () {
-    if (this.backend !== "chimerax") return;
-    var waiting = this.chimeraxRendering && this._countRenderedChimeraxImages() < 1;
-    this.setStatus(waiting ? "Rendering…" : "", waiting);
+  TrajectoryVolumeDisplay.prototype._countReadyVolumes = function () {
+    var total = this._volumeNavCount();
+    var n = 0;
+    for (var i = 0; i < total; i++) {
+      if (this._volumeReadyAt(i)) n++;
+    }
+    return n;
   };
 
-  TrajectoryVolumeDisplay.prototype.setChimeraxRendering = function (on) {
+  TrajectoryVolumeDisplay.prototype._hasDisplayableVolumes = function () {
+    if (this.backend === "chimerax") {
+      return this._countRenderedChimeraxImages() > 0;
+    }
+    return this._countReadyVolumes() > 0;
+  };
+
+  TrajectoryVolumeDisplay.prototype.setIncompleteVolumeOverlay = function (on) {
+    this.incompleteVolumeOverlay = !!on;
+    this._syncChimeraxRenderingOverlay();
+  };
+
+  TrajectoryVolumeDisplay.prototype._syncChimeraxRenderingOverlay = function () {
+    var anyReady = this._hasDisplayableVolumes();
+    var rerenderBusy = this.backend === "chimerax"
+      && !!this.chimeraxRendering
+      && !!this.chimeraxRerenderInFlight
+      && anyReady;
+    var busy = rerenderBusy;
+    this.setStatus(busy ? "Re-rendering…" : "", busy);
+  };
+
+  TrajectoryVolumeDisplay.prototype.setChimeraxRendering = function (on, opts) {
+    opts = opts || {};
     this.chimeraxRendering = !!on;
+    if (!on) {
+      this.chimeraxRerenderInFlight = false;
+    } else if (opts.rerender) {
+      this.chimeraxRerenderInFlight = true;
+    } else if (opts.rerender === false) {
+      this.chimeraxRerenderInFlight = false;
+    }
     if (this.backend === "chimerax") {
       this._syncChrome();
-      this._renderChimerax();
+      if (this._hasDisplayableVolumes()) {
+        this._renderChimerax();
+      }
       this._syncChimeraxRenderingOverlay();
     } else if (!on) {
       this.setStatus("", false);
@@ -330,7 +463,10 @@
       this.setExpandedBelow(false);
     }
     this.backend = backend;
-    if (backend !== "chimerax") this.chimeraxRendering = false;
+    if (backend !== "chimerax") {
+      this.chimeraxRendering = false;
+      this.chimeraxRerenderInFlight = false;
+    }
     if (this.raycastView && typeof this.raycastView.setInteractionEnabled === "function") {
       this.raycastView.setInteractionEnabled(backend === "vtk");
     }
@@ -464,6 +600,11 @@
     } else if (!this.volumes.length && !(payload && payload.images && payload.images.length)) {
       this.expectedVolumeCount = null;
     }
+    var expected = this.expectedVolumeCount;
+    if (expected != null && expected > 0) {
+      while (this.volumes.length < expected) this.volumes.push(null);
+      while (this.chimeraxImages.length < expected) this.chimeraxImages.push(null);
+    }
     if (this.vtkFocusIndex >= this.volumes.length) this.vtkFocusIndex = 0;
     if (this.vtkFocusIndex < 0) this.vtkFocusIndex = 0;
     if (this.chimeraxFocusIndex >= this.chimeraxImages.length) this.chimeraxFocusIndex = 0;
@@ -529,13 +670,12 @@
   TrajectoryVolumeDisplay.prototype.setFocusIndex = function (index) {
     var i = Number(index);
     if (!Number.isFinite(i)) return;
-    i = Math.floor(i);
+    i = this._snapFocusIndexToReady(i);
+    if (i < 0) return;
     if (this.backend === "chimerax") {
       var cxTotal = this._volumeNavCount();
       if (cxTotal < 1) return;
-      i = Math.max(0, Math.min(cxTotal - 1, i));
-      var displayIndex = this._nearestRenderedChimeraxIndex(i);
-      if (this.chimeraxFocusIndex === i && this._chimeraxImageReadyAt(displayIndex)) {
+      if (this.chimeraxFocusIndex === i && this._chimeraxImageReadyAt(i)) {
         this._syncVolumeNavChrome();
         return;
       }
@@ -545,12 +685,9 @@
       this._syncVolumeNavChrome();
       return;
     }
-    if (this.backend !== "vtk" || !this.volumes.length) return;
-    var n = this.expectedVolumeCount != null && this.expectedVolumeCount > 0
-      ? this.expectedVolumeCount
-      : this.volumes.length;
+    if (this.backend !== "vtk") return;
+    var n = this._volumeNavCount();
     if (n < 1) return;
-    i = Math.max(0, Math.min(n - 1, i));
     if (this.vtkFocusIndex === i && this.raycastVolIndex === i) {
       this._syncVolumeNavChrome();
       return;
@@ -564,7 +701,12 @@
 
   TrajectoryVolumeDisplay.prototype._applySliderFocus = function () {
     if (!this.volumeSliderEl) return;
-    this.setFocusIndex(Number(this.volumeSliderEl.value));
+    var snapped = this._snapFocusIndexToReady(Number(this.volumeSliderEl.value));
+    if (snapped < 0) return;
+    if (String(this.volumeSliderEl.value) !== String(snapped)) {
+      this.volumeSliderEl.value = String(snapped);
+    }
+    this.setFocusIndex(snapped);
   };
 
   TrajectoryVolumeDisplay.prototype._volumeNavCount = function () {
@@ -596,14 +738,244 @@
     return labels;
   };
 
+  TrajectoryVolumeDisplay.prototype._volumeSliderTickLabelMeasurer = function () {
+    if (!this._volumeSliderTickLabelMeasurerEl) {
+      var el = document.createElement("span");
+      el.className = "cryo-vslice-volume-slider-tick-label";
+      el.setAttribute("aria-hidden", "true");
+      el.style.position = "absolute";
+      el.style.left = "-10000px";
+      el.style.top = "0";
+      el.style.visibility = "hidden";
+      el.style.maxWidth = "none";
+      el.style.whiteSpace = "pre-line";
+      el.style.pointerEvents = "none";
+      document.body.appendChild(el);
+      this._volumeSliderTickLabelMeasurerEl = el;
+    }
+    return this._volumeSliderTickLabelMeasurerEl;
+  };
+
+  TrajectoryVolumeDisplay.prototype._measureVolumeSliderTickLabelWidth = function (
+    measurer,
+    text,
+    fontSizePx,
+    fontWeight,
+    fontFamily
+  ) {
+    measurer.style.fontSize = String(fontSizePx) + "px";
+    measurer.style.fontWeight = fontWeight || "600";
+    measurer.style.fontFamily = fontFamily || '"Barlow", ui-sans-serif, system-ui, sans-serif';
+    measurer.style.whiteSpace = "pre-line";
+    var raw = String(text || "");
+    var lines = raw.split("\n");
+    var maxW = 0;
+    for (var li = 0; li < lines.length; li++) {
+      measurer.textContent = lines[li];
+      maxW = Math.max(maxW, measurer.getBoundingClientRect().width);
+    }
+    return maxW;
+  };
+
+  TrajectoryVolumeDisplay.prototype._volumeSliderTickLabelWidthsAtSize = function (
+    labels,
+    fontSizePx
+  ) {
+    var measurer = this._volumeSliderTickLabelMeasurer();
+    var widths = [];
+    for (var i = 0; i < labels.length; i++) {
+      var cs = window.getComputedStyle(labels[i]);
+      widths.push(this._measureVolumeSliderTickLabelWidth(
+        measurer,
+        labels[i].textContent,
+        fontSizePx,
+        cs.fontWeight,
+        cs.fontFamily
+      ));
+    }
+    return widths;
+  };
+
+  TrajectoryVolumeDisplay.prototype._volumeSliderThumbPx = function () {
+    var wrap = this.volumeSliderEl && this.volumeSliderEl.parentElement;
+    if (!wrap) return 16;
+    var raw = window.getComputedStyle(wrap).getPropertyValue("--cryo-vol-slider-thumb").trim();
+    if (raw) {
+      var parsed = parseFloat(raw);
+      if (isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return 16;
+  };
+
+  TrajectoryVolumeDisplay.prototype._volumeSliderTrackWidthPx = function () {
+    var wrap = this.volumeSliderEl && this.volumeSliderEl.parentElement;
+    if (!wrap) {
+      return this.volumeSliderTicksEl ? this.volumeSliderTicksEl.clientWidth : 0;
+    }
+    return wrap.clientWidth;
+  };
+
+  TrajectoryVolumeDisplay.prototype._volumeSliderTickCentersPx = function (total) {
+    total = Number(total);
+    if (!isFinite(total) || total < 1) return [];
+    var trackW = this._volumeSliderTrackWidthPx();
+    if (trackW <= 0) return [];
+    var thumb = this._volumeSliderThumbPx();
+    var travel = Math.max(0, trackW - thumb);
+    var inset = thumb * 0.5;
+    if (total === 1) return [inset];
+    var centers = [];
+    for (var i = 0; i < total; i++) {
+      centers.push(inset + (travel * i) / (total - 1));
+    }
+    return centers;
+  };
+
+  TrajectoryVolumeDisplay.prototype._positionVolumeSliderTicks = function (total) {
+    if (!this.volumeSliderTicksEl || total < 1) return;
+    var ticks = this.volumeSliderTicksEl.querySelectorAll(".cryo-vslice-volume-slider-tick");
+    for (var i = 0; i < ticks.length; i++) {
+      var frac = total > 1 ? i / (total - 1) : 0;
+      ticks[i].style.setProperty("--tick-pos", String(frac));
+    }
+  };
+
+  TrajectoryVolumeDisplay.prototype._volumeSliderTickLabelMaxWidthAt = function (
+    index,
+    centersPx
+  ) {
+    if (!centersPx.length) return 0;
+    var leftHalf = index > 0
+      ? (centersPx[index] - centersPx[index - 1]) * 0.5
+      : (centersPx.length > 1 ? (centersPx[1] - centersPx[0]) * 0.5 : centersPx[0]);
+    var rightHalf = index < centersPx.length - 1
+      ? (centersPx[index + 1] - centersPx[index]) * 0.5
+      : leftHalf;
+    return Math.max(0, Math.min(leftHalf, rightHalf) * 2);
+  };
+
+  TrajectoryVolumeDisplay.prototype._volumeSliderTickLabelsFitAtSize = function (
+    widths,
+    centersPx
+  ) {
+    if (!widths.length) return true;
+    var lMax = 0;
+    for (var i = 0; i < widths.length; i++) {
+      if (widths[i] > lMax) lMax = widths[i];
+    }
+    var minGap = 0.2 * lMax;
+    for (var j = 0; j < widths.length; j++) {
+      var maxW = this._volumeSliderTickLabelMaxWidthAt(j, centersPx);
+      if (widths[j] > maxW + 0.5) return false;
+    }
+    if (widths.length < 2) return true;
+    for (var k = 0; k < widths.length - 1; k++) {
+      var gap = (centersPx[k + 1] - centersPx[k]) - ((widths[k] + widths[k + 1]) * 0.5);
+      if (gap + 0.5 < minGap) return false;
+    }
+    return true;
+  };
+
+  TrajectoryVolumeDisplay.prototype._markVolumeSliderTickLabelsPending = function () {
+    if (!this.volumeSliderTicksEl) return;
+    this.volumeSliderTicksEl.classList.remove("cryo-vslice-volume-slider-ticks--ready");
+    this.volumeSliderTicksEl.classList.add("cryo-vslice-volume-slider-ticks--pending-fit");
+  };
+
+  TrajectoryVolumeDisplay.prototype._applyVolumeSliderTickLabelFont = function (
+    fontSizePx
+  ) {
+    if (!this.volumeSliderTicksEl || fontSizePx == null) return;
+    var labels = this.volumeSliderTicksEl.querySelectorAll(
+      ".cryo-vslice-volume-slider-tick-label"
+    );
+    var size = String(fontSizePx) + "px";
+    var centersPx = this._volumeSliderTickCentersPx(labels.length);
+    for (var li = 0; li < labels.length; li++) {
+      labels[li].style.fontSize = size;
+      if (centersPx.length) {
+        labels[li].style.maxWidth =
+          String(this._volumeSliderTickLabelMaxWidthAt(li, centersPx)) + "px";
+      }
+    }
+    this._volumeSliderTickLabelFontPx = fontSizePx;
+    var ticksEl = this.volumeSliderTicksEl;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (!ticksEl) return;
+        ticksEl.classList.remove("cryo-vslice-volume-slider-ticks--pending-fit");
+        ticksEl.classList.add("cryo-vslice-volume-slider-ticks--ready");
+      });
+    });
+  };
+
+  TrajectoryVolumeDisplay.prototype._fitVolumeSliderTickLabelFont = function () {
+    if (!this.volumeSliderTicksEl) return;
+    var labels = this.volumeSliderTicksEl.querySelectorAll(
+      ".cryo-vslice-volume-slider-tick-label"
+    );
+    if (!labels.length) return;
+    this._markVolumeSliderTickLabelsPending();
+
+    var total = labels.length;
+    this._positionVolumeSliderTicks(total);
+    var centersPx = this._volumeSliderTickCentersPx(total);
+    if (!centersPx.length) {
+      this._scheduleVolumeSliderTickLabelFit();
+      return;
+    }
+
+    var lo = 6;
+    var multiline = false;
+    for (var mi = 0; mi < labels.length; mi++) {
+      if (String(labels[mi].textContent || "").indexOf("\n") >= 0) {
+        multiline = true;
+        break;
+      }
+    }
+    var hi = multiline ? 11 : 40;
+    var best = lo;
+    while (lo <= hi) {
+      var mid = Math.ceil((lo + hi) * 0.5);
+      var widths = this._volumeSliderTickLabelWidthsAtSize(labels, mid);
+      if (this._volumeSliderTickLabelsFitAtSize(widths, centersPx)) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    this._applyVolumeSliderTickLabelFont(best);
+  };
+
+  TrajectoryVolumeDisplay.prototype._scheduleVolumeSliderTickLabelFit = function () {
+    var self = this;
+    this._markVolumeSliderTickLabelsPending();
+    if (this._volumeSliderTickFitRaf) return;
+    this._volumeSliderTickFitRaf = requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        self._volumeSliderTickFitRaf = 0;
+        self._fitVolumeSliderTickLabelFont();
+      });
+    });
+  };
+
   TrajectoryVolumeDisplay.prototype._syncVolumeSliderTicks = function (focus, total) {
     if (!this.volumeSliderTicksEl) return;
     var labels = this._volumeNavLabels();
     if (total < 1) {
       this.volumeSliderTicksEl.innerHTML = "";
+      this.volumeSliderTicksEl.classList.remove(
+        "cryo-vslice-volume-slider-ticks--ready",
+        "cryo-vslice-volume-slider-ticks--pending-fit"
+      );
       return;
     }
-    if (this.volumeSliderTicksEl.childElementCount !== total) {
+    var needsLabelReflow = this.volumeSliderTicksEl.childElementCount !== total;
+    var labelTextChanged = false;
+    if (needsLabelReflow) {
+      this._markVolumeSliderTickLabelsPending();
       this.volumeSliderTicksEl.innerHTML = "";
       for (var ti = 0; ti < total; ti++) {
         var tick = document.createElement("button");
@@ -618,26 +990,46 @@
         var lbl = document.createElement("span");
         lbl.className = "cryo-vslice-volume-slider-tick-label";
         lbl.textContent = String(labels[ti] != null ? labels[ti] : ti + 1);
+        if (this._volumeSliderTickLabelFontPx != null) {
+          lbl.style.fontSize = String(this._volumeSliderTickLabelFontPx) + "px";
+        }
         tick.appendChild(lbl);
         this.volumeSliderTicksEl.appendChild(tick);
       }
+      labelTextChanged = true;
     } else {
       var tickBtns = this.volumeSliderTicksEl.querySelectorAll(".cryo-vslice-volume-slider-tick");
       for (var uj = 0; uj < tickBtns.length; uj++) {
         var lblEl = tickBtns[uj].querySelector(".cryo-vslice-volume-slider-tick-label");
-        if (lblEl) lblEl.textContent = String(labels[uj] != null ? labels[uj] : uj + 1);
+        if (!lblEl) continue;
+        var nextText = String(labels[uj] != null ? labels[uj] : uj + 1);
+        if (lblEl.textContent !== nextText) {
+          labelTextChanged = true;
+          this._markVolumeSliderTickLabelsPending();
+          lblEl.textContent = nextText;
+        }
       }
     }
     var ticks = this.volumeSliderTicksEl.querySelectorAll(".cryo-vslice-volume-slider-tick");
     var isChimeraX = this.backend === "chimerax";
     var pipelineBusy = isChimeraX && this.chimeraxRendering;
+    var rerenderBusy = isChimeraX && this.chimeraxRerenderInFlight;
     for (var tj = 0; tj < ticks.length; tj++) {
+      var tickReady = isChimeraX
+        ? this._chimeraxImageReadyAt(tj)
+        : this._volumeReadyAt(tj);
       ticks[tj].classList.toggle("cryo-vslice-volume-slider-tick--active", tj === focus);
+      var isPending = !!((pipelineBusy && !tickReady) || rerenderBusy);
+      ticks[tj].classList.toggle("cryo-vslice-volume-slider-tick--pending", isPending);
       ticks[tj].classList.toggle(
-        "cryo-vslice-volume-slider-tick--pending",
-        !!(pipelineBusy && !this._chimeraxImageReadyAt(tj))
+        "cryo-vslice-volume-slider-tick--inactive",
+        !tickReady && !isPending
       );
-      ticks[tj].disabled = focus < 0;
+      ticks[tj].disabled = focus < 0 || !tickReady;
+    }
+    this._positionVolumeSliderTicks(total);
+    if (labelTextChanged || this._volumeSliderTickLabelFontPx == null) {
+      this._scheduleVolumeSliderTickLabelFit();
     }
   };
 
@@ -645,10 +1037,10 @@
     var isVtk = this.backend === "vtk";
     var isChimeraX = this.backend === "chimerax";
     var total = this._volumeNavCount();
-    var renderedCount = isChimeraX ? this._countRenderedChimeraxImages() : total;
+    var readyCount = this._countReadyVolumes();
     var multi = total > 1;
     var active = multi;
-    if (isChimeraX && this.chimeraxRendering && renderedCount < 1) {
+    if (isChimeraX && this.chimeraxRendering && readyCount < 1) {
       active = false;
     }
     if (this.volumeNavEl) {
@@ -657,7 +1049,15 @@
       this.volumeNavEl.hidden = !(isVtk || isChimeraX) || total < 1;
     }
     var focus = isChimeraX ? this.chimeraxFocusIndex : this.vtkFocusIndex;
-    var navStepEnabled = isChimeraX ? renderedCount > 1 : active;
+    if (active) {
+      var snapped = this._snapFocusIndexToReady(focus);
+      if (snapped >= 0 && snapped !== focus) {
+        focus = snapped;
+        if (isChimeraX) this.chimeraxFocusIndex = snapped;
+        else this.vtkFocusIndex = snapped;
+      }
+    }
+    var navStepEnabled = readyCount > 1;
     if (this.btnVolPrev) this.btnVolPrev.disabled = !navStepEnabled;
     if (this.btnVolNext) this.btnVolNext.disabled = !navStepEnabled;
     if (this.volumeSliderEl) {
@@ -665,29 +1065,100 @@
       this.volumeSliderEl.min = "0";
       this.volumeSliderEl.max = String(Math.max(0, total - 1));
       this.volumeSliderEl.step = "1";
-      if (active) {
-        var clamped = Math.max(0, Math.min(total - 1, focus));
-        if (String(this.volumeSliderEl.value) !== String(clamped)) {
-          this.volumeSliderEl.value = String(clamped);
+      if (active && focus >= 0) {
+        var sliderIdx = this._snapFocusIndexToReady(focus);
+        if (sliderIdx < 0) sliderIdx = Math.max(0, Math.min(total - 1, focus));
+        if (String(this.volumeSliderEl.value) !== String(sliderIdx)) {
+          this.volumeSliderEl.value = String(sliderIdx);
         }
+        var navLabels = this._volumeNavLabels();
+        var navText = navLabels[sliderIdx] != null
+          ? String(navLabels[sliderIdx])
+          : String(sliderIdx + 1);
+        this.volumeSliderEl.setAttribute("aria-valuetext", navText);
+        focus = sliderIdx;
+      } else {
+        this.volumeSliderEl.setAttribute("aria-valuetext", "—");
       }
     }
     this._syncVolumeSliderTicks(active ? focus : -1, total);
-    if (this.volumeNavLabelEl) {
-      if (!isVtk && !(isChimeraX && total > 0)) {
-        this.volumeNavLabelEl.textContent = "—";
-        this.volumeNavLabelEl.classList.add("cryo-vslice-volume-nav-label--inactive");
-      } else if (!active) {
-        this.volumeNavLabelEl.textContent = "—";
-        this.volumeNavLabelEl.classList.add("cryo-vslice-volume-nav-label--inactive");
-      } else {
-        this.volumeNavLabelEl.classList.remove("cryo-vslice-volume-nav-label--inactive");
-        var labels = this._volumeNavLabels();
-        var labelText = labels[focus] != null ? String(labels[focus]) : String(focus + 1);
-        this.volumeNavLabelEl.textContent =
-          labelText + " (" + String(focus + 1) + " / " + String(total) + ")";
-      }
+  };
+
+  TrajectoryVolumeDisplay.prototype.resetInteractiveView = function () {
+    if (this.backend === "vtk" && this.raycastView) {
+      this._suppressVtkCameraCapture = true;
+      this.raycastView.resetCamera();
+      this._suppressVtkCameraCapture = false;
+      this.vtkCameraUserAdjusted = false;
+      this.setSharedViewMatrix("");
+      return;
     }
+    if (this.backend === "slice" && this.sliceViewer) {
+      this.sliceViewer.resetView();
+    }
+  };
+
+  TrajectoryVolumeDisplay.prototype.canResetInteractiveView = function () {
+    var hasVol = this.volumes.some(function (v) { return v && v.volume_b64; });
+    if (this.backend === "vtk") {
+      return !!(this.raycastView && hasVol);
+    }
+    if (this.backend === "slice") {
+      return !!(this.sliceViewer && hasVol);
+    }
+    return false;
+  };
+
+  TrajectoryVolumeDisplay.prototype._resetViewEnabled = function () {
+    if (typeof this.canResetView === "function") {
+      return !!this.canResetView();
+    }
+    return this.canResetInteractiveView();
+  };
+
+  TrajectoryVolumeDisplay.prototype._setLayoutStablePanelVisible = function (el, visible) {
+    if (!el) return;
+    if (!this.stableBackendChrome) {
+      el.classList.remove("cryo-traj-vol-backend-panel--inactive");
+      el.classList.remove("cryo-traj-vol-backend-panel--reserved");
+      el.hidden = !visible;
+      return;
+    }
+    el.removeAttribute("hidden");
+    el.classList.remove("cryo-traj-vol-backend-panel--reserved");
+    el.classList.toggle("cryo-traj-vol-backend-panel--inactive", !visible);
+    el.setAttribute("aria-hidden", visible ? "false" : "true");
+  };
+
+  TrajectoryVolumeDisplay.prototype._setLayoutStablePanelReserved = function (el, visible) {
+    if (!el) return;
+    if (!this.stableBackendChrome) {
+      el.classList.remove("cryo-traj-vol-backend-panel--inactive");
+      el.classList.remove("cryo-traj-vol-backend-panel--reserved");
+      el.hidden = !visible;
+      return;
+    }
+    el.removeAttribute("hidden");
+    el.classList.remove("cryo-traj-vol-backend-panel--inactive");
+    el.classList.toggle("cryo-traj-vol-backend-panel--reserved", !visible);
+    el.setAttribute("aria-hidden", visible ? "false" : "true");
+  };
+
+  TrajectoryVolumeDisplay.prototype.syncResetViewButton = function () {
+    if (!this.btnResetView) return;
+    var isChimeraX = this.backend === "chimerax";
+    var enabled = this._resetViewEnabled();
+    this.btnResetView.hidden = false;
+    this.btnResetView.textContent = "Reset view";
+    this.btnResetView.setAttribute("aria-label", "Reset volume view");
+    this.btnResetView.disabled = !enabled;
+    this.btnResetView.title = enabled
+      ? (isChimeraX
+        ? "Clear rotations and re-render with the default view."
+        : "Reset pan, zoom, and camera.")
+      : (isChimeraX
+        ? "Render ChimeraX images before resetting the view."
+        : "Load volumes before resetting the view.");
   };
 
   TrajectoryVolumeDisplay.prototype._syncChrome = function () {
@@ -696,13 +1167,8 @@
     var isSlice = this.backend === "slice";
     var hasVol = this.volumes.some(function (v) { return v && v.volume_b64; });
     var hasCxImages = this._countRenderedChimeraxImages() > 0;
-    var pendingCount = this._expectedVolumeCount();
-    var hasPendingVolumes = pendingCount > 0;
-    var showChimeraxLoading = isChimeraX && !hasCxImages
-      && (this.chimeraxRendering || hasPendingVolumes);
     var showChimeraxPanel = isChimeraX;
-    var showInteractive = !isChimeraX && (hasVol || hasPendingVolumes);
-    var showInteractiveLoading = !isChimeraX && hasPendingVolumes && !hasVol;
+    var showInteractive = !isChimeraX && hasVol;
     if (this.asideShellEl) {
       this.asideShellEl.hidden = isChimeraX ? !showChimeraxPanel : false;
     }
@@ -710,26 +1176,43 @@
       this.displayRowEl.hidden = !(showInteractive || showChimeraxPanel);
     }
     if (this.viewportEl && isChimeraX) {
-      this.viewportEl.hidden = !(hasCxImages || showChimeraxLoading);
+      this.viewportEl.hidden = !hasCxImages;
     } else if (this.viewportEl) {
       this.viewportEl.hidden = !hasVol;
     }
+    var showControlsDock = (showInteractive || showChimeraxPanel)
+      && (hasVol || hasCxImages);
     if (this.controlsDockEl) {
-      var showControls = (showInteractive || showChimeraxPanel)
-        && (hasVol || hasCxImages || showChimeraxLoading || showInteractiveLoading);
-      this.controlsDockEl.hidden = !showControls;
+      this.controlsDockEl.hidden = !showControlsDock;
     }
     if (this.vtkSliceControlsEl) {
-      this.vtkSliceControlsEl.hidden = isChimeraX;
+      if (this.stableBackendChrome && showControlsDock) {
+        this._setLayoutStablePanelVisible(this.vtkSliceControlsEl, true);
+      } else {
+        this.vtkSliceControlsEl.hidden = isChimeraX;
+        this.vtkSliceControlsEl.classList.remove("cryo-traj-vol-backend-panel--inactive");
+      }
     }
     if (this.chimeraxViewControlsEl) {
-      this.chimeraxViewControlsEl.hidden = !isChimeraX;
+      if (this.stableBackendChrome && showControlsDock) {
+        this._setLayoutStablePanelVisible(this.chimeraxViewControlsEl, isChimeraX);
+      } else {
+        this.chimeraxViewControlsEl.hidden = !isChimeraX;
+        this.chimeraxViewControlsEl.classList.remove("cryo-traj-vol-backend-panel--inactive");
+      }
     }
     if (this.padColumnEl) {
-      this.padColumnEl.hidden = isChimeraX || !hasVol || showChimeraxLoading;
+      var showPad = !isChimeraX && hasVol;
+      if (this.stableBackendChrome && hasVol) {
+        this._setLayoutStablePanelReserved(this.padColumnEl, showPad);
+      } else {
+        this.padColumnEl.hidden = !showPad;
+        this.padColumnEl.classList.remove("cryo-traj-vol-backend-panel--inactive");
+        this.padColumnEl.classList.remove("cryo-traj-vol-backend-panel--reserved");
+      }
     }
     if (this.isoControlsEl) {
-      this.isoControlsEl.hidden = !(isVtk || (isChimeraX && (hasCxImages || showChimeraxLoading)));
+      this.isoControlsEl.hidden = !(isVtk && hasVol) && !(isChimeraX && hasCxImages);
     }
     if (this.sliceControlsRowEl) {
       this.sliceControlsRowEl.hidden = !isSlice || !hasVol;
@@ -745,20 +1228,22 @@
       this.rotationLockToolbarEl.hidden = isVtk || isChimeraX
         || !(this.sliceViewer && this.sliceViewer.layers && this.sliceViewer.layers.length > 1);
     }
-    if (this.btnResetView) {
-      this.btnResetView.hidden = isChimeraX;
-      this.btnResetView.textContent = isVtk ? "Reset camera" : "Reset view";
-      this.btnResetView.setAttribute(
-        "aria-label",
-        isVtk ? "Reset 3D camera" : "Reset slice view"
-      );
-    }
+    this.syncResetViewButton();
     this._syncVolumeNavChrome();
-    if (isChimeraX) this._syncChimeraxRenderingOverlay();
+    if (isChimeraX || isVtk) this._syncChimeraxRenderingOverlay();
     if (isVtk && this.raycastView) this._scheduleVtkResize();
   };
 
   TrajectoryVolumeDisplay.prototype._renderCurrent = function () {
+    if (!this._hasDisplayableVolumes()) {
+      if (this.chimeraxPreviewEl) {
+        this.chimeraxPreviewEl.hidden = true;
+        this.chimeraxPreviewEl.src = "";
+      }
+      this.setStatus("", false);
+      this._syncChrome();
+      return;
+    }
     if (this.backend === "chimerax") {
       this._renderChimerax();
       return;
@@ -771,35 +1256,26 @@
   };
 
   TrajectoryVolumeDisplay.prototype._stepChimeraxFocus = function (delta) {
-    var total = this._volumeNavCount();
-    if (total < 1) return;
-    var idx = this.chimeraxFocusIndex;
-    for (var attempt = 0; attempt < total; attempt++) {
-      idx = (idx + delta + total) % total;
-      if (this._chimeraxImageReadyAt(idx)) {
-        this.setFocusIndex(idx);
-        return;
-      }
-    }
+    this._stepReadyFocus(delta);
   };
 
   TrajectoryVolumeDisplay.prototype._cycleVtkFocus = function (delta) {
-    if (this.backend === "chimerax") {
-      if (this._countRenderedChimeraxImages() < 1) return;
-      this._stepChimeraxFocus(delta);
-      return;
+    if (this.backend === "chimerax" || this.backend === "vtk") {
+      this._stepReadyFocus(delta);
     }
-    if (this.backend !== "vtk" || this.volumes.length < 2) return;
-    var n = this.volumes.length;
-    this.vtkFocusIndex = (this.vtkFocusIndex + delta + n) % n;
-    this.raycastVolIndex = null;
-    this._syncVolumeNavChrome();
-    this._renderVtk();
-    this._notifyFocusChange();
   };
 
   TrajectoryVolumeDisplay.prototype._renderInteractive = function () {
     var self = this;
+    if (!this._hasDisplayableVolumes()) {
+      if (this.viewportEl) this.viewportEl.hidden = true;
+      if (this.controlsDockEl) this.controlsDockEl.hidden = true;
+      this._destroyRaycast();
+      if (this.sliceViewer) this.sliceViewer.setVolumes([], false);
+      this.setStatus("", false);
+      this._syncChrome();
+      return;
+    }
     if (!this.volumes.length) {
       if (this.viewportEl) this.viewportEl.hidden = true;
       if (this.controlsDockEl) this.controlsDockEl.hidden = true;
@@ -888,10 +1364,26 @@
 
   TrajectoryVolumeDisplay.prototype._renderVtk = function () {
     var self = this;
-    var idx = Math.max(0, Math.min(this.vtkFocusIndex, this.volumes.length - 1));
+    if (!this._hasDisplayableVolumes()) {
+      this.setStatus("", false);
+      if (this.viewportEl) this.viewportEl.hidden = true;
+      this._syncChrome();
+      return;
+    }
+    var navTotal = this._volumeNavCount();
+    if (navTotal < 1) return;
+    var idx = Math.max(0, Math.min(this.vtkFocusIndex, navTotal - 1));
+    if (!this._volumeReadyAt(idx)) {
+      if (this._countReadyVolumes() > 0) {
+        idx = this._nearestReadyVolumeIndex(idx);
+        this.vtkFocusIndex = idx;
+      }
+    }
+    while (this.volumes.length < navTotal) this.volumes.push(null);
     var vol = this.volumes[idx];
     if (!vol || !vol.volume_b64) {
-      this.setStatus("Loading volume…", true);
+      this.setStatus("", false);
+      this._syncChrome();
       return;
     }
     this.vtkFocusIndex = idx;

@@ -297,8 +297,10 @@ def volume_job_progress_snapshot(token: str) -> dict[str, object] | None:
         pct = (100.0 * done / total) if total else 0.0
         phase = str(entry.get("phase") or "decode")
         workers = int(entry["workers"])
+        display_total = entry.get("display_total")
+        snap_total = int(display_total) if display_total is not None else total
         snap: dict[str, object] = {
-            "total": total,
+            "total": snap_total,
             "done": done,
             "workers": workers,
             "percent": round(pct, 1),
@@ -310,8 +312,13 @@ def volume_job_progress_snapshot(token: str) -> dict[str, object] | None:
         elif phase == "pipeline":
             snap["n_gpus"] = int(entry.get("n_gpus") or workers)
             snap["n_cpus"] = int(entry.get("n_cpus") or 1)
-            snap["decode_done"] = int(entry.get("decode_done") or 0)
-            snap["render_done"] = int(entry.get("render_done") or done)
+            decode_done = int(entry.get("decode_done") or 0)
+            render_done = int(entry.get("render_done") or done)
+            if snap_total > 0:
+                decode_done = min(snap_total, decode_done)
+                render_done = min(snap_total, render_done)
+            snap["decode_done"] = decode_done
+            snap["render_done"] = render_done
         else:
             snap["n_cpus"] = workers
         return snap
@@ -350,10 +357,15 @@ def volume_job_progress_register_pipeline(
     *,
     n_gpus: int,
     n_cpus: int,
+    display_total: int | None = None,
 ) -> None:
     with _DECODE_PROGRESS_LOCK:
-        _VOLUME_JOB_PROGRESS[token] = {
-            "total": max(0, int(total)),
+        internal_total = max(0, int(total))
+        progress_total = (
+            max(0, int(display_total)) if display_total is not None else internal_total
+        )
+        entry: dict[str, object] = {
+            "total": progress_total,
             "done": 0,
             "workers": max(1, int(n_gpus)),
             "phase": "pipeline",
@@ -364,6 +376,10 @@ def volume_job_progress_register_pipeline(
             "render_done": 0,
             "t0": time.monotonic(),
         }
+        if display_total is not None:
+            entry["display_total"] = progress_total
+            entry["internal_total"] = internal_total
+        _VOLUME_JOB_PROGRESS[token] = entry
 
 
 def volume_job_progress_update_pipeline(
@@ -594,6 +610,31 @@ def _run_chimerax_render_with_png_progress(
         volume_job_progress_set_done(progress_token, n_total)
 
 
+def _coerce_z_decode_matrix(z_values: np.ndarray, zdim: int) -> np.ndarray:
+    """Return ``z_values`` as ``(n, zdim)`` for ``np.savetxt`` / ``eval_vol``."""
+    z_values = np.asarray(z_values, dtype=np.float64)
+    zdim = int(zdim)
+    if zdim < 1:
+        raise ValueError(f"zdim must be positive; got {zdim}.")
+    if z_values.ndim == 1:
+        if z_values.size == zdim:
+            z_values = z_values.reshape(1, zdim)
+        elif z_values.size % zdim != 0:
+            raise ValueError(
+                f"z_values length {z_values.size} is not a multiple of zdim {zdim}."
+            )
+        else:
+            z_values = z_values.reshape(-1, zdim)
+    elif z_values.ndim == 2:
+        if z_values.shape[1] != zdim:
+            raise ValueError(
+                f"z_values must have zdim {zdim}; got shape {z_values.shape}."
+            )
+    else:
+        raise ValueError(f"z_values must be 1D or 2D; got shape {z_values.shape}.")
+    return z_values
+
+
 def _decode_z_values_classic(
     exp: DashboardExperiment,
     z_values: np.ndarray,
@@ -605,7 +646,9 @@ def _decode_z_values_classic(
     from cryodrgn import analysis
 
     os.makedirs(out_dir, exist_ok=True)
-    zfile = os.path.join(out_dir, "z_values.txt")
+    zdim = int(exp.z.shape[1])
+    z_values = _coerce_z_decode_matrix(z_values, zdim)
+    zfile = os.path.join(out_dir, f"z_values_{int(vol_start_index):04d}.txt")
     np.savetxt(zfile, z_values)
     weights = os.path.join(exp.workdir, f"weights.{exp.epoch}.pkl")
     cfg = _config_yaml_path(exp.workdir)
@@ -681,6 +724,8 @@ def _decode_z_values_drgnai(
     from cryodrgn.mrcfile import write_mrc
 
     os.makedirs(out_dir, exist_ok=True)
+    zdim = int(exp.z.shape[1])
+    z_values = _coerce_z_decode_matrix(z_values, zdim)
     vg = _drgnai_volume_generator(exp, device_id=device)
     vol_start_index = int(vol_start_index)
     for i, z in enumerate(z_values):
@@ -732,7 +777,8 @@ def _decode_z_values_parallel_impl(
 ) -> None:
     import joblib
 
-    z_values = np.asarray(z_values)
+    zdim = int(exp.z.shape[1])
+    z_values = _coerce_z_decode_matrix(z_values, zdim)
     chunks = [c for c in np.array_split(z_values, n_gpus) if len(c)]
     if len(chunks) <= 1:
         _decode_z_values_worker(exp, z_values, mrc_dir, device=0, vol_start_index=1)
@@ -745,14 +791,31 @@ def _decode_z_values_parallel_impl(
         tasks.append((device_id, chunk, vol_start))
         vol_start += len(chunk)
 
+    def _run_parallel_decode(
+        device_id: int, chunk: np.ndarray, vol_start_index: int
+    ) -> None:
+        work_dir = tempfile.mkdtemp(prefix="cryodrgn_decode_", dir=mrc_dir)
+        try:
+            _decode_z_values_worker(
+                exp,
+                chunk,
+                work_dir,
+                device=device_id,
+                vol_start_index=vol_start_index,
+            )
+            for name in os.listdir(work_dir):
+                if not name.endswith(".mrc"):
+                    continue
+                src = os.path.join(work_dir, name)
+                dst = os.path.join(mrc_dir, name)
+                if os.path.exists(dst):
+                    os.remove(dst)
+                shutil.move(src, dst)
+        finally:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
     joblib.Parallel(n_jobs=len(tasks))(
-        joblib.delayed(_decode_z_values_worker)(
-            exp,
-            chunk,
-            mrc_dir,
-            device=device_id,
-            vol_start_index=vol_start_index,
-        )
+        joblib.delayed(_run_parallel_decode)(device_id, chunk, vol_start_index)
         for device_id, chunk, vol_start_index in tasks
     )
 
@@ -985,12 +1048,25 @@ def _pipelined_decode_and_chimerax_pngs(
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
     progress_token: str | None = None,
+    trajectory_slot_indices: list[int] | None = None,
+    n_trajectory_total: int | None = None,
+    progress_display_total: int | None = None,
 ) -> tuple[list[bytes], str | None, list[str]]:
     """Decode trajectory z values while rendering ChimeraX PNGs as each .mrc appears."""
     from cryodrgn.dashboard.chimerax_animation import resolve_chimerax_volume_level
 
     z_values = np.asarray(z_values, dtype=np.float64)
     n_total = len(z_values)
+    slot_indices = (
+        [int(i) for i in trajectory_slot_indices]
+        if trajectory_slot_indices is not None
+        else list(range(n_total))
+    )
+    if len(slot_indices) != n_total:
+        raise ValueError("trajectory_slot_indices length must match z_values rows.")
+    n_partial_ui = (
+        int(n_trajectory_total) if n_trajectory_total is not None else n_total
+    )
     cc = max(1, min(int(chimerax_cpus), 32))
     n_jobs = parallel_jobs(cc, n_total)
     n_gpus = cuda_gpu_count_for_decode()
@@ -999,9 +1075,13 @@ def _pipelined_decode_and_chimerax_pngs(
 
     if progress_token:
         volume_job_progress_register_pipeline(
-            progress_token, n_total, n_gpus=n_gpus, n_cpus=cc
+            progress_token,
+            n_total,
+            n_gpus=n_gpus,
+            n_cpus=cc,
+            display_total=progress_display_total,
         )
-        volume_job_partial_register(progress_token, n_total)
+        volume_job_partial_register(progress_token, n_partial_ui)
 
     decode_exc: list[BaseException] = []
     decode_done = threading.Event()
@@ -1059,13 +1139,14 @@ def _pipelined_decode_and_chimerax_pngs(
 
         for fut in done:
             i, data, vm = fut.result()
+            pending.pop(fut, None)
             with render_lock:
                 rendered[i] = data
                 if vm and view_matrix is None:
                     view_matrix = vm
 
             if progress_token:
-                volume_job_partial_set_image(progress_token, i, data)
+                volume_job_partial_set_image(progress_token, slot_indices[i], data)
 
     with ThreadPoolExecutor(max_workers=n_jobs) as executor:
         while len(rendered) < n_total:
@@ -1138,6 +1219,11 @@ def _pipelined_decode_and_chimerax_pngs(
 
     if progress_token:
         volume_job_partial_mark_complete(progress_token, view_matrix)
+        volume_job_progress_update_pipeline(
+            progress_token,
+            decode_done=n_total,
+            render_done=n_total,
+        )
         volume_job_progress_set_done(progress_token, n_total)
 
     return png_bytes_list, view_matrix, vol_files
@@ -1153,6 +1239,9 @@ def generate_trajectory_volume_pngs(
     volume_level: float | None = None,
     progress_token: str | None = None,
     pipeline: bool | None = None,
+    trajectory_slot_indices: list[int] | None = None,
+    n_trajectory_total: int | None = None,
+    progress_display_total: int | None = None,
 ) -> tuple[list[bytes], str]:
     """Decode volumes along a z-space trajectory and render ChimeraX static PNGs.
 
@@ -1189,6 +1278,9 @@ def generate_trajectory_volume_pngs(
                     view_turns=view_turns,
                     volume_level=volume_level,
                     progress_token=progress_token,
+                    trajectory_slot_indices=trajectory_slot_indices,
+                    n_trajectory_total=n_trajectory_total,
+                    progress_display_total=progress_display_total,
                 )
         else:
             vol_files = _decode_z_values_to_vol_paths(

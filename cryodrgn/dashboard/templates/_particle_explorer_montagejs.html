@@ -3169,9 +3169,6 @@
   }
 
   var selFbModalTitle = document.getElementById("sel-fb-modal-title");
-  var selFbModalBackdrop = selFileBrowserPanel
-    ? selFileBrowserPanel.querySelector("[data-sel-fb-close]")
-    : null;
   var selectionSaveModalTriggerEl = null;
 
   function syncSelectionSaveModalTitle() {
@@ -3181,12 +3178,6 @@
     } else {
       selFbModalTitle.textContent = "Save selection";
     }
-  }
-
-  function onSelectionSaveModalKeydown(ev) {
-    if (ev.key !== "Escape" || !selFileBrowserPanel || selFileBrowserPanel.hidden) return;
-    ev.preventDefault();
-    closeSelectionFileBrowser();
   }
 
   function openRegionSelectionFileBrowser(regionIdx, regRows) {
@@ -3213,34 +3204,32 @@
     }
     syncSelectionSaveModalTitle();
     selectionSaveModalTriggerEl = document.activeElement;
-    selFileBrowserPanel.hidden = false;
-    selFileBrowserPanel.setAttribute("aria-hidden", "false");
-    document.body.classList.add("cryo-explorer-save-modal-open");
+    if (window.CryoDashModal) {
+      CryoDashModal.open(selFileBrowserPanel, { focusEl: selFbSaveName });
+    } else {
+      selFileBrowserPanel.hidden = false;
+      selFileBrowserPanel.setAttribute("aria-hidden", "false");
+      document.body.classList.add("cryo-explorer-save-modal-open");
+    }
     loadSelectionFileBrowserDir(startDir || "");
-    requestAnimationFrame(function() {
-      if (selFbSaveName) {
-        try {
-          selFbSaveName.focus();
-          selFbSaveName.select();
-        } catch (eFocus) { /* ignore */ }
-      }
-    });
   }
 
   function closeSelectionFileBrowser() {
     if (!selFileBrowserPanel) return;
-    selFileBrowserPanel.hidden = true;
-    selFileBrowserPanel.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("cryo-explorer-save-modal-open");
+    if (window.CryoDashModal) {
+      CryoDashModal.close(selFileBrowserPanel, { restoreFocus: selectionSaveModalTriggerEl });
+    } else {
+      selFileBrowserPanel.hidden = true;
+      selFileBrowserPanel.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("cryo-explorer-save-modal-open");
+      var restore = selectionSaveModalTriggerEl;
+      if (restore && typeof restore.focus === "function") {
+        try { restore.focus(); } catch (eRestore) { /* ignore */ }
+      }
+    }
     selFbCurrentDir = null;
     clearPendingRegionSave();
-    var restore = selectionSaveModalTriggerEl;
     selectionSaveModalTriggerEl = null;
-    if (restore && typeof restore.focus === "function") {
-      try {
-        restore.focus();
-      } catch (eRestore) { /* ignore */ }
-    }
   }
 
   function normalizedSelectionBasename() {
@@ -3254,6 +3243,20 @@
 
   function loadSelectionFileBrowserDir(dir) {
     if (!selFbList || !selFbPath) return;
+    if (window.CryoFileBrowser) {
+      CryoFileBrowser.loadDir({
+        listUrl: "{{ url_for('api_list_server_files') }}",
+        dir: dir || null,
+        listEl: selFbList,
+        pathEl: selFbPath,
+        onDir: function(next) { loadSelectionFileBrowserDir(next); },
+        onFile: function(path, ent) {
+          if (selFbSaveName) selFbSaveName.value = ent.name;
+        },
+        onLoaded: function(j) { selFbCurrentDir = j.dir; }
+      });
+      return;
+    }
     selFbList.innerHTML = "<li class='cryo-file-browser-empty'>Loading…</li>";
     var q = dir ? ("?dir=" + encodeURIComponent(dir)) : "";
     fetch("{{ url_for('api_list_server_files') }}" + q)
@@ -3373,22 +3376,47 @@
   if (selFbUp) {
     selFbUp.addEventListener("click", function() {
       if (selFbCurrentDir) {
-        var parent = selFbCurrentDir.replace(/\/[^\/]*\/?$/, "") || "/";
+        var parent = window.CryoFileBrowser
+          ? CryoFileBrowser.parentDir(selFbCurrentDir)
+          : (selFbCurrentDir.replace(/\/[^\/]*\/?$/, "") || "/");
         loadSelectionFileBrowserDir(parent);
       }
     });
   }
-  if (selFbCancel) {
-    selFbCancel.addEventListener("click", function() {
+  if (selFileBrowserPanel && window.CryoDashModal) {
+    CryoDashModal.wire(selFileBrowserPanel, {
+      closeAttr: "data-sel-fb-close",
+      cancelId: "sel-fb-cancel",
+      onClose: function() {
+        selFbCurrentDir = null;
+        clearPendingRegionSave();
+        var restore = selectionSaveModalTriggerEl;
+        selectionSaveModalTriggerEl = null;
+        if (restore && typeof restore.focus === "function") {
+          try { restore.focus(); } catch (eRestore) { /* ignore */ }
+        }
+      }
+    });
+  } else {
+    if (selFbCancel) {
+      selFbCancel.addEventListener("click", function() {
+        closeSelectionFileBrowser();
+      });
+    }
+    var selFbModalBackdrop = selFileBrowserPanel
+      ? selFileBrowserPanel.querySelector("[data-sel-fb-close]")
+      : null;
+    if (selFbModalBackdrop) {
+      selFbModalBackdrop.addEventListener("click", function() {
+        closeSelectionFileBrowser();
+      });
+    }
+    document.addEventListener("keydown", function(ev) {
+      if (ev.key !== "Escape" || !selFileBrowserPanel || selFileBrowserPanel.hidden) return;
+      ev.preventDefault();
       closeSelectionFileBrowser();
     });
   }
-  if (selFbModalBackdrop) {
-    selFbModalBackdrop.addEventListener("click", function() {
-      closeSelectionFileBrowser();
-    });
-  }
-  document.addEventListener("keydown", onSelectionSaveModalKeydown);
   if (selFbSaveBtn) {
     selFbSaveBtn.addEventListener("click", function() {
       saveSelectionViaBrowser();
@@ -3523,9 +3551,16 @@
   }
   syncExplorerMontagePanelReadiness();
   if (btnMontageResampleCache) {
+    btnMontageResampleCache.addEventListener("mousedown", function(e) {
+      if (btnMontageResampleCache.disabled) return;
+      /* Keep focus off the button so the menu panel does not scroll it into view. */
+      e.preventDefault();
+    });
     btnMontageResampleCache.addEventListener("click", function() {
       if (btnMontageResampleCache.disabled) return;
+      captureMontageMenuScroll();
       showRandomPreloaded();
+      scheduleRestoreMontageMenuScroll();
     });
   }
   updateParticleSelFieldset();

@@ -86,6 +86,11 @@
   var boxSelectTooltipEl = document.getElementById("box-select-tooltip");
   var montageActionsEl = document.getElementById("montage-actions");
   var montageAsideEl = document.querySelector(".cryo-dash-page--particle-explorer .cryo-dash-montage");
+  var montageMenuScrollEl = montageAsideEl
+    ? montageAsideEl.querySelector(".cryo-explorer-menu-scroll")
+    : null;
+  var montageMenuScrollPreserveTop = null;
+  var montageMenuScrollRestorePending = false;
 
   var montageDisplayMode = "images";
   var volumeStaticDataUrls = null;
@@ -937,6 +942,31 @@
   function montageRowExtraPx() {
     return MONTAGE_CELL_PAD_Y + MONTAGE_META_IMG_GAP;
   }
+  function captureMontageMenuScroll() {
+    if (!montageMenuScrollEl) return;
+    montageMenuScrollPreserveTop = montageMenuScrollEl.scrollTop;
+    montageMenuScrollRestorePending = true;
+  }
+
+  function restoreMontageMenuScroll() {
+    if (!montageMenuScrollRestorePending || montageMenuScrollEl == null
+        || montageMenuScrollPreserveTop == null) {
+      return;
+    }
+    montageMenuScrollEl.scrollTop = montageMenuScrollPreserveTop;
+  }
+
+  function finishMontageMenuScrollRestore() {
+    montageMenuScrollRestorePending = false;
+    montageMenuScrollPreserveTop = null;
+  }
+
+  function scheduleRestoreMontageMenuScroll() {
+    requestAnimationFrame(function() {
+      requestAnimationFrame(restoreMontageMenuScroll);
+    });
+  }
+
   function montageGridLayoutAvailWidth() {
     if (!imageGridMenuBody) return 0;
     var availW = imageGridMenuBody.clientWidth;
@@ -989,6 +1019,8 @@
       }
     }
     applyMontageMetaTypography(cellW);
+    restoreMontageMenuScroll();
+    if (montageMenuScrollRestorePending) finishMontageMenuScrollRestore();
   }
   function scheduleSyncMontageGridRegionLayout() {
     if (montageGridLayoutTimer) clearTimeout(montageGridLayoutTimer);

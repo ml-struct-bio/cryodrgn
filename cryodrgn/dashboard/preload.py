@@ -62,12 +62,17 @@ def encode_particle_batch(
     datadir: str | None,
     global_indices: Iterable[int],
     max_px: int,
+    *,
+    src: object | None = None,
 ) -> list[str]:
     """Load and encode raw particles as base64 JPEGs for thumbnail preloading.
 
     Use :class:`ImageSource` directly instead of :class:`ImageDataset`; dashboard
     thumbnails do their own percentile scaling and do not need ImageDataset's
     costly normalization estimates.
+
+    Pass a pre-opened ``src`` (e.g. from :meth:`DashboardExperiment.particle_image_source`)
+    when encoding many batches in one process so multi-file stacks are not re-indexed.
     """
     import base64 as _b64
     import io as _io
@@ -77,7 +82,8 @@ def encode_particle_batch(
 
     from cryodrgn.source import ImageSource
 
-    src = ImageSource.from_file(mrcfile, lazy=True, datadir=datadir or "")
+    if src is None:
+        src = ImageSource.from_file(mrcfile, lazy=True, datadir=datadir or "")
     out: list[str] = []
     for gidx in global_indices:
         raw = src.images(gidx, as_numpy=True)

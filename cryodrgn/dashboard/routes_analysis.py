@@ -49,6 +49,7 @@ from cryodrgn.dashboard.particle_explorer import (
     volume_job_partial_snapshot,
     volume_job_partial_unregister,
 )
+from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from cryodrgn.dashboard.preload import particle_thumbnail_b64_from_row
 from cryodrgn.dashboard.plots import (
     pair_grid_figure_aspect_ratio,
@@ -66,6 +67,7 @@ from cryodrgn.dashboard.route_helpers import (
     discrete_color_columns_for_exp,
 )
 from cryodrgn.dashboard.trajectory import (
+    attach_trajectory_marker_colors,
     compute_trajectory_latent_path,
     default_trajectory_endpoints_xy,
     has_pc_columns,
@@ -342,6 +344,69 @@ def api_trajectory_save_volumes():
         return jsonify(error=str(err)), 500
 
 
+def api_trajectory_save_gif():
+    """Assemble trajectory ChimeraX PNG frames into a GIF and write server-side."""
+    e: DashboardExperiment = g.dashboard_exp
+    err = _trajectory_eligibility_error(e)
+    if err is not None:
+        return err
+    data = _request_json_dict()
+    raw_frames = data.get("images")
+    if raw_frames is None:
+        raw_frames = data.get("frames")
+    if not isinstance(raw_frames, list):
+        return jsonify(error="images must be a list of base64 PNG strings."), 400
+    str_frames = [str(x) for x in raw_frames if isinstance(x, (str, bytes))]
+    if len(str_frames) != len(raw_frames):
+        return jsonify(error="each frame must be a string."), 400
+    if len(str_frames) < 2:
+        return jsonify(error="At least two frames are required."), 400
+
+    fps_raw = data.get("fps", 4)
+    try:
+        fps = float(fps_raw)
+    except (TypeError, ValueError):
+        return jsonify(error="fps must be a number."), 400
+    if fps <= 0 or fps > 60:
+        return jsonify(error="fps must be between 0 and 60."), 400
+    duration_ms = max(1, int(round(1000.0 / fps)))
+
+    try:
+        gif_bytes = png_base64_frames_to_gif_bytes(str_frames, durations_ms=duration_ms)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except RuntimeError as err:
+        return jsonify(error=str(err)), 500
+    except Exception as err:
+        logger.exception("trajectory GIF assembly failed")
+        return jsonify(error=str(err)), 500
+
+    raw_out_path = data.get("out_path")
+    if raw_out_path is None or str(raw_out_path).strip() == "":
+        out_path = os.path.join(os.path.abspath(e.workdir), "trajectory.gif")
+    else:
+        if not isinstance(raw_out_path, str):
+            return jsonify(error="out_path must be a string path"), 400
+        req_path = raw_out_path.strip()
+        if not req_path:
+            return jsonify(error="out_path must not be empty"), 400
+        if not req_path.lower().endswith(".gif"):
+            req_path = req_path + ".gif"
+        if os.path.isabs(req_path):
+            out_path = os.path.abspath(req_path)
+        else:
+            out_path = os.path.abspath(os.path.join(e.workdir, req_path))
+    out_dir = os.path.dirname(out_path) or os.path.abspath(e.workdir)
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        with open(out_path, "wb") as fh:
+            fh.write(gif_bytes)
+    except OSError as err:
+        return jsonify(error=str(err)), 500
+
+    return jsonify(ok=True, path=out_path)
+
+
 def _trajectory_anchor_driven_json(
     e: DashboardExperiment, anchor_indices: list[int], data: dict
 ):
@@ -502,10 +567,13 @@ def api_trajectory_coords():
     try:
         data = _request_json_dict()
         p = parse_trajectory_request_body(e, data)
+        discrete_label_colors = _parse_optional_discrete_label_colors(
+            data.get("discrete_label_colors")
+        )
     except ValueError as err:
         return jsonify(error=str(err)), 400
     try:
-        z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(e, p)
+        z_traj, traj_rows, traj_xy, snap_vol_ids = compute_trajectory_latent_path(e, p)
         payload = trajectory_shared_json_payload(
             e,
             z_traj,
@@ -517,8 +585,16 @@ def api_trajectory_coords():
             ycol=p["ycol"],
             color_col=str(data.get("color") or "none"),
             continuous_palette=data.get("palette"),
+            discrete_label_colors=discrete_label_colors,
         )
-        _add_direct_anchor_pidx(payload, p, z_traj)
+        _add_direct_anchor_pidx(payload, p, z_traj, e, snap_vol_ids=snap_vol_ids)
+        attach_trajectory_marker_colors(
+            e,
+            payload,
+            str(data.get("color") or "none"),
+            continuous_palette=data.get("palette"),
+            discrete_label_colors=discrete_label_colors,
+        )
         return jsonify(payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -651,8 +727,21 @@ def api_trajectory_volumes():
             return jsonify(payload)
 
         p = parse_trajectory_request_body(e, data)
-        z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(e, p)
+        z_traj, traj_rows, traj_xy, snap_vol_ids = compute_trajectory_latent_path(e, p)
+        from cryodrgn.dashboard.trajectory import resolve_trajectory_decode_plan
+
+        z_decode, decode_slot_indices, n_traj = resolve_trajectory_decode_plan(
+            data, z_traj
+        )
+        partial_decode = len(decode_slot_indices) < n_traj
         cc = int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL))
+        progress_display_total = None
+        raw_djt = data.get("decode_job_total")
+        if raw_djt is not None:
+            try:
+                progress_display_total = max(0, int(raw_djt))
+            except (TypeError, ValueError):
+                return jsonify(error="decode_job_total must be an integer."), 400
         view_matrix_camera = None
         raw_vm = data.get("view_matrix")
         if raw_vm is not None:
@@ -691,20 +780,33 @@ def api_trajectory_volumes():
             color_col=str(data.get("color") or "none"),
             continuous_palette=data.get("palette"),
         )
-        _add_direct_anchor_pidx(payload, p, z_traj)
+        _add_direct_anchor_pidx(payload, p, z_traj, e, snap_vol_ids=snap_vol_ids)
         if render_backend == "chimerax":
             blobs, cache_token = generate_trajectory_volume_pngs(
                 e,
-                z_traj,
+                z_decode,
                 chimerax_cpus=cc,
                 view_matrix_camera=view_matrix_camera,
                 view_turns=view_turns,
                 volume_level=iso_level,
                 progress_token=progress_token,
+                trajectory_slot_indices=(
+                    decode_slot_indices if partial_decode else None
+                ),
+                n_trajectory_total=n_traj if partial_decode else None,
+                progress_display_total=progress_display_total,
             )
-            payload["images"] = [
-                base64.standard_b64encode(b).decode("ascii") for b in blobs
-            ]
+            if partial_decode:
+                images_sparse: list[str | None] = [None] * n_traj
+                for j, slot in enumerate(decode_slot_indices):
+                    images_sparse[slot] = base64.standard_b64encode(blobs[j]).decode(
+                        "ascii"
+                    )
+                payload["images"] = images_sparse
+            else:
+                payload["images"] = [
+                    base64.standard_b64encode(b).decode("ascii") for b in blobs
+                ]
             payload["volume_cache_id"] = cache_token
             payload["render_backend"] = "chimerax"
             mrc_path = primary_mrc_path_from_volume_cache(cache_token)
@@ -714,9 +816,17 @@ def api_trajectory_volumes():
                 )
         else:
             vol_payloads, cache_token = generate_trajectory_volume_b64_list(
-                e, z_traj, progress_token=progress_token
+                e, z_decode, progress_token=progress_token
             )
-            payload["volumes"] = vol_payloads
+            if partial_decode:
+                volumes_sparse: list[dict[str, object] | None] = [None] * n_traj
+                for j, slot in enumerate(decode_slot_indices):
+                    entry = dict(vol_payloads[j])
+                    entry["index"] = int(slot)
+                    volumes_sparse[slot] = entry
+                payload["volumes"] = volumes_sparse
+            else:
+                payload["volumes"] = vol_payloads
             payload["volume_cache_id"] = cache_token
             payload["render_backend"] = render_backend
         if traj_rows is not None and p["mode"] in ("nearest", "graph"):

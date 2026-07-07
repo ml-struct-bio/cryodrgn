@@ -145,6 +145,7 @@ _ROUTES = (
     ("/api/trajectory_coords", ra.api_trajectory_coords, "POST"),
     ("/api/trajectory_save_zpath", ra.api_trajectory_save_zpath, "POST"),
     ("/api/trajectory_save_volumes", ra.api_trajectory_save_volumes, "POST"),
+    ("/api/trajectory_save_gif", ra.api_trajectory_save_gif, "POST"),
     ("/api/trajectory_import_anchors", ra.api_trajectory_import_anchors, "POST"),
     ("/api/list_server_files", ra.api_list_server_files, "GET"),
     ("/api/trajectory_kmeans_centers", ra.api_trajectory_kmeans_centers, "POST"),

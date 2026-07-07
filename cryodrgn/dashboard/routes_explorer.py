@@ -6,6 +6,7 @@ Through preload.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import pickle
@@ -718,6 +719,15 @@ def api_scatter():
             # Invalid marker_size query param; keep the default size.
             pass
     use_svg = request.args.get("use_svg") == "1"
+    discrete_label_colors = None
+    raw_dlc = request.args.get("discrete_label_colors")
+    if raw_dlc:
+        try:
+            discrete_label_colors = _parse_optional_discrete_label_colors(
+                json.loads(raw_dlc)
+            )
+        except (ValueError, json.JSONDecodeError) as err:
+            return jsonify(error=str(err)), 400
     try:
         # WebGL trace (Scattergl) is required at explorer / filter caps: SVG Scatter
         # cannot paint O(10^5) markers in reasonable time, so the plot stays blank and
@@ -734,6 +744,7 @@ def api_scatter():
             use_webgl=not use_svg,
             marker_size=marker_size,
             continuous_palette=request.args.get("palette"),
+            discrete_label_colors=discrete_label_colors,
         )
     except Exception as err:
         logger.exception("scatter plot failed")
@@ -1433,16 +1444,17 @@ def api_preload_images():
         return jsonify(payload)
 
     def _encode_indices(global_indices: list[int]) -> list[str]:
+        img_src = e.particle_image_source()
         parallel_threshold = max(128, cpus * 32)
         if cpus > 1 and len(global_indices) >= parallel_threshold:
-            from concurrent.futures import ProcessPoolExecutor
+            from concurrent.futures import ThreadPoolExecutor
 
             chunk_sz = -(-len(global_indices) // cpus)
             chunks = [
                 global_indices[i : i + chunk_sz]
                 for i in range(0, len(global_indices), chunk_sz)
             ]
-            with ProcessPoolExecutor(max_workers=len(chunks)) as pool:
+            with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
                 futures = [
                     pool.submit(
                         encode_particle_batch,
@@ -1450,6 +1462,7 @@ def api_preload_images():
                         e.datadir,
                         ch,
                         96,
+                        src=img_src,
                     )
                     for ch in chunks
                 ]
@@ -1462,6 +1475,7 @@ def api_preload_images():
             e.datadir,
             global_indices,
             96,
+            src=img_src,
         )
 
     cached = PRELOAD_CACHE.get(key)

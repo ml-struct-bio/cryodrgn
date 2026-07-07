@@ -75,7 +75,7 @@ class DashboardExperiment:
     umap: np.ndarray | None
     pc: np.ndarray
     z: np.ndarray
-    _image_dataset: ImageDataset | None = field(
+    _image_source: object | None = field(
         default=None, init=False, repr=False, compare=False
     )
     user_covariate_columns: list[str] = field(
@@ -106,6 +106,16 @@ class DashboardExperiment:
     @property
     def can_preview_particles(self) -> bool:
         return self.enc_mode != "tilt"
+
+    def particle_image_source(self):
+        """Lazily opened particle stack shared by explorer thumbnail preload."""
+        if self._image_source is None:
+            from cryodrgn.source import ImageSource
+
+            self._image_source = ImageSource.from_file(
+                self.particles_path, lazy=True, datadir=self.datadir or ""
+            )
+        return self._image_source
 
 
 def load_experiment(
@@ -255,11 +265,7 @@ def particle_image_array(exp: DashboardExperiment, row_index: int) -> np.ndarray
     if not exp.can_preview_particles:
         raise RuntimeError("Particle previews are not supported for tilt-series data.")
     g = int(exp.all_indices[int(row_index)])
-    if exp._image_dataset is None:
-        exp._image_dataset = ImageDataset(
-            mrcfile=exp.particles_path, lazy=True, datadir=exp.datadir
-        )
-    img = exp._image_dataset.src.images(g, as_numpy=True)
+    img = exp.particle_image_source().images(g, as_numpy=True)
     if img.ndim == 3:
         img = img[0]
     return np.asarray(img, dtype=np.float32)

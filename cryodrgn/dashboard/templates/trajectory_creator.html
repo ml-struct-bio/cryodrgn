@@ -339,6 +339,11 @@
     width: 100%;
     overflow: visible;
   }
+  .cryo-traj-ui-inflight {
+    opacity: 0.55;
+    filter: grayscale(1);
+    pointer-events: none;
+  }
   #traj-z-panel:not([hidden]) + .cryo-traj-vol-panel-host {
     margin-top: 0.06rem;
   }
@@ -632,22 +637,6 @@
     width: 100%;
     margin: 0;
     flex: 0 0 auto;
-  }
-  .cryo-traj-vol-panel-host .cryo-vslice-status-slot {
-    flex: 0 0 auto;
-    min-height: 0;
-    box-sizing: border-box;
-  }
-  .cryo-traj-vol-panel-host .cryo-vslice-status-slot:has(.cryo-vslice-status:empty) {
-    display: none;
-  }
-  .cryo-traj-vol-panel-host .cryo-vslice-status-slot .cryo-vslice-status {
-    margin: 0;
-    min-height: 1.15rem;
-    line-height: 1.15rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .cryo-traj-vol-volume-nav-row .cryo-vslice-volume-nav {
     position: relative;
@@ -967,6 +956,44 @@
     border-radius: 4px;
     background: #faf8f4;
     box-sizing: border-box;
+    overflow: hidden;
+  }
+  .cryo-traj-vol-panel-host .cryo-vslice-viewport > .cryo-plot-rendering-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    flex: none;
+    min-height: 0;
+    height: auto;
+    margin: 0;
+    border-radius: inherit;
+  }
+  .cryo-traj-vol-panel-host .cryo-vslice-viewport > .cryo-plot-rendering-overlay[hidden] {
+    display: none !important;
+  }
+  .cryo-traj-vol-panel-host #vslice-rendering-overlay.cryo-plot-rendering-overlay--show:not(
+    .cryo-plot-rendering-overlay--nonblocking
+  ) {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    background: rgba(250, 248, 244, 0.96);
+    pointer-events: auto;
+  }
+  .cryo-traj-vol-panel-host #vslice-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__inner {
+    gap: 1.1rem;
+    max-width: min(94%, 30rem);
+  }
+  .cryo-traj-vol-panel-host #vslice-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__label {
+    font-size: clamp(1.65rem, 5vw, 2.65rem);
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    color: #1a202c;
+  }
+  .cryo-traj-vol-panel-host .cryo-vslice-viewport:not([hidden]) {
+    display: block;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-canvas,
   .cryo-traj-vol-panel-host .cryo-vslice-vtk-container {
@@ -1016,39 +1043,6 @@
     display: block;
     box-sizing: border-box;
     position: relative;
-  }
-  .cryo-traj-vol-panel-host .cryo-vslice-scroll > .cryo-plot-rendering-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    flex: none;
-    min-height: 0;
-    height: auto;
-    margin: 0;
-  }
-  .cryo-traj-vol-panel-host .cryo-vslice-scroll > .cryo-plot-rendering-overlay[hidden] {
-    display: none !important;
-  }
-  .cryo-traj-vol-panel-host #vslice-rendering-overlay.cryo-plot-rendering-overlay--show:not(
-    .cryo-plot-rendering-overlay--nonblocking
-  ) {
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-    background: rgba(250, 248, 244, 0.96);
-    pointer-events: auto;
-  }
-  .cryo-traj-vol-panel-host #vslice-rendering-overlay.cryo-plot-rendering-overlay--show
-    .cryo-plot-rendering-overlay__inner {
-    gap: 1.1rem;
-    max-width: min(94%, 30rem);
-  }
-  .cryo-traj-vol-panel-host #vslice-rendering-overlay.cryo-plot-rendering-overlay--show
-    .cryo-plot-rendering-overlay__label {
-    font-size: clamp(1.65rem, 5vw, 2.65rem);
-    font-weight: 800;
-    letter-spacing: 0.03em;
-    color: #1a202c;
   }
   .cryo-traj-vol-panel-host .cryo-vslice-scroll > .cryo-vslice-viewport:not([hidden]) {
     display: block;
@@ -1272,10 +1266,6 @@
   .cryo-traj-vol-column[hidden] {
     display: none !important;
   }
-  /* Extra space under the indeterminate bar while volumes are generating */
-  #traj-progress:not([hidden]) + .cryo-traj-vol-column {
-    margin-top: 0.55rem;
-  }
   .cryo-traj-vol-cell {
     position: relative;
     flex: 0 0 auto;
@@ -1494,52 +1484,66 @@
   .cryo-traj-manual-mode-row {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.25rem;
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
   }
+  .cryo-traj-manual-mode-row--graph {
+    flex-wrap: wrap;
+  }
   .cryo-traj-manual-interp-btn {
-    flex: 1 1 0;
+    flex: 1 1 5.5rem;
+    min-width: 0;
     width: auto;
+    max-width: 100%;
     margin-top: 0;
-    min-height: calc(0.7 * (2 * (0.76rem + 0.65rem * 2.08)));
-    padding: 0.18rem 0.22rem;
-    font-size: 0.57rem;
-    line-height: 1.04;
+    min-height: 2.05rem;
+    padding: 0.12rem 0.14rem;
+    font-size: 0.5rem;
+    line-height: 1.02;
     white-space: normal;
+    overflow: hidden;
   }
   .cryo-traj-manual-mode-row .cryo-traj-manual-npoints {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    font-size: 0.72rem;
+    gap: 0.15rem;
+    font-size: 0.62rem;
     color: var(--muted, #5c6b7a);
     font-weight: 600;
     white-space: nowrap;
   }
   .cryo-traj-manual-mode-row .cryo-traj-manual-npoints select {
-    width: 3.25rem;
-    padding: 0.1rem 0.2rem;
-    font-size: 0.78rem;
+    width: 2.65rem;
+    min-width: 0;
+    padding: 0.06rem 0.12rem;
+    font-size: 0.68rem;
   }
   .cryo-traj-manual-graph-neighbors {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    flex: 0 0 auto;
-    flex-wrap: wrap;
+    gap: 0.2rem;
+    flex: 0 1 auto;
+    margin-left: auto;
+  }
+  .cryo-traj-manual-mode-row--graph .cryo-traj-manual-graph-neighbors {
+    flex: 1 1 100%;
+    margin-left: 0;
+    justify-content: flex-end;
   }
   .cryo-traj-manual-graph-neighbors label {
-    font-size: 0.68rem;
+    font-size: 0.6rem;
     font-weight: 600;
     color: var(--muted, #5c6b7a);
     white-space: nowrap;
   }
   .cryo-traj-manual-graph-neighbors select {
-    width: 3.25rem;
-    padding: 0.1rem 0.2rem;
-    font-size: 0.78rem;
+    width: 2.65rem;
+    min-width: 0;
+    padding: 0.06rem 0.12rem;
+    font-size: 0.68rem;
   }
   .cryo-traj-mode-seg input:focus-visible + label {
     outline: 2px solid var(--nav-bg, #243b53);
@@ -1588,12 +1592,39 @@
     padding: 0.1rem 0.25rem;
     font-size: 0.82rem;
   }
-  .cryo-traj-status {
+  .cryo-traj-controls-host {
+    position: relative;
+    margin: 0;
+  }
+  .cryo-traj-controls-host > fieldset {
+    margin: 0;
+  }
+  .cryo-traj-controls-host--busy > fieldset {
+    opacity: 0.55;
+    filter: grayscale(1);
+    pointer-events: none;
+  }
+  .cryo-traj-controls-busy-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+    border-radius: 0.35rem;
+    background: rgba(245, 240, 232, 0.72);
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+  .cryo-traj-controls-busy-overlay[hidden] {
+    display: none !important;
+  }
+  .cryo-traj-controls-busy-overlay__label {
     font-size: 0.82rem;
     color: var(--muted, #5c6b7a);
-    min-height: 1.2em;
+    text-align: center;
     line-height: 1.35;
-    flex: 0 0 auto;
   }
   .cryo-traj-hint {
     font-size: 0.78rem;
@@ -1882,7 +1913,8 @@
         <label class="cryo-select-line" for="sc">Color by</label>
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
-      <fieldset>
+      <div class="cryo-traj-controls-host" id="traj-controls-host">
+      <fieldset id="traj-controls-fieldset">
         <legend>Trajectory controls</legend>
         <div class="cryo-traj-npoints-label" id="traj-points-row">
           <span id="traj-points-label">Points</span>
@@ -1895,18 +1927,18 @@
         <div class="cryo-traj-manual-interp-stack" id="traj-manual-interp-stack" hidden role="group"
           aria-label="Manual trajectory interpolation">
           <div class="cryo-traj-manual-mode-row" id="traj-manual-volume-row">
-            <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn cryo-traj-alt-mode-btn--active"
-              id="btn-traj-manual-volume" aria-pressed="true">Snap to nearest<br />analyze volume points</button>
+            <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn"
+              id="btn-traj-manual-volume" aria-pressed="false">Find nearest point(s)<br />along interpolated path</button>
             <label class="cryo-traj-manual-npoints" for="manual-snap-n-points">
               <span>Points</span>
-              <select id="manual-snap-n-points" aria-label="Interpolation points for volume snap">
+              <select id="manual-snap-n-points" aria-label="Interpolation points for particle snap">
                 {% for n in range(1, 21) %}
                 <option value="{{ n }}"{% if n == 1 %} selected{% endif %}>{{ n }}</option>
                 {% endfor %}
               </select>
             </label>
           </div>
-          <div class="cryo-traj-manual-mode-row" id="traj-manual-graph-row">
+          <div class="cryo-traj-manual-mode-row cryo-traj-manual-mode-row--graph" id="traj-manual-graph-row">
             <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn"
               id="btn-traj-manual-graph" aria-pressed="false">Graph/nearest neighbor<br />interpolation</button>
             <label class="cryo-traj-manual-npoints" for="manual-graph-n-points">
@@ -1961,6 +1993,10 @@
           </div>
         </div>
       </fieldset>
+      <div id="traj-controls-busy-overlay" class="cryo-traj-controls-busy-overlay" hidden aria-hidden="true">
+        <span class="cryo-traj-controls-busy-overlay__label">Generating trajectory…</span>
+      </div>
+      </div>
       <fieldset id="traj-color-controls" class="cryo-traj-color-controls" hidden
         aria-label="Color controls">
         <legend>Color controls</legend>
@@ -2094,7 +2130,6 @@
       <button type="button" class="btn" id="btn-generate-volumes">Generate 4 volumes</button>
       <button type="button" class="btn btn-secondary" id="btn-save-volumes">Save volumes</button>
     </div>
-    <p id="traj-status" class="cryo-traj-status"></p>
     <div id="traj-z-panel" class="cryo-traj-z-panel" hidden>
       <details class="cryo-traj-z-details">
         <summary>Latent <code>z</code> for each trajectory point</summary>
@@ -2111,9 +2146,6 @@
     </div>
     <div class="cryo-traj-vol-panel-host" id="traj-vol-panel-root">
       <div class="cryo-vslice-panel-shell cryo-traj-vol-panel-shell" id="traj-vol-aside-shell">
-        <div class="cryo-vslice-status-slot">
-          <p id="vslice-status" class="cryo-dash-legend-note cryo-vslice-status" aria-live="polite"></p>
-        </div>
         <div class="cryo-traj-vol-volume-nav-row" id="traj-vol-volume-nav-row">
           <div id="traj-vol-volume-nav" class="cryo-vslice-volume-nav cryo-vslice-volume-nav--inactive"
             role="group" aria-label="Select trajectory volume" aria-disabled="true" hidden>
@@ -2131,13 +2163,13 @@
             <div class="cryo-vslice-viewport" id="vslice-viewport" hidden>
               <canvas id="vslice-canvas" class="cryo-vslice-canvas" aria-label="Volume slice"></canvas>
               <div id="vslice-vtk-container" class="cryo-vslice-vtk-container" hidden aria-label="Volume 3D raycast"></div>
-            </div>
-            <div id="vslice-rendering-overlay" class="cryo-plot-rendering-overlay" hidden aria-hidden="true">
-              <div class="cryo-plot-rendering-overlay__inner">
-                <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
-                <div id="vslice-progress" class="cryo-plot-rendering-overlay__track cryo-vslice-progress" role="progressbar"
-                  aria-valuetext="Loading volume">
-                  <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+              <div id="vslice-rendering-overlay" class="cryo-plot-rendering-overlay" hidden aria-hidden="true">
+                <div class="cryo-plot-rendering-overlay__inner">
+                  <span class="cryo-plot-rendering-overlay__label">Rendering…</span>
+                  <div id="vslice-progress" class="cryo-plot-rendering-overlay__track cryo-vslice-progress" role="progressbar"
+                    aria-valuetext="Loading volume">
+                    <div class="cryo-plot-rendering-overlay__indeterminate"></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2278,10 +2310,6 @@
         aria-label="Close volume viewer">&times;</button>
     </div>
     <div class="cryo-traj-vol-popout-body">
-      <div id="traj-progress" class="cryo-plot-rendering-overlay__track" role="progressbar"
-        aria-valuetext="Generating volumes" hidden style="flex:0 0 auto;">
-        <div class="cryo-plot-rendering-overlay__indeterminate"></div>
-      </div>
       <div id="traj-vol-expanded-host" class="cryo-traj-vol-expanded-host" hidden
         aria-label="Expanded volume display"></div>
       <div id="traj-vol-column" class="cryo-traj-vol-column" hidden></div>

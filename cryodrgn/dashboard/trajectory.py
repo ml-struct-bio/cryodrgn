@@ -154,6 +154,36 @@ def parse_traj_neighbor_value(data: dict, key: str, default: int) -> int:
     return parse_int_from_dict(data, key, default=default, lo=2, hi=200)
 
 
+def resolve_trajectory_decode_plan(
+    data: dict, z_traj: np.ndarray
+) -> tuple[np.ndarray, list[int], int]:
+    """Choose which trajectory slots to decode for a volume request.
+
+    Returns ``(z_decode, slot_indices, n_traj)`` where ``slot_indices[j]`` is the
+    full-trajectory index for ``z_decode[j]``. When ``decode_indices`` is omitted,
+    all points are decoded in order.
+    """
+    z_traj = np.asarray(z_traj, dtype=np.float64)
+    n_traj = int(z_traj.shape[0])
+    raw = data.get("decode_indices")
+    if raw is None:
+        return z_traj, list(range(n_traj)), n_traj
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("decode_indices must be a non-empty list of integers.")
+    slot_indices = [int(i) for i in raw]
+    for idx in slot_indices:
+        if idx < 0 or idx >= n_traj:
+            raise ValueError(f"decode_indices out of range: {idx}")
+    z_decode = z_traj[np.asarray(slot_indices, dtype=np.int64)]
+    if z_decode.ndim == 1:
+        zdim = int(z_traj.shape[1]) if z_traj.ndim == 2 else 1
+        if z_decode.size == zdim:
+            z_decode = z_decode.reshape(1, zdim)
+        else:
+            z_decode = z_decode.reshape(-1, zdim)
+    return z_decode, slot_indices, n_traj
+
+
 def parse_anchor_path_order(data: dict) -> str:
     """``heuristic`` (default), ``exact``, or ``preserve`` (keep request order)."""
     raw = str(data.get("anchor_path_order", "heuristic") or "heuristic").strip().lower()
@@ -546,6 +576,245 @@ def _compute_direct_anchor_trajectory(
     return np.concatenate(z_parts, axis=0), None, np.concatenate(xy_parts, axis=0)
 
 
+def _nearest_plot_row_for_xy(coords: np.ndarray, pt: np.ndarray) -> int:
+    """Dataset row nearest to ``pt`` in the current plot axis space."""
+    return int(np.argmin(np.sum((coords - pt) ** 2, axis=1)))
+
+
+def _direct_path_anchor_positions(
+    n_anchors: int, interpolation_points: int, path_len: int
+) -> dict[int, int]:
+    """Map direct-interpolation path index -> anchor ordinal (0..n_anchors-1)."""
+    if n_anchors < 2 or path_len < 2:
+        return {}
+    if interpolation_points <= 0:
+        if path_len != n_anchors:
+            return {}
+        return {i: i for i in range(n_anchors)}
+    per_seg = int(interpolation_points) + 1
+    expected = (n_anchors - 1) * per_seg + 1
+    if expected != path_len:
+        return {}
+    out: dict[int, int] = {0: 0}
+    for seg_i in range(1, n_anchors):
+        out[seg_i * per_seg] = seg_i
+    return out
+
+
+def _dedupe_consecutive_trajectory_points(
+    rows: list[int], z_parts: list[np.ndarray], xy: np.ndarray
+) -> tuple[list[int], np.ndarray, np.ndarray]:
+    """Drop consecutive duplicate rows while keeping aligned z and xy."""
+    if not rows:
+        zdim = int(z_parts[0].shape[0]) if z_parts else 0
+        return (
+            [],
+            np.zeros((0, zdim), dtype=np.float64),
+            np.zeros((0, 2), dtype=np.float64),
+        )
+    keep_rows = [rows[0]]
+    keep_z = [np.asarray(z_parts[0], dtype=np.float64)]
+    keep_xy = [np.asarray(xy[0], dtype=np.float64)]
+    for i in range(1, len(rows)):
+        if rows[i] == keep_rows[-1]:
+            continue
+        keep_rows.append(rows[i])
+        keep_z.append(np.asarray(z_parts[i], dtype=np.float64))
+        keep_xy.append(np.asarray(xy[i], dtype=np.float64))
+    return keep_rows, np.stack(keep_z, axis=0), np.asarray(keep_xy, dtype=np.float64)
+
+
+def _dedupe_consecutive_rows(
+    rows: list[int], vol_ids: list[str], xy: np.ndarray
+) -> tuple[list[int], list[str], np.ndarray]:
+    """Drop consecutive duplicate plot rows while keeping aligned vol ids and xy."""
+    if not rows:
+        return [], [], np.zeros((0, 2), dtype=np.float64)
+    keep_rows = [rows[0]]
+    keep_vols = [vol_ids[0]]
+    keep_xy = [xy[0]]
+    for i in range(1, len(rows)):
+        if rows[i] == keep_rows[-1]:
+            continue
+        keep_rows.append(rows[i])
+        keep_vols.append(vol_ids[i])
+        keep_xy.append(xy[i])
+    return keep_rows, keep_vols, np.asarray(keep_xy, dtype=np.float64)
+
+
+def _compute_direct_anchor_trajectory_snap_volume_markers(
+    e: DashboardExperiment,
+    anchor_indices: list[int],
+    xcol: str,
+    ycol: str,
+    interpolation_points: int,
+    allowed_vol_ids: set[str] | frozenset[str] | None = None,
+) -> tuple[np.ndarray, list[int], np.ndarray, list[str]]:
+    """Direct anchor interpolation with each sample snapped to analyze volume markers."""
+    from cryodrgn.dashboard.volume_slice_viewer import snap_xy_to_analyze_volume_markers
+
+    _z_anchor, rows, anchor_xy = _compute_trajectory_from_anchor_indices(
+        e, anchor_indices, xcol, ycol
+    )
+    if len(rows) < 2:
+        raise ValueError("Need at least two anchor indices")
+    if interpolation_points < 0:
+        raise ValueError("Interpolation points must be >= 0")
+
+    if interpolation_points == 0:
+        snap_rows, snap_xy, snap_vols = snap_xy_to_analyze_volume_markers(
+            e, anchor_xy, xcol, ycol, allowed_vol_ids=allowed_vol_ids
+        )
+        deduped_rows, deduped_vols, deduped_xy = _dedupe_consecutive_rows(
+            snap_rows, snap_vols, snap_xy
+        )
+        zs = np.asarray(deduped_rows, dtype=int)
+        return e.z[zs], deduped_rows, deduped_xy, deduped_vols
+
+    n_points = int(interpolation_points) + 2
+    full_rows: list[int] = []
+    full_vols: list[str] = []
+    full_xy: list[np.ndarray] = []
+    for i in range(len(rows) - 1):
+        xy_start = anchor_xy[i]
+        xy_end = anchor_xy[i + 1]
+        t = np.linspace(0.0, 1.0, n_points, dtype=np.float64)
+        seg_xy = (np.outer(1.0 - t, xy_start) + np.outer(t, xy_end))[:-1]
+        seg_rows, seg_snap_xy, seg_vols = snap_xy_to_analyze_volume_markers(
+            e, seg_xy, xcol, ycol, allowed_vol_ids=allowed_vol_ids
+        )
+        full_rows.extend(seg_rows)
+        full_vols.extend(seg_vols)
+        full_xy.extend(seg_snap_xy)
+    last_rows, last_xy, last_vols = snap_xy_to_analyze_volume_markers(
+        e, anchor_xy[-1:], xcol, ycol, allowed_vol_ids=allowed_vol_ids
+    )
+    full_rows.extend(last_rows)
+    full_vols.extend(last_vols)
+    full_xy.extend(last_xy)
+    full_xy_arr = np.asarray(full_xy, dtype=np.float64)
+    if allowed_vol_ids is not None and interpolation_points > 0:
+        deduped_rows, deduped_vols, deduped_xy = full_rows, full_vols, full_xy_arr
+    else:
+        deduped_rows, deduped_vols, deduped_xy = _dedupe_consecutive_rows(
+            full_rows, full_vols, full_xy_arr
+        )
+    zs = np.asarray(deduped_rows, dtype=int)
+    return e.z[zs], deduped_rows, deduped_xy, deduped_vols
+
+
+def _compute_direct_anchor_trajectory_snap_nearest_particles(
+    e: DashboardExperiment,
+    anchor_indices: list[int],
+    xcol: str,
+    ycol: str,
+    interpolation_points: int,
+) -> tuple[np.ndarray, list[int], np.ndarray]:
+    """Snap midpoint-split anchor trajectories to the nearest particles.
+
+    The frontend inserts ``interpolation_points`` interior points between each
+    consecutive anchor pair. Each inserted point is snapped to the nearest
+    particle to the midpoint between its two adjacent trajectory points in
+    *currently-plotted* coordinates.
+    """
+    if interpolation_points < 0:
+        raise ValueError("Interpolation points must be >= 0")
+
+    _z_anchor, anchor_rows, anchor_xy = _compute_trajectory_from_anchor_indices(
+        e, anchor_indices, xcol, ycol
+    )
+    if len(anchor_rows) < 2:
+        raise ValueError("Need at least two anchor indices")
+
+    coords = e.plot_df[[xcol, ycol]].values.astype(np.float64)
+
+    from collections import deque
+
+    class _MidNode:
+        __slots__ = ("row", "xy", "prev", "next")
+
+        def __init__(self, row: int, xy: np.ndarray):
+            self.row = int(row)
+            self.xy = xy
+            self.prev: "_MidNode | None" = None
+            self.next: "_MidNode | None" = None
+
+    interior = int(interpolation_points)
+
+    full_rows: list[int] = []
+    full_z_parts: list[np.ndarray] = []
+    full_xy_parts: list[np.ndarray] = []
+
+    seg_count = len(anchor_rows) - 1
+    for seg_i in range(seg_count):
+        left_row = int(anchor_rows[seg_i])
+        right_row = int(anchor_rows[seg_i + 1])
+        left_xy = np.asarray(anchor_xy[seg_i], dtype=np.float64)
+        right_xy = np.asarray(anchor_xy[seg_i + 1], dtype=np.float64)
+
+        left_node = _MidNode(left_row, left_xy)
+        right_node = _MidNode(right_row, right_xy)
+        left_node.next = right_node
+        right_node.prev = left_node
+
+        q = deque([(left_node, right_node)])
+        inserted = 0
+
+        while inserted < interior and q:
+            l, r = q.popleft()
+            # Endpoints must still be consecutive for this queued segment.
+            if l.next is not r:
+                continue
+
+            mid_xy = (l.xy + r.xy) / 2.0
+            mid_row = _nearest_plot_row_for_xy(coords, mid_xy)
+            mid_xy_snapped = np.asarray(coords[mid_row], dtype=np.float64)
+
+            m_node = _MidNode(mid_row, mid_xy_snapped)
+            # Insert between l and r.
+            m_node.prev = l
+            m_node.next = r
+            l.next = m_node
+            r.prev = m_node
+
+            inserted += 1
+            q.append((l, m_node))
+            q.append((m_node, r))
+
+        # Collect segment points from left -> right.
+        seg_rows: list[int] = []
+        seg_xy: list[np.ndarray] = []
+        node = left_node
+        while node is not None:
+            seg_rows.append(node.row)
+            seg_xy.append(np.asarray(node.xy, dtype=np.float64))
+            if node is right_node:
+                break
+            node = node.next
+
+        if len(seg_rows) < 2:
+            raise ValueError("Could not construct snapped trajectory segment.")
+
+        # Avoid duplicating the right endpoint across adjacent segments.
+        if seg_i < seg_count - 1:
+            seg_rows = seg_rows[:-1]
+            seg_xy = seg_xy[:-1]
+
+        full_rows.extend(seg_rows)
+        full_xy_parts.extend(seg_xy)
+        full_z_parts.extend(
+            [np.asarray(e.z[row], dtype=np.float64) for row in seg_rows]
+        )
+
+    # Preserve consecutive duplicate snapped particle rows.
+    # This keeps trajectory point indices aligned with the volume-slider slots.
+    full_xy_arr = np.asarray(full_xy_parts, dtype=np.float64)
+    full_z_arr = np.stack(
+        [np.asarray(z, dtype=np.float64) for z in full_z_parts], axis=0
+    )
+    return full_z_arr, full_rows, full_xy_arr
+
+
 def _graph_neighbor_max_dist(ndist: np.ndarray, n: int, avg_neighbors: int) -> float:
     """Distance cutoff matching ``cryodrgn graph_traversal`` (top-k order statistic).
 
@@ -726,6 +995,11 @@ def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
             data, "avg_neighbors", default=max(2, n_points)
         )
         anchor_path_order = parse_anchor_path_order(data)
+        # Backward compatibility: older clients could request volume-marker
+        # snapping via `snap_to_volume_points`; treat that as snap-to-particles.
+        snap_to_nearest_particles = bool(
+            data.get("snap_to_nearest_particles") or data.get("snap_to_volume_points")
+        )
         return {
             "use_anchors": True,
             "anchor_indices": anchor_indices,
@@ -736,6 +1010,7 @@ def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
             "max_neighbors": max_neighbors,
             "avg_neighbors": avg_neighbors,
             "anchor_path_order": anchor_path_order,
+            "snap_to_nearest_particles": snap_to_nearest_particles,
         }
 
     mode = str(data.get("mode", "direct")).strip().lower()
@@ -796,7 +1071,7 @@ def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
 def compute_trajectory_latent_path(
     e: DashboardExperiment, p: dict
 ) -> tuple[np.ndarray, list[int] | None, np.ndarray]:
-    """Return ``(z_traj, traj_rows_or_None, traj_xy)`` for the parsed body ``p``."""
+    """Return ``(z_traj, traj_rows_or_None, traj_xy)``."""
     if p.get("use_anchors"):
         if p["mode"] == "direct":
             path_order = str(p.get("anchor_path_order", "heuristic"))
@@ -808,14 +1083,28 @@ def compute_trajectory_latent_path(
                 path_order=path_order,
             )
             p["anchor_indices"] = ordered
-            return _compute_direct_anchor_trajectory(
+            if p.get("snap_to_nearest_particles"):
+                (
+                    z_traj,
+                    traj_rows,
+                    traj_xy,
+                ) = _compute_direct_anchor_trajectory_snap_nearest_particles(
+                    e,
+                    ordered,
+                    p["xcol"],
+                    p["ycol"],
+                    int(p["n_points"]),
+                )
+                return z_traj, traj_rows, traj_xy
+            z_traj, traj_rows, traj_xy = _compute_direct_anchor_trajectory(
                 e,
                 ordered,
                 p["xcol"],
                 p["ycol"],
                 int(p["n_points"]),
             )
-        return _compute_graph_anchor_trajectory(
+            return z_traj, traj_rows, traj_xy
+        z_traj, traj_rows, traj_xy = _compute_graph_anchor_trajectory(
             e,
             p["anchor_indices"],
             p["xcol"],
@@ -823,6 +1112,7 @@ def compute_trajectory_latent_path(
             max_neighbors=int(p.get("max_neighbors", p["n_points"])),
             avg_neighbors=int(p.get("avg_neighbors", p["n_points"])),
         )
+        return z_traj, traj_rows, traj_xy
 
     mode = p["mode"]
     sx0, sy0 = p["sx0"], p["sy0"]
@@ -866,28 +1156,147 @@ def compute_trajectory_latent_path(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_traj_ref_to_plot_row(exp: DashboardExperiment, ref: int) -> int | None:
+    """Map a trajectory row reference to a ``plot_df`` iloc position."""
+    ri = int(ref)
+    mapped = plot_df_rows_for_dataset_indices(exp, np.asarray([ri], dtype=int))
+    if mapped:
+        return int(mapped[0])
+    if 0 <= ri < len(exp.plot_df):
+        return ri
+    return None
+
+
+def _marker_colors_for_plot_rows(
+    e: DashboardExperiment,
+    plot_rows: list[int],
+    color_col: str,
+    *,
+    continuous_palette: str | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
+) -> list[str]:
+    df = e.plot_df
+    sub = df.iloc[plot_rows]
+    if _lower_color_series_is_discrete(df[color_col]):
+        hex_colors, _fk = _scatter_discrete_marker_arrays(
+            df, sub, color_col, discrete_label_colors
+        )
+        return hex_colors
+    _cvals, cmin, cmax = _continuous_series_stats(df[color_col])
+    plotly_cs = normalize_continuous_palette(continuous_palette)
+    vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(dtype=np.float64)
+    return numeric_array_to_plotly_hex(vals, plotly_cs, vmin=cmin, vmax=cmax)
+
+
 def trajectory_marker_colors_for_rows(
     e: DashboardExperiment,
     traj_rows: list[int],
     color_col: str | None,
     *,
     continuous_palette: str | None = None,
-) -> list[str] | None:
+    discrete_label_colors: dict[str, str] | None = None,
+) -> list[str | None] | None:
     """Per-trajectory-point hex colours matching the scatter covariate scale."""
     if not traj_rows or not color_col or color_col == "none":
         return None
     if color_col not in e.plot_df.columns:
         return None
-    df = e.plot_df
-    row_idx = [int(r) for r in traj_rows]
-    sub = df.iloc[row_idx]
-    if _lower_color_series_is_discrete(df[color_col]):
-        hex_colors, _fk = _scatter_discrete_marker_arrays(df, sub, color_col, None)
-        return hex_colors
-    _cvals, cmin, cmax = _continuous_series_stats(df[color_col])
-    plotly_cs = normalize_continuous_palette(continuous_palette)
-    vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(dtype=np.float64)
-    return numeric_array_to_plotly_hex(vals, plotly_cs, vmin=cmin, vmax=cmax)
+    resolved: list[int | None] = [
+        _resolve_traj_ref_to_plot_row(e, int(r)) for r in traj_rows
+    ]
+    if not any(r is not None for r in resolved):
+        return None
+    batch_rows: list[int] = []
+    batch_pos: list[int] = []
+    for i, pr in enumerate(resolved):
+        if pr is not None:
+            batch_rows.append(int(pr))
+            batch_pos.append(i)
+    batch_colors = _marker_colors_for_plot_rows(
+        e,
+        batch_rows,
+        color_col,
+        continuous_palette=continuous_palette,
+        discrete_label_colors=discrete_label_colors,
+    )
+    out: list[str | None] = [None] * len(traj_rows)
+    for j, pos in enumerate(batch_pos):
+        out[pos] = batch_colors[j]
+    return out
+
+
+def trajectory_marker_colors_for_particle_indices(
+    e: DashboardExperiment,
+    particle_indices: list[int | None],
+    color_col: str | None,
+    *,
+    continuous_palette: str | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
+) -> list[str | None] | None:
+    """Sparse per-point colours when only some trajectory samples are particles."""
+    if not particle_indices or not color_col or color_col == "none":
+        return None
+    if color_col not in e.plot_df.columns:
+        return None
+    out: list[str | None] = [None] * len(particle_indices)
+    batch_rows: list[int] = []
+    batch_pos: list[int] = []
+    for i, pidx in enumerate(particle_indices):
+        if pidx is None:
+            continue
+        pr = _resolve_traj_ref_to_plot_row(e, int(pidx))
+        if pr is None:
+            continue
+        batch_rows.append(int(pr))
+        batch_pos.append(i)
+    if not batch_rows:
+        return out
+    batch_colors = _marker_colors_for_plot_rows(
+        e,
+        batch_rows,
+        color_col,
+        continuous_palette=continuous_palette,
+        discrete_label_colors=discrete_label_colors,
+    )
+    for j, pos in enumerate(batch_pos):
+        out[pos] = batch_colors[j]
+    return out
+
+
+def attach_trajectory_marker_colors(
+    e: DashboardExperiment,
+    payload: dict,
+    color_col: str | None,
+    *,
+    continuous_palette: str | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
+) -> None:
+    """Add ``traj_marker_colors`` to a trajectory coords/volumes JSON payload."""
+    if payload.get("traj_marker_colors"):
+        return
+    traj_rows = payload.get("traj_rows")
+    if traj_rows:
+        marker_colors = trajectory_marker_colors_for_rows(
+            e,
+            traj_rows,
+            color_col,
+            continuous_palette=continuous_palette,
+            discrete_label_colors=discrete_label_colors,
+        )
+        if marker_colors:
+            payload["traj_marker_colors"] = marker_colors
+        return
+    pidx = payload.get("traj_particle_indices")
+    if pidx:
+        marker_colors = trajectory_marker_colors_for_particle_indices(
+            e,
+            pidx,
+            color_col,
+            continuous_palette=continuous_palette,
+            discrete_label_colors=discrete_label_colors,
+        )
+        if marker_colors:
+            payload["traj_marker_colors"] = marker_colors
 
 
 def trajectory_shared_json_payload(
@@ -902,6 +1311,7 @@ def trajectory_shared_json_payload(
     ycol: str,
     color_col: str | None = None,
     continuous_palette: str | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
 ) -> dict:
     payload: dict = {
         "ok": True,
@@ -914,19 +1324,17 @@ def trajectory_shared_json_payload(
         "xcol": xcol,
         "ycol": ycol,
     }
-    if traj_rows is not None and mode in ("nearest", "graph"):
+    if traj_rows is not None and mode in ("nearest", "graph", "direct"):
         payload["traj_particle_indices"] = [
             _plot_row_particle_index(e, r) for r in traj_rows
         ]
-    if mode == "nearest" and traj_rows:
-        marker_colors = trajectory_marker_colors_for_rows(
-            e,
-            traj_rows,
-            color_col,
-            continuous_palette=continuous_palette,
-        )
-        if marker_colors:
-            payload["traj_marker_colors"] = marker_colors
+    attach_trajectory_marker_colors(
+        e,
+        payload,
+        color_col,
+        continuous_palette=continuous_palette,
+        discrete_label_colors=discrete_label_colors,
+    )
     return payload
 
 

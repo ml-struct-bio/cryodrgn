@@ -573,7 +573,7 @@ def api_trajectory_coords():
     except ValueError as err:
         return jsonify(error=str(err)), 400
     try:
-        z_traj, traj_rows, traj_xy, snap_vol_ids = compute_trajectory_latent_path(e, p)
+        z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(e, p)
         payload = trajectory_shared_json_payload(
             e,
             z_traj,
@@ -587,7 +587,7 @@ def api_trajectory_coords():
             continuous_palette=data.get("palette"),
             discrete_label_colors=discrete_label_colors,
         )
-        _add_direct_anchor_pidx(payload, p, z_traj, e, snap_vol_ids=snap_vol_ids)
+        _add_direct_anchor_pidx(payload, p, z_traj, e)
         attach_trajectory_marker_colors(
             e,
             payload,
@@ -727,7 +727,7 @@ def api_trajectory_volumes():
             return jsonify(payload)
 
         p = parse_trajectory_request_body(e, data)
-        z_traj, traj_rows, traj_xy, snap_vol_ids = compute_trajectory_latent_path(e, p)
+        z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(e, p)
         from cryodrgn.dashboard.trajectory import resolve_trajectory_decode_plan
 
         z_decode, decode_slot_indices, n_traj = resolve_trajectory_decode_plan(
@@ -780,7 +780,7 @@ def api_trajectory_volumes():
             color_col=str(data.get("color") or "none"),
             continuous_palette=data.get("palette"),
         )
-        _add_direct_anchor_pidx(payload, p, z_traj, e, snap_vol_ids=snap_vol_ids)
+        _add_direct_anchor_pidx(payload, p, z_traj, e)
         if render_backend == "chimerax":
             blobs, cache_token = generate_trajectory_volume_pngs(
                 e,

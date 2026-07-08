@@ -245,25 +245,11 @@ def _add_direct_anchor_pidx(
     p: dict,
     z_traj: np.ndarray,
     e: DashboardExperiment,
-    snap_vol_ids: list[str] | None = None,
 ) -> None:
     """Merge anchor indices and direct-anchor particle IDs into ``payload``."""
     if not p.get("use_anchors"):
         return
     payload["anchor_indices"] = p["anchor_indices"]
-    if p.get("snap_to_volume_points") and payload.get("traj_rows"):
-        if snap_vol_ids:
-            payload["analyze_volume_ids"] = snap_vol_ids
-        else:
-            from cryodrgn.dashboard.volume_slice_viewer import (
-                analyze_volume_ids_for_plot_rows,
-            )
-
-            vol_ids = analyze_volume_ids_for_plot_rows(e, payload["traj_rows"])
-            if vol_ids and all(v is not None for v in vol_ids):
-                payload["analyze_volume_ids"] = vol_ids
-        payload["anchor_path_order"] = p.get("anchor_path_order", "heuristic")
-        return
     if p["mode"] != "direct":
         payload["anchor_path_order"] = p.get("anchor_path_order", "heuristic")
         return

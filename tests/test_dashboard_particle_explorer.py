@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import os
 import pickle
+import tempfile
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -16,6 +17,7 @@ from cryodrgn.dashboard import app as dash_app
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import (
     _chimerax_render_cmds,
+    _coerce_z_decode_matrix,
     _config_yaml_path,
     _decode_z_values_to_vol_paths,
     _is_drgnai_config,
@@ -681,9 +683,84 @@ class TestParticleExplorerVolumeGeneration:
                 dashboard_experiment, np.zeros((2, zdim + 1))
             )
 
-    def test_rerender_chimerax_pngs_from_volume_cache(
+    def test_pipelined_decode_and_chimerax_pngs_completes(
         self,
         dashboard_experiment: DashboardExperiment,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cryodrgn.dashboard.particle_explorer import (
+            _pipelined_decode_and_chimerax_pngs,
+            volume_job_partial_register,
+            volume_job_partial_snapshot,
+            volume_job_progress_register_pipeline,
+            volume_job_progress_snapshot,
+        )
+
+        z_traj = dashboard_experiment.z[:4]
+        n = len(z_traj)
+        token = "test-pipeline-token"
+
+        def _fake_parallel(
+            exp: DashboardExperiment,
+            z_values: np.ndarray,
+            mrc_dir: str,
+            n_gpus: int,
+        ) -> None:
+            os.makedirs(mrc_dir, exist_ok=True)
+            for i in range(len(z_values)):
+                p = os.path.join(mrc_dir, f"vol_{i + 1:03d}.mrc")
+                Path(p).write_bytes(b"\x00" * 1024)
+
+        def _fake_render(mrc_path: str, out_png: str, **kwargs: object) -> str | None:
+            from PIL import Image
+
+            Image.new("RGB", (4, 4)).save(out_png)
+            return "camera matrix" if kwargs.get("report_view_matrix") else None
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer._decode_z_values_parallel_impl",
+            _fake_parallel,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.cuda_gpu_count_for_decode",
+            lambda: 2,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.render_static_png",
+            _fake_render,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.chimerax_animation.resolve_chimerax_volume_level",
+            lambda _path, level=None: 0.5,
+        )
+
+        mrc_dir = tempfile.mkdtemp()
+        png_dir = tempfile.mkdtemp()
+        volume_job_progress_register_pipeline(token, n, n_gpus=2, n_cpus=4)
+        volume_job_partial_register(token, n)
+
+        pngs, vm, vol_files = _pipelined_decode_and_chimerax_pngs(
+            dashboard_experiment,
+            z_traj,
+            mrc_dir,
+            png_dir,
+            chimerax_cpus=4,
+            progress_token=token,
+        )
+        assert len(pngs) == n
+        assert len(vol_files) == n
+        snap = volume_job_progress_snapshot(token)
+        assert snap is not None
+        assert snap["decode_done"] == n
+        assert snap["render_done"] == n
+        partial = volume_job_partial_snapshot(token)
+        assert partial is not None
+        assert partial["complete"] is True
+        assert len(partial["images"]) == n
+
+    def test_rerender_chimerax_pngs_from_volume_cache(
+        self,
+        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from cryodrgn.dashboard.particle_explorer import (
@@ -692,6 +769,10 @@ class TestParticleExplorerVolumeGeneration:
         )
 
         calls: list[int] = []
+        mrc_a = tmp_path / "a.mrc"
+        mrc_b = tmp_path / "b.mrc"
+        mrc_a.write_bytes(b"\x00")
+        mrc_b.write_bytes(b"\x00")
 
         def _fake_cycle(views, chimerax_cpus=1):
             calls.append(int(chimerax_cpus))
@@ -707,7 +788,11 @@ class TestParticleExplorerVolumeGeneration:
             "cryodrgn.dashboard.particle_explorer.render_landscape_cycle_static_views",
             _fake_cycle,
         )
-        token = _register_vol_mrc_cache("/tmp/fake", ["/tmp/a.mrc", "/tmp/b.mrc"], ())
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.chimerax_animation.resolve_chimerax_volume_level",
+            lambda _path, level=None: 0.5 if level is None else float(level),
+        )
+        token = _register_vol_mrc_cache(str(tmp_path), [str(mrc_a), str(mrc_b)], ())
         blobs, _ = rerender_chimerax_pngs_from_volume_cache(
             token, chimerax_cpus=6, view_turns=[("x", 30.0)]
         )
@@ -732,24 +817,70 @@ class TestParticleExplorerVolumeGeneration:
         mrc_dir = tmp_path / "decode"
         called: list[str] = []
 
-        def _fake_classic(
+        def _fake_worker(
             exp: DashboardExperiment,
             z_values: np.ndarray,
             out_dir: str,
+            *,
             device: int = 0,
+            vol_start_index: int = 1,
         ) -> None:
             called.append(out_dir)
             os.makedirs(out_dir, exist_ok=True)
             for i in range(len(z_values)):
-                Path(out_dir, f"vol_{i + 1:03d}.mrc").write_bytes(b"\x00")
+                Path(out_dir, f"vol_{vol_start_index + i:03d}.mrc").write_bytes(b"\x00")
 
         monkeypatch.setattr(
-            "cryodrgn.dashboard.particle_explorer._decode_z_values_classic",
-            _fake_classic,
+            "cryodrgn.dashboard.particle_explorer.cuda_gpu_count_for_decode",
+            lambda: 1,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer._decode_z_values_worker",
+            _fake_worker,
         )
         paths = _decode_z_values_to_vol_paths(dashboard_experiment, z, str(mrc_dir))
         assert called == [str(mrc_dir)]
         assert len(paths) == 2
+
+    def test_coerce_z_decode_matrix_single_row(self) -> None:
+        z = np.arange(4, dtype=np.float64)
+        out = _coerce_z_decode_matrix(z, 4)
+        assert out.shape == (1, 4)
+
+    def test_coerce_z_decode_matrix_two_rows(self) -> None:
+        z = np.arange(8, dtype=np.float64).reshape(2, 4)
+        out = _coerce_z_decode_matrix(z, 4)
+        np.testing.assert_array_equal(out, z)
+
+    def test_decode_classic_writes_unique_zfile(
+        self,
+        dashboard_experiment: DashboardExperiment,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        z = dashboard_experiment.z[:1]
+        zfiles: list[str] = []
+
+        def _fake_gen_volumes(weights, cfg, zfile, outdir, **kwargs):
+            zfiles.append(zfile)
+            os.makedirs(outdir, exist_ok=True)
+            Path(outdir, "vol_001.mrc").write_bytes(b"\x00")
+
+        monkeypatch.setattr(
+            "cryodrgn.analysis.gen_volumes",
+            _fake_gen_volumes,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer._is_drgnai_config",
+            lambda _cfg: False,
+        )
+        from cryodrgn.dashboard.particle_explorer import _decode_z_values_classic
+
+        _decode_z_values_classic(
+            dashboard_experiment, z, str(tmp_path), vol_start_index=3
+        )
+        assert len(zfiles) == 1
+        assert zfiles[0].endswith("z_values_0003.txt")
 
     def test_sorted_vol_mrc_paths_skips_subdirs(self, tmp_path: Path) -> None:
         (tmp_path / "vol_001.mrc").write_bytes(b"\x00")
@@ -806,6 +937,39 @@ class TestSaveSelectionRoundTrip:
         with open(js["path"], "rb") as fh:
             saved = pickle.load(fh)
         assert saved.size == 4
+
+    def test_save_selection_custom_path_roundtrip(
+        self, flask_client, dashboard_experiment: DashboardExperiment, tmp_path
+    ) -> None:
+        """``sel_dir`` + custom basename writes both main and inverse pickles."""
+        dest = tmp_path / "custom_out"
+        dest.mkdir()
+        rows = [0, 2, 4]
+        r = flask_client.post(
+            "/api/save_selection",
+            json={
+                "rows": rows,
+                "basename": "region_a",
+                "sel_dir": str(dest),
+                "save_inverse": True,
+            },
+        )
+        assert r.status_code == 200, r.get_json()
+        js = r.get_json()
+        main_path = dest / "region_a.pkl"
+        inv_path = dest / "region_a_inverse.pkl"
+        assert js["path"] == str(main_path)
+        assert js["inverse_path"] == str(inv_path)
+        assert main_path.is_file()
+        assert inv_path.is_file()
+        expected = np.asarray(dashboard_experiment.all_indices[rows], dtype=int)
+        all_ds = np.asarray(dashboard_experiment.all_indices, dtype=int)
+        with open(main_path, "rb") as fh:
+            selected = pickle.load(fh)
+        with open(inv_path, "rb") as fh:
+            inverse = pickle.load(fh)
+        assert np.array_equal(selected, expected)
+        assert np.array_equal(inverse, np.setdiff1d(all_ds, expected))
 
 
 class TestApiCovariateThresholdRows:
@@ -1703,6 +1867,8 @@ class TestPreloadDeltaResponses:
 class TestParticleExplorerPlotlyBrowserSmoke:
     """Headless Chromium: cache build, montage grid, and grid-letter overlays."""
 
+    pytestmark = pytest.mark.browser
+
     def test_cache_build_montage_and_scatter_letters(
         self, playwright_page, dashboard_live_url
     ) -> None:
@@ -1734,9 +1900,46 @@ class TestParticleExplorerPlotlyBrowserSmoke:
         )
         assert out["expanded_cached"] > out["initial_cached"]
 
+    def test_selection_save_modal_opens(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_wait_plot_ready,
+        )
+
+        base = dashboard_live_url.rstrip("/")
+        playwright_page.goto(
+            f"{base}/explorer",
+            wait_until="domcontentloaded",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        _dashboard_smoke_wait_plot_ready(
+            playwright_page, "scatter", timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS
+        )
+        playwright_page.evaluate(
+            """() => {
+              var fs = document.getElementById('particle-sel-fieldset');
+              if (fs) fs.disabled = false;
+            }"""
+        )
+        playwright_page.click("#save-indices-custom")
+        playwright_page.wait_for_function(
+            """() => {
+              var panel = document.getElementById('sel-file-browser-panel');
+              return panel && !panel.hidden;
+            }""",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        assert playwright_page.evaluate(
+            """() => document.body.classList.contains('cryo-explorer-save-modal-open')"""
+        )
+
 
 class TestParticleExplorerBrowserPanels:
     """Playwright checks for explorer panel DOM (replaces static HTML grep for shell IDs)."""
+
+    pytestmark = pytest.mark.browser
 
     def test_volume_explorer_panels_attached(
         self, playwright_page, dashboard_volumes_eligible_live_url

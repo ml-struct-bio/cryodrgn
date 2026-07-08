@@ -951,6 +951,8 @@ def dashboard_landscape_live_url(dashboard_landscape_volpca_live_url: str):
 class TestLandscapeVolpcaPlotlyBrowserSmoke:
     """Headless Chromium: vol PCA random selection overlay letters."""
 
+    pytestmark = pytest.mark.browser
+
     def test_random_selection_overlay_letters(
         self, playwright_page, dashboard_landscape_live_url
     ) -> None:

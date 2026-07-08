@@ -351,7 +351,7 @@ class TestVolumeSliceViewerRoutes:
         assert "traj-vol-volume-nav" in body
         assert "traj-vol-volume-slider" in body
         assert "traj-vol-expanded-host" in body
-        assert "traj-vol-display-region" in body
+        assert "traj-vol-popout-modal" in body
         assert "traj-mode-manual" in body
         assert 'id="traj-mode-manual" value="manual" checked' in body.replace(
             " ", ""
@@ -359,9 +359,24 @@ class TestVolumeSliceViewerRoutes:
             'id="traj-mode-manual"' in body
             and "checked" in body.split("traj-mode-manual")[1].split(">")[0]
         )
-        assert "Manually selecting" in body
+        assert "Selecting particles manually" in body
+        assert "traj-scatter-interp-nearest" in body
+        assert "traj-scatter-interp-direct" in body
+        assert "btn-traj-manual-volume" in body
+        assert "btn-traj-manual-graph" in body
+        assert "manual-snap-n-points" in body
+        assert "manual-graph-n-points" in body
+        assert "traj-manual-interp-graph" not in body
+        assert "btn-traj-graph" not in body
+        assert "traj-mode-alt" not in body
         assert "volume_slice_canvas.js" in body
         assert "trajectory_volume_display.js" in body
+        assert "stableBackendChrome: true" in body
+        assert "cryo-traj-vol-backend-panel--inactive" in body
+        assert "cryo-traj-vol-backend-panel--reserved" in body
+        assert 'id="vslice-chimerax-view-controls"' in body
+        assert "vslice-iso-controls" in body
+        assert "traj-chimerax-view-rotate-row" in body
         assert "volume_3d_utils.js" in body
         assert "/api/volume_viewer/analyze_volumes" in body
 
@@ -412,6 +427,14 @@ class TestVolumeSliceViewerRoutes:
 class TestTrajectoryVolumeBrowserSmoke:
     """Headless Chromium: manual k-means/PC picker and VTK chrome on trajectory page."""
 
+    pytestmark = [pytest.mark.browser, pytest.mark.slow]
+
+    @pytest.fixture(autouse=True)
+    def _stub_volume_viewer_apis(self, playwright_page):
+        from tests.conftest import playwright_route_volume_viewer_render_stub
+
+        playwright_route_volume_viewer_render_stub(playwright_page)
+
     def test_catalog_and_canvas_load(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
@@ -428,10 +451,15 @@ class TestTrajectoryVolumeBrowserSmoke:
     def test_manual_mode_trajectory_overlay_on_load(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import _dashboard_smoke_volume_viewer_ready
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
+        )
 
         ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
         playwright_page.wait_for_function(
@@ -439,7 +467,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               var overlay = document.getElementById('traj-glyph-overlay');
               return !!(overlay && overlay.querySelector('.cryo-traj-glyph-path'));
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         state = playwright_page.evaluate(
             """() => {
@@ -477,24 +505,40 @@ class TestTrajectoryVolumeBrowserSmoke:
         assert state["activePickerBtns"] >= 2
         assert state["glyphMarkers"] >= 2
         assert state["plotlyLineTraces"] >= 1
-        assert state["anchorPickHidden"] is True
         assert state["manualPickerVisible"] is True
         gen_btn = playwright_page.evaluate(
             """() => {
               var btn = document.getElementById('btn-generate-volumes');
-              return { present: !!btn, hidden: btn ? btn.hidden : true };
+              var saveBtn = document.getElementById('btn-save-volumes');
+              return {
+                present: !!btn,
+                hidden: btn ? btn.hidden : true,
+                disabled: btn ? btn.disabled : true,
+                savePresent: !!saveBtn,
+                saveHidden: saveBtn ? saveBtn.hidden : true,
+                saveDisabled: saveBtn ? saveBtn.disabled : true
+              };
             }"""
         )
         assert gen_btn["present"] is True
-        assert gen_btn["hidden"] is True
+        assert gen_btn["hidden"] is False
+        assert gen_btn["disabled"] is True
+        assert gen_btn["savePresent"] is True
+        assert gen_btn["saveHidden"] is False
+        assert gen_btn["saveDisabled"] is True
 
     def test_manual_mode_chimerax_default_with_analyze_volumes(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import _dashboard_smoke_volume_viewer_ready
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
+        )
 
         ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
         playwright_page.wait_for_function(
@@ -504,16 +548,21 @@ class TestTrajectoryVolumeBrowserSmoke:
               return !!(cx && cx.checked && !cx.disabled
                 && preview && !preview.hidden && preview.src);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
 
     def test_3d_mode_chrome_and_bundle(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import _dashboard_smoke_volume_viewer_ready
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
+        )
 
         ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
         playwright_page.wait_for_function(
@@ -521,7 +570,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               var vtkBackend = document.getElementById('traj-vol-backend-vtk');
               return !!(vtkBackend && !vtkBackend.disabled);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         playwright_page.click("label[for='traj-vol-backend-vtk']")
         playwright_page.wait_for_function(
@@ -529,7 +578,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               var vtkBackend = document.getElementById('traj-vol-backend-vtk');
               return !!(vtkBackend && vtkBackend.checked && !vtkBackend.disabled);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         chrome = playwright_page.evaluate(
             """() => {
@@ -582,10 +631,15 @@ class TestTrajectoryVolumeBrowserSmoke:
     def test_manual_volume_picker_toggles_selection(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import dashboard_smoke_volume_viewer_picker_switch
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            dashboard_smoke_volume_viewer_picker_switch,
+        )
 
         out = dashboard_smoke_volume_viewer_picker_switch(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert out is not None
         if not out.get("switched"):
@@ -596,7 +650,11 @@ class TestTrajectoryVolumeBrowserSmoke:
     def test_manual_mode_chimerax_gallery_renders_images(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import _dashboard_smoke_volume_viewer_ready
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
+            fulfill_volume_viewer_render_route,
+        )
 
         tiny_png = (
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
@@ -616,12 +674,14 @@ class TestTrajectoryVolumeBrowserSmoke:
                     content_type="application/json",
                     body=body,
                 )
-            else:
+            elif not fulfill_volume_viewer_render_route(route):
                 route.continue_()
 
         playwright_page.route("**/api/volume_viewer/**", _route_handler)
         ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
         playwright_page.wait_for_function(
@@ -629,7 +689,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               var cx = document.getElementById('traj-vol-backend-chimerax');
               return !!(cx && !cx.disabled);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         playwright_page.click("label[for='traj-vol-backend-chimerax']")
         playwright_page.wait_for_function(
@@ -641,7 +701,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               return preview.src.indexOf("blob:") === 0
                 || preview.src.indexOf("data:image/png;base64,") === 0;
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         layout = playwright_page.evaluate(
             """() => {
@@ -660,8 +720,9 @@ class TestTrajectoryVolumeBrowserSmoke:
         playwright_page.click("#btn-traj-vol-dock-below")
         playwright_page.wait_for_function(
             """() => {
+              var modal = document.getElementById('traj-vol-popout-modal');
               var col = document.getElementById('traj-vol-column');
-              if (!col || col.hidden) return false;
+              if (!modal || modal.hidden || !col || col.hidden) return false;
               var imgs = col.querySelectorAll('img.cryo-traj-vol-main');
               if (imgs.length < 2) return false;
               for (var i = 0; i < imgs.length; i++) {
@@ -673,7 +734,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               }
               return true;
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
 
     def test_manual_mode_chimerax_rotate_controls_send_view_turns(
@@ -682,7 +743,11 @@ class TestTrajectoryVolumeBrowserSmoke:
         import json
         import time
 
-        from tests.conftest import _dashboard_smoke_volume_viewer_ready
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
+            fulfill_volume_viewer_render_route,
+        )
 
         tiny_png = (
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
@@ -704,12 +769,14 @@ class TestTrajectoryVolumeBrowserSmoke:
                         '"view_matrix": "camera 1,0,0,0,0,1,0,0,0,0,1,0"}'
                     ),
                 )
-            else:
+            elif not fulfill_volume_viewer_render_route(route):
                 route.continue_()
 
         playwright_page.route("**/api/volume_viewer/**", _route_handler)
         ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
         playwright_page.wait_for_function(
@@ -720,7 +787,7 @@ class TestTrajectoryVolumeBrowserSmoke:
                 && status.textContent.indexOf('Loading') >= 0;
               return !!(vtkHost && !vtkHost.hidden && !busy);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         playwright_page.click("label[for='traj-vol-backend-chimerax']")
         playwright_page.wait_for_function(
@@ -730,7 +797,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               return !!(preview && !preview.hidden && preview.src
                 && rotateBtn && !rotateBtn.disabled);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert captured, "expected initial ChimeraX batch request"
         initial = captured[0]
@@ -751,13 +818,17 @@ class TestTrajectoryVolumeBrowserSmoke:
             str(t.get("axis")).lower(): float(t.get("degrees", 0)) for t in turns
         }
         assert (
-            abs(by_axis.get("y", 0) - 15) < 1.0
+            abs(by_axis.get("y", 0) - 180) < 1.0
         ), f"unexpected y turn after rotate: {turns}"
 
     def test_manual_mode_vtk_expand_then_chimerax_shows_aside_preview(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import _dashboard_smoke_volume_viewer_ready
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
+            fulfill_volume_viewer_render_route,
+        )
 
         tiny_png = (
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
@@ -774,12 +845,14 @@ class TestTrajectoryVolumeBrowserSmoke:
                     content_type="application/json",
                     body='{"ok": true, "images": ["' + tiny_png + '"]}',
                 )
-            else:
+            elif not fulfill_volume_viewer_render_route(route):
                 route.continue_()
 
         playwright_page.route("**/api/volume_viewer/**", _route_handler)
         ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
         playwright_page.wait_for_function(
@@ -789,18 +862,20 @@ class TestTrajectoryVolumeBrowserSmoke:
               return !!(vtk && vtk.checked && !vtk.disabled
                 && vtkHost && !vtkHost.hidden);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         dock_btn = playwright_page.query_selector("#btn-traj-vol-dock-below")
         if dock_btn and not dock_btn.is_hidden():
             playwright_page.click("#btn-traj-vol-dock-below")
             playwright_page.wait_for_function(
                 """() => {
+                  var modal = document.getElementById('traj-vol-popout-modal');
                   var host = document.getElementById('traj-vol-expanded-host');
                   var row = document.getElementById('vslice-display-row');
-                  return !!(host && !host.hidden && row && host.contains(row));
+                  return !!(modal && !modal.hidden && host && !host.hidden
+                    && row && host.contains(row));
                 }""",
-                timeout=30_000,
+                timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             )
         playwright_page.click("label[for='traj-vol-backend-chimerax']")
         playwright_page.wait_for_function(
@@ -816,35 +891,21 @@ class TestTrajectoryVolumeBrowserSmoke:
               return preview.src.indexOf("blob:") === 0
                 || preview.src.indexOf("data:image/png;base64,") === 0;
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
 
     def test_manual_mode_chimerax_vtk_roundtrip_restores_vtk_preview(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import _dashboard_smoke_volume_viewer_ready
-
-        tiny_png = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
-            "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        from tests.conftest import (
+            DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
         )
 
-        def _route_handler(route):
-            if (
-                route.request.method == "POST"
-                and "analyze_volumes_chimerax_batch" in route.request.url
-            ):
-                route.fulfill(
-                    status=200,
-                    content_type="application/json",
-                    body='{"ok": true, "images": ["' + tiny_png + '"]}',
-                )
-            else:
-                route.continue_()
-
-        playwright_page.route("**/api/volume_viewer/**", _route_handler)
         ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )
         assert ready is not None
         playwright_page.wait_for_function(
@@ -852,7 +913,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               var vtk = document.getElementById('vslice-vtk-container');
               return !!(vtk && !vtk.hidden);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )
         playwright_page.click("label[for='traj-vol-backend-chimerax']")
         playwright_page.wait_for_function(
@@ -860,7 +921,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               var preview = document.getElementById('vslice-chimerax-preview');
               return !!(preview && !preview.hidden && preview.src);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )
         playwright_page.click("label[for='traj-vol-backend-vtk']")
         playwright_page.wait_for_function(
@@ -875,5 +936,5 @@ class TestTrajectoryVolumeBrowserSmoke:
               var row = document.getElementById('vslice-display-row');
               return !!(row && !row.hidden);
             }""",
-            timeout=60_000,
+            timeout=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )

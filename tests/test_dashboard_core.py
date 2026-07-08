@@ -157,6 +157,25 @@ class TestDashboardScatterApis:
         r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none&marker_size=3")
         assert r.status_code == 200
 
+    def test_api_scatter_discrete_label_colors(self, flask_client) -> None:
+        import json
+        from urllib.parse import quote
+
+        overrides = json.dumps({"1": "#ff0000"})
+        r = flask_client.get(
+            "/api/scatter?x=UMAP1&y=UMAP2&color=labels&filter_ui=1"
+            + "&discrete_label_colors="
+            + quote(overrides)
+        )
+        assert r.status_code == 200
+        js = r.get_json()
+        colors = js["data"][0]["marker"]["color"]
+        assert isinstance(colors, list)
+        assert "#ff0000" in colors
+        meta = js.get("layout", {}).get("meta", {})
+        assert meta.get("cdrgn_color_legend", {}).get("type") == "discrete"
+        assert meta["cdrgn_color_legend"]["items"]
+
     def test_api_scatter_honors_explicit_max_points(self, flask_client) -> None:
         r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none&max_points=2")
         assert r.status_code == 200
@@ -997,6 +1016,20 @@ class TestDiscreteCovariateLegendContracts:
         assert "_ensureDiscreteCollapseToggle" in js
         assert "_upgradeDiscreteCollapseTitleButton" in js
         assert "_discretePanelCollapsed" in js
+        assert "traj-scatter-color-legend__size-control" in read_dashboard_template(
+            "trajectory_creator.html"
+        )
+        assert "--cryo-traj-scatter-legend-scale" in read_dashboard_template(
+            "trajectory_creator.html"
+        )
+        traj_html = read_dashboard_template("trajectory_creator.html")
+        assert "btn-reverse-traj" in traj_html
+        assert "Reverse trajectory" in traj_html
+        assert "cryo-traj-action-btn" in traj_html
+        assert "enqueueTrajGifScatterCapture" in traj_html
+        assert "restoreTrajGifLiveLayoutBaseline" in traj_html
+        assert "computeTrajGifUnionVolumeCropRect" in traj_html
+        assert "lockTrajGifVolumeAlignment" in traj_html
         # Particle explorer styles live inline in particle_explorer.html (no
         # standalone .css file).
         pe_html = read_dashboard_template("particle_explorer.html")
@@ -1345,6 +1378,58 @@ class TestDashboardModules:
         ]
         assert "listed_cov.pkl" in names
 
+
+class TestDashboardFileModalContracts:
+    """Overlay file-browser modals share base.html CSS and cryo_file_browser.js."""
+
+    _COVARIATE_HOSTS = (
+        "particle_explorer.html",
+        "trajectory_creator.html",
+        "latent_3d.html",
+        "pair_grid.html",
+    )
+
+    def test_base_has_shared_save_modal_css(self) -> None:
+        base = read_dashboard_template("base.html")
+        assert ".cryo-explorer-save-modal {" in base
+        assert "body.cryo-explorer-save-modal-open" in base
+        assert "cryo_file_browser.js" in base
+
+    @pytest.mark.parametrize("rel", _COVARIATE_HOSTS)
+    def test_covariate_pkl_hosts_include_modal_partial(self, rel: str) -> None:
+        text = read_dashboard_template(rel)
+        assert "_covariate_pkl_loader.html" in text
+        assert "covariate_pkl_loader.js" in text
+
+    def test_covariate_pkl_modal_is_overlay_dialog(self) -> None:
+        modal = read_dashboard_template("_covariate_pkl_loader.html")
+        assert 'class="cryo-explorer-save-modal' in modal
+        assert 'role="dialog"' in modal
+        assert "cryo-explorer-save-modal__backdrop" in modal
+
+    def test_selection_save_modal_partial(self) -> None:
+        modal = read_dashboard_template("_selection_save_modal.html")
+        assert 'id="sel-file-browser-panel"' in modal
+        assert "cryo-explorer-save-modal" in modal
+
+    def test_cryo_file_browser_js_exports(self) -> None:
+        js = read_dashboard_static_js("cryo_file_browser.js")
+        assert "CryoDashModal" in js
+        assert "CryoFileBrowser" in js
+        assert "loadDir" in js
+
+    def test_covariate_loader_uses_shared_modal(self) -> None:
+        js = read_dashboard_static_js("covariate_pkl_loader.js")
+        assert "CryoDashModal" in js
+        assert "CryoFileBrowser" in js
+
+    def test_particle_explorer_includes_selection_save_partial(self) -> None:
+        pe = read_dashboard_template("particle_explorer.html")
+        assert "_selection_save_modal.html" in pe
+        assert ".cryo-explorer-save-modal {" not in pe
+
+
+class TestDashboardLandscapeHelpers:
     def test_landscape_full_ready_false_without_outputs(self) -> None:
         from cryodrgn.dashboard import landscape_full_3d  # noqa: PLC0415
 
@@ -1430,6 +1515,8 @@ class TestBundledPlotlyJs:
 
 class TestDashboardIndexBrowserSmoke:
     """Landing page navigation cards."""
+
+    pytestmark = pytest.mark.browser
 
     def test_landing_cards_nav_and_trajectory_gating(
         self, playwright_page, dashboard_live_url

@@ -1054,6 +1054,8 @@ class TestLatent3dVolAnimScatter3dCameraPreserve:
 class TestLandscapeFull3dPlotlyBrowserSmoke:
     """Headless Chromium: 3-D landscape vol scene annotations (mocked landscape_full)."""
 
+    pytestmark = pytest.mark.browser
+
     def test_random_selection_scene_annotations(
         self, playwright_page, dashboard_landscape_full_live_url
     ) -> None:
@@ -1068,6 +1070,8 @@ class TestLandscapeFull3dPlotlyBrowserSmoke:
 
 class TestLatent3dPlotlyBrowserSmoke:
     """Headless Chromium: latent 3-D scatter and discrete colour legend."""
+
+    pytestmark = pytest.mark.browser
 
     def test_scatter3d_and_discrete_legend(
         self, playwright_page, dashboard_live_url
@@ -1091,6 +1095,8 @@ class TestLatent3dPlotlyBrowserSmoke:
 
 class TestLandscapeFull3dPlotlyBrowserSmokeExtra:
     """Extra landscape-full-3d browser flows (annotation clear)."""
+
+    pytestmark = pytest.mark.browser
 
     def test_clear_selection_removes_scene_annotations(
         self, playwright_page, dashboard_landscape_full_live_url

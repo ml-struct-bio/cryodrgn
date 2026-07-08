@@ -713,6 +713,8 @@ class TestCommandBuilderStaticSite:
 class TestCommandBuilderBrowserSmoke:
     """Headless Chromium: command line preview updates when command type changes."""
 
+    pytestmark = pytest.mark.browser
+
     def test_cmd_type_switch_updates_preview(
         self, playwright_page, dashboard_live_url
     ) -> None:

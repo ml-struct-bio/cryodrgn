@@ -209,6 +209,8 @@ class TestSavePairPlotPng:
 class TestPairplotBrowserSmoke:
     """Headless Chromium: pair-grid PNG refresh and upper-triangle style toggle."""
 
+    pytestmark = pytest.mark.browser
+
     def test_pairplot_image_loads_and_hex_style_redraws(
         self, playwright_page, dashboard_live_url
     ) -> None:

@@ -43,6 +43,7 @@ from cryodrgn.dashboard.trajectory import (
     parse_trajectory_request_body,
     plot_df_rows_for_dataset_indices,
     random_dataset_indices,
+    resolve_trajectory_decode_plan,
     trajectory_anchor_mode_params,
     trajectory_anchor_payload_from_indices,
     trajectory_default_xy_cols,
@@ -222,7 +223,10 @@ class TestDashboardTrajectoryCoords:
         colors = js.get("traj_marker_colors")
         assert isinstance(colors, list)
         assert len(colors) == len(js["traj_rows"])
-        assert all(isinstance(c, str) and c.startswith("#") for c in colors)
+        assert all(
+            c is None or (isinstance(c, str) and c.startswith("#")) for c in colors
+        )
+        assert any(isinstance(c, str) and c.startswith("#") for c in colors)
 
     def test_anchor_driven_trajectory(
         self, flask_client, dashboard_experiment: DashboardExperiment
@@ -510,9 +514,15 @@ class TestOrderPointsShortestNoncrossingPath:
 
 
 class TestParseAnchorPathOrder:
-    def test_defaults_to_heuristic(self) -> None:
-        assert parse_anchor_path_order({}) == "heuristic"
-        assert parse_anchor_path_order({"anchor_path_order": ""}) == "heuristic"
+    def test_defaults_to_preserve(self) -> None:
+        assert parse_anchor_path_order({}) == "preserve"
+        assert parse_anchor_path_order({"anchor_path_order": ""}) == "preserve"
+
+    def test_accepts_heuristic_aliases(self) -> None:
+        assert (
+            parse_anchor_path_order({"anchor_path_order": "heuristic"}) == "heuristic"
+        )
+        assert parse_anchor_path_order({"anchor_path_order": "inexact"}) == "heuristic"
 
     def test_accepts_exact_aliases(self) -> None:
         assert parse_anchor_path_order({"anchor_path_order": "exact"}) == "exact"
@@ -521,6 +531,7 @@ class TestParseAnchorPathOrder:
     def test_accepts_preserve_aliases(self) -> None:
         assert parse_anchor_path_order({"anchor_path_order": "preserve"}) == "preserve"
         assert parse_anchor_path_order({"anchor_path_order": "selection"}) == "preserve"
+        assert parse_anchor_path_order({"anchor_path_order": "original"}) == "preserve"
 
 
 class TestComputeDirectAnchorTrajectory:
@@ -748,6 +759,29 @@ class TestDefaultTrajectoryEndpointsXY:
         assert start[0] < 0 < end[0] or end[0] < 0 < start[0]
 
 
+class TestResolveTrajectoryDecodePlan:
+    def test_full_decode_by_default(self) -> None:
+        z = np.arange(12, dtype=np.float64).reshape(4, 3)
+        z_decode, slots, n_traj = resolve_trajectory_decode_plan({}, z)
+        assert n_traj == 4
+        assert slots == [0, 1, 2, 3]
+        np.testing.assert_array_equal(z_decode, z)
+
+    def test_partial_decode_indices(self) -> None:
+        z = np.arange(12, dtype=np.float64).reshape(4, 3)
+        z_decode, slots, n_traj = resolve_trajectory_decode_plan(
+            {"decode_indices": [1, 3]}, z
+        )
+        assert n_traj == 4
+        assert slots == [1, 3]
+        np.testing.assert_array_equal(z_decode, z[[1, 3]])
+
+    def test_rejects_out_of_range(self) -> None:
+        z = np.zeros((3, 2), dtype=np.float64)
+        with pytest.raises(ValueError, match="out of range"):
+            resolve_trajectory_decode_plan({"decode_indices": [0, 3]}, z)
+
+
 class TestTrajectoryAnchorModeParams:
     def test_direct_mode_clamps_interpolation(self) -> None:
         mode, n_points, maxn, avgn = trajectory_anchor_mode_params(
@@ -805,6 +839,7 @@ class TestTrajectoryAnchorPayloadFromIndices:
             "z1",
             mode="direct",
             n_points=2,
+            anchor_path_order="preserve",
         )
         assert payload["ok"] is True
         assert payload["mode"] == "direct"
@@ -993,28 +1028,63 @@ class TestTrajectoryVolumeApis:
         assert j["n_saved"] == 1
         assert j["files"] == [saved_path]
 
+    def test_trajectory_save_gif_ineligible_is_400(
+        self, flask_client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
+            lambda _e: False,
+        )
+        r = flask_client.post(
+            "/api/trajectory_save_gif",
+            json={"images": ["a", "b"], "fps": 4},
+        )
+        assert r.status_code == 400
+        assert r.get_json().get("error") == _TRAJECTORY_INELIGIBLE_MSG
+
+    def test_trajectory_save_gif_requires_two_frames(
+        self, flask_client_volumes_eligible
+    ) -> None:
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_save_gif",
+            json={"images": ["only"], "fps": 4},
+        )
+        assert r.status_code == 400
+        assert "two" in r.get_json().get("error", "").lower()
+
+    def test_trajectory_save_gif_roundtrip(
+        self,
+        flask_client_volumes_eligible,
+        tmp_path,
+        dashboard_experiment: DashboardExperiment,
+    ) -> None:
+        from tests.conftest import png_b64_rgb
+
+        a = png_b64_rgb(rgb=(10, 20, 30))
+        b = png_b64_rgb(rgb=(200, 180, 40))
+        out_path = str(tmp_path / "traj-movie.gif")
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_save_gif",
+            json={"images": [a, b], "fps": 5, "out_path": out_path},
+        )
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
+        assert os.path.isfile(out_path)
+        raw = open(out_path, "rb").read()
+        assert raw[:6] in (b"GIF87a", b"GIF89a")
+
     def test_trajectory_volumes_api_mocked(
         self,
         flask_client_volumes_eligible,
         dashboard_experiment: DashboardExperiment,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        import io
-
-        from PIL import Image
-
         z_traj = dashboard_experiment.z[:3]
 
         def _fake_compute(exp, params):
             return z_traj, None, np.zeros((3, 2), dtype=np.float64)
 
-        def _fake_pngs(exp, z_values, chimerax_cpus=1, view_matrix_camera=None):
-            blobs = []
-            for _ in range(len(z_values)):
-                buf = io.BytesIO()
-                Image.new("RGB", (4, 4)).save(buf, format="PNG")
-                blobs.append(buf.getvalue())
-            return blobs, "cache-tok"
+        from tests.conftest import make_fake_trajectory_volume_pngs
 
         monkeypatch.setattr(
             "cryodrgn.dashboard.routes_analysis.compute_trajectory_latent_path",
@@ -1022,7 +1092,7 @@ class TestTrajectoryVolumeApis:
         )
         monkeypatch.setattr(
             "cryodrgn.dashboard.routes_analysis.generate_trajectory_volume_pngs",
-            _fake_pngs,
+            make_fake_trajectory_volume_pngs(),
         )
         r = flask_client_volumes_eligible.post(
             "/api/trajectory_volumes",
@@ -1067,17 +1137,27 @@ class TestTrajectoryVolumeApis:
 
     """Headless Chromium: default trajectory overlay and random anchor coords."""
 
+    @pytest.mark.browser
+    @pytest.mark.slow
     def test_default_trajectory_and_random_anchors(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import dashboard_smoke_trajectory
+        from tests.conftest import (
+            DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+            dashboard_smoke_trajectory,
+            playwright_route_volume_viewer_render_stub,
+        )
 
+        playwright_route_volume_viewer_render_stub(playwright_page)
         out = dashboard_smoke_trajectory(
-            playwright_page, dashboard_volumes_eligible_live_url
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )
         assert out is not None
-        assert out["traces_before_anchor"] >= 2
-        assert out["traces_after_anchor"] >= 2
+        assert out["glyph_markers_before_anchor"] >= 2
+        assert out["active_picker_before_anchor"] >= 2
+        assert out["glyph_markers_after_anchor"] >= 2
 
 
 class TestTrajectoryPageWithMockEligibility:
@@ -1109,3 +1189,96 @@ class TestTrajectoryPageWithMockEligibility:
         assert len(js["z_traj"]) >= 2
         assert all(len(z) == 4 for z in js["z_traj"])
         assert js["mode"] == "direct"
+
+
+class TestManualTrajectoryParticleSnap:
+    def test_snap_request_body_flag(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        p = parse_trajectory_request_body(
+            dashboard_experiment,
+            {
+                "anchor_indices": [0, 5, 10],
+                "mode": "direct",
+                "x": "z0",
+                "y": "z1",
+                "n_points": 2,
+                "snap_to_nearest_particles": True,
+            },
+        )
+        assert p["snap_to_nearest_particles"] is True
+
+    def test_midpoint_snap_uses_nearest_particles_in_plot_axes(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        coords = dashboard_experiment.plot_df[["z0", "z1"]].values.astype(np.float64)
+        rows = [0, min(10, len(coords) - 1), min(20, len(coords) - 1)]
+        p = {
+            "use_anchors": True,
+            "anchor_indices": rows,
+            "xcol": "z0",
+            "ycol": "z1",
+            "mode": "direct",
+            "n_points": 1,
+            "snap_to_nearest_particles": True,
+            "anchor_path_order": "preserve",
+        }
+        z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(
+            dashboard_experiment, p
+        )
+        assert traj_rows is not None
+        assert len(traj_rows) == len(z_traj) == len(traj_xy)
+        expected_n = (len(rows) - 1) * (p["n_points"] + 1) + 1
+        assert len(traj_rows) == expected_n
+        n = int(dashboard_experiment.z.shape[0])
+        for i, r in enumerate(traj_rows):
+            ri = int(r)
+            assert 0 <= ri < n
+            np.testing.assert_allclose(z_traj[i], dashboard_experiment.z[ri])
+            np.testing.assert_allclose(traj_xy[i], coords[ri])
+        mid = 0.5 * (coords[rows[0]] + coords[rows[1]])
+        expected_mid = int(np.argmin(np.sum((coords - mid) ** 2, axis=1)))
+        assert traj_rows[1] == expected_mid
+
+    def test_ten_anchors_one_interp_point_yields_nineteen_samples(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        n = int(dashboard_experiment.z.shape[0])
+        rows = [int(i * (n - 1) / 9) for i in range(10)]
+        p = {
+            "use_anchors": True,
+            "anchor_indices": rows,
+            "xcol": "z0",
+            "ycol": "z1",
+            "mode": "direct",
+            "n_points": 1,
+            "snap_to_nearest_particles": True,
+            "anchor_path_order": "preserve",
+        }
+        z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(
+            dashboard_experiment, p
+        )
+        assert len(traj_rows) == len(z_traj) == len(traj_xy) == 19
+
+    def test_snap_coords_api_payload(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        rows = [0, min(10, len(dashboard_experiment.z) - 1)]
+        r = flask_client.post(
+            "/api/trajectory_coords",
+            json={
+                "anchor_indices": rows,
+                "mode": "direct",
+                "x": "z0",
+                "y": "z1",
+                "n_points": 1,
+                "snap_to_nearest_particles": True,
+                "anchor_path_order": "preserve",
+            },
+        )
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
+        js = r.get_json()
+        assert js.get("traj_rows")
+        assert not js.get("analyze_volume_ids")
+        assert len(js["traj_rows"]) == 3

@@ -251,7 +251,7 @@ def _add_direct_anchor_pidx(
         return
     payload["anchor_indices"] = p["anchor_indices"]
     if p["mode"] != "direct":
-        payload["anchor_path_order"] = p.get("anchor_path_order", "heuristic")
+        payload["anchor_path_order"] = p.get("anchor_path_order", "preserve")
         return
     pidx = direct_anchor_particle_indices_payload(
         anchor_indices=p["anchor_indices"],
@@ -260,7 +260,7 @@ def _add_direct_anchor_pidx(
     )
     if pidx is not None:
         payload["traj_particle_indices"] = pidx
-    payload["anchor_path_order"] = p.get("anchor_path_order", "heuristic")
+    payload["anchor_path_order"] = p.get("anchor_path_order", "preserve")
 
 
 def _api_try(fn: callable, msg: str, *, logger: Any = None) -> tuple:

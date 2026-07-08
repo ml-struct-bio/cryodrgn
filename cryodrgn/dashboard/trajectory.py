@@ -185,13 +185,15 @@ def resolve_trajectory_decode_plan(
 
 
 def parse_anchor_path_order(data: dict) -> str:
-    """``heuristic`` (default), ``exact``, or ``preserve`` (keep request order)."""
-    raw = str(data.get("anchor_path_order", "heuristic") or "heuristic").strip().lower()
+    """``preserve`` (default), ``heuristic``, or ``exact``."""
+    raw = str(data.get("anchor_path_order", "preserve") or "preserve").strip().lower()
     if raw in ("exact", "held_karp", "held-karp", "optimal"):
         return "exact"
-    if raw in ("preserve", "none", "selection", "natural"):
+    if raw in ("heuristic", "inexact"):
+        return "heuristic"
+    if raw in ("preserve", "none", "selection", "natural", "original"):
         return "preserve"
-    return "heuristic"
+    return "preserve"
 
 
 def trajectory_anchor_mode_params(data: dict) -> tuple[str, int, int, int]:
@@ -1074,7 +1076,7 @@ def compute_trajectory_latent_path(
     """Return ``(z_traj, traj_rows_or_None, traj_xy)``."""
     if p.get("use_anchors"):
         if p["mode"] == "direct":
-            path_order = str(p.get("anchor_path_order", "heuristic"))
+            path_order = str(p.get("anchor_path_order", "preserve"))
             ordered = order_anchor_indices_for_direct_path(
                 e,
                 p["anchor_indices"],
@@ -1374,7 +1376,7 @@ def trajectory_anchor_payload_from_indices(
     n_points: int = 4,
     max_neighbors: int | None = None,
     avg_neighbors: int | None = None,
-    anchor_path_order: str = "heuristic",
+    anchor_path_order: str = "preserve",
 ) -> dict:
     """Build coords/volume JSON for a list of dataset indices (``z.N.pkl`` rows)."""
     mode = str(mode).strip().lower()
@@ -1423,7 +1425,7 @@ def trajectory_anchor_payload_from_indices(
         if pidx is not None:
             payload["traj_particle_indices"] = pidx
     payload["anchor_indices"] = p["anchor_indices"]
-    payload["anchor_path_order"] = p.get("anchor_path_order", "heuristic")
+    payload["anchor_path_order"] = p.get("anchor_path_order", "preserve")
     return payload
 
 

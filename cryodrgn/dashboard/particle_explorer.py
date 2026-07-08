@@ -1004,6 +1004,26 @@ def primary_mrc_path_from_volume_cache(token: str) -> str | None:
         return str(vol_files[0]) if vol_files else None
 
 
+def volume_cache_slot_indices(token: str) -> tuple[int, ...]:
+    """Trajectory slot indices for each cached volume in ``images`` order.
+
+    For trajectory PNG cache tokens created by
+    :func:`generate_trajectory_volume_pngs`, the stored ``rows`` metadata
+    aligns each cached PNG back onto the corresponding slider index.
+    """
+    with _VOL_CACHE_LOCK:
+        meta = _VOL_MRC_CACHE.get(token)
+        if not meta:
+            raise ValueError("Unknown or expired volume cache id.")
+        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
+            _vol_cache_evict_unlocked(token)
+            raise ValueError("Volume cache expired. Generate volumes again.")
+        rows = meta.get("rows") or ()
+        if not rows:
+            return ()
+        return tuple(int(r) for r in rows)
+
+
 def trajectory_volume_b64_list_from_cache(
     token: str,
     exp: DashboardExperiment,
@@ -1304,7 +1324,16 @@ def generate_trajectory_volume_pngs(
                 progress_token=progress_token,
                 rerender=False,
             )
-        token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
+        # Store the mapping between the returned PNG order and the trajectory
+        # slot indices that each PNG belongs to. This is required so the
+        # frontend can re-align cached ChimeraX renders back onto the correct
+        # slider indices after partial decoding.
+        rows = (
+            tuple(int(i) for i in trajectory_slot_indices)
+            if trajectory_slot_indices is not None
+            else tuple(range(int(z_values.shape[0])))
+        )
+        token = _register_vol_mrc_cache(mrc_dir, vol_files, rows)
         return png_bytes_list, token
     except Exception:
         shutil.rmtree(mrc_dir, ignore_errors=True)

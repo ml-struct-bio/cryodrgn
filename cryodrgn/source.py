@@ -478,18 +478,19 @@ class _MRCDataFrameSource(ImageSource):
         assert "__mrc_filename" in df.columns
         self.df = df
         self.datadir = datadir
-        self.df["__mrc_filepath"] = self.df["__mrc_filename"].apply(self.parse_filename)
-
-        self._sources = {
-            filepath: MRCFileSource(filepath) if os.path.exists(filepath) else None
-            for filepath in self.df["__mrc_filepath"].unique()
+        path_by_filename = {
+            fn: self.parse_filename(fn) for fn in self.df["__mrc_filename"].unique()
         }
+        self.df["__mrc_filepath"] = self.df["__mrc_filename"].map(path_by_filename)
 
-        # Peek into the first mrc file to get image size
+        # Open constituent .mrc/.mrcs stacks on demand (star/cs stacks may list thousands).
+        self._sources: dict[str, MRCFileSource | None] = {}
+
+        # Peek into the first extant stack to get image size (one header read).
         D = None
-        for filepath, src in self._sources.items():
-            if isinstance(src, MRCFileSource):
-                D = src.D
+        for filepath in path_by_filename.values():
+            if os.path.exists(filepath):
+                D = MRCFileSource(filepath).D
                 break
 
         super().__init__(
@@ -500,11 +501,20 @@ class _MRCDataFrameSource(ImageSource):
             indices=indices,
         )
 
+    def _get_mrc_source(self, filepath: str) -> MRCFileSource | None:
+        if filepath not in self._sources:
+            self._sources[filepath] = (
+                MRCFileSource(filepath) if os.path.exists(filepath) else None
+            )
+        return self._sources[filepath]
+
     def _images(
         self, indices: np.ndarray, require_contiguous: bool = False
     ) -> np.ndarray:
         def load_single_mrcs(filepath, df):
-            src = self._sources[filepath]
+            src = self._get_mrc_source(filepath)
+            if src is None:
+                raise ValueError(f"Missing MRC file `{filepath}`.")
 
             # `df.index` indicates the positions where the data needs to be inserted
             # and returned for use by caller

@@ -437,9 +437,8 @@
   }
   .cryo-traj-picker-anchor-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 45%;
-    grid-template-rows: auto auto auto;
-    column-gap: 0.35rem;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
     row-gap: 0.35rem;
     width: 100%;
     box-sizing: border-box;
@@ -447,24 +446,13 @@
   }
   .cryo-traj-picker-anchor-row .cryo-traj-manual-picker {
     grid-column: 1;
-    grid-row: 1 / span 2;
+    grid-row: 1;
     width: auto;
     min-width: 0;
     box-sizing: border-box;
   }
   .cryo-traj-picker-anchor-row .cryo-traj-manual-picker[hidden] {
     display: none !important;
-  }
-  .cryo-traj-picker-anchor-row .cryo-traj-manual-picker[hidden] ~ .cryo-traj-anchor-quick-row .btn {
-    grid-column: auto;
-  }
-  .cryo-traj-picker-anchor-row:has(.cryo-traj-manual-picker[hidden]) {
-    grid-template-columns: 45% 45%;
-    justify-content: end;
-  }
-  .cryo-traj-picker-hint {
-    grid-column: 1 / -1;
-    margin: 0;
   }
   .cryo-traj-anchor-row .cryo-traj-manual-picker {
     flex: 0 0 auto;
@@ -817,44 +805,112 @@
     box-sizing: border-box;
   }
   .cryo-traj-vol-picker-compact {
-    display: flex;
-    align-items: stretch;
-    gap: 0.22rem;
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
   }
-  .cryo-traj-vol-picker-compact-btns {
+  .cryo-traj-vol-picker-compact-inner {
     display: flex;
     flex: 1 1 auto;
-    flex-wrap: nowrap;
-    gap: var(--cryo-vslice-vol-btn-gap, 0.18rem);
+    flex-direction: column;
+    gap: 0.18rem;
     min-width: 0;
+    box-sizing: border-box;
+  }
+  .cryo-traj-vol-picker-set-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--muted, #5c6b7a);
+    letter-spacing: 0.03em;
+    line-height: 1.2;
+    padding: 0 0.06rem;
+  }
+  .cryo-traj-vol-picker-compact-btns-wrap {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    gap: 0.22rem;
     border: 1px solid rgba(36, 59, 83, 0.14);
     border-radius: 4px;
     background: rgba(250, 248, 244, 0.65);
     padding: var(--cryo-vslice-vol-scroll-pad, 0.28rem) 0.32rem;
     box-sizing: border-box;
   }
+  .cryo-traj-vol-picker-compact-btns {
+    display: flex;
+    flex: 0 0 77%;
+    width: 77%;
+    max-width: 77%;
+    flex-wrap: nowrap;
+    gap: var(--cryo-vslice-vol-btn-gap, 0.18rem);
+    min-width: 0;
+    overflow: hidden;
+    align-items: stretch;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+    box-sizing: border-box;
+  }
   .cryo-traj-vol-picker-compact-btns .cryo-traj-vol-group-btn {
     flex: 1 1 0;
+    width: auto;
     min-width: 0;
     min-height: var(--cryo-vslice-vol-btn-h);
-    padding: 0.12rem 0.28rem;
-    font-size: 0.64rem;
+    height: var(--cryo-vslice-vol-btn-h);
+    padding: 0.1rem 0.12rem;
+    font-size: 0.6rem;
     font-weight: 600;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cryo-traj-vol-picker-compact-btns .cryo-traj-vol-group-btn--custom {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
   }
   .cryo-traj-vol-picker-expand {
-    flex: 0 0 auto;
-    align-self: stretch;
-    min-width: 1.65rem;
-    padding: 0.12rem 0.28rem;
-    font-size: 0.82rem;
+    flex: 0 0 var(--cryo-vslice-vol-btn-h);
+    width: var(--cryo-vslice-vol-btn-h);
+    height: var(--cryo-vslice-vol-btn-h);
+    min-width: var(--cryo-vslice-vol-btn-h);
+    max-width: var(--cryo-vslice-vol-btn-h);
+    min-height: var(--cryo-vslice-vol-btn-h);
+    max-height: var(--cryo-vslice-vol-btn-h);
+    align-self: center;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(36, 59, 83, 0.2) !important;
+    border-radius: 3px;
+    background: rgba(232, 236, 241, 0.95) !important;
+    color: var(--nav-bg, #243b53) !important;
+    box-sizing: border-box;
+    font-size: 0.72rem !important;
     font-weight: 700;
     line-height: 1;
   }
+  .cryo-traj-vol-picker-expand:hover {
+    background: rgba(36, 59, 83, 0.12) !important;
+    color: var(--nav-bg, #243b53) !important;
+  }
+  .cryo-traj-vol-picker-expand-glyph {
+    display: inline-block;
+    line-height: 1;
+    color: inherit;
+    font-size: inherit !important;
+    transition: transform 0.15s ease;
+  }
   .cryo-traj-vol-picker-expand--open {
+    background: rgba(36, 59, 83, 0.1) !important;
+    color: var(--nav-bg, #243b53) !important;
+  }
+  .cryo-traj-vol-picker-expand--open .cryo-traj-vol-picker-expand-glyph {
     transform: rotate(90deg);
   }
   .cryo-traj-vol-picker-detail {
@@ -1687,43 +1743,8 @@
     width: 100%;
     box-sizing: border-box;
   }
-  .cryo-traj-picker-anchor-row .cryo-traj-anchor-quick-row {
+  .cryo-traj-anchor-pick-controls {
     display: contents;
-  }
-  .cryo-traj-anchor-quick-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .cryo-traj-anchor-quick-row[hidden] {
-    display: none !important;
-  }
-  .cryo-traj-picker-anchor-row .cryo-traj-anchor-quick-row .btn {
-    grid-column: 2;
-    width: 100%;
-    min-width: 0;
-    font-size: 0.72rem;
-    padding: 0.32rem 0.4rem;
-    line-height: 1.25;
-    box-sizing: border-box;
-    text-align: center;
-  }
-  .cryo-traj-picker-anchor-row .cryo-traj-anchor-quick-row .btn:first-child {
-    grid-row: 1;
-  }
-  .cryo-traj-picker-anchor-row .cryo-traj-anchor-quick-row .btn:last-child {
-    grid-row: 2;
-  }
-  .cryo-traj-anchor-quick-row .btn {
-    flex: 0 0 auto;
-    min-width: 0;
-    font-size: 0.72rem;
-    padding: 0.32rem 0.4rem;
-    line-height: 1.25;
-    box-sizing: border-box;
-    text-align: center;
   }
   .cryo-traj-anchor-manual-row {
     display: grid;
@@ -1981,12 +2002,18 @@
           title="Set up a trajectory with at least two points or volumes first.">Reverse trajectory</button>
         <button type="button" class="btn btn-secondary cryo-traj-action-btn" id="btn-record-traj-gif" disabled
           title="Select and render at least two trajectory volumes first.">Record trajectory<br/>GIF movie</button>
+        <div class="cryo-traj-anchor-pick-controls" id="traj-anchor-pick">
+          <button type="button" class="btn btn-secondary cryo-traj-action-btn" id="btn-anchor-import-pkl">Import anchor .txt</button>
+          <button type="button" class="btn btn-secondary cryo-traj-action-btn" id="btn-anchor-random">10 random indices</button>
+        </div>
         <div class="cryo-traj-anchor-path-order-controls" id="traj-anchor-path-order-controls" hidden>
           <span class="cryo-traj-anchor-path-order-legend" id="traj-anchor-path-order-legend">Anchor visit order</span>
           <div class="volsketch-seg cryo-traj-mode-seg cryo-traj-path-order-seg" role="radiogroup"
             aria-labelledby="traj-anchor-path-order-legend">
-            <input type="radio" name="traj-anchor-path-order" id="traj-anchor-path-heuristic" value="heuristic"
+            <input type="radio" name="traj-anchor-path-order" id="traj-anchor-path-preserve" value="preserve"
               checked />
+            <label for="traj-anchor-path-preserve">Original order</label>
+            <input type="radio" name="traj-anchor-path-order" id="traj-anchor-path-heuristic" value="heuristic" />
             <label for="traj-anchor-path-heuristic">Inexact</label>
             <input type="radio" name="traj-anchor-path-order" id="traj-anchor-path-exact" value="exact" />
             <label for="traj-anchor-path-exact">Exact shortest path</label>
@@ -2066,31 +2093,32 @@
         <div class="cryo-traj-manual-picker" id="traj-manual-picker">
           <div id="vslice-volume-picker" class="cryo-vslice-volume-picker">
             <div class="cryo-traj-vol-picker-compact" id="traj-vol-picker-compact">
-              <div class="cryo-traj-vol-picker-compact-btns" id="traj-vol-picker-compact-btns"
-                role="group" aria-label="Volume set shortcuts">
-                <button type="button" class="btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn cryo-vslice-vol-btn--placeholder" disabled>Kmeans{{ exp_kmeans }}</button>
-                <button type="button" class="btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn cryo-vslice-vol-btn--placeholder" disabled>PC1</button>
-                <button type="button" class="btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn cryo-vslice-vol-btn--placeholder" disabled>PC2</button>
+              <div class="cryo-traj-vol-picker-compact-inner">
+                <div class="cryo-traj-vol-picker-set-label" id="traj-vol-picker-set-label">Particle sets</div>
+                <div class="cryo-traj-vol-picker-compact-btns-wrap">
+                  <div class="cryo-traj-vol-picker-compact-btns" id="traj-vol-picker-compact-btns"
+                    role="group" aria-label="Particle sets">
+                    <button type="button" class="btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn cryo-vslice-vol-btn--placeholder" disabled>Kmeans{{ exp_kmeans }}</button>
+                    <button type="button" class="btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn cryo-vslice-vol-btn--placeholder" disabled>PC1</button>
+                    <button type="button" class="btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn cryo-vslice-vol-btn--placeholder" disabled>PC2</button>
+                    <button type="button" class="btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn cryo-traj-vol-group-btn--custom cryo-vslice-vol-btn--placeholder" disabled>Other</button>
+                  </div>
+                  <button type="button" class="btn btn-secondary cryo-traj-vol-picker-expand"
+                    id="btn-traj-vol-picker-expand" aria-expanded="false"
+                    aria-controls="traj-vol-picker-detail" title="Show individual volumes"
+                    aria-label="Show individual volumes"><span class="cryo-traj-vol-picker-expand-glyph" aria-hidden="true">&#9656;</span></button>
+                </div>
               </div>
-              <button type="button" class="btn btn-secondary cryo-traj-vol-picker-expand"
-                id="btn-traj-vol-picker-expand" aria-expanded="false"
-                aria-controls="traj-vol-picker-detail" title="Show individual volumes"
-                aria-label="Show individual volumes">&#9656;</button>
             </div>
             <div class="cryo-traj-vol-picker-detail" id="traj-vol-picker-detail" hidden>
               <div class="cryo-vslice-volume-picker-scroll" id="vslice-volume-picker-scroll">
                 <div class="cryo-vslice-volume-picker-rows" id="vslice-volume-picker-rows"
-                  role="group" aria-label="Individual k-means and PC volumes">
+                  role="group" aria-label="Individual particle set volumes">
                 </div>
               </div>
             </div>
           </div>
         </div>
-        <div class="cryo-traj-anchor-quick-row" id="traj-anchor-pick">
-          <button type="button" class="btn btn-secondary" id="btn-anchor-import-pkl">Import anchor .txt</button>
-          <button type="button" class="btn btn-secondary" id="btn-anchor-random">10 random indices</button>
-        </div>
-        <p class="cryo-traj-hint cryo-traj-picker-hint">Select two or more k-means or PC volumes to define the path.</p>
       </div>
       <div class="cryo-traj-anchor-manual-row" id="traj-anchor-manual-row" hidden>
         <input

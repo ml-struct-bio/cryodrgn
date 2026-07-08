@@ -731,6 +731,58 @@
     if (!opts.deferRender) this._renderCurrent();
   };
 
+  TrajectoryVolumeDisplay.prototype.reorderVolumeSlots = function (permutation, opts) {
+    opts = opts || {};
+    if (!permutation || permutation.length < 2) return;
+    var n = permutation.length;
+    var prevFocus = this.backend === "chimerax" ? this.chimeraxFocusIndex : this.vtkFocusIndex;
+
+    function permuteArray(arr) {
+      if (!arr || !arr.length) arr = [];
+      var padded = arr.slice();
+      while (padded.length < n) padded.push(null);
+      if (padded.length > n) padded.length = n;
+      var out = new Array(n);
+      for (var i = 0; i < n; i++) {
+        var src = permutation[i];
+        out[i] = (src >= 0 && src < padded.length) ? padded[src] : null;
+      }
+      return out;
+    }
+
+    this.volumes = permuteArray(this.volumes);
+    this.chimeraxImages = permuteArray(this.chimeraxImages);
+    if (Array.isArray(this._chimeraxRerenderReadyMask)) {
+      this._chimeraxRerenderReadyMask = permuteArray(this._chimeraxRerenderReadyMask);
+    }
+    this.raycastVolIndex = null;
+
+    var nextFocus = opts.focusIndex;
+    if (nextFocus == null && prevFocus >= 0 && prevFocus < n) {
+      for (var fi = 0; fi < n; fi++) {
+        if (permutation[fi] === prevFocus) {
+          nextFocus = fi;
+          break;
+        }
+      }
+    }
+    if (nextFocus != null && Number.isFinite(Number(nextFocus))) {
+      nextFocus = Math.max(0, Math.min(n - 1, Math.floor(Number(nextFocus))));
+      if (this.backend === "chimerax") this.chimeraxFocusIndex = nextFocus;
+      else this.vtkFocusIndex = nextFocus;
+    }
+
+    if (this.backend === "chimerax") {
+      this._renderChimerax();
+    } else if (this.backend === "vtk") {
+      this._renderVtk();
+    } else if (this.backend === "slice") {
+      this._renderInteractive();
+    }
+    this._notifyFocusChange();
+    this._syncVolumeNavChrome();
+  };
+
   TrajectoryVolumeDisplay.prototype._refreshIsoSamplesFromVolumes = function () {
     if (!global.CryoVolume3dUtils) return;
     var vol = null;

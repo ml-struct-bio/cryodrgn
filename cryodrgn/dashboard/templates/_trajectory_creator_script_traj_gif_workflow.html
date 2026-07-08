@@ -1296,7 +1296,8 @@
 
   function importServerPklFile(serverPath) {
     setTrajStatus("Loading anchor indices…", false);
-    resetAnchorPathOrderToHeuristic();
+    resetAnchorPathOrderToDefault();
+    if (isManualTraversalMode()) manualCustomPlotRowsRegisterPending = true;
     var anchorMode = currentAnchorTraversalMode();
     var nPointsReq = requestedAnchorNPoints(anchorMode);
     fetch("{{ url_for('api_trajectory_import_anchors') }}", {
@@ -1315,12 +1316,14 @@
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
         if (!res.ok) {
+          manualCustomPlotRowsRegisterPending = false;
           setTrajStatus(res.j.error || "Import failed.", false);
           return;
         }
         onTrajectoryIndicesLoaded(res.j);
       })
       .catch(function(err) {
+        manualCustomPlotRowsRegisterPending = false;
         console.error(err);
         setTrajStatus("Import request failed.", false);
       });
@@ -1415,6 +1418,7 @@
       if (!radio.checked || radio.disabled) return;
       if (radio.value === "exact") requestExactAnchorPathOrder();
       else if (radio.value === "heuristic") requestHeuristicAnchorPathOrder();
+      else if (radio.value === "preserve") requestPreserveAnchorPathOrder();
     });
   });
   if (btnAnchorManualLoad) {

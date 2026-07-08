@@ -966,7 +966,179 @@ def js_function_body(source: str, fn_marker: str, until_marker: str) -> str:
 # ---------------------------------------------------------------------------
 
 DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS = 120_000
+DASHBOARD_BROWSER_FAST_TIMEOUT_MS = 30_000
 DASHBOARD_BROWSER_SMOKE_CACHE_SIZE = 25
+
+
+def make_fake_trajectory_volume_pngs(cache_token: str = "cache-tok"):
+    """Return a ``generate_trajectory_volume_pngs`` stub accepting ``**kwargs``."""
+
+    def _fake(exp, z_values, **kwargs):
+        import io
+
+        from PIL import Image
+
+        blobs = []
+        for _ in range(len(z_values)):
+            buf = io.BytesIO()
+            Image.new("RGB", (4, 4)).save(buf, format="PNG")
+            blobs.append(buf.getvalue())
+        return blobs, cache_token
+
+    return _fake
+
+
+def _volume_viewer_stub_payloads():
+    """JSON bodies for stubbed ``/api/volume_viewer/*`` responses."""
+    import json
+
+    tiny = png_b64_rgb()
+    catalog = [
+        {
+            "id": "kmeans:0",
+            "kind": "kmeans",
+            "cluster_label": 0,
+            "znorm": 0.1,
+        },
+        {
+            "id": "kmeans:1",
+            "kind": "kmeans",
+            "cluster_label": 1,
+            "znorm": 0.2,
+        },
+        {
+            "id": "kmeans:2",
+            "kind": "kmeans",
+            "cluster_label": 2,
+            "znorm": 0.3,
+        },
+    ]
+    markers = [
+        {
+            "vol_id": f"kmeans:{i}",
+            "plot_row": i * 10,
+            "label": f"K{i + 1}",
+            "kind": "kmeans",
+        }
+        for i in range(3)
+    ]
+    return {
+        "tiny": tiny,
+        "catalog_with_markers": json.dumps(
+            {
+                "ok": True,
+                "catalog": catalog,
+                "default_vol_id": "kmeans:0",
+                "markers": markers,
+                "D": None,
+            }
+        ),
+        "catalog_only": json.dumps(
+            {
+                "ok": True,
+                "catalog": catalog,
+                "default_vol_id": "kmeans:0",
+                "markers": [],
+                "D": None,
+            }
+        ),
+        "markers_only": json.dumps({"ok": True, "markers": markers}),
+        "single_volume": json.dumps(
+            {"ok": True, "id": "kmeans:0", "volume_b64": tiny, "D": 32}
+        ),
+    }
+
+
+def fulfill_volume_viewer_render_route(route) -> bool:
+    """Fulfill slow volume-viewer render POSTs; return True if handled."""
+    import json
+
+    tiny = _volume_viewer_stub_payloads()["tiny"]
+    url = route.request.url
+    method = route.request.method
+    if "analyze_volumes_chimerax_batch" in url and method == "POST":
+        try:
+            req = json.loads(route.request.post_data or "{}")
+        except json.JSONDecodeError:
+            req = {}
+        ids = req.get("ids") or ["kmeans:0"]
+        images = [tiny] * max(1, len(ids))
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"ok": True, "images": images}),
+        )
+        return True
+    if "analyze_volumes_batch" in url and method == "POST":
+        try:
+            req = json.loads(route.request.post_data or "{}")
+        except json.JSONDecodeError:
+            req = {}
+        ids = req.get("ids") or ["kmeans:0"]
+        volumes = {
+            str(vol_id): {"volume_b64": tiny, "D": 32, "id": str(vol_id)}
+            for vol_id in ids
+        }
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"ok": True, "volumes": volumes}),
+        )
+        return True
+    return False
+
+
+def playwright_route_volume_viewer_render_stub(page) -> None:
+    """Stub only slow ChimeraX/VTK batch renders; catalog GETs hit the live server."""
+
+    def _handler(route):
+        if not fulfill_volume_viewer_render_route(route):
+            route.continue_()
+
+    page.route("**/api/volume_viewer/**", _handler)
+
+
+def fulfill_volume_viewer_route(route) -> bool:
+    """Fulfill a Playwright route with volume-viewer stubs; return True if handled."""
+    if fulfill_volume_viewer_render_route(route):
+        return True
+
+    payloads = _volume_viewer_stub_payloads()
+    url = route.request.url
+    method = route.request.method
+    if "analyze_volumes" in url and method == "GET":
+        body = (
+            payloads["catalog_only"]
+            if "include_markers=0" in url
+            else payloads["catalog_with_markers"]
+        )
+        route.fulfill(status=200, content_type="application/json", body=body)
+        return True
+    if "analyze_markers" in url and method == "GET":
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=payloads["markers_only"],
+        )
+        return True
+    if "analyze_volume" in url and method == "GET":
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=payloads["single_volume"],
+        )
+        return True
+    return False
+
+
+def playwright_route_volume_viewer_stub(page) -> None:
+    """Intercept ``/api/volume_viewer/*`` with fast JSON stubs for Playwright tests."""
+
+    def _handler(route):
+        if not fulfill_volume_viewer_route(route):
+            route.continue_()
+
+    page.route("**/api/volume_viewer/**", _handler)
 
 
 @contextmanager
@@ -1605,27 +1777,50 @@ def dashboard_smoke_trajectory(
     info = _dashboard_smoke_wait_plot_ready(page, "scatter", timeout_ms=timeout_ms)
     page.wait_for_function(
         """() => {
-          var gd = document.getElementById('scatter');
-          return gd && gd.data && gd.data.length >= 2;
+          var overlay = document.getElementById('traj-glyph-overlay');
+          var picker = document.getElementById('vslice-volume-picker-rows');
+          var hasGlyph = !!(overlay && overlay.querySelector('.cryo-traj-glyph-path'));
+          var pickerBtns = picker
+            ? picker.querySelectorAll('.cryo-vslice-vol-btn').length
+            : 0;
+          return hasGlyph && pickerBtns >= 2;
         }""",
         timeout=timeout_ms,
     )
-    before = _dashboard_smoke_eval_plot(page, "scatter")
+    before = _dashboard_smoke_trajectory_state(page)
     page.click("#btn-anchor-random")
     page.wait_for_function(
         """() => {
           var st = document.getElementById('traj-status');
           var txt = st ? st.textContent || '' : '';
-          return /latent z|index trajectory ready/i.test(txt);
+          return /manual selection ready|anchor path|latent z ready|selection and volumes ready/i.test(txt);
         }""",
         timeout=timeout_ms,
     )
-    after = _dashboard_smoke_eval_plot(page, "scatter")
+    after = _dashboard_smoke_trajectory_state(page)
     return {
         "scatter_points": info.get("n"),
-        "traces_before_anchor": before.get("traces"),
-        "traces_after_anchor": after.get("traces"),
+        "glyph_markers_before_anchor": before.get("glyph_markers"),
+        "glyph_markers_after_anchor": after.get("glyph_markers"),
+        "active_picker_before_anchor": before.get("active_picker_buttons"),
+        "active_picker_after_anchor": after.get("active_picker_buttons"),
     }
+
+
+def _dashboard_smoke_trajectory_state(page) -> dict:
+    return page.evaluate(
+        """() => {
+          var overlay = document.getElementById('traj-glyph-overlay');
+          return {
+            glyph_markers: overlay
+              ? overlay.querySelectorAll('.cryo-traj-glyph-marker').length
+              : 0,
+            active_picker_buttons: document.querySelectorAll(
+              '.cryo-vslice-vol-btn--active'
+            ).length,
+          };
+        }"""
+    )
 
 
 def _dashboard_smoke_volume_viewer_ready(

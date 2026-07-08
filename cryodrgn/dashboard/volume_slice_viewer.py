@@ -425,6 +425,75 @@ def kmeans_volume_ids_for_anchor_indices(
     return vol_ids
 
 
+def analyze_volume_marker_index(
+    exp: DashboardExperiment,
+    xcol: str,
+    ycol: str,
+    allowed_vol_ids: set[str] | frozenset[str] | None = None,
+) -> tuple[np.ndarray, list[str], list[int]]:
+    """Scatter coordinates, catalog ids, and plot rows for analyze volume markers."""
+    markers = discover_analyze_volume_markers(exp)
+    coords = exp.plot_df[[xcol, ycol]].values.astype(np.float64)
+    xy_parts: list[np.ndarray] = []
+    vol_ids: list[str] = []
+    plot_rows: list[int] = []
+    for marker in markers:
+        vol_id = str(marker["vol_id"])
+        if allowed_vol_ids is not None and vol_id not in allowed_vol_ids:
+            continue
+        plot_row = marker.get("plot_row")
+        if plot_row is None:
+            continue
+        ri = int(plot_row)
+        if ri < 0 or ri >= len(coords):
+            continue
+        pt = coords[ri]
+        if not np.all(np.isfinite(pt)):
+            continue
+        xy_parts.append(pt)
+        vol_ids.append(vol_id)
+        plot_rows.append(ri)
+    if not xy_parts:
+        raise ValueError(
+            "No analyze volume markers with plot coordinates for the current axes."
+        )
+    return np.vstack(xy_parts), vol_ids, plot_rows
+
+
+def snap_xy_to_analyze_volume_markers(
+    exp: DashboardExperiment,
+    xy_pts: np.ndarray,
+    xcol: str,
+    ycol: str,
+    allowed_vol_ids: set[str] | frozenset[str] | None = None,
+) -> tuple[list[int], np.ndarray, list[str]]:
+    """Nearest analyze-volume marker for each ``(x, y)`` query in plot space."""
+    marker_xy, vol_ids, plot_rows = analyze_volume_marker_index(
+        exp, xcol, ycol, allowed_vol_ids=allowed_vol_ids
+    )
+    xy_pts = np.atleast_2d(np.asarray(xy_pts, dtype=np.float64))
+    diff = xy_pts[:, None, :] - marker_xy[None, :, :]
+    dist2 = np.sum(diff * diff, axis=2)
+    nearest = np.argmin(dist2, axis=1)
+    out_rows = [plot_rows[int(i)] for i in nearest]
+    out_xy = marker_xy[nearest]
+    out_vols = [vol_ids[int(i)] for i in nearest]
+    return out_rows, out_xy, out_vols
+
+
+def analyze_volume_ids_for_plot_rows(
+    exp: DashboardExperiment, plot_rows: list[int]
+) -> list[str | None]:
+    """Map plot rows to catalog volume ids where each row is an analyze marker."""
+    markers = discover_analyze_volume_markers(exp)
+    row_to_vol: dict[int, str] = {}
+    for marker in markers:
+        plot_row = marker.get("plot_row")
+        if plot_row is not None:
+            row_to_vol[int(plot_row)] = str(marker["vol_id"])
+    return [row_to_vol.get(int(row)) for row in plot_rows]
+
+
 def _catalog_public(catalog: list[dict]) -> list[dict]:
     return [{k: v for k, v in entry.items() if k != "path"} for entry in catalog]
 

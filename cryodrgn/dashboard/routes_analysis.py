@@ -48,6 +48,7 @@ from cryodrgn.dashboard.particle_explorer import (
     trajectory_volume_b64_list_from_cache,
     volume_job_partial_snapshot,
     volume_job_partial_unregister,
+    volume_cache_slot_indices,
 )
 from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from cryodrgn.dashboard.preload import particle_thumbnail_b64_from_row
@@ -707,12 +708,22 @@ def api_trajectory_volumes():
                 volume_level=iso_level,
                 progress_token=progress_token,
             )
+            images = [base64.standard_b64encode(b).decode("ascii") for b in blobs]
             payload = {
                 "ok": True,
-                "images": [base64.standard_b64encode(b).decode("ascii") for b in blobs],
+                "images": images,
                 "volume_cache_id": cache_token,
                 "render_backend": "chimerax",
             }
+            # If we know the trajectory slot indices for each cached PNG,
+            # return them so the frontend can re-align dense rerender
+            # results back onto the full slider index space.
+            try:
+                slot_indices = volume_cache_slot_indices(cache_token)
+            except ValueError:
+                slot_indices = ()
+            if slot_indices and len(slot_indices) == len(blobs):
+                payload["slot_indices"] = [int(i) for i in slot_indices]
             mrc_path = primary_mrc_path_from_volume_cache(cache_token)
             if mrc_path:
                 payload.update(

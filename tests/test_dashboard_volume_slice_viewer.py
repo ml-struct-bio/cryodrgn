@@ -365,6 +365,19 @@ class TestVolumeSliceViewerRoutes:
         assert "traj-scatter-interp-nearest" in body
         assert "traj-scatter-interp-direct" in body
         assert "btn-traj-manual-volume" in body
+        assert "btn-rerender-volumes" in body
+        assert "deferManualWaypointVolumeRerender" in body
+        assert "finishManualVolumeDeselection" in body
+        assert "plotRowsForManualVolIds" in body
+        assert "syncManualVolumeViewerForWaypointSelection" in body
+        assert "manualSnappedDecodePathActive" in body
+        assert "preserveManualSnappedDecodeVolumeCatalog" in body
+        assert "reverseManualInterpolatedVolumeCatalogPreservingAnchors" in body
+        assert "syncManualAnchorIndicesToVolIdOrder" in body
+        assert "compactManualAnchorVolumesFromSnapshot" in body
+        assert "manualInterpolatedVolumeReversePending" in body
+        assert "reverseDecodedTrajectoryVolumesInMemory" in body
+        assert "Render volumes" in body
         assert "btn-traj-manual-graph" in body
         assert "manual-snap-n-points" in body
         assert "manual-graph-n-points" in body
@@ -527,13 +540,17 @@ class TestTrajectoryVolumeBrowserSmoke:
             """() => {
               var btn = document.getElementById('btn-generate-volumes');
               var saveBtn = document.getElementById('btn-save-volumes');
+              var rerenderBtn = document.getElementById('btn-rerender-volumes');
               return {
                 present: !!btn,
                 hidden: btn ? btn.hidden : true,
                 disabled: btn ? btn.disabled : true,
                 savePresent: !!saveBtn,
                 saveHidden: saveBtn ? saveBtn.hidden : true,
-                saveDisabled: saveBtn ? saveBtn.disabled : true
+                saveDisabled: saveBtn ? saveBtn.disabled : true,
+                rerenderPresent: !!rerenderBtn,
+                rerenderHidden: rerenderBtn ? rerenderBtn.hidden : true,
+                rerenderDisabled: rerenderBtn ? rerenderBtn.disabled : true
               };
             }"""
         )
@@ -543,6 +560,9 @@ class TestTrajectoryVolumeBrowserSmoke:
         assert gen_btn["savePresent"] is True
         assert gen_btn["saveHidden"] is False
         assert gen_btn["saveDisabled"] is True
+        assert gen_btn["rerenderPresent"] is True
+        assert gen_btn["rerenderHidden"] is False
+        assert gen_btn["rerenderDisabled"] is False
 
     def test_manual_mode_chimerax_default_with_analyze_volumes(
         self, playwright_page, dashboard_volumes_eligible_live_url
@@ -550,6 +570,7 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_rerender_manual_volumes,
         )
 
         ready = _dashboard_smoke_volume_viewer_ready(
@@ -558,6 +579,10 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
+        dashboard_smoke_rerender_manual_volumes(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
         playwright_page.wait_for_function(
             """() => {
               var cx = document.getElementById('traj-vol-backend-chimerax');
@@ -574,6 +599,7 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_rerender_manual_volumes,
         )
 
         ready = _dashboard_smoke_volume_viewer_ready(
@@ -582,6 +608,10 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
+        dashboard_smoke_rerender_manual_volumes(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
         playwright_page.wait_for_function(
             """() => {
               var vtkBackend = document.getElementById('traj-vol-backend-vtk');
@@ -670,6 +700,7 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_rerender_manual_volumes,
             fulfill_volume_viewer_render_route,
         )
 
@@ -701,6 +732,10 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
+        dashboard_smoke_rerender_manual_volumes(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
         playwright_page.wait_for_function(
             """() => {
               var cx = document.getElementById('traj-vol-backend-chimerax');
@@ -763,6 +798,7 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_rerender_manual_volumes,
             fulfill_volume_viewer_render_route,
         )
 
@@ -796,15 +832,9 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
-        playwright_page.wait_for_function(
-            """() => {
-              var vtkHost = document.getElementById('vslice-vtk-container');
-              var status = document.getElementById('vslice-status');
-              var busy = status && status.textContent
-                && status.textContent.indexOf('Loading') >= 0;
-              return !!(vtkHost && !vtkHost.hidden && !busy);
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        dashboard_smoke_rerender_manual_volumes(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         playwright_page.click("label[for='traj-vol-backend-chimerax']")
         playwright_page.wait_for_function(
@@ -844,6 +874,7 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_rerender_manual_volumes,
             fulfill_volume_viewer_render_route,
         )
 
@@ -872,6 +903,10 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
+        dashboard_smoke_rerender_manual_volumes(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
         playwright_page.wait_for_function(
             """() => {
               var vtk = document.getElementById('traj-vol-backend-vtk');
@@ -917,6 +952,7 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_rerender_manual_volumes,
         )
 
         ready = _dashboard_smoke_volume_viewer_ready(
@@ -925,6 +961,10 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )
         assert ready is not None
+        dashboard_smoke_rerender_manual_volumes(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+        )
         playwright_page.wait_for_function(
             """() => {
               var vtk = document.getElementById('vslice-vtk-container');

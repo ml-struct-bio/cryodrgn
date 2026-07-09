@@ -22,6 +22,7 @@
   var manualVolumeSnapActive = false;
   var manualParticleSnapPathActive = false;
   var manualInterpTrajectoryCount = 0;
+  var manualInterpolatedVolumeReversePending = false;
   var lastScatterTraversalMode = "direct";
   var DEFAULT_DIRECT_TRAJ_N_POINTS = 4;
   var DEFAULT_MANUAL_TRAJ_N_POINTS = 1;
@@ -110,6 +111,7 @@
   var manualGraphNPointsEl = document.getElementById("manual-graph-n-points");
   var btnGenerateVolumesEl = document.getElementById("btn-generate-volumes");
   var btnSaveVolumesEl = document.getElementById("btn-save-volumes");
+  var btnRerenderVolumesEl = document.getElementById("btn-rerender-volumes");
   var btnResetEl = document.getElementById("btn-reset");
   var btnReverseTraj = document.getElementById("btn-reverse-traj");
   var nPointsEl = document.getElementById("n-points");
@@ -536,7 +538,16 @@
   function manualInterpolatedAnchorSlotIndices(total) {
     total = Math.max(0, Math.floor(Number(total)));
     var nAnchors = manualSelectedVolIds.length;
-    if (nAnchors < 2 || total < 2) return [];
+    if (nAnchors < 2 || total < 2) {
+      if (manualSnappedDecodePathActive()) {
+        var readySlots = [];
+        for (var ri = 0; ri < total; ri++) {
+          if (trajectoryVolumeReadyAt(ri)) readySlots.push(ri);
+        }
+        return readySlots;
+      }
+      return [];
+    }
     if (trajPlotRows && trajPlotRows.length === total
         && anchorIndicesActive && anchorIndicesActive.length >= 2) {
       var anchorRows = {};
@@ -654,6 +665,21 @@
     return rows;
   }
 
+  function syncManualAnchorIndicesToVolIdOrder() {
+    if (!isManualTraversalMode()) return false;
+    var rows = manualCatalogSelectedPlotRows();
+    if (rows.length >= 2) {
+      anchorIndicesActive = rows.slice();
+      return true;
+    }
+    if (anchorIndicesActive && anchorIndicesActive.length >= 2
+        && anchorIndicesActive.length === manualSelectedVolIds.length) {
+      anchorIndicesActive.reverse();
+      return true;
+    }
+    return false;
+  }
+
   function removeCustomVolIdsForPlotRows(plotRows) {
     var removed = false;
     (plotRows || []).forEach(function(row) {
@@ -676,16 +702,78 @@
     return n >= 2 ? n : manualSelectedVolIds.length;
   }
 
+  function manualRetainedSnappedPathLength() {
+    if (trajPlotRows && trajPlotRows.length >= 2) return trajPlotRows.length;
+    if (anchorTrajXY && anchorTrajXY.length >= 2) return anchorTrajXY.length;
+    var n = parseInt(manualInterpTrajectoryCount, 10);
+    return isFinite(n) && n >= 2 ? n : 0;
+  }
+
+  function manualSnappedDecodePathActive() {
+    if (!isManualTraversalMode() || hasGeneratedTrajectoryVolumes() || isGraphTraversalActive()) {
+      return false;
+    }
+    if (!(manualVolumeSnapActive || manualParticleSnapPathActive || manualInterpTrajectoryCount >= 2)) {
+      return false;
+    }
+    return manualRetainedSnappedPathLength() >= 2;
+  }
+
+  function buildPathVolumeDisplayIds(pathLen) {
+    pathLen = Math.max(0, Math.floor(Number(pathLen)));
+    var ids = new Array(pathLen);
+    for (var i = 0; i < pathLen; i++) ids[i] = null;
+    return ids;
+  }
+
+  function preserveManualSnappedDecodeVolumeCatalog() {
+    if (!manualSnappedDecodePathActive()) return false;
+    var pathLen = manualRetainedSnappedPathLength();
+    if (pathLen < 2) return false;
+    var vols = [];
+    var imgs = [];
+    if (manualAnalyzeVolumePayload) {
+      vols = (manualAnalyzeVolumePayload.volumes || manualAnalyzeVolumePayload.slots || []).slice();
+      imgs = (manualAnalyzeVolumePayload.images || []).slice();
+    } else if (trajVolDisplay) {
+      vols = (manualVolumeSlots || []).slice();
+      imgs = trajVolDisplay.chimeraxImages ? trajVolDisplay.chimeraxImages.slice() : [];
+    }
+    var resized = sparsePathSeedsFromArrays(vols, imgs, pathLen);
+    manualAnalyzeVolumePayload = {
+      volumes: resized.volumes,
+      slots: resized.volumes.slice(),
+      images: resized.images,
+      ids: buildPathVolumeDisplayIds(pathLen),
+      expectedVolumeCount: pathLen
+    };
+    manualVolumeSlots = resized.volumes.slice();
+    manualVolumeDisplayIds = manualAnalyzeVolumePayload.ids.slice();
+    manualAnalyzeVolumesReady = resized.volumes.some(function(v) { return !!v; })
+      || resized.images.some(function(img) { return !!img; });
+    if (!hasGeneratedTrajectoryVolumes()) {
+      lastVolumePayload = mergeVolumePayload(manualAnalyzeVolumePayload);
+    }
+    applyManualInterpolatedVolumeSliderDisplay();
+    syncTrajVolBackendChrome();
+    syncDirectModeVolumePendingOverlay();
+    updateGenerateVolumesButtonLabel();
+    setManualInterpolatedTrajectoryStatus();
+    return true;
+  }
+
   function manualInterpolatedCatalogActive() {
-    return isManualTraversalMode()
-      && (manualVolumeSnapActive || manualParticleSnapPathActive)
-      && !isGraphTraversalActive()
-      && manualCatalogAnchorVolIdCount() >= 2;
+    if (!isManualTraversalMode() || isGraphTraversalActive()) return false;
+    if ((manualVolumeSnapActive || manualParticleSnapPathActive) && manualCatalogAnchorVolIdCount() >= 2) {
+      return true;
+    }
+    return manualSnappedDecodePathActive();
   }
 
   function manualInterpolatedCatalogExpectedCount() {
     if (!manualInterpolatedCatalogActive()) return 0;
-    var snappedLen = Math.max(0, parseInt(manualInterpTrajectoryCount, 10) || 0);
+    var snappedLen = manualRetainedSnappedPathLength();
+    if (snappedLen >= 2) return snappedLen;
     if (!snappedLen && anchorTrajXY && anchorTrajXY.length >= 2) {
       snappedLen = anchorTrajXY.length;
     }
@@ -698,7 +786,7 @@
     return (nAnchors - 1) * (nPoints + 1) + 1;
   }
 
-  function compactManualAnchorVolumesAndImages(vols, imgs, nAnchors, nPoints) {
+  function compactManualAnchorVolumesAndImages(vols, imgs, nAnchors, nPoints, pathLen) {
     vols = vols || [];
     imgs = imgs || [];
     nAnchors = Math.max(0, Math.floor(Number(nAnchors)));
@@ -706,9 +794,17 @@
     if (vols.length === nAnchors) {
       return { volumes: vols.slice(), images: (imgs || []).slice(0, nAnchors) };
     }
-    var n = nAnchors < 2 ? 0 : ((nAnchors - 1) * (nPoints + 1) + 1);
-    if (vols.length === n || (imgs && imgs.length === n)) {
-      var anchorSlots = manualAnchorSlotsOnInterpolatedPath(nAnchors, nPoints);
+    if (!pathLen) {
+      pathLen = vols.length > nAnchors ? vols.length : 0;
+      if (!pathLen && imgs && imgs.length > nAnchors) pathLen = imgs.length;
+    }
+    pathLen = Math.max(0, Math.floor(Number(pathLen)));
+    var formulaN = nAnchors < 2 ? 0 : ((nAnchors - 1) * (nPoints + 1) + 1);
+    if (pathLen > nAnchors && (vols.length === pathLen || (imgs && imgs.length === pathLen))) {
+      var anchorSlots = manualInterpolatedAnchorSlotIndices(pathLen);
+      if (!anchorSlots.length || anchorSlots.length < nAnchors) {
+        anchorSlots = manualAnchorSlotsOnInterpolatedPath(nAnchors, nPoints);
+      }
       var cv = [];
       var ci = [];
       for (var ai = 0; ai < anchorSlots.length && ai < nAnchors; ai++) {
@@ -717,6 +813,17 @@
         ci.push(imgs && slot >= 0 && slot < imgs.length ? imgs[slot] : null);
       }
       return { volumes: cv, images: ci };
+    }
+    if (vols.length === formulaN || (imgs && imgs.length === formulaN)) {
+      var formulaSlots = manualAnchorSlotsOnInterpolatedPath(nAnchors, nPoints);
+      var formulaVols = [];
+      var formulaImgs = [];
+      for (var fi = 0; fi < formulaSlots.length && fi < nAnchors; fi++) {
+        var formulaSlot = formulaSlots[fi];
+        formulaVols.push(formulaSlot >= 0 && formulaSlot < vols.length ? vols[formulaSlot] : null);
+        formulaImgs.push(imgs && formulaSlot >= 0 && formulaSlot < imgs.length ? imgs[formulaSlot] : null);
+      }
+      return { volumes: formulaVols, images: formulaImgs };
     }
     return { volumes: vols.slice(), images: (imgs || []).slice() };
   }
@@ -907,6 +1014,9 @@
     if (!manualInterpolatedCatalogActive() || hasGeneratedTrajectoryVolumes()) {
       return false;
     }
+    if (manualSnappedDecodePathActive() && manualCatalogAnchorVolIdCount() < 2) {
+      return preserveManualSnappedDecodeVolumeCatalog();
+    }
     if (!manualAnalyzeVolumePayload) return false;
     var nAnchors = manualCatalogAnchorVolIdCount();
     if (nAnchors < 2) return false;
@@ -915,7 +1025,7 @@
     if (n <= nAnchors) return false;
     var compactVols = manualAnalyzeVolumePayload.volumes || manualAnalyzeVolumePayload.slots || [];
     var compactImgs = manualCompactAnchorImagesForExpansion();
-    var compact = compactManualAnchorVolumesAndImages(compactVols, compactImgs, nAnchors, nPoints);
+    var compact = compactManualAnchorVolumesAndImages(compactVols, compactImgs, nAnchors, nPoints, n);
     var seeded = seedManualSnappedPathDisplaySlots(
       compact.volumes,
       compact.images,
@@ -1144,6 +1254,14 @@
   }
 
   function manualTrajectoryHasInteriorSamples() {
+    if (manualSnappedDecodePathActive()) {
+      var pathLen = manualRetainedSnappedPathLength();
+      var nAnchors = typeof manualCatalogAnchorVolIdCount === "function"
+        ? manualCatalogAnchorVolIdCount()
+        : manualAnchorCount();
+      if (nAnchors >= 2 && pathLen > nAnchors) return true;
+      if (pathLen > 2) return true;
+    }
     var nAnchors = typeof manualCatalogAnchorVolIdCount === "function"
       ? manualCatalogAnchorVolIdCount()
       : manualAnchorCount();
@@ -1178,6 +1296,9 @@
     if (!isManualTraversalMode()) {
       if (anchorKmeansVolumeIds.length >= 2) return anchorKmeansVolumeIds.slice();
       return [];
+    }
+    if (deferManualWaypointVolumeRerender() && !manualInterpolatedCatalogActive()) {
+      return manualSelectedVolIds.slice();
     }
     if (manualTrajectoryVolumeIds.length >= 2) {
       return manualTrajectoryVolumeIds.slice();
@@ -1292,7 +1413,15 @@
     if (msg) setTrajStatus(msg, false);
   }
 
-  function invalidateManualVolumeDisplayForSelectionChange() {
+  function deferManualWaypointVolumeRerender() {
+    if (!isManualTraversalMode() || hasGeneratedTrajectoryVolumes()) return false;
+    if (manualInterpolatedCatalogActive()) return false;
+    if (manualVolumeSnapActive || manualParticleSnapPathActive || graphTraversalActive) return false;
+    if (manualTrajectoryHasInteriorSamples()) return false;
+    return true;
+  }
+
+  function invalidateManualVolumeDisplayForSelectionChangeForce() {
     if (!manualAnalyzeVolumeIdsMismatch() && manualAnalyzeVolumesReady) {
       syncManualVolumeSliderTickLabels();
       return;
@@ -1310,6 +1439,21 @@
       syncManualVolumeSliderPreview();
       syncManualVolumeSliderTickLabels();
     }
+  }
+
+  function invalidateManualVolumeDisplayForSelectionChange() {
+    if (deferManualWaypointVolumeRerender()) {
+      if (typeof clearManualVolumeViewerIfSelectionEmpty === "function") {
+        clearManualVolumeViewerIfSelectionEmpty();
+      }
+      if (typeof ensureManualVolumeViewerOrRenderOption === "function") {
+        ensureManualVolumeViewerOrRenderOption();
+      } else {
+        syncRerenderVolumesButtonVisibility();
+      }
+      return;
+    }
+    invalidateManualVolumeDisplayForSelectionChangeForce();
   }
 
   function preferredAnalyzeVolumeBackend() {
@@ -1644,11 +1788,14 @@
     var backend = preferredVolumeBackend();
     var expectedCount = currentVolumeCount();
     if (isManualTraversalMode()) {
-      if (manualSelectedVolIds.length >= 2) {
-        expectedCount = manualSelectedVolIds.length;
-      } else if (expectedCount < 2) {
-        expectedCount = 10;
+      var selN = typeof manualAnchorPlotRowsFromSelection === "function"
+        ? manualAnchorPlotRowsFromSelection().length
+        : manualSelectedVolIds.length;
+      if (selN < 2) {
+        if (!hasGeneratedTrajectoryVolumes()) clearManualAnalyzeVolumeDisplay();
+        return;
       }
+      expectedCount = selN;
     } else if (anchorKmeansVolumeIds.length >= 2) {
       expectedCount = anchorKmeansVolumeIds.length;
     } else if (!scatterTrajectoryPathReady()) {
@@ -2747,12 +2894,13 @@
 
   function syncManualVolumeSliderPreview() {
     if (!trajVolDisplay) return;
-    if (!manualSelectedVolIds.length) {
-      trajVolDisplay.loadPayload({
-        volumes: [],
-        images: [],
-        expectedVolumeCount: null
-      }, { deferRender: true });
+    if (!manualSelectedVolIds.length && !(manualActiveCustomPlotRows && manualActiveCustomPlotRows.length)) {
+      clearManualAnalyzeVolumeDisplay();
+      return;
+    }
+    if (typeof manualAnchorPlotRowsFromSelection === "function"
+        && manualAnchorPlotRowsFromSelection().length < 2) {
+      clearManualAnalyzeVolumeDisplay();
       return;
     }
     trajVolDisplay.loadPayload({
@@ -3010,6 +3158,13 @@
   function syncManualVolumeDisplay() {
     if (!isManualTraversalMode()) return;
     syncAnalyzeVolumeDisplay();
+    syncRerenderVolumesButtonVisibility();
+  }
+
+  function requestManualWaypointVolumeRerender() {
+    if (!rerenderVolumesActionEnabled()) return;
+    invalidateManualVolumeDisplayForSelectionChangeForce();
+    syncManualVolumeDisplay();
   }
 
   function ensureSliceBackendWhenVolumesMissing() {
@@ -3336,6 +3491,7 @@
       if (shown > 0) {
         setManualInterpolatedTrajectoryStatus({ chimeraxReady: shown });
       }
+      syncRerenderVolumesButtonVisibility();
       return shown;
     }
     function finalizeChimeraxCatalogBatch() {
@@ -3729,6 +3885,12 @@
         if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true);
         syncTrajChimeraxViewControls();
         if (analyzeVolumeCatalogSelectionActive() && !hasGeneratedTrajectoryVolumes()) {
+          if (deferManualWaypointVolumeRerender() && !manualAnalyzeVolumesReady) {
+            if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+            syncRerenderVolumesButtonVisibility();
+            syncGenerateVolumesButtonVisibility();
+            return;
+          }
           if (syncManualChimeraxDisplay()) return;
         }
         if (shouldTriggerVolumeGenerationOnBackendSwitch()) {
@@ -3748,6 +3910,11 @@
       var volPayload = activeVolumePayload() || {};
       if (analyzeVolumeCatalogSelectionActive()) {
         selectTrajVolumeBackend(backend);
+        if (deferManualWaypointVolumeRerender() && !manualAnalyzeVolumesReady) {
+          syncRerenderVolumesButtonVisibility();
+          syncGenerateVolumesButtonVisibility();
+          return;
+        }
         syncAnalyzeVolumeDisplay();
         syncGenerateVolumesButtonVisibility();
         return;
@@ -4062,7 +4229,11 @@
     persistManualVolumeSelection();
     buildManualPickerRows();
     syncAnchorPathOrderUI();
-    syncManualVolumeSliderPreview();
+    if (deferManualWaypointVolumeRerender()) {
+      syncRerenderVolumesButtonVisibility();
+    } else {
+      syncManualVolumeSliderPreview();
+    }
     if (pc1.length >= 2) scheduleManualBootstrap();
     else syncManualVolumeMinimumStatus();
   }

@@ -415,11 +415,14 @@
   }
   .cryo-traj-volume-actions {
     display: grid;
-    grid-template-columns: 41% 41%;
-    column-gap: 5%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 0.35rem;
     width: 100%;
     margin: 0.45rem 0 0;
     box-sizing: border-box;
+  }
+  .cryo-traj-volume-actions .btn[hidden] {
+    display: none !important;
   }
   .cryo-traj-volume-actions .btn {
     width: 100%;
@@ -2186,6 +2189,8 @@
     <div class="cryo-traj-volume-actions" id="traj-volume-actions">
       <button type="button" class="btn" id="btn-generate-volumes">Generate 4 volumes</button>
       <button type="button" class="btn btn-secondary" id="btn-save-volumes">Save volumes</button>
+      <button type="button" class="btn btn-secondary" id="btn-rerender-volumes" hidden
+        title="Load and render volumes for the selected waypoints.">Render volumes</button>
     </div>
     <div id="traj-z-panel" class="cryo-traj-z-panel" hidden>
       <details class="cryo-traj-z-details">

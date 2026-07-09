@@ -461,9 +461,9 @@ class _MRCDataFrameSource(ImageSource):
     ----------
     df (pd.DataFrame):  The table listing the constituent parts of this stack.
     datadir (str):  Optional path used by .cs and .star files to prepend to file names.
-    _sources (dict[str, MRCFileSource])
-        Index of the .mrc/.mrcs files in this collection; keys are the file paths
-        and values are the data in each loaded lazily.
+    _sources (dict[str, MRCFileSource | None])
+        Cache of opened .mrc/.mrcs files in this collection; keys are file paths
+        and values are loaded on demand (``None`` if the path is missing).
     """
 
     def __init__(
@@ -542,8 +542,15 @@ class _MRCDataFrameSource(ImageSource):
         return data
 
     @property
-    def sources(self) -> Iterator[tuple[str, MRCFileSource]]:
-        return iter(self._sources.items())
+    def sources(self) -> Iterator[tuple[str, MRCFileSource | None]]:
+        """All unique stack paths, opening each MRC header/source on first access.
+
+        Construction leaves ``_sources`` empty for large .star/.cs inputs; callers such
+        as ``cryodrgn downsample`` still need the full path inventory, so this property
+        materialises entries from ``__mrc_filepath`` rather than only the cache.
+        """
+        for filepath in self.df["__mrc_filepath"].unique():
+            yield filepath, self._get_mrc_source(filepath)
 
     def parse_filename(self, filename: str) -> str:
         """Get the complete path to an image stack using `self.datadir` if necessary.

@@ -1871,6 +1871,44 @@ def _dashboard_smoke_volume_viewer_ready(
     }
 
 
+def dashboard_smoke_rerender_manual_volumes(
+    page,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> None:
+    """Trajectory creator: click Render volumes and wait for analyze load to finish."""
+    page.wait_for_function(
+        """() => {
+          var btn = document.getElementById('btn-rerender-volumes');
+          return !!(btn && !btn.hidden);
+        }""",
+        timeout=timeout_ms,
+    )
+    page.wait_for_function(
+        """() => {
+          var btn = document.getElementById('btn-rerender-volumes');
+          return !!(btn && !btn.disabled);
+        }""",
+        timeout=timeout_ms,
+    )
+    page.click("#btn-rerender-volumes")
+    page.wait_for_function(
+        """() => {
+          var btn = document.getElementById('btn-rerender-volumes');
+          if (btn && btn.textContent.indexOf('Rendering volumes') >= 0) return false;
+          var overlay = document.getElementById('vslice-rendering-overlay');
+          if (overlay && !overlay.hidden) return false;
+          var preview = document.getElementById('vslice-chimerax-preview');
+          if (preview && !preview.hidden && preview.src) return true;
+          var cx = document.getElementById('traj-vol-backend-chimerax');
+          if (cx && cx.checked && !cx.disabled) return true;
+          return !!(btn && btn.disabled
+            && (btn.title || '').indexOf('already match') >= 0);
+        }""",
+        timeout=timeout_ms,
+    )
+
+
 def dashboard_smoke_volume_viewer(
     page,
     base_url: str,

@@ -393,6 +393,7 @@
     manualScatterPickWired = true;
     gd.on("plotly_click", function(ev) {
       if (!isManualTraversalMode()) return;
+      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
       if (!ev.points || !ev.points.length) return;
       var pt = ev.points[0];
       if (pt.curveNumber !== 0) return;
@@ -432,27 +433,96 @@
   var manualScatterHighlightKey = "";
   var manualScatterHighlightActive = false;
   var volumeDisplayFocusEngaged = false;
+  /** Last volume/slider focus used for scatter highlight; survives render resets. */
+  var lastDisplayedVolumeFocusIndex = 0;
   var volumeScatterHighlightRestyleGen = 0;
 
   function resetVolumeDisplayFocusEngaged() {
     volumeDisplayFocusEngaged = false;
   }
 
+  function resetDisplayedVolumeFocusIndex() {
+    lastDisplayedVolumeFocusIndex = 0;
+    resetVolumeDisplayFocusEngaged();
+  }
+
   function engageVolumeDisplayFocus() {
     volumeDisplayFocusEngaged = true;
+    // Do not restore here: slider / keyboard focus changes call engage via
+    // onFocusChange after setFocusIndex; restoring would snap back to the
+    // previously remembered tick (often 0 on initial load).
+    rememberDisplayedVolumeFocusIndex(currentVolumeFocusIndex());
+  }
+
+  function rememberDisplayedVolumeFocusIndex(idx) {
+    idx = Math.floor(Number(idx));
+    if (!Number.isFinite(idx) || idx < 0) return;
+    lastDisplayedVolumeFocusIndex = idx;
+  }
+
+  function restoreRememberedVolumeFocusIndex() {
+    // After payload / path changes, land on a *ready* tick only — never leave
+    // the slider on an inactive (undecoded) sample.
+    snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
+  }
+
+  function snapVolumeFocusToActiveTick(preferredIdx) {
+    if (!trajVolDisplay) return -1;
+    var preferred = preferredIdx != null ? preferredIdx : lastDisplayedVolumeFocusIndex;
+    preferred = Math.floor(Number(preferred));
+    if (!Number.isFinite(preferred) || preferred < 0) preferred = 0;
+    var snapped = -1;
+    if (typeof trajVolDisplay.snapFocusToReadyTick === "function") {
+      snapped = trajVolDisplay.snapFocusToReadyTick(preferred);
+    } else if (typeof trajVolDisplay.setFocusIndex === "function") {
+      // setFocusIndex without allowInterior snaps to a ready tick.
+      trajVolDisplay.setFocusIndex(preferred);
+      snapped = currentVolumeFocusIndex();
+    }
+    if (snapped >= 0) rememberDisplayedVolumeFocusIndex(snapped);
+    return snapped;
+  }
+
+  function trajectoryPathPointCountForHighlight() {
+    var pts = trajXYPointsForHighlight();
+    if (pts && pts.length >= 2) return pts.length;
+    if (editableTrajXY && editableTrajXY.length >= 2) return editableTrajXY.length;
+    if (anchorTrajXY && anchorTrajXY.length >= 2) return anchorTrajXY.length;
+    if (startXY && endXY) return 2;
+    return 0;
+  }
+
+  function clampTrajectoryHighlightIndex(idx, n) {
+    n = Math.max(0, Math.floor(Number(n)) || 0);
+    if (n < 1) return -1;
+    idx = Math.floor(Number(idx));
+    if (!Number.isFinite(idx) || idx < 0) return 0;
+    return Math.max(0, Math.min(n - 1, idx));
   }
 
   function effectiveVolumeFocusIndex() {
-    if (!hasVolumeFocusDisplay()) return -1;
-    if (volumeDisplayFocusEngaged) return currentVolumeFocusIndex();
-    return 0;
+    var n = trajectoryPathPointCountForHighlight();
+    if (n < 1 && hasVolumeFocusDisplay()) {
+      n = Math.max(n, currentVolumeCount() || 0);
+    }
+    if (n < 1) return -1;
+    var idx;
+    if (volumeDisplayFocusEngaged && hasVolumeFocusDisplay()) {
+      idx = currentVolumeFocusIndex();
+    } else if (volumeDisplayFocusEngaged) {
+      idx = lastDisplayedVolumeFocusIndex;
+    } else {
+      // Initial load / while volumes render: keep a point highlighted.
+      idx = lastDisplayedVolumeFocusIndex;
+    }
+    return clampTrajectoryHighlightIndex(idx, n);
   }
 
   function currentVolumeFocusIndex() {
     if (trajVolDisplay && typeof trajVolDisplay.getFocusIndex === "function") {
       return trajVolDisplay.getFocusIndex();
     }
-    return 0;
+    return lastDisplayedVolumeFocusIndex;
   }
 
   function plotRowForAnalyzeVolumeId(volId) {
@@ -611,9 +681,8 @@
   }
 
   function volumeFocusHighlightTraceIndices() {
-    var backend = volumeDisplayBackendActive();
-    if (backend !== "vtk" && backend !== "chimerax") return null;
-    if (!hasVolumeFocusDisplay()) return null;
+    var focus = effectiveVolumeFocusIndex();
+    if (focus < 0) return null;
     if (analyzeVolumeCatalogSelectionActive()) {
       if (analyzeVolumeCatalogDisplayReady() && volumeDisplayFocusEngaged) {
         // Interpolated manual path: interior slider ticks have null volume ids but
@@ -630,11 +699,15 @@
           var focusedTi = scatterRowToTraceIndex(plotRow);
           if (focusedTi >= 0) return [focusedTi];
         }
-        return [];
       }
+      // Catalog selected but volumes still rendering / focus not engaged yet:
+      // fall through to trajectory-path highlight so a point stays selected.
+    }
+    if (trajectoryPathPointCountForHighlight() >= 2) {
+      return trajectoryVolumeHighlightTraceIndices();
     }
     if ((hasGeneratedTrajectoryVolumes() || decodedTrajectoryVolumesVisible())
-        && volumeDisplayFocusEngaged) {
+        && hasVolumeFocusDisplay()) {
       return trajectoryVolumeHighlightTraceIndices();
     }
     return null;
@@ -646,12 +719,15 @@
     if (isManualTraversalMode() && volumeDisplayFocusEngaged) {
       return manualVolumeHighlightTraceIndicesAllSelected();
     }
+    if (trajectoryPathPointCountForHighlight() >= 2) {
+      return trajectoryVolumeHighlightTraceIndices();
+    }
     return [];
   }
 
   function trajectoryVolumeFocusIndexForGlyphs() {
-    if (!trajectoryVolumeNavActive()) return -1;
-    var idx = currentVolumeFocusIndex();
+    var idx = effectiveVolumeFocusIndex();
+    if (idx < 0) return -1;
     if (isManualTraversalMode() || anchorKmeansVolumeIds.length >= 2) {
       if (anchorTrajXY && anchorTrajXY.length >= 2) {
         if (anchorKmeansVolumeIds.length >= 2 && anchorIndicesActive && anchorIndicesActive.length >= 2
@@ -661,15 +737,18 @@
         }
         return Math.max(0, Math.min(anchorTrajXY.length - 1, idx));
       }
-      return -1;
+      return idx;
     }
-    if (!hasVolumeFocusDisplay()) return -1;
     return Math.max(0, idx);
   }
 
   function shouldSyncManualVolumeScatterHighlight() {
-    if (isManualTraversalMode() && manualInterpolatedCatalogActive()) return false;
-    if (!volumeDisplayFocusEngaged) return false;
+    if (isManualTraversalMode() && manualInterpolatedCatalogActive()) {
+      // Still highlight the active trajectory sample on the path overlay /
+      // nearest scatter point while interpolated volumes render.
+      return trajectoryPathPointCountForHighlight() >= 2;
+    }
+    if (trajectoryPathPointCountForHighlight() >= 2) return true;
     if (!trajectoryVolumeNavActive()) return false;
     var backend = volumeDisplayBackendActive();
     if (backend !== "vtk" && backend !== "chimerax") return false;
@@ -792,6 +871,7 @@
     }
     var indices = manualVolumeHighlightTraceIndices();
     var focus = effectiveVolumeFocusIndex();
+    if (focus >= 0) rememberDisplayedVolumeFocusIndex(focus);
     var key = String(focus) + ":" + indices.slice().sort(function(a, b) { return a - b; }).join(",");
     if (key === manualScatterHighlightKey) return;
     if (!indices.length) {
@@ -1274,8 +1354,13 @@
       redrawTrajectoryOverlay();
       scheduleTrajGlyphOverlaySync();
     }
-    if ((hasGeneratedTrajectoryVolumes() || decodedTrajectoryVolumesVisible()) && hasVolumeFocusDisplay()) {
+    // Keep a trajectory sample highlighted whenever the path exists, including
+    // while volumes are still rendering (defaults to first / last-displayed).
+    if (trajectoryPathPointCountForHighlight() >= 2
+        || ((hasGeneratedTrajectoryVolumes() || decodedTrajectoryVolumesVisible())
+            && hasVolumeFocusDisplay())) {
       syncManualVolumeScatterHighlight();
+      syncTrajGlyphOverlay();
     }
     if (trajectoryVolumeDisplayReorderPending && !isManualTraversalMode()) {
       if (j.anchor_indices && j.anchor_indices.length >= 2) {
@@ -1612,6 +1697,8 @@
       return;
     }
     var myGen = ++volumeGeneration;
+    // Preserve the last displayed volume focus across the render; highlight
+    // stays on that sample (or the first point on initial load) while decoding.
     resetVolumeDisplayFocusEngaged();
     resetVtkNavigationCamera();
     if (isManualTraversalMode() && manualInterpolatedCatalogActive()) {
@@ -1621,6 +1708,13 @@
     var slotN = trajectorySliderSlotCount();
     var displayN = slotN > 0 ? slotN : pathN;
     var decodeTotal = pathN > 0 ? pathN : displayN;
+    if (displayN >= 2 || pathN >= 2) {
+      rememberDisplayedVolumeFocusIndex(
+        clampTrajectoryHighlightIndex(lastDisplayedVolumeFocusIndex, displayN || pathN)
+      );
+      syncManualVolumeScatterHighlight();
+      syncTrajGlyphOverlay();
+    }
     var intendedRenderBackend = currentVolumeRenderBackend();
     // Compute missing indices against the *intended* render backend.
     // In particular, for ChimeraX we must key off `chimeraxImages[]`
@@ -2238,6 +2332,7 @@
         }
         /* New default path (load / axis change / reset): drop stale thumbnails; drag/mode/n alone do not. */
         clearVolumeMontage();
+        resetDisplayedVolumeFocusIndex();
         startXY = res.j.start.slice();
         endXY = res.j.end.slice();
         editableTrajXY = null;
@@ -2246,6 +2341,8 @@
         }
         redrawTrajectoryOverlay();
         fetchTrajectoryCoords();
+        syncManualVolumeScatterHighlight();
+        syncTrajGlyphOverlay();
         if (plotStatus) {
           plotStatus.textContent = "Default trajectory on long axis — press Generate to decode volumes.";
         }
@@ -2613,6 +2710,7 @@
     });
   });
   function onManualInterpPointsChanged(which) {
+    if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
     syncPointsSelectorRange();
     updateGenerateVolumesButtonLabel();
     removeTrajectorySampleMarkersOnly();
@@ -2626,6 +2724,7 @@
 
   if (nPointsEl) {
     nPointsEl.addEventListener("change", function() {
+      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
       if (isManualTraversalMode()) return;
       syncPointsSelectorRange();
       updateGenerateVolumesButtonLabel();
@@ -2661,6 +2760,7 @@
   }
   if (maxNeighborsEl) {
     maxNeighborsEl.addEventListener("change", function() {
+      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
       if (!graphTraversalActive) return;
       if (isManualTraversalMode() && hasAnchorIndices()) {
         syncManualSelectionToAnchors({ forceInterp: true });
@@ -2671,6 +2771,7 @@
   }
   if (avgNeighborsEl) {
     avgNeighborsEl.addEventListener("change", function() {
+      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
       if (!graphTraversalActive) return;
       if (isManualTraversalMode() && hasAnchorIndices()) {
         syncManualSelectionToAnchors({ forceInterp: true });

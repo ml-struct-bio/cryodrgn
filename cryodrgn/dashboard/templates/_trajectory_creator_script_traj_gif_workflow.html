@@ -1472,6 +1472,7 @@
 
   function resetTrajectory() {
     var wasManual = isManualTraversalMode();
+    resetDisplayedVolumeFocusIndex();
     clearAnchorMode();
     if (wasManual) {
       manualDefaultSelectionApplied = false;

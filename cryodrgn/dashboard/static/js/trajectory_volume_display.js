@@ -837,6 +837,15 @@
     return this._countRenderedChimeraxImages() > 0;
   };
 
+  TrajectoryVolumeDisplay.prototype.snapFocusToReadyTick = function (preferredIndex) {
+    var snapped = this._snapFocusIndexToReady(
+      preferredIndex != null ? preferredIndex : this.getFocusIndex()
+    );
+    if (snapped < 0) return -1;
+    this.setFocusIndex(snapped);
+    return snapped;
+  };
+
   TrajectoryVolumeDisplay.prototype.setFocusIndex = function (index, opts) {
     opts = opts || {};
     var i = Number(index);

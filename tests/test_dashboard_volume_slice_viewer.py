@@ -359,14 +359,31 @@ class TestVolumeSliceViewerRoutes:
             'id="traj-mode-manual"' in body
             and "checked" in body.split("traj-mode-manual")[1].split(">")[0]
         )
-        assert "Selecting particles manually" in body
+        assert "Choosing trajectory waypoints" in body
+        assert "using particles and particle sets" in body
+        assert "Tracing trajectory path directly" in body
         assert "traj-scatter-interp-nearest" in body
         assert "traj-scatter-interp-direct" in body
         assert "btn-traj-manual-volume" in body
         assert "btn-traj-manual-graph" in body
         assert "manual-snap-n-points" in body
         assert "manual-graph-n-points" in body
+        assert "Add points along" in body
+        assert "direct line" in body
+        assert "Add points using" in body
+        assert "graph traversal" in body
+        assert "Add trajectory points" in body
+        assert "through interpolation" in body
+        assert "traj-manual-interp-stack" in body
+        assert "cryo-traj-manual-mode-fields" in body
         assert "traj-manual-interp-graph" not in body
+        assert "lastDisplayedVolumeFocusIndex" in body
+        assert "rememberDisplayedVolumeFocusIndex" in body
+        assert "restoreRememberedVolumeFocusIndex" in body
+        assert "snapVolumeFocusToActiveTick" in body
+        assert "trajectoryAddPointsBusy" in body
+        assert "snapFocusToReadyTick" in body
+        assert "trajectoryPathPointCountForHighlight" in body
         assert "btn-traj-graph" not in body
         assert "traj-mode-alt" not in body
         assert "volume_slice_canvas.js" in body

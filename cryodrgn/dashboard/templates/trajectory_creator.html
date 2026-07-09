@@ -1527,10 +1527,6 @@
     display: none !important;
   }
   .cryo-traj-manual-interp-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    margin-top: 0.35rem;
     width: 100%;
     box-sizing: border-box;
   }
@@ -1538,31 +1534,60 @@
     display: none !important;
   }
   .cryo-traj-manual-mode-row {
+    --cryo-traj-manual-field-font: 0.68rem;
+    --cryo-traj-manual-field-pad-y: 0.06rem;
+    --cryo-traj-manual-field-h: calc(
+      var(--cryo-traj-manual-field-font) * 1.2
+      + 2 * var(--cryo-traj-manual-field-pad-y)
+    );
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0;
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
+    margin: 0;
+    padding: 0.4rem 0.45rem 0.45rem;
+    border: 1px solid rgba(36, 59, 83, 0.18);
+    border-radius: 3px;
+    background: rgba(250, 248, 244, 0.55);
   }
-  .cryo-traj-manual-mode-row--graph {
-    flex-wrap: wrap;
+  .cryo-traj-manual-mode-row + .cryo-traj-manual-mode-row {
+    margin-top: 0.4rem;
+  }
+  /* Match both interpolation buttons to 61% of the left menu panel width. */
+  .cryo-dash-controls {
+    container-type: inline-size;
+    container-name: cryo-traj-menu;
   }
   .cryo-traj-manual-interp-btn {
-    flex: 1 1 5.5rem;
+    flex: 0 0 auto;
+    width: 61cqw;
+    max-width: 61cqw;
     min-width: 0;
-    width: auto;
-    max-width: 100%;
     margin-top: 0;
+    margin-bottom: 0;
     min-height: 2.05rem;
     padding: 0.12rem 0.14rem;
     font-size: 0.5rem;
     line-height: 1.02;
     white-space: normal;
     overflow: hidden;
+    box-sizing: border-box;
+  }
+  .cryo-traj-manual-mode-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem 0.55rem;
+    width: 100%;
+    box-sizing: border-box;
+    /* Keep fields tight under the button (≤ 20% of field height). */
+    margin-top: calc(0.2 * var(--cryo-traj-manual-field-h));
   }
   .cryo-traj-manual-mode-row .cryo-traj-manual-npoints {
-    flex: 0 1 auto;
     display: flex;
     align-items: center;
     gap: 0.15rem;
@@ -1574,20 +1599,13 @@
   .cryo-traj-manual-mode-row .cryo-traj-manual-npoints select {
     width: 2.65rem;
     min-width: 0;
-    padding: 0.06rem 0.12rem;
-    font-size: 0.68rem;
+    padding: var(--cryo-traj-manual-field-pad-y) 0.12rem;
+    font-size: var(--cryo-traj-manual-field-font);
   }
   .cryo-traj-manual-graph-neighbors {
     display: flex;
     align-items: center;
     gap: 0.2rem;
-    flex: 0 1 auto;
-    margin-left: auto;
-  }
-  .cryo-traj-manual-mode-row--graph .cryo-traj-manual-graph-neighbors {
-    flex: 1 1 100%;
-    margin-left: 0;
-    justify-content: flex-end;
   }
   .cryo-traj-manual-graph-neighbors label {
     font-size: 0.6rem;
@@ -1659,6 +1677,15 @@
     opacity: 0.55;
     filter: grayscale(1);
     pointer-events: none;
+  }
+  .cryo-traj-manual-interp-stack--busy {
+    opacity: 0.55;
+    filter: grayscale(1);
+    pointer-events: none;
+  }
+  .cryo-traj-manual-interp-stack--busy .cryo-traj-manual-interp-btn,
+  .cryo-traj-manual-interp-stack--busy select {
+    cursor: not-allowed;
   }
   .cryo-traj-controls-busy-overlay {
     position: absolute;
@@ -1935,21 +1962,12 @@
         <select id="sc"><option value="none">None</option></select>
       </fieldset>
       <div class="cryo-traj-controls-host" id="traj-controls-host">
-      <fieldset id="traj-controls-fieldset">
-        <legend>Trajectory controls</legend>
-        <div class="cryo-traj-npoints-label" id="traj-points-row">
-          <span id="traj-points-label">Points</span>
-          <select id="n-points">
-            {% for n in range(2, 21) %}
-            <option value="{{ n }}"{% if n == 4 %} selected{% endif %}>{{ n }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="cryo-traj-manual-interp-stack" id="traj-manual-interp-stack" hidden role="group"
-          aria-label="Manual trajectory interpolation">
-          <div class="cryo-traj-manual-mode-row" id="traj-manual-volume-row">
-            <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn"
-              id="btn-traj-manual-volume" aria-pressed="false">Find nearest point(s)<br />along interpolated path</button>
+      <fieldset class="cryo-traj-manual-interp-stack" id="traj-manual-interp-stack" hidden>
+        <legend>Add trajectory points<br />through interpolation</legend>
+        <div class="cryo-traj-manual-mode-row" id="traj-manual-volume-row">
+          <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn"
+            id="btn-traj-manual-volume" aria-pressed="false">Add points along<br />direct line</button>
+          <div class="cryo-traj-manual-mode-fields">
             <label class="cryo-traj-manual-npoints" for="manual-snap-n-points">
               <span>Points</span>
               <select id="manual-snap-n-points" aria-label="Interpolation points for particle snap">
@@ -1959,9 +1977,11 @@
               </select>
             </label>
           </div>
-          <div class="cryo-traj-manual-mode-row cryo-traj-manual-mode-row--graph" id="traj-manual-graph-row">
-            <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn"
-              id="btn-traj-manual-graph" aria-pressed="false">Graph/nearest neighbor<br />interpolation</button>
+        </div>
+        <div class="cryo-traj-manual-mode-row" id="traj-manual-graph-row">
+          <button type="button" class="btn btn-secondary cryo-traj-manual-interp-btn cryo-traj-alt-mode-btn"
+            id="btn-traj-manual-graph" aria-pressed="false">Add points using<br />graph traversal</button>
+          <div class="cryo-traj-manual-mode-fields">
             <label class="cryo-traj-manual-npoints" for="manual-graph-n-points">
               <span>Points</span>
               <select id="manual-graph-n-points" aria-label="Interpolation points for graph traversal">
@@ -1986,6 +2006,17 @@
             </div>
           </div>
         </div>
+      </fieldset>
+      <fieldset id="traj-controls-fieldset">
+        <legend>Trajectory controls</legend>
+        <div class="cryo-traj-npoints-label" id="traj-points-row">
+          <span id="traj-points-label">Points</span>
+          <select id="n-points">
+            {% for n in range(2, 21) %}
+            <option value="{{ n }}"{% if n == 4 %} selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </div>
         <fieldset class="cryo-traj-scatter-interp-fieldset" id="traj-scatter-interp-fieldset" hidden>
           <div class="volsketch-seg cryo-traj-mode-seg cryo-traj-mode-seg--stacked" role="radiogroup"
             aria-label="Scatter trajectory interpolation">
@@ -1995,8 +2026,6 @@
             <label for="traj-scatter-interp-direct" id="traj-scatter-interp-direct-label">Use direct interpolation<br />in space</label>
           </div>
         </fieldset>
-        <p class="cryo-traj-hint" id="traj-settings-hint" style="margin-top:0.35rem;">Drag the orange and navy handles
-          on the plot to edit the trajectory.</p>
         <button type="button" class="btn cryo-traj-action-btn" id="btn-reset">Reset trajectory points</button>
         <button type="button" class="btn btn-secondary cryo-traj-action-btn" id="btn-reverse-traj" disabled
           title="Set up a trajectory with at least two points or volumes first.">Reverse trajectory</button>
@@ -2083,9 +2112,9 @@
     <fieldset class="cryo-traj-mode-fieldset">
       <div class="volsketch-seg cryo-traj-mode-seg" role="radiogroup" aria-label="Traversal mode">
         <input type="radio" name="traj-mode" id="traj-mode-direct" value="direct" />
-        <label for="traj-mode-direct" id="traj-mode-direct-label">Selecting co-ordinates directly<br />in space</label>
+        <label for="traj-mode-direct" id="traj-mode-direct-label">Tracing trajectory path directly<br />in space</label>
         <input type="radio" name="traj-mode" id="traj-mode-manual" value="manual" checked />
-        <label for="traj-mode-manual" id="traj-mode-manual-label">Selecting particles manually<br />individually or in sets</label>
+        <label for="traj-mode-manual" id="traj-mode-manual-label">Choosing trajectory waypoints<br />using particles and particle sets</label>
       </div>
     </fieldset>
     <div class="cryo-traj-anchor-row" id="traj-anchor-wrap">

@@ -117,7 +117,6 @@
   var maxNeighborsEl = document.getElementById("max-neighbors");
   var avgNeighborsEl = document.getElementById("avg-neighbors");
   var trajPointsLabelEl = document.getElementById("traj-points-label");
-  var trajSettingsHintEl = document.getElementById("traj-settings-hint");
   var trajZPanel = document.getElementById("traj-z-panel");
   var trajZNums = document.getElementById("traj-z-nums");
   var trajZPre = document.getElementById("traj-z-pre");
@@ -863,6 +862,9 @@
     if (trajVolDisplay.backend === "chimerax") {
       trajVolDisplay._renderCurrent();
     }
+    // Newly inserted interior samples are inactive until decoded — keep the
+    // slider on a ready (active) tick nearest the previous focus.
+    snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
     if (typeof trajVolDisplay._syncVolumeNavChrome === "function") {
       trajVolDisplay._syncVolumeNavChrome();
     }
@@ -965,6 +967,7 @@
     manualAnalyzeVolumesReady = loadedManualVolumeCount(resized.volumes) > 0
       || resized.images.some(function(img) { return !!img; });
     applyManualAnalyzeVolumeDisplay(currentVolumeRenderBackend());
+    snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
     syncDirectModeVolumePendingOverlay();
     updateGenerateVolumesButtonLabel();
     return true;
@@ -2885,7 +2888,7 @@
     manualVolumeSlots = null;
     manualVolumeLoadGeneration++;
     manualVolumePrefetchGeneration++;
-    resetVolumeDisplayFocusEngaged();
+    resetDisplayedVolumeFocusIndex();
     if (!hasGeneratedTrajectoryVolumes()) {
       lastVolumePayload = null;
       if (trajVolColumn) trajVolColumn.innerHTML = "";
@@ -3690,6 +3693,7 @@
     syncTrajVolDockButton();
     syncTrajVolBackendChrome();
     syncTrajChimeraxViewControls();
+    snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
     syncManualVolumeScatterHighlight();
     syncTrajGlyphOverlay();
     syncTrajGifRecordButton();
@@ -3882,6 +3886,8 @@
       onFocusChange: function() {
         if (!(isManualTraversalMode() && manualInterpolatedCatalogActive())) {
           engageVolumeDisplayFocus();
+        } else {
+          rememberDisplayedVolumeFocusIndex(currentVolumeFocusIndex());
         }
         ensureManualVolumeAtFocusLoaded();
         syncManualVolumeScatterHighlight();
@@ -4228,6 +4234,46 @@
     return manualCoordsInFlight || trajectoryCoordsInFlight > 0 || !!pendingAnchorPathOrder;
   }
 
+  function trajectoryAddPointsBusy() {
+    return trajectoryPathRecalcBusy()
+      || trajectoryVolumeFetchInFlight
+      || trajectoryChimeraxViewRerenderInFlight
+      || !!(overlay && overlay.classList && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
+  }
+
+  function syncManualInterpAddPointsEnabled() {
+    var busy = trajectoryAddPointsBusy();
+    var title = busy ? "Unavailable while rendering." : "";
+    if (btnTrajManualVolume) {
+      btnTrajManualVolume.disabled = busy;
+      btnTrajManualVolume.title = title;
+    }
+    if (btnTrajManualGraph) {
+      btnTrajManualGraph.disabled = busy;
+      btnTrajManualGraph.title = title;
+    }
+    if (manualSnapNPointsEl) {
+      manualSnapNPointsEl.disabled = busy;
+      manualSnapNPointsEl.title = title;
+    }
+    if (manualGraphNPointsEl) {
+      manualGraphNPointsEl.disabled = busy;
+      manualGraphNPointsEl.title = title;
+    }
+    if (maxNeighborsEl) {
+      maxNeighborsEl.disabled = busy;
+      maxNeighborsEl.title = title;
+    }
+    if (avgNeighborsEl) {
+      avgNeighborsEl.disabled = busy;
+      avgNeighborsEl.title = title;
+    }
+    if (trajManualInterpStack) {
+      trajManualInterpStack.classList.toggle("cryo-traj-manual-interp-stack--busy", busy);
+      trajManualInterpStack.setAttribute("aria-busy", busy ? "true" : "false");
+    }
+  }
+
   function beginTrajectoryCoordsFetch() {
     trajectoryCoordsInFlight++;
     syncTrajectoryControlsBusy();
@@ -4239,17 +4285,20 @@
   }
 
   function syncTrajectoryControlsBusy() {
-    var busy = trajectoryPathRecalcBusy();
+    var pathBusy = trajectoryPathRecalcBusy();
     if (trajControlsHost) {
-      trajControlsHost.classList.toggle("cryo-traj-controls-host--busy", busy);
+      // Greyscale the whole host only while the path itself is recalculating.
+      trajControlsHost.classList.toggle("cryo-traj-controls-host--busy", pathBusy);
     }
     if (trajControlsBusyOverlay) {
-      trajControlsBusyOverlay.hidden = !busy;
-      trajControlsBusyOverlay.setAttribute("aria-hidden", busy ? "false" : "true");
+      trajControlsBusyOverlay.hidden = !pathBusy;
+      trajControlsBusyOverlay.setAttribute("aria-hidden", pathBusy ? "false" : "true");
     }
     if (trajControlsBusyLabel) {
       trajControlsBusyLabel.textContent = TRAJECTORY_PATH_BUSY_MESSAGE;
     }
+    // Volume / scatter rendering blocks only the add-points fieldset.
+    syncManualInterpAddPointsEnabled();
   }
 
   function syncTrajectoryUiBusy() {

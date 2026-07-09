@@ -10,7 +10,7 @@
     syncTrajVolBackendChrome();
     syncGenerateVolumesButtonVisibility();
     resetVolumeDisplayFocusEngaged();
-    resetVolumeScatterMarkerAesthetics();
+    syncManualVolumeScatterHighlight();
     syncTrajGlyphOverlay();
     applyManualAnalyzeVolumeDisplay(preferredAnalyzeVolumeBackend());
     syncDirectModeVolumePendingOverlay();
@@ -339,6 +339,7 @@
   }
 
   function registerManualCustomPlotRows(rows, activate) {
+    if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return false;
     if (!mergeManualCustomPlotRows(rows, { activate: activate !== false })) return false;
     resetVolumeDisplayFocusEngaged();
     resetAnchorPathOrderToDefault();
@@ -935,7 +936,13 @@
     }
     var ids = manualGroupVolIds(groupKey);
     if (!ids.length) return;
-    if (manualGroupFullySelected(groupKey)) {
+    var removing = manualGroupFullySelected(groupKey);
+    if (!removing
+        && typeof trajectoryAddPointsBusy === "function"
+        && trajectoryAddPointsBusy()) {
+      return;
+    }
+    if (removing) {
       manualSelectedVolIds = manualSelectedVolIds.filter(function(id) {
         return ids.indexOf(id) < 0;
       });
@@ -1167,6 +1174,7 @@
       finishManualIndividualDeselection(plotRowForManualVolId(volId));
       return;
     }
+    if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
     manualSelectedVolIds.push(volId);
     persistManualVolumeSelection();
     resetVolumeDisplayFocusEngaged();
@@ -2133,6 +2141,9 @@
       btnTrajManualGraph.classList.toggle("cryo-traj-alt-mode-btn--active", graphTraversalActive);
       btnTrajManualGraph.setAttribute("aria-pressed", graphTraversalActive ? "true" : "false");
     }
+    if (typeof syncManualInterpAddPointsEnabled === "function") {
+      syncManualInterpAddPointsEnabled();
+    }
   }
 
   function setScatterInterpolationMode(mode) {
@@ -2165,6 +2176,7 @@
 
   function setManualInterpolationMode(mode) {
     if (!isManualTraversalMode()) return;
+    if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
     manualVolumeSnapActive = mode === "volume";
     graphTraversalActive = mode !== "volume";
     manualParticleSnapPathActive = mode === "volume";
@@ -2325,7 +2337,7 @@
     var ylab = axisDisplayName(sy.value);
     if (trajModeDirectLabel) {
       trajModeDirectLabel.innerHTML =
-        "Selecting co-ordinates directly<br />in " + xlab + "/" + ylab + " space";
+        "Tracing trajectory path directly<br />in " + xlab + "/" + ylab + " space";
     }
     if (trajScatterInterpDirectLabel) {
       trajScatterInterpDirectLabel.innerHTML =
@@ -2337,43 +2349,16 @@
     var hasAnchors = hasAnchorIndices();
     syncTraversalModeLabels();
     syncTraversalAltButtons();
-    if (!trajPointsLabelEl || !trajSettingsHintEl) return;
-    var graphMode = isGraphTraversalActive();
     syncPointsSelectorRange();
     if (trajPointsRowEl) {
       trajPointsRowEl.style.display = isManualTraversalMode() ? "none" : "flex";
     }
-    if (!hasAnchors) {
+    if (!trajPointsLabelEl) return;
+    if (!hasAnchors || isGraphTraversalActive() || isManualTraversalMode()) {
       trajPointsLabelEl.textContent = "Points";
-      if (isManualTraversalMode()) {
-        trajSettingsHintEl.textContent = manualInterpolationArmed()
-          ? (graphMode
-            ? "Anchors are fixed. Points, Max, and Avg. on the graph row control traversal between each anchor pair."
-            : "Anchors are fixed. Points sets interpolation between each pair; each sample snaps to the nearest point along the path.")
-          : "Select k-means or PC volumes above, then press snap or graph to build an interpolated trajectory.";
-      } else if (trajectoryMode === "nearest") {
-        trajSettingsHintEl.textContent =
-          "Drag the orange and navy handles on the plot; the path snaps to nearest particle points.";
-      } else {
-        trajSettingsHintEl.textContent =
-          "Drag the orange and navy handles on the plot to edit the trajectory.";
-      }
-      return;
-    }
-    if (graphMode) {
-      trajSettingsHintEl.textContent =
-        "Anchors are fixed. Points, Max, and Avg. on the graph row control traversal between each anchor pair.";
       return;
     }
     trajPointsLabelEl.textContent = "Interpolation points between anchors";
-    if (isManualTraversalMode()) {
-      trajSettingsHintEl.textContent = manualInterpolationArmed()
-        ? "Anchors are fixed. Points sets interpolation between each pair; each sample snaps to the nearest point along the path."
-        : "Select k-means or PC volumes above, then press snap or graph to build an interpolated trajectory.";
-    } else {
-      trajSettingsHintEl.textContent =
-        "Anchors are fixed. Points sets interpolation points between each consecutive anchor pair (0-20).";
-    }
   }
 
   function currentVolumeCount() {
@@ -2944,6 +2929,7 @@
       }
       trajectoryVolumeDisplayReorderPending = false;
       ingestManualCustomPlotRowsFromTrajectoryResponse(res);
+      snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
     } else if (anchorKmeansVolumeIds.length >= 2) {
       if (finishAnchorPathOrderVolumePreserveIfPending()) {
         syncManualVolumeScatterHighlight();
@@ -3123,11 +3109,13 @@
   });
   if (btnTrajManualVolume) {
     btnTrajManualVolume.addEventListener("click", function() {
+      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
       setManualInterpolationMode("volume");
     });
   }
   if (btnTrajManualGraph) {
     btnTrajManualGraph.addEventListener("click", function() {
+      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
       setManualInterpolationMode("graph");
     });
   }

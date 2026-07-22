@@ -232,6 +232,54 @@ def _round_direct_mode_traj_xy(traj_xy: np.ndarray) -> np.ndarray:
     return out
 
 
+def _direct_mode_xy_atol(*pts: np.ndarray) -> float:
+    """Half-unit tolerance matching :func:`_round_direct_mode_traj_xy` decimals."""
+    max_abs = 0.0
+    for pt in pts:
+        arr = np.asarray(pt, dtype=np.float64).ravel()
+        finite = arr[np.isfinite(arr)]
+        if finite.size:
+            max_abs = max(max_abs, float(np.nanmax(np.abs(finite))))
+    decimals = 2 if max_abs >= 100.0 else 3
+    return 0.5 * (10.0**-decimals)
+
+
+def _xy_already_on_particle(pt: np.ndarray, particle_xy: np.ndarray) -> bool:
+    """True when ``pt`` already coincides with a particle under direct-mode rounding."""
+    a = np.asarray(pt, dtype=np.float64).ravel()
+    b = np.asarray(particle_xy, dtype=np.float64).ravel()
+    if a.size < 2 or b.size < 2:
+        return False
+    atol = _direct_mode_xy_atol(a[:2], b[:2])
+    return bool(np.allclose(a[:2], b[:2], rtol=0.0, atol=atol))
+
+
+def _snap_points_to_nearest_particles(
+    coords: np.ndarray, pts: np.ndarray
+) -> tuple[list[int], np.ndarray]:
+    """Nearest-particle rows / XY for each sample.
+
+    Samples that already lie on their nearest particle (within direct-mode
+    rounding) keep their input XY unchanged so snap has no visual effect on
+    points that already correspond to real particles.
+    """
+    coords = np.asarray(coords, dtype=np.float64)
+    pts = np.asarray(pts, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[1] < 2:
+        raise ValueError("pts must be an (N, 2) array")
+    rows: list[int] = []
+    out_xy = np.empty((pts.shape[0], 2), dtype=np.float64)
+    for i, pt in enumerate(pts):
+        row = _nearest_plot_row_for_xy(coords, pt)
+        particle_xy = np.asarray(coords[row], dtype=np.float64)
+        rows.append(row)
+        if _xy_already_on_particle(pt, particle_xy):
+            out_xy[i] = pt[:2]
+        else:
+            out_xy[i] = particle_xy[:2]
+    return rows, out_xy
+
+
 def parse_anchor_indices_txt(raw: bytes) -> list[int]:
     """Parse whitespace-delimited integer indices from a UTF-8 text blob."""
     try:
@@ -561,6 +609,10 @@ def _compute_direct_anchor_trajectory(
         raise ValueError("Need at least two anchor indices")
     if interpolation_points < 0:
         raise ValueError("Interpolation points must be >= 0")
+    # Path-order changes with no interpolation must remain a pure permutation of
+    # the anchors (same particle set / point count), not a denser polyline.
+    if int(interpolation_points) == 0:
+        return z_anchor, rows, anchor_xy
     n_points = int(interpolation_points) + 2
 
     z_parts: list[np.ndarray] = []
@@ -971,6 +1023,22 @@ def _compute_graph_anchor_trajectory(
     return z_traj, full_path, traj_xy
 
 
+def _parse_optional_traj_xy_custom(data: dict) -> list[list[float]] | None:
+    """Parse optional client-supplied traj_xy polyline from a request body."""
+    raw_traj_xy = data.get("traj_xy")
+    if not isinstance(raw_traj_xy, list) or len(raw_traj_xy) < 2:
+        return None
+    pts: list[list[float]] = []
+    for i, p in enumerate(raw_traj_xy[:200]):
+        if not isinstance(p, list) or len(p) != 2:
+            raise ValueError(f"traj_xy[{i}] must be [x, y].")
+        try:
+            pts.append([float(p[0]), float(p[1])])
+        except (TypeError, ValueError) as err:
+            raise ValueError(f"traj_xy[{i}] has non-numeric coordinates.") from err
+    return pts
+
+
 def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
     """Validate a trajectory POST JSON body.
 
@@ -1013,26 +1081,19 @@ def parse_trajectory_request_body(e: DashboardExperiment, data: dict) -> dict:
             "avg_neighbors": avg_neighbors,
             "anchor_path_order": anchor_path_order,
             "snap_to_nearest_particles": snap_to_nearest_particles,
+            # Direct-line densify may send the PC/catalog polyline for display.
+            "traj_xy_custom": _parse_optional_traj_xy_custom(data),
         }
 
     mode = str(data.get("mode", "direct")).strip().lower()
     if mode not in ("direct", "nearest"):
         raise ValueError('mode must be "direct" or "nearest".')
 
-    raw_traj_xy = data.get("traj_xy")
-    traj_xy_custom = sx0 = sy0 = ex0 = ey0 = None
-    if isinstance(raw_traj_xy, list) and len(raw_traj_xy) >= 2:
-        pts: list[list[float]] = []
-        for i, p in enumerate(raw_traj_xy[:200]):
-            if not isinstance(p, list) or len(p) != 2:
-                raise ValueError(f"traj_xy[{i}] must be [x, y].")
-            try:
-                pts.append([float(p[0]), float(p[1])])
-            except (TypeError, ValueError) as err:
-                raise ValueError(f"traj_xy[{i}] has non-numeric coordinates.") from err
-        traj_xy_custom = pts
-        sx0, sy0 = pts[0]
-        ex0, ey0 = pts[-1]
+    traj_xy_custom = _parse_optional_traj_xy_custom(data)
+    sx0 = sy0 = ex0 = ey0 = None
+    if traj_xy_custom is not None:
+        sx0, sy0 = traj_xy_custom[0]
+        ex0, ey0 = traj_xy_custom[-1]
     else:
         start_xy = data.get("start")
         end_xy = data.get("end")
@@ -1105,6 +1166,13 @@ def compute_trajectory_latent_path(
                 p["ycol"],
                 int(p["n_points"]),
             )
+            # Client direct-line densify sends the PC/catalog polyline as traj_xy.
+            # Keep that geometry for display while still decoding z from anchors.
+            custom_xy = p.get("traj_xy_custom")
+            if custom_xy is not None:
+                custom = np.asarray(custom_xy, dtype=np.float64)
+                if custom.ndim == 2 and custom.shape[0] == int(z_traj.shape[0]):
+                    return z_traj, None, _round_direct_mode_traj_xy(custom)
             return z_traj, traj_rows, traj_xy
         z_traj, traj_rows, traj_xy = _compute_graph_anchor_trajectory(
             e,
@@ -1126,10 +1194,12 @@ def compute_trajectory_latent_path(
     custom_xy = p.get("traj_xy_custom")
     if custom_xy is not None:
         pts = np.asarray(custom_xy, dtype=np.float64)
+        if mode == "nearest":
+            traj_rows, traj_xy = _snap_points_to_nearest_particles(coords, pts)
+            z_traj = e.z[np.asarray(traj_rows, dtype=int)]
+            return z_traj, traj_rows, traj_xy
         traj_rows = [int(np.argmin(np.sum((coords - pt) ** 2, axis=1))) for pt in pts]
         z_traj = e.z[np.asarray(traj_rows, dtype=int)]
-        if mode == "nearest":
-            return z_traj, traj_rows, coords[np.asarray(traj_rows, dtype=int)]
         return z_traj, None, _round_direct_mode_traj_xy(pts)
 
     if mode == "direct":
@@ -1148,9 +1218,9 @@ def compute_trajectory_latent_path(
     line_xy = np.outer(1.0 - t, np.array([sx0, sy0])) + np.outer(
         t, np.array([ex0, ey0])
     )
-    traj_rows = [int(np.argmin(np.sum((coords - pt) ** 2, axis=1))) for pt in line_xy]
-    z_traj = e.z[np.array(traj_rows)]
-    return z_traj, traj_rows, coords[np.array(traj_rows)]
+    traj_rows, traj_xy = _snap_points_to_nearest_particles(coords, line_xy)
+    z_traj = e.z[np.asarray(traj_rows, dtype=int)]
+    return z_traj, traj_rows, traj_xy
 
 
 # ---------------------------------------------------------------------------
@@ -1457,13 +1527,61 @@ def load_kmeans_center_indices(e: DashboardExperiment) -> list[int]:
     return arr.tolist()
 
 
-def random_dataset_indices(e: DashboardExperiment, k: int = 10) -> list[int]:
-    """Up to ``k`` distinct random row indices into ``z``."""
+def random_dataset_indices(
+    e: DashboardExperiment,
+    k: int = 10,
+    exclude: list[int] | tuple[int, ...] | None = None,
+) -> list[int]:
+    """Up to ``k`` distinct random row indices into ``z``.
+
+    When ``exclude`` is provided, those indices are omitted so callers can
+    append unused particles to an existing trajectory.
+
+    Sampling avoids materializing an ``O(n)`` candidate list for typical
+    large stacks (rejection sampling). A dense fallback is used only when
+    most indices are excluded.
+    """
     n = int(e.z.shape[0])
     if n < 2:
         raise ValueError("Dataset has fewer than 2 particles")
+    exclude_set = {int(i) for i in (exclude or []) if 0 <= int(i) < n}
+    available = n - len(exclude_set)
+    if available < 1:
+        raise ValueError("No unused particle indices available to sample")
+    take = min(max(0, int(k)), available)
+    if take < 1:
+        return []
     rng = np.random.default_rng()
-    return rng.choice(n, size=min(int(k), n), replace=False).astype(int).tolist()
+
+    # Fast path: reject draws that hit exclude / duplicates. Expected work is
+    # O(take) when exclude is small relative to n (the common dashboard case).
+    if available > max(take * 20, 1024):
+        chosen: set[int] = set()
+        guard = 0
+        max_guard = max(10_000, take * 200)
+        while len(chosen) < take and guard < max_guard:
+            batch = int(min(max(take * 4, 32), take * 8, max_guard - guard))
+            draws = rng.integers(0, n, size=batch)
+            guard += batch
+            for raw in draws:
+                idx = int(raw)
+                if idx in exclude_set or idx in chosen:
+                    continue
+                chosen.add(idx)
+                if len(chosen) >= take:
+                    break
+        if len(chosen) >= take:
+            return list(chosen)
+
+    # Dense / mostly-excluded: build the available index array once.
+    mask = np.ones(n, dtype=bool)
+    if exclude_set:
+        mask[list(exclude_set)] = False
+    candidates = np.flatnonzero(mask)
+    if candidates.size < 1:
+        raise ValueError("No unused particle indices available to sample")
+    take = min(take, int(candidates.size))
+    return rng.choice(candidates, size=take, replace=False).astype(int).tolist()
 
 
 def plot_df_rows_for_dataset_indices(

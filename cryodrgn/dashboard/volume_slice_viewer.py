@@ -309,24 +309,137 @@ def discover_analyze_volume_catalog(exp: DashboardExperiment) -> list[dict]:
     return catalog
 
 
-def _pc_trajectory_plot_rows_with_pca(
+def _load_pc_trajectory_z_values(pc_dir: str) -> np.ndarray | None:
+    """Load ``pc*/z_values.txt`` as ``(n, zdim)``, or ``None`` if missing."""
+    path = os.path.join(pc_dir, "z_values.txt")
+    if not os.path.isfile(path):
+        return None
+    try:
+        arr = np.loadtxt(path)
+    except (OSError, ValueError):
+        return None
+    arr = np.asarray(arr, dtype=np.float64)
+    if arr.size == 0:
+        return None
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    if arr.ndim != 2:
+        return None
+    return arr
+
+
+def _pc_trajectory_nearest_plot_rows(
     exp: DashboardExperiment,
-    pca,
-    pc_num: int,
-    n_samples: int,
+    z_pc: np.ndarray,
 ) -> list[int]:
-    """Nearest on-data plot rows for ``pc{pc_num}/`` trajectory samples."""
-    if n_samples < 1:
+    """Nearest on-data plot rows for PC trajectory ``z`` samples (UMAP fallback)."""
+    z_pc = np.asarray(z_pc, dtype=np.float32)
+    if z_pc.ndim != 2 or z_pc.shape[0] < 1:
         return []
     z = np.asarray(exp.z, dtype=np.float32)
-    pc = np.asarray(exp.pc, dtype=np.float64)
-    col = int(pc_num) - 1
-    if col < 0 or col >= pc.shape[1]:
+    if z_pc.shape[1] != z.shape[1]:
         return []
-    lo, hi = np.percentile(pc[:, col], (5, 95))
-    z_pc = cryo_analysis.get_pc_traj(pca, z.shape[1], n_samples, pc_num, lo, hi)
     _, pc_ind = cryo_analysis.get_nearest_point(z, z_pc)
     return [int(x) for x in np.atleast_1d(pc_ind).tolist()]
+
+
+def _plot_axis_values_from_latent_z(
+    exp: DashboardExperiment,
+    z_mat: np.ndarray,
+    col: str,
+    *,
+    pca=None,
+) -> np.ndarray | None:
+    """Map latent ``z`` rows onto one scatter axis (``z*`` or ``PC*`` only)."""
+    z_mat = np.atleast_2d(np.asarray(z_mat, dtype=np.float64))
+    if z_mat.ndim != 2 or z_mat.shape[0] < 1:
+        return None
+    zdim = int(exp.z.shape[1])
+    if z_mat.shape[1] != zdim:
+        return None
+    col = str(col)
+    if re.fullmatch(r"z[0-9]+", col):
+        idx = int(col[1:])
+        if 0 <= idx < zdim:
+            return z_mat[:, idx].astype(np.float64, copy=False)
+        return None
+    m_pc = re.fullmatch(r"PC([0-9]+)", col)
+    if m_pc:
+        pc_idx = int(m_pc.group(1)) - 1
+        if pca is None:
+            _, pca = cryo_analysis.run_pca(np.asarray(exp.z, dtype=np.float32))
+        pc_coords = np.asarray(pca.transform(z_mat), dtype=np.float64)
+        if 0 <= pc_idx < pc_coords.shape[1]:
+            return pc_coords[:, pc_idx]
+        return None
+    return None
+
+
+def project_latent_z_to_plot_xy(
+    exp: DashboardExperiment,
+    z_mat: np.ndarray,
+    xcol: str,
+    ycol: str,
+) -> np.ndarray | None:
+    """Project latent ``z`` rows into ``(xcol, ycol)`` plot space.
+
+    Supports ``z*`` and ``PC*`` axes (matching analyze PCA traversal plots).
+    Returns ``None`` for axes that require out-of-sample embedding (e.g. UMAP).
+    """
+    xcol = str(xcol)
+    ycol = str(ycol)
+    pca = None
+    if re.fullmatch(r"PC([0-9]+)", xcol) or re.fullmatch(r"PC([0-9]+)", ycol):
+        _, pca = cryo_analysis.run_pca(np.asarray(exp.z, dtype=np.float32))
+    xs = _plot_axis_values_from_latent_z(exp, z_mat, xcol, pca=pca)
+    ys = _plot_axis_values_from_latent_z(exp, z_mat, ycol, pca=pca)
+    if xs is None or ys is None:
+        return None
+    return np.column_stack([xs, ys])
+
+
+def enrich_analyze_volume_markers_plot_xy(
+    exp: DashboardExperiment,
+    markers: list[dict],
+    xcol: str,
+    ycol: str,
+) -> list[dict]:
+    """Attach ``xy`` plot coordinates for the current scatter axes (in-place copies)."""
+    xcol = str(xcol)
+    ycol = str(ycol)
+    coords = exp.plot_df[[xcol, ycol]].values.astype(np.float64)
+    out: list[dict] = []
+    z_rows: list[np.ndarray] = []
+    z_marker_indices: list[int] = []
+    for marker in markers:
+        m = dict(marker)
+        m.pop("xy", None)
+        z_raw = m.get("z")
+        if z_raw is not None:
+            try:
+                z_arr = np.asarray(z_raw, dtype=np.float64).reshape(-1)
+            except (TypeError, ValueError):
+                z_arr = np.asarray([], dtype=np.float64)
+            if z_arr.size == int(exp.z.shape[1]) and np.all(np.isfinite(z_arr)):
+                z_marker_indices.append(len(out))
+                z_rows.append(z_arr)
+        plot_row = m.get("plot_row")
+        if plot_row is not None:
+            ri = int(plot_row)
+            if 0 <= ri < len(coords) and np.all(np.isfinite(coords[ri])):
+                m["xy"] = [float(coords[ri, 0]), float(coords[ri, 1])]
+        out.append(m)
+
+    if z_rows:
+        z_mat = np.vstack(z_rows)
+        projected = project_latent_z_to_plot_xy(exp, z_mat, xcol, ycol)
+        if projected is not None:
+            for local_i, marker_i in enumerate(z_marker_indices):
+                pt = projected[local_i]
+                if np.all(np.isfinite(pt)):
+                    # Prefer true PC/z trajectory coordinates over nearest-particle xy.
+                    out[marker_i]["xy"] = [float(pt[0]), float(pt[1])]
+    return out
 
 
 def _load_kmeans_center_plot_rows(km_dir: str) -> list[int] | None:
@@ -341,7 +454,14 @@ def discover_analyze_volume_markers(
     exp: DashboardExperiment,
     catalog: list[dict] | None = None,
 ) -> list[dict]:
-    """Scatterplot anchor row and short label for each analyze volume."""
+    """Scatterplot anchor metadata for each analyze volume.
+
+    PC markers carry latent ``z`` from ``analyze.*/pc*/z_values.txt`` so the
+    trajectory creator can place them at the true PC-traversal coordinates
+    (instead of snapping to a nearest particle). Volumes still load from the
+    corresponding ``vol_*.mrc`` files. ``plot_row`` remains the nearest particle
+    for UMAP axes and colour fallbacks.
+    """
     cache_key = (exp.workdir, int(exp.epoch), int(exp.kmeans_folder_id))
     with _ANALYZE_VOL_CACHE_LOCK:
         cached = _ANALYZE_MARKER_CACHE.get(cache_key)
@@ -354,18 +474,38 @@ def discover_analyze_volume_markers(
     km_dir = os.path.join(_analyze_dir(exp), f"kmeans{int(exp.kmeans_folder_id)}")
     km_rows = _load_kmeans_center_plot_rows(km_dir)
 
-    pc_counts: dict[int, int] = {}
-    for entry in catalog:
-        if entry.get("kind") == "pc":
-            pc_counts[int(entry["pc"])] = pc_counts.get(int(entry["pc"]), 0) + 1
+    pc_nums = sorted(
+        {int(entry["pc"]) for entry in catalog if entry.get("kind") == "pc"}
+    )
+    pc_z_cache: dict[int, np.ndarray] = {}
     pc_row_cache: dict[int, list[int]] = {}
-    if pc_counts:
-        z = np.asarray(exp.z, dtype=np.float32)
-        _, pca = cryo_analysis.run_pca(z)
-        for pc_num, n_samples in pc_counts.items():
-            pc_row_cache[pc_num] = _pc_trajectory_plot_rows_with_pca(
-                exp, pca, pc_num, n_samples
+    anlz = _analyze_dir(exp)
+    pca = None
+    for pc_num in pc_nums:
+        pc_dir = os.path.join(anlz, f"pc{pc_num}")
+        z_pc = _load_pc_trajectory_z_values(pc_dir)
+        n_samples = sum(
+            1
+            for entry in catalog
+            if entry.get("kind") == "pc" and int(entry["pc"]) == pc_num
+        )
+        if z_pc is None or z_pc.shape[1] != int(exp.z.shape[1]):
+            # Older analyze folders without z_values.txt: regenerate the PC
+            # trajectory and snap to nearest particles.
+            if n_samples < 1:
+                continue
+            if pca is None:
+                _, pca = cryo_analysis.run_pca(np.asarray(exp.z, dtype=np.float32))
+            pc = np.asarray(exp.pc, dtype=np.float64)
+            col = int(pc_num) - 1
+            if col < 0 or col >= pc.shape[1]:
+                continue
+            lo, hi = np.percentile(pc[:, col], (5, 95))
+            z_pc = cryo_analysis.get_pc_traj(
+                pca, int(exp.z.shape[1]), n_samples, pc_num, lo, hi
             )
+        pc_z_cache[pc_num] = np.asarray(z_pc, dtype=np.float64)
+        pc_row_cache[pc_num] = _pc_trajectory_nearest_plot_rows(exp, z_pc)
 
     markers: list[dict] = []
     for entry in catalog:
@@ -373,6 +513,7 @@ def discover_analyze_volume_markers(
         kind = entry.get("kind")
         plot_row: int | None = None
         label = vol_id
+        z_list: list[float] | None = None
         if kind == "kmeans":
             cl = int(entry["cluster_label"])
             label = f"K{cl + 1}"
@@ -382,17 +523,21 @@ def discover_analyze_volume_markers(
             pc_num = int(entry["pc"])
             si = int(entry["sample_index"])
             label = f"PC{pc_num}·{si + 1}"
+            z_pc = pc_z_cache.get(pc_num)
+            if z_pc is not None and 0 <= si < len(z_pc):
+                z_list = [float(v) for v in z_pc[si].tolist()]
             rows = pc_row_cache.get(pc_num) or []
             if 0 <= si < len(rows):
                 plot_row = int(rows[si])
-        markers.append(
-            {
-                "vol_id": vol_id,
-                "plot_row": plot_row,
-                "label": label,
-                "kind": kind,
-            }
-        )
+        marker: dict = {
+            "vol_id": vol_id,
+            "plot_row": plot_row,
+            "label": label,
+            "kind": kind,
+        }
+        if z_list is not None:
+            marker["z"] = z_list
+        markers.append(marker)
 
     with _ANALYZE_VOL_CACHE_LOCK:
         _ANALYZE_MARKER_CACHE[cache_key] = markers
@@ -432,8 +577,9 @@ def analyze_volume_marker_index(
     allowed_vol_ids: set[str] | frozenset[str] | None = None,
 ) -> tuple[np.ndarray, list[str], list[int]]:
     """Scatter coordinates, catalog ids, and plot rows for analyze volume markers."""
-    markers = discover_analyze_volume_markers(exp)
-    coords = exp.plot_df[[xcol, ycol]].values.astype(np.float64)
+    markers = enrich_analyze_volume_markers_plot_xy(
+        exp, discover_analyze_volume_markers(exp), xcol, ycol
+    )
     xy_parts: list[np.ndarray] = []
     vol_ids: list[str] = []
     plot_rows: list[int] = []
@@ -441,16 +587,20 @@ def analyze_volume_marker_index(
         vol_id = str(marker["vol_id"])
         if allowed_vol_ids is not None and vol_id not in allowed_vol_ids:
             continue
+        xy = marker.get("xy")
+        if (
+            not isinstance(xy, (list, tuple))
+            or len(xy) != 2
+            or not np.all(np.isfinite(np.asarray(xy, dtype=np.float64)))
+        ):
+            continue
         plot_row = marker.get("plot_row")
+        # Free PC latent points may lack a particle row; keep index alignment with
+        # a non-negative sentinel only when a real row exists.
         if plot_row is None:
             continue
         ri = int(plot_row)
-        if ri < 0 or ri >= len(coords):
-            continue
-        pt = coords[ri]
-        if not np.all(np.isfinite(pt)):
-            continue
-        xy_parts.append(pt)
+        xy_parts.append(np.asarray(xy, dtype=np.float64))
         vol_ids.append(vol_id)
         plot_rows.append(ri)
     if not xy_parts:
@@ -588,10 +738,17 @@ def analyze_volumes_catalog_payload(
     return payload
 
 
-def analyze_volume_markers_payload(exp: DashboardExperiment) -> dict:
+def analyze_volume_markers_payload(
+    exp: DashboardExperiment,
+    *,
+    xcol: str | None = None,
+    ycol: str | None = None,
+) -> dict:
     """Scatterplot anchor rows and labels for analyze volumes."""
     catalog = discover_analyze_volume_catalog(exp)
     markers = discover_analyze_volume_markers(exp, catalog)
+    if xcol and ycol and xcol in exp.plot_df.columns and ycol in exp.plot_df.columns:
+        markers = enrich_analyze_volume_markers_plot_xy(exp, markers, xcol, ycol)
     return {"ok": True, "markers": markers}
 
 

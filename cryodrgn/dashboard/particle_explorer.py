@@ -43,8 +43,6 @@ chimerax_path = cx.chimerax_path
 run_chimerax_cmds = cx.run_chimerax_cmds
 parallel_jobs = cx.parallel_jobs
 chimerax_animation_meta = cx.chimerax_animation_meta
-mrc_to_static_png = cx.mrc_to_static_png
-parallel_chimerax_static_pngs = cx.parallel_chimerax_static_pngs
 mrc_to_rotating_gif = cx.mrc_to_rotating_gif
 mrc_to_rotating_gif_single_session = cx.mrc_to_rotating_gif_single_session
 batch_landscape_rotate_gifs = cx.batch_landscape_rotate_gifs
@@ -868,41 +866,61 @@ def generate_trajectory_volume_b64_list(
     z_values: np.ndarray,
     *,
     progress_token: str | None = None,
+    trajectory_slot_indices: list[int] | None = None,
+    include_transfer_payloads: bool = True,
 ) -> tuple[list[dict[str, object]], str]:
-    """Decode trajectory z values and return float32 volume blobs for client VTK/slice.
+    """Decode trajectory z values and optionally return VTK/slice transfer blobs.
 
-    Returns ``(volume_payloads, cache_token)`` where each payload has
-    ``volume_b64``, ``D``, and ``index``.
+    Returns ``(volume_payloads, cache_token)``. When ``include_transfer_payloads``
+    is true each payload has ``volume_b64``, ``D``, and ``index``. When false
+    (Generate / cache-only), payloads are lightweight ``{index, decoded: true}``
+    markers so the client can arm Render without shipping multi-hundred-MB
+    base64 volumes after decode.
     """
-    from cryodrgn.dashboard.volume_slice_viewer import (
-        apply_reconstruction_window,
-        vtk_transfer_volume_payload,
-    )
-    from cryodrgn.mrcfile import parse_mrc
-
     z_values = np.asarray(z_values, dtype=np.float64)
     if z_values.ndim != 2 or z_values.shape[1] != exp.z.shape[1]:
         raise ValueError(
             f"z_values must be (n, {exp.z.shape[1]}); got shape {z_values.shape}"
         )
 
+    n_total = int(z_values.shape[0])
+    if trajectory_slot_indices is not None:
+        rows = tuple(int(i) for i in trajectory_slot_indices)
+        if len(rows) != n_total:
+            raise ValueError("trajectory_slot_indices length must match z_values rows.")
+    else:
+        rows = tuple(range(n_total))
+
     mrc_dir = tempfile.mkdtemp(prefix="cryodrgn_trajectory_mrc_")
     try:
         vol_files = _decode_z_values_to_vol_paths(
             exp, z_values, mrc_dir, progress_token=progress_token
         )
-        payloads: list[dict[str, object]] = []
+        if not include_transfer_payloads:
+            token = _register_vol_mrc_cache(mrc_dir, vol_files, rows)
+            payloads = [
+                {"index": int(rows[i]), "decoded": True} for i in range(len(vol_files))
+            ]
+            return payloads, token
+
+        from cryodrgn.dashboard.volume_slice_viewer import (
+            apply_reconstruction_window,
+            vtk_transfer_volume_payload,
+        )
+        from cryodrgn.mrcfile import parse_mrc
+
+        payloads = []
         for i, vf in enumerate(vol_files):
             vol, _ = parse_mrc(vf)
             vol = apply_reconstruction_window(np.asarray(vol, dtype=np.float32), exp)
             transfer = vtk_transfer_volume_payload(vol)
             payloads.append(
                 {
-                    "index": int(i),
+                    "index": int(rows[i]),
                     **transfer,
                 }
             )
-        token = _register_vol_mrc_cache(mrc_dir, vol_files, ())
+        token = _register_vol_mrc_cache(mrc_dir, vol_files, rows)
         return payloads, token
     except Exception:
         shutil.rmtree(mrc_dir, ignore_errors=True)
@@ -1186,21 +1204,17 @@ def _pipelined_decode_and_chimerax_pngs(
                 )
                 volume_job_partial_update_decode(progress_token, decode_count)
 
-            if iso_level is None:
-                if volume_level is not None and np.isfinite(float(volume_level)):
-                    iso_level = float(volume_level)
-                elif 0 in ready_map:
-                    iso_level = resolve_chimerax_volume_level(
-                        ready_map[0], volume_level
-                    )
+            if iso_level is None and volume_level is not None:
+                iso_level = resolve_chimerax_volume_level(None, volume_level)
 
-            if iso_level is not None:
-                for idx, mrc_path in ready_map.items():
-                    if idx in scheduled or idx < 0 or idx >= n_total:
-                        continue
-                    scheduled.add(idx)
-                    fut = executor.submit(_render_one, idx, mrc_path)
-                    pending[fut] = idx
+            # ``iso_level is None`` → ChimeraX ``sdLevel 2`` per volume; render as
+            # each .mrc becomes ready (no need to wait on a shared absolute level).
+            for idx, mrc_path in ready_map.items():
+                if idx in scheduled or idx < 0 or idx >= n_total:
+                    continue
+                scheduled.add(idx)
+                fut = executor.submit(_render_one, idx, mrc_path)
+                pending[fut] = idx
 
             _collect_finished()
 
@@ -1366,7 +1380,7 @@ def generate_montage_volume_pngs(
                 (i, vf, os.path.join(png_dir, f"cell_{i}.png"), 100)
                 for i, vf in enumerate(vol_files)
             ]
-            paths = parallel_chimerax_static_pngs(tasks, chimerax_cpus=cc)
+            paths = render_static_pngs_parallel(tasks, chimerax_cpus=cc)
             png_bytes_list: list[bytes] = []
             for pth in paths:
                 with open(pth, "rb") as fh:

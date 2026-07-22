@@ -13,6 +13,7 @@ and trajectory creator volume strips.
 
 from __future__ import annotations
 
+import atexit
 import html
 import os
 import re
@@ -21,6 +22,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -82,28 +84,209 @@ def chimerax_path() -> str:
     return p
 
 
+def _env_truthy_flag(name: str) -> bool | None:
+    """Parse an optional boolean env override (``1``/``0``, ``true``/``false``, …)."""
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return None
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return None
+
+
+def use_chimerax_xvfb() -> bool:
+    """Whether to run ChimeraX under a virtual X11 display instead of ``--offscreen``.
+
+    ChimeraX ``--offscreen`` requires OSMesa/EGL. On many HPC login nodes those are
+    missing, so ChimeraX starts but ``save`` fails with ``OpenGL rendering is not
+    available``. A local ``Xvfb`` display *without* ``--offscreen`` uses software GL.
+
+    Override with ``CRYODRGN_CHIMERAX_XVFB=1`` / ``0``. Default: use Xvfb when
+    ``DISPLAY`` is unset or empty.
+    """
+    forced = _env_truthy_flag("CRYODRGN_CHIMERAX_XVFB")
+    if forced is not None:
+        return forced
+    return not bool(os.environ.get("DISPLAY", "").strip())
+
+
+def _chimerax_opengl_unavailable(out: str, err: str) -> bool:
+    """True when ChimeraX failed because OpenGL / offscreen rendering is missing."""
+    blob = f"{err}\n{out}".lower()
+    return (
+        "opengl rendering is not available" in blob
+        or "unable to save images because opengl" in blob
+        or "limitationerror: unable to save images" in blob
+    )
+
+
+_SHARED_XVFB_LOCK = threading.Lock()
+_SHARED_XVFB_PROC: subprocess.Popen | None = None
+_SHARED_XVFB_DISPLAY: str | None = None
+
+
+def _shutdown_shared_xvfb() -> None:
+    """Terminate the process-local Xvfb started by :func:`_ensure_shared_xvfb_display`."""
+    global _SHARED_XVFB_PROC, _SHARED_XVFB_DISPLAY
+    with _SHARED_XVFB_LOCK:
+        proc = _SHARED_XVFB_PROC
+        _SHARED_XVFB_PROC = None
+        _SHARED_XVFB_DISPLAY = None
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _ensure_shared_xvfb_display() -> str:
+    """Start (or reuse) a process-local ``Xvfb`` and return its ``DISPLAY`` value.
+
+    Prefer a managed ``Xvfb`` over ``xvfb-run`` so parallel joblib workers do not race
+    on ``xvfb-run`` cleanup (which can yield exit code 1 after a successful render).
+    """
+    global _SHARED_XVFB_PROC, _SHARED_XVFB_DISPLAY
+    with _SHARED_XVFB_LOCK:
+        if (
+            _SHARED_XVFB_PROC is not None
+            and _SHARED_XVFB_PROC.poll() is None
+            and _SHARED_XVFB_DISPLAY
+        ):
+            return _SHARED_XVFB_DISPLAY
+        xvfb_bin = shutil.which("Xvfb")
+        if not xvfb_bin:
+            raise EnvironmentError(
+                "ChimeraX image saves need OpenGL, but --offscreen/OSMesa is unavailable "
+                "on this host and Xvfb was not found on PATH. Install Xvfb "
+                "(e.g. xorg-x11-server-Xvfb), set a working DISPLAY, or set "
+                "CRYODRGN_CHIMERAX_XVFB=0 if your ChimeraX build supports true offscreen."
+            )
+        last_err = ""
+        for display_num in range(90, 200):
+            lock_path = f"/tmp/.X{display_num}-lock"
+            if os.path.exists(lock_path):
+                continue
+            display = f":{display_num}"
+            try:
+                proc = subprocess.Popen(
+                    [
+                        xvfb_bin,
+                        display,
+                        "-screen",
+                        "0",
+                        "1024x768x24",
+                        "-nolisten",
+                        "tcp",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            except OSError as err:
+                last_err = str(err)
+                continue
+            # Brief settle; abort if Xvfb dies immediately (display taken, etc.).
+            time.sleep(0.2)
+            if proc.poll() is not None:
+                err_txt = ""
+                try:
+                    err_txt = (proc.stderr.read() if proc.stderr else "") or ""
+                except Exception:
+                    pass
+                last_err = err_txt.strip() or f"Xvfb exited with {proc.returncode}"
+                continue
+            _SHARED_XVFB_PROC = proc
+            _SHARED_XVFB_DISPLAY = display
+            atexit.register(_shutdown_shared_xvfb)
+            return display
+        raise EnvironmentError(
+            "Could not start Xvfb for ChimeraX rendering"
+            + (f": {last_err}" if last_err else ".")
+        )
+
+
+def _chimerax_subprocess(
+    cx: str, joined_cmds: str, *, xvfb: bool
+) -> subprocess.CompletedProcess[str]:
+    """Run one ChimeraX ``--cmd`` invocation (``--offscreen`` or DISPLAY via Xvfb)."""
+    cmd_arg = shlex.quote(joined_cmds)
+    cx_q = shlex.quote(cx)
+    env = None
+    if xvfb:
+        display = _ensure_shared_xvfb_display()
+        env = os.environ.copy()
+        env["DISPLAY"] = display
+        # GUI GL context via virtual display — do not pass --offscreen/--nogui.
+        shell_cmd = f"{cx_q} --cmd {cmd_arg}"
+    else:
+        shell_cmd = f"{cx_q} --offscreen --cmd {cmd_arg}"
+    return subprocess.run(
+        shell_cmd,
+        shell=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
 def run_chimerax_cmds(
     cmds: list[str], *, catch_errors: bool = False
 ) -> tuple[str, str]:
-    """Run ChimeraX offscreen with semicolon-separated commands.
+    """Run ChimeraX with semicolon-separated commands (offscreen or Xvfb).
 
     See ``pipelines/tile.py``. Limited by :data:`CHIMERAX_MAX_CONCURRENT_SLOTS`.
+    When ``--offscreen`` fails for missing OpenGL, retries once under Xvfb
+    unless ``CRYODRGN_CHIMERAX_XVFB=0``.
     """
     cx = chimerax_path()
     joined = " ; ".join(cmds)
+    if _env_truthy_flag("CRYODRGN_CHIMERAX_XVFB") is False:
+        attempts = [False]
+    elif use_chimerax_xvfb():
+        attempts = [True]
+    else:
+        # Prefer --offscreen when DISPLAY is set; fall back to Xvfb on OpenGL failure.
+        attempts = [False, True]
+
+    last_out, last_err, last_code = "", "", 0
     with _CHIMERAX_SLOT_SEM:
-        proc = subprocess.run(
-            f"{shlex.quote(cx)} --offscreen --cmd {shlex.quote(joined)}",
-            shell=True,
-            capture_output=True,
-            text=True,
+        for attempt_idx, xvfb in enumerate(attempts):
+            proc = _chimerax_subprocess(cx, joined, xvfb=xvfb)
+            last_out, last_err = proc.stdout or "", proc.stderr or ""
+            last_code = int(proc.returncode)
+            # Some ChimeraX builds return 0 after a LimitationError on ``save``.
+            opengl_missing = _chimerax_opengl_unavailable(last_out, last_err)
+            ok = last_code == 0 and not opengl_missing
+            if ok:
+                break
+            if not xvfb and attempt_idx + 1 < len(attempts) and opengl_missing:
+                continue
+            if opengl_missing and last_code == 0:
+                last_code = 70
+            break
+
+    if catch_errors and last_err.strip():
+        raise RuntimeError(f"ChimeraX stderr:\n{last_err}\nstdout:\n{last_out}")
+    if last_code != 0:
+        hint = ""
+        if _chimerax_opengl_unavailable(last_out, last_err):
+            hint = (
+                "\nChimeraX could not create an OpenGL context for image saves. "
+                "On headless hosts install Xvfb and retry (or export "
+                "CRYODRGN_CHIMERAX_XVFB=1). If --offscreen/OSMesa works on this "
+                "machine, export CRYODRGN_CHIMERAX_XVFB=0."
+            )
+        raise RuntimeError(
+            f"ChimeraX exited with {last_code}.{hint}\n{last_err}\n{last_out}"
         )
-    out, err = proc.stdout or "", proc.stderr or ""
-    if catch_errors and err.strip():
-        raise RuntimeError(f"ChimeraX stderr:\n{err}\nstdout:\n{out}")
-    if proc.returncode != 0:
-        raise RuntimeError(f"ChimeraX exited with {proc.returncode}.\n{err}\n{out}")
-    return out, err
+    return last_out, last_err
 
 
 _CHIMERAX_MATRIX_NUM_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
@@ -310,9 +493,10 @@ def _mpl_retrim_png(out_png: str, dpi: int, *, corner_label: str | None = None) 
     plt.close(fig)
 
 
-_DEFAULT_ISO_PERCENTILE = 42.0
 _ISO_SLIDER_RANK_LO = 2.0
 _ISO_SLIDER_RANK_HI = 99.5
+# Default ChimeraX contour when the client has not set an absolute iso level.
+_DEFAULT_CHIMERAX_SD_LEVEL = 2.0
 
 
 def volume_percentile_samples(
@@ -340,55 +524,24 @@ def iso_slider_data_range(samples: np.ndarray) -> tuple[float, float]:
     return lo, hi
 
 
-def _percentile_value(samples: np.ndarray, pct: float) -> float:
+def suggest_iso_data_value(samples: np.ndarray) -> float:
+    """Default contour as mean + 2σ (matches ChimeraX ``sdLevel 2``).
+
+    Mirrors ``volume_3d_utils.js``. Used for the dashboard iso slider when the
+    initial ChimeraX render used ``volume #1 sdLevel 2``.
+    """
     samples = np.asarray(samples, dtype=np.float64)
     if samples.size == 0:
         return 0.0
-    pct = float(np.clip(pct, 0.0, 100.0))
-    idx = (pct / 100.0) * (samples.size - 1)
-    lo = int(np.floor(idx))
-    hi = int(np.ceil(idx))
-    if lo == hi:
-        return float(samples[lo])
-    frac = idx - lo
-    return float(samples[lo] * (1.0 - frac) + samples[hi] * frac)
-
-
-def suggest_iso_data_value(samples: np.ndarray) -> float:
-    """Heuristic default contour level (mirrors ``volume_3d_utils.js``)."""
-    samples = np.asarray(samples, dtype=np.float64)
-    if samples.size < 8:
-        return _percentile_value(samples, _DEFAULT_ISO_PERCENTILE)
-    vmin = float(samples[0])
-    vmax = float(samples[-1])
-    span = vmax - vmin
-    if not (span > 0):
-        return _percentile_value(samples, _DEFAULT_ISO_PERCENTILE)
-    p10 = _percentile_value(samples, 10.0)
-    p25 = _percentile_value(samples, 25.0)
-    p50 = _percentile_value(samples, 50.0)
-    p90 = _percentile_value(samples, 90.0)
-    p99 = _percentile_value(samples, 99.0)
-    baseline = p10 + (p25 - p10) * 0.35
-    signal = p99 - baseline
-    if not (signal > 0):
-        return _percentile_value(samples, _DEFAULT_ISO_PERCENTILE)
-    median_frac = (p50 - vmin) / span
-    tail_frac = (vmax - p90) / span
-    alpha = 0.24
-    if median_frac < 0.12:
-        alpha = 0.18
-    elif median_frac < 0.22:
-        alpha = 0.21
-    elif median_frac > 0.4:
-        alpha = 0.32
-    if tail_frac < 0.08:
-        alpha += 0.06
-    target = baseline + signal * alpha
-    for p in range(5, 99):
-        if _percentile_value(samples, float(p)) >= target:
-            return _percentile_value(samples, float(np.clip(round(p), 12, 94)))
-    return _percentile_value(samples, 88.0)
+    if samples.size == 1:
+        return float(samples[0])
+    mean = float(np.mean(samples))
+    std = float(np.std(samples))
+    if not np.isfinite(mean):
+        return 0.0
+    if not (std > 0) or not np.isfinite(std):
+        return mean
+    return mean + _DEFAULT_CHIMERAX_SD_LEVEL * std
 
 
 def mrc_iso_metadata(
@@ -414,11 +567,17 @@ def resolve_chimerax_volume_level(
     mrc_path: str | None,
     iso_level: float | None,
 ) -> float | None:
-    """Effective ``volume #1 level`` for ChimeraX rendering."""
+    """Absolute ``volume #1 level`` override, or ``None`` for ChimeraX ``sdLevel 2``.
+
+    When ``iso_level`` is unset, callers should leave ``volume_level`` unset so
+    :func:`chimerax_render_cmds` emits ``volume #1 sdLevel 2``. Slider metadata
+    still uses :func:`mrc_iso_metadata` / :func:`suggest_iso_data_value`.
+    ``mrc_path`` is retained for call-site compatibility; it is not required to
+    choose the default ``sdLevel``.
+    """
+    _ = mrc_path
     if iso_level is not None and np.isfinite(float(iso_level)):
         return float(iso_level)
-    if mrc_path:
-        return mrc_iso_metadata(mrc_path)["level"]
     return None
 
 
@@ -435,6 +594,13 @@ def chimerax_iso_response_fields(
         "iso_range": {"min": meta["min"], "max": meta["max"]},
         "iso_level": meta["level"],
     }
+
+
+# Match ``cryodrgn.commands_utils.make_movies`` epilogue for surface display.
+_CHIMERAX_VOLUME_DISPLAY_POLISH: tuple[str, ...] = (
+    "surface dust all size 10",
+    "lighting soft",
+)
 
 
 def chimerax_render_cmds(
@@ -463,6 +629,9 @@ def chimerax_render_cmds(
     ]
     if volume_level is not None and np.isfinite(float(volume_level)):
         cmds.append(f"volume #1 level {float(volume_level):g} ")
+    else:
+        cmds.append(f"volume #1 sdLevel {_DEFAULT_CHIMERAX_SD_LEVEL:g} ")
+    cmds.extend(_CHIMERAX_VOLUME_DISPLAY_POLISH)
     if view_matrix_camera:
         # VTK exports an absolute camera matrix; skip ``view orient`` so it is not composed
         # on top of a default orientation (which would mismatch the VTK view).
@@ -535,7 +704,7 @@ def render_static_pngs_parallel(
     *,
     chimerax_cpus: int,
 ) -> list[str]:
-    """Run :func:`mrc_to_static_png` for each task in parallel.
+    """Run :func:`render_static_png` for each task in parallel.
 
     Each task is ``(sort_index, mrc_path, out_png_path, dpi)`` or with optional
     ``volume_color`` and/or ``corner_label`` (hex or ChimeraX color name).
@@ -549,7 +718,7 @@ def render_static_pngs_parallel(
     def _one(task: ChimeraxPngTask) -> tuple[int, str]:
         if len(task) == 6:
             idx, mrc_path, out_png, dpi, vcol, clab = task
-            mrc_to_static_png(
+            render_static_png(
                 mrc_path,
                 out_png,
                 dpi=dpi,
@@ -558,10 +727,10 @@ def render_static_pngs_parallel(
             )
         elif len(task) == 5:
             idx, mrc_path, out_png, dpi, vcol = task
-            mrc_to_static_png(mrc_path, out_png, dpi=dpi, volume_color=vcol)
+            render_static_png(mrc_path, out_png, dpi=dpi, volume_color=vcol)
         else:
             idx, mrc_path, out_png, dpi = task
-            mrc_to_static_png(mrc_path, out_png, dpi=dpi)
+            render_static_png(mrc_path, out_png, dpi=dpi)
         return idx, out_png
 
     if n_jobs <= 1:
@@ -622,6 +791,7 @@ def chimerax_rotation_session_cmds(
         "set bgColor white ",
         "volume center #1",
         f"volume color {vc} ",
+        *_CHIMERAX_VOLUME_DISPLAY_POLISH,
     ]
     matrix_log: str | None = None
     if view_matrix_camera:
@@ -676,6 +846,7 @@ def chimerax_multi_volume_rotation_session_cmds(
                 f"open {qvol} name {vol.vol_name} ",
                 "volume center #1",
                 f"volume color {vc} ",
+                *_CHIMERAX_VOLUME_DISPLAY_POLISH,
                 "view #1 orient ",
             ]
         )
@@ -1115,8 +1286,6 @@ def render_rotating_gif(
 
 
 # Backward-compatible aliases used across the dashboard codebase.
-mrc_to_static_png = render_static_png
-parallel_chimerax_static_pngs = render_static_pngs_parallel
 mrc_to_rotating_gif_single_session = render_rotating_gif_single_session
 mrc_to_rotating_gif = render_rotating_gif
 batch_landscape_rotate_gifs = render_landscape_rotate_gifs

@@ -1,5 +1,24 @@
 /**
  * Trajectory creator integrated volume panel: VTK 3D, 2D slice, or ChimeraX PNGs.
+ *
+ * Invariants with the Decode/Render button (via Session.decodeRenderDebts):
+ *   - ``renderDebtCount()`` === ``inactiveTickCount()`` (both use ``_slotTickReadyAt``).
+ *   - Decode debt is the inactive-tick set intersected with undecoded slots, so
+ *     decode count ≤ inactive tick count by set inclusion. Prefer Session for
+ *     the joint ``{decode, render}`` read — Display alone owns the inactive set.
+ *   - While a ChimeraX render batch is active, ``chimeraxViewBatchSnapshot()`` is
+ *     the frozen view/iso for every frame in that batch (rotation consistency).
+ *
+ * Two distinct notions of "ready" are used on purpose and must not be mixed:
+ *   - ``_slotTickReadyAt`` (nav-ready): the single predicate behind tick color/
+ *     click-enablement, Decode/Render debt, nav enablement, and every focus
+ *     entry point (slider drag/change, Prev/Next, keyboard, tick clicks) via
+ *     ``_nearestNavReadyIndex`` / ``_snapFocusIndexToReady`` / ``_stepReadyFocus``.
+ *     A tick is a valid stopping point if and only if it renders active.
+ *   - ``_volumeReadyAt`` / ``_chimeraxImageReadyAt`` (paintable): raw "do we
+ *     hold bytes locally" checks used only by the paint-fallback family
+ *     (``_volumeDisplayIndexForFocus`` and the ``_render*`` methods) to pick
+ *     what to actually draw once a focus index has been chosen.
  */
 (function (global) {
   "use strict";
@@ -74,6 +93,9 @@
     this.onFocusChange = options.onFocusChange || null;
     this.getVolumeNavLabels = options.getVolumeNavLabels || null;
     this.allowUnreadyVolumeNav = options.allowUnreadyVolumeNav || null;
+    // Optional: page-level readiness (Session / heap / debt) so slider ticks
+    // match Decode/Render accounting when display arrays briefly lag.
+    this.slotReadyAt = options.slotReadyAt || null;
     this._volumeSliderTickLabelFontPx = null;
     this._viewportHomeParent = null;
     this._viewportHomeNext = null;
@@ -82,6 +104,10 @@
     this._controlsHomeParent = null;
     this._controlsHomeNext = null;
     this.stableBackendChrome = !!options.stableBackendChrome;
+    /** Frozen ChimeraX view/iso for the in-flight render batch (or null). */
+    this._chimeraxViewBatch = null;
+    /** Optional page hook: () => { view_matrix, view_turns, viewKey, isoKey, iso_level } */
+    this.captureChimeraxViewSnapshot = options.captureChimeraxViewSnapshot || null;
 
     if (this.canvasEl && global.CryoVolumeSliceCanvas) {
       this.sliceViewer = new global.CryoVolumeSliceCanvas({ canvas: this.canvasEl });
@@ -212,6 +238,15 @@
     return "data:image/png;base64," + s;
   };
 
+  /**
+   * Raw local-data checks: does this display instance already hold the actual
+   * bytes to paint at ``index``? These answer "what can we render right now"
+   * and must stay local-only (a hook can never supply pixels). Reserved for
+   * the paint-fallback family (``_volumeDisplayIndexForFocus`` and the
+   * ``_render*`` methods it feeds) — never use these for navigation/tick
+   * readiness decisions; use ``_slotTickReadyAt`` for those instead so nav
+   * never disagrees with the tick chrome it drives.
+   */
   TrajectoryVolumeDisplay.prototype._chimeraxImageReadyAt = function (index) {
     var i = Math.floor(Number(index));
     return i >= 0 && i < this.chimeraxImages.length && !!this.chimeraxImages[i];
@@ -225,6 +260,165 @@
       && !!(this.volumes[i] && this.volumes[i].volume_b64);
   };
 
+  /**
+   * Canonical slot-readiness predicate. Every other "is this slot ready"
+   * decision in the class — tick chrome, Decode/Render debt, nav enablement,
+   * and slider/keyboard/tick stopping points — must call this (directly or
+   * via ``inactiveTick*``/``_nearestNavReadyIndex``) so they can never
+   * disagree about which slots are active. Prefers the page-level
+   * Session/debt-aware ``slotReadyAt`` hook, without recursing through
+   * ``_chimeraxImageReadyAt`` (used by those helpers).
+   */
+  TrajectoryVolumeDisplay.prototype._slotTickReadyAt = function (index) {
+    if (this.backend === "chimerax" && this.chimeraxRerenderInFlight) {
+      return this._chimeraxTickReadyAt(index);
+    }
+    if (typeof this.slotReadyAt === "function") return !!this.slotReadyAt(index);
+    return this.backend === "chimerax"
+      ? this._chimeraxImageReadyAt(index)
+      : this._volumeReadyAt(index);
+  };
+
+  /**
+   * Number of volume-slider ticks (live path length on the panel).
+   */
+  TrajectoryVolumeDisplay.prototype.tickCount = function () {
+    return this._volumeNavCount();
+  };
+
+  /**
+   * Indices of inactive volume-slider ticks (same chrome as grey ticks).
+   */
+  TrajectoryVolumeDisplay.prototype.inactiveTickIndices = function () {
+    var total = this.tickCount();
+    var out = [];
+    for (var i = 0; i < total; i++) {
+      if (!this._slotTickReadyAt(i)) out.push(i);
+    }
+    return out;
+  };
+
+  TrajectoryVolumeDisplay.prototype.inactiveTickCount = function () {
+    return this.inactiveTickIndices().length;
+  };
+
+  /**
+   * Render debt for the Decode/Render button. Always equals inactiveTickCount
+   * (class invariant with the volume-slider chrome).
+   */
+  TrajectoryVolumeDisplay.prototype.renderDebtCount = function () {
+    return this.inactiveTickCount();
+  };
+
+  /**
+   * Decode debt among inactive ticks. ``isDecodedFn(i)`` should return true when
+   * slot ``i`` already has decode material. Result ⊆ inactiveTickIndices, so
+   * length ≤ inactiveTickCount by construction.
+   */
+  TrajectoryVolumeDisplay.prototype.decodeDebtIndices = function (isDecodedFn) {
+    var inactive = this.inactiveTickIndices();
+    if (typeof isDecodedFn !== "function") return inactive.slice();
+    var out = [];
+    for (var i = 0; i < inactive.length; i++) {
+      var idx = inactive[i];
+      if (!isDecodedFn(idx)) out.push(idx);
+    }
+    return out;
+  };
+
+  TrajectoryVolumeDisplay.prototype.decodeDebtCount = function (isDecodedFn) {
+    return this.decodeDebtIndices(isDecodedFn).length;
+  };
+
+  /**
+   * Clone a ChimeraX view/iso snapshot used for one render batch.
+   */
+  TrajectoryVolumeDisplay.prototype._cloneChimeraxViewSnapshot = function (snap) {
+    snap = snap || {};
+    return {
+      view_matrix: snap.view_matrix ? String(snap.view_matrix) : "",
+      view_turns: Array.isArray(snap.view_turns)
+        ? snap.view_turns.map(function (t) {
+            return {
+              axis: String((t && t.axis) || "").toLowerCase(),
+              degrees: Number(t && t.degrees)
+            };
+          }).filter(function (t) {
+            return t.axis && Number.isFinite(t.degrees) && Math.abs(t.degrees) > 1e-9;
+          })
+        : [],
+      viewKey: snap.viewKey != null ? String(snap.viewKey) : "",
+      isoKey: snap.isoKey != null ? String(snap.isoKey) : "",
+      iso_level: snap.iso_level != null && Number.isFinite(Number(snap.iso_level))
+        ? Number(snap.iso_level)
+        : null
+    };
+  };
+
+  /**
+   * Live ChimeraX view/iso for the next render (or the frozen batch snapshot).
+   */
+  TrajectoryVolumeDisplay.prototype.chimeraxViewSnapshot = function () {
+    if (this._chimeraxViewBatch) {
+      return this._cloneChimeraxViewSnapshot(this._chimeraxViewBatch);
+    }
+    if (typeof this.captureChimeraxViewSnapshot === "function") {
+      try {
+        var live = this.captureChimeraxViewSnapshot();
+        if (live) return this._cloneChimeraxViewSnapshot(live);
+      } catch (errSnap) { /* fall through */ }
+    }
+    return this._cloneChimeraxViewSnapshot({
+      view_matrix: "",
+      view_turns: [],
+      viewKey: "default",
+      isoKey: this.chimeraxIsoLevel != null && Number.isFinite(Number(this.chimeraxIsoLevel))
+        ? "iso:" + Number(this.chimeraxIsoLevel).toFixed(4)
+        : "iso:auto",
+      iso_level: this.chimeraxIsoLevel
+    });
+  };
+
+  TrajectoryVolumeDisplay.prototype.chimeraxViewBatchSnapshot = function () {
+    return this._chimeraxViewBatch
+      ? this._cloneChimeraxViewSnapshot(this._chimeraxViewBatch)
+      : null;
+  };
+
+  /**
+   * Freeze view/iso for every frame in the current ChimeraX render batch.
+   */
+  TrajectoryVolumeDisplay.prototype.beginChimeraxViewBatch = function (snap) {
+    this._chimeraxViewBatch = this._cloneChimeraxViewSnapshot(
+      snap || this.chimeraxViewSnapshot()
+    );
+    return this.chimeraxViewBatchSnapshot();
+  };
+
+  TrajectoryVolumeDisplay.prototype.endChimeraxViewBatch = function () {
+    this._chimeraxViewBatch = null;
+    return this;
+  };
+
+  /**
+   * Apply the (batch) view snapshot onto a ChimeraX API payload.
+   */
+  TrajectoryVolumeDisplay.prototype.applyChimeraxViewToPayload = function (payload, snap) {
+    payload = payload || {};
+    snap = this._cloneChimeraxViewSnapshot(snap || this.chimeraxViewSnapshot());
+    if (snap.view_matrix) {
+      payload.view_matrix = snap.view_matrix;
+      delete payload.view_turns;
+    } else if (snap.view_turns && snap.view_turns.length) {
+      payload.view_turns = snap.view_turns.slice();
+      delete payload.view_matrix;
+    }
+    if (snap.iso_level != null && Number.isFinite(snap.iso_level)) {
+      payload.iso_level = snap.iso_level;
+    }
+    return payload;
+  };
+
   TrajectoryVolumeDisplay.prototype._countRenderedChimeraxImages = function () {
     var total = this._volumeNavCount();
     var n = 0;
@@ -234,6 +428,10 @@
     return n;
   };
 
+  /**
+   * Nearest index with actual local bytes to paint — the chimerax/vtk-specific
+   * halves of the raw paint-fallback used only by ``_volumeDisplayIndexForFocus``.
+   */
   TrajectoryVolumeDisplay.prototype._nearestRenderedChimeraxIndex = function (target) {
     var total = this._volumeNavCount();
     if (total < 1) return 0;
@@ -262,6 +460,13 @@
     return typeof this.allowUnreadyVolumeNav === "function" && !!this.allowUnreadyVolumeNav();
   };
 
+  /**
+   * Which local slot to actually paint for a given focus index. Backend-specific
+   * and raw-data-based by necessity — a hook can say a slot is "ready" (decoded
+   * server-side) before its bytes have been mirrored into this display instance,
+   * but we can only ever paint bytes we already hold. Nav/tick-stop decisions
+   * must not use this; they use ``_nearestNavReadyIndex`` instead.
+   */
   TrajectoryVolumeDisplay.prototype._volumeDisplayIndexForFocus = function (focus) {
     var t = Math.max(0, Math.min(this._volumeNavCount() - 1, Math.floor(Number(focus))));
     if (this.backend === "chimerax") {
@@ -273,16 +478,33 @@
     return this._nearestReadyVolumeIndex(t);
   };
 
-  TrajectoryVolumeDisplay.prototype._snapFocusIndexToReady = function (target) {
+  /**
+   * Nearest slot that satisfies ``_slotTickReadyAt`` — the same predicate the
+   * ticks render active/clickable with (see ``_syncVolumeSliderTicks``). One
+   * backend-agnostic search suffices because ``_slotTickReadyAt`` already
+   * dispatches on ``this.backend`` internally. Returns -1 when nothing on the
+   * path is nav-ready.
+   */
+  TrajectoryVolumeDisplay.prototype._nearestNavReadyIndex = function (target) {
     var total = this._volumeNavCount();
     if (total < 1) return -1;
     var t = Math.max(0, Math.min(total - 1, Math.floor(Number(target))));
-    if (!this._volumeReadyAt(t)) {
-      t = this.backend === "chimerax"
-        ? this._nearestRenderedChimeraxIndex(t)
-        : this._nearestReadyVolumeIndex(t);
+    if (this._slotTickReadyAt(t)) return t;
+    for (var d = 1; d < total; d++) {
+      if (t - d >= 0 && this._slotTickReadyAt(t - d)) return t - d;
+      if (t + d < total && this._slotTickReadyAt(t + d)) return t + d;
     }
-    return this._volumeReadyAt(t) ? t : -1;
+    return -1;
+  };
+
+  /**
+   * Snap a candidate focus index onto the nearest nav-ready slot (or -1 when
+   * none are ready). Every navigation entry point — slider drag/change,
+   * keyboard stepping, programmatic focus — funnels through this so none of
+   * them can stop somewhere the tick chrome disagrees with.
+   */
+  TrajectoryVolumeDisplay.prototype._snapFocusIndexToReady = function (target) {
+    return this._nearestNavReadyIndex(target);
   };
 
   TrajectoryVolumeDisplay.prototype._stepReadyFocus = function (delta) {
@@ -291,7 +513,7 @@
     var idx = this.backend === "chimerax" ? this.chimeraxFocusIndex : this.vtkFocusIndex;
     for (var attempt = 0; attempt < total; attempt++) {
       idx = (idx + delta + total) % total;
-      if (this._volumeReadyAt(idx)) {
+      if (this._slotTickReadyAt(idx)) {
         this.setFocusIndex(idx);
         return;
       }
@@ -466,6 +688,11 @@
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
   };
 
+  /**
+   * Raw count of locally-paintable VTK slots — feeds ``_hasDisplayableVolumes``
+   * (busy-overlay/placeholder gating) only. Nav enablement uses the nav-ready
+   * count in ``_syncVolumeNavChrome`` instead.
+   */
   TrajectoryVolumeDisplay.prototype._countReadyVolumes = function () {
     var total = this._volumeNavCount();
     var n = 0;
@@ -535,6 +762,7 @@
     if (!on) {
       this.chimeraxRerenderInFlight = false;
       this._chimeraxRerenderReadyMask = null;
+      this.endChimeraxViewBatch();
     } else if (opts.rerender) {
       this.chimeraxRerenderInFlight = true;
       this._holdChimeraxImagesForRerender();
@@ -729,6 +957,7 @@
     if (this.chimeraxFocusIndex < 0) this.chimeraxFocusIndex = 0;
     this._refreshIsoSamplesFromVolumes();
     if (!opts.deferRender) this._renderCurrent();
+    this._syncVolumeNavChrome();
   };
 
   TrajectoryVolumeDisplay.prototype.reorderVolumeSlots = function (permutation, opts) {
@@ -736,24 +965,14 @@
     if (!permutation || permutation.length < 2) return;
     var n = permutation.length;
     var prevFocus = this.backend === "chimerax" ? this.chimeraxFocusIndex : this.vtkFocusIndex;
+    var permuteArray = global.CryoTrajectoryVolumeStateUtils
+      && global.CryoTrajectoryVolumeStateUtils.permuteArray;
+    if (typeof permuteArray !== "function") return;
 
-    function permuteArray(arr) {
-      if (!arr || !arr.length) arr = [];
-      var padded = arr.slice();
-      while (padded.length < n) padded.push(null);
-      if (padded.length > n) padded.length = n;
-      var out = new Array(n);
-      for (var i = 0; i < n; i++) {
-        var src = permutation[i];
-        out[i] = (src >= 0 && src < padded.length) ? padded[src] : null;
-      }
-      return out;
-    }
-
-    this.volumes = permuteArray(this.volumes);
-    this.chimeraxImages = permuteArray(this.chimeraxImages);
+    this.volumes = permuteArray(this.volumes, permutation);
+    this.chimeraxImages = permuteArray(this.chimeraxImages, permutation);
     if (Array.isArray(this._chimeraxRerenderReadyMask)) {
-      this._chimeraxRerenderReadyMask = permuteArray(this._chimeraxRerenderReadyMask);
+      this._chimeraxRerenderReadyMask = permuteArray(this._chimeraxRerenderReadyMask, permutation);
     }
     this.raycastVolIndex = null;
 
@@ -793,6 +1012,13 @@
       }
     }
     if (!vol) return;
+    // Skip full float32 decode when the iso source blob is unchanged (e.g. waypoint
+    // append remounts the slider with the same decoded volumes plus empty slots).
+    if (this._isoSampleSourceB64 === vol.volume_b64
+        && this.isoPercentileSamples
+        && this.isoPercentileSamples.length) {
+      return;
+    }
     try {
       var U = global.CryoVolume3dUtils;
       var values = U.decodeFloat32Volume(vol.volume_b64, vol.D);
@@ -801,6 +1027,7 @@
       if (this.chimeraxIsoLevel == null) {
         this.chimeraxIsoLevel = U.suggestIsoDataValue(this.isoPercentileSamples);
       }
+      this._isoSampleSourceB64 = vol.volume_b64;
       this._syncIsoSliderFromState();
     } catch (err) {
       // Keep prior iso state if volume decode fails.
@@ -1212,9 +1439,7 @@
     var rerenderBusy = isChimeraX && this.chimeraxRerenderInFlight;
     var allowUnreadyNav = this._allowsSparseInteriorFocus();
     for (var tj = 0; tj < ticks.length; tj++) {
-      var tickReady = isChimeraX
-        ? this._chimeraxTickReadyAt(tj)
-        : this._volumeReadyAt(tj);
+      var tickReady = this._slotTickReadyAt(tj);
       ticks[tj].classList.toggle("cryo-vslice-volume-slider-tick--active", !navSuspended && tj === focus);
       if (navSuspended) {
         ticks[tj].classList.remove("cryo-vslice-volume-slider-tick--pending");
@@ -1248,7 +1473,10 @@
     var isVtk = this.backend === "vtk";
     var isChimeraX = this.backend === "chimerax";
     var total = this._volumeNavCount();
-    var readyCount = this._countReadyVolumes();
+    // Nav-ready count via the same predicate as the tick chrome below
+    // (_slotTickReadyAt, through inactiveTickCount) — nav enablement,
+    // Prev/Next stepping, and tick color/click-enablement must always agree.
+    var readyCount = total - this.inactiveTickCount();
     var multi = total > 1;
     var navSuspended = this._volumeNavSuspended();
     var active = multi && readyCount > 0 && !navSuspended;

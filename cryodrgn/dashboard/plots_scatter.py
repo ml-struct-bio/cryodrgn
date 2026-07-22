@@ -257,10 +257,12 @@ def scatter_json(
     preselect_plot_df_rows: Collection[int] | None = None,
     use_webgl: bool = True,
     marker_size: float = 4,
+    marker_opacity: float = 0.35,
     continuous_palette: str | None = None,
     discrete_label_colors: dict[str, str] | None = None,
 ) -> str:
     plotly_cs = normalize_continuous_palette(continuous_palette)
+    marker_opacity = float(max(0.0, min(1.0, marker_opacity)))
 
     sub, row_indices = _subsample(exp.plot_df, max_points, seed=0)
     idx_arr = sub["index"].to_numpy()
@@ -283,7 +285,7 @@ def scatter_json(
         )
         marker = dict(
             size=marker_size,
-            opacity=0.35,
+            opacity=marker_opacity,
             color=hex_colors,
         )
         fk_arr = np.asarray(fk_list, dtype=object)
@@ -291,7 +293,7 @@ def scatter_json(
     elif color_col and color_col != "none" and color_col in sub.columns:
         marker = dict(
             size=marker_size,
-            opacity=0.35,
+            opacity=marker_opacity,
             color=sub[color_col],
             colorscale=plotly_cs,
         )
@@ -303,7 +305,7 @@ def scatter_json(
         disp[~finite_mask] = None
         customdata = np.column_stack([idx_arr, row_arr, disp])
     else:
-        marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
+        marker = dict(size=marker_size, opacity=marker_opacity, color="#4a5568")
         customdata = np.column_stack([idx_arr, row_arr])
 
     has_cov_color = bool(color_col and color_col != "none" and color_col in sub.columns)

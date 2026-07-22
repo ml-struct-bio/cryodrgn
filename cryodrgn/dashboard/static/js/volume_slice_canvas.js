@@ -67,7 +67,7 @@
     return new Float32Array(bytes.buffer);
   }
 
-  /** Match particle explorer image grid meta band (see _particle_explorer_scatterjs.html). */
+  /** Match particle explorer image grid meta band (see particle_explorer.css). */
   var VSLICE_META_TOP_FRAC = 0.19;
   var VSLICE_META_IMG_GAP = 1;
   var VSLICE_CELL_PAD_Y = 2;

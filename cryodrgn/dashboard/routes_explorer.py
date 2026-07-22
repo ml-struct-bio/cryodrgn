@@ -251,7 +251,8 @@ def api_load_covariate_pkl():
     """Load a particle-indexed numeric numpy array from a server-side ``.pkl`` file.
 
     Merges one or more columns into ``plot_df`` so scatter colour selectors can use
-    them like built-in covariates.
+    them like built-in covariates. Paths may be anywhere the dashboard process can
+    read (not limited to the experiment output folder).
     """
     e: DashboardExperiment = g.dashboard_exp
     data = _request_json_dict()
@@ -261,9 +262,8 @@ def api_load_covariate_pkl():
     if not server_path.lower().endswith(".pkl"):
         return jsonify(error="Select a .pkl file."), 400
     abs_path = os.path.abspath(server_path)
-    root = os.path.abspath(e.workdir)
-    if not (abs_path == root or abs_path.startswith(root + os.sep)):
-        return jsonify(error="Path must be under the experiment output folder."), 400
+    if not os.path.isfile(abs_path):
+        return jsonify(error="File not found on server."), 400
     try:
         new_cols, discrete_cols = merge_covariate_pkl(e, abs_path)
     except ValueError as err:
@@ -546,8 +546,10 @@ def api_volume_viewer_analyze_volumes():
 def api_volume_viewer_analyze_markers():
     """Scatterplot markers for analyze k-means / PC volumes."""
     e: DashboardExperiment = g.dashboard_exp
+    xcol = (request.args.get("x") or request.args.get("xcol") or "").strip() or None
+    ycol = (request.args.get("y") or request.args.get("ycol") or "").strip() or None
     try:
-        payload = analyze_volume_markers_payload(e)
+        payload = analyze_volume_markers_payload(e, xcol=xcol, ycol=ycol)
         return jsonify(payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -718,6 +720,14 @@ def api_scatter():
         except ValueError:
             # Invalid marker_size query param; keep the default size.
             pass
+    marker_opacity = 0.35
+    raw_mo = request.args.get("marker_opacity")
+    if raw_mo:
+        try:
+            marker_opacity = max(0.0, min(float(raw_mo), 1.0))
+        except ValueError:
+            # Invalid marker_opacity query param; keep the default opacity.
+            pass
     use_svg = request.args.get("use_svg") == "1"
     discrete_label_colors = None
     raw_dlc = request.args.get("discrete_label_colors")
@@ -743,6 +753,7 @@ def api_scatter():
             preselect_plot_df_rows=preselect_rows,
             use_webgl=not use_svg,
             marker_size=marker_size,
+            marker_opacity=marker_opacity,
             continuous_palette=request.args.get("palette"),
             discrete_label_colors=discrete_label_colors,
         )

@@ -276,7 +276,17 @@ def trajectory_creator_page():
         exp_workdir=e.workdir,
         exp_epoch=int(e.epoch),
         preload_cpus=int(current_app.config.get("PRELOAD_CPUS", 4)),
-        chimerax_cpus_default=DEFAULT_CHIMERAX_PARALLEL,
+        # Honour ``cryodrgn dashboard -c`` for ChimeraX parallelism (not the
+        # library default of 16), matching analyze-volume / Render status text.
+        chimerax_cpus_default=max(
+            1,
+            min(
+                int(
+                    current_app.config.get("PRELOAD_CPUS") or DEFAULT_CHIMERAX_PARALLEL
+                ),
+                32,
+            ),
+        ),
         traj_decode_gpu_count=cuda_gpu_count_for_decode(),
     )
 
@@ -541,16 +551,35 @@ def api_trajectory_kmeans_centers():
 
 
 def api_trajectory_random_indices():
-    """Choose up to 10 random dataset indices (fewer if the stack is smaller)."""
+    """Choose up to 10 random dataset indices (fewer if the stack is smaller).
+
+    Optional JSON body fields:
+    - ``count``: number of new indices to sample (default 10)
+    - ``exclude_indices``: indices already on the trajectory (skipped when sampling)
+    """
     e: DashboardExperiment = g.dashboard_exp
     err = _trajectory_eligibility_error(e)
     if err is not None:
         return err
 
     try:
-        return _trajectory_anchor_driven_json(
-            e, random_dataset_indices(e, 10), _request_json_dict()
-        )
+        data = _request_json_dict()
+        raw_count = data.get("count", 10)
+        try:
+            count = max(0, int(raw_count))
+        except (TypeError, ValueError):
+            return jsonify(error="count must be an integer."), 400
+        exclude: list[int] = []
+        raw_exclude = data.get("exclude_indices")
+        if raw_exclude is not None:
+            if not isinstance(raw_exclude, list):
+                return jsonify(error="exclude_indices must be a list of integers."), 400
+            try:
+                exclude = [int(i) for i in raw_exclude]
+            except (TypeError, ValueError):
+                return jsonify(error="exclude_indices must be a list of integers."), 400
+        indices = random_dataset_indices(e, count, exclude=exclude)
+        return jsonify(ok=True, indices=indices, anchor_indices=indices)
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:
@@ -613,7 +642,9 @@ def api_trajectory_volumes_decode_progress():
         return jsonify(ok=False, error="Missing job_id."), 400
     snap = decode_progress_snapshot(token)
     if snap is None:
-        return jsonify(ok=False, error="Unknown or expired decode job."), 404
+        # 200 (not 404) so in-flight progress polls do not spam the browser
+        # console before the server registers the job or after it unregisters.
+        return jsonify(ok=False, error="Unknown or expired decode job."), 200
     return jsonify(ok=True, **snap)
 
 
@@ -626,7 +657,7 @@ def api_trajectory_volumes_partial():
         return jsonify(ok=False, error="Missing job_id."), 400
     snap = volume_job_partial_snapshot(token)
     if snap is None:
-        return jsonify(ok=False, error="Unknown or expired volume job."), 404
+        return jsonify(ok=False, error="Unknown or expired volume job."), 200
     return jsonify(ok=True, **snap)
 
 
@@ -826,8 +857,18 @@ def api_trajectory_volumes():
                     chimerax_iso_response_fields(mrc_path, iso_level=iso_level)
                 )
         else:
+            # Generate (and other vtk/slice decode jobs) may omit shipping
+            # multi-hundred-MB volume_b64 blobs: decode into the MRC cache only
+            # so Render / volumes_from_cache can use the token afterward.
+            omit_xfer = bool(data.get("omit_volume_transfer") or data.get("cache_only"))
             vol_payloads, cache_token = generate_trajectory_volume_b64_list(
-                e, z_decode, progress_token=progress_token
+                e,
+                z_decode,
+                progress_token=progress_token,
+                trajectory_slot_indices=(
+                    list(decode_slot_indices) if partial_decode else list(range(n_traj))
+                ),
+                include_transfer_payloads=not omit_xfer,
             )
             if partial_decode:
                 volumes_sparse: list[dict[str, object] | None] = [None] * n_traj
@@ -840,6 +881,9 @@ def api_trajectory_volumes():
                 payload["volumes"] = vol_payloads
             payload["volume_cache_id"] = cache_token
             payload["render_backend"] = render_backend
+            if omit_xfer:
+                payload["omit_volume_transfer"] = True
+                payload["slot_indices"] = [int(i) for i in decode_slot_indices]
         if traj_rows is not None and p["mode"] in ("nearest", "graph"):
             payload["particle_thumbs"] = [
                 particle_thumbnail_b64_from_row(e, int(r)) for r in traj_rows

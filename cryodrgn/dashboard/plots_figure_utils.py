@@ -27,9 +27,9 @@ DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE = 10
 
 # Dashboard-only discrete palette for labels/k-means (kept out of non-dashboard tools).
 _DASHBOARD_CHIMERAX_COLORS: tuple[str, ...] = (
-    "#949494",
+    "#00f700",
     "#ffd84d",
-    "#81bfd1",
+    "#0025ff",
     "#929ad1",
     "#c39bc3",
     "#d1a0a0",

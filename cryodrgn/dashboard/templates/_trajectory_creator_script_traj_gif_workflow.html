@@ -207,20 +207,27 @@
   function computeTrajGifLockedVolumeContentScale(frameBoundsList, panelW, panelH, paddingFrac) {
     if (!frameBoundsList || !frameBoundsList.length) return null;
     paddingFrac = (paddingFrac == null) ? TRAJ_GIF_VOLUME_PADDING : paddingFrac;
-    var maxW = 0;
-    var maxH = 0;
+    var union = null;
     for (var i = 0; i < frameBoundsList.length; i++) {
-      var sz = trajGifContentSizeFromBounds(frameBoundsList[i]);
-      if (sz.w > maxW) maxW = sz.w;
-      if (sz.h > maxH) maxH = sz.h;
+      union = unionTrajGifContentBounds(union, frameBoundsList[i]);
     }
+    if (!union) return null;
+    var maxW = union.maxX - union.minX + 1;
+    var maxH = union.maxY - union.minY + 1;
     if (maxW < 1 || maxH < 1) return null;
     var availW = panelW * (1 - (2 * paddingFrac));
     var availH = panelH * (1 - (2 * paddingFrac));
     return {
       scale: Math.min(availW / maxW, availH / maxH),
       maxContentW: maxW,
-      maxContentH: maxH
+      maxContentH: maxH,
+      // Shared crop window so every frame has identical whitespace dimensions.
+      unionBounds: {
+        minX: union.minX,
+        minY: union.minY,
+        maxX: union.maxX,
+        maxY: union.maxY
+      }
     };
   }
 
@@ -326,13 +333,19 @@
     if (!ctx) throw new Error("Could not render GIF volume frame.");
     ctx.fillStyle = "#faf8f4";
     ctx.fillRect(0, 0, panelW, panelH);
-    if (!bounds || !placement || !placement.scale) {
+    if (!placement || !placement.scale) {
       return gifDataUrlToBareB64(canvas.toDataURL("image/png"));
     }
-    var minX = Math.max(0, bounds.minX);
-    var minY = Math.max(0, bounds.minY);
-    var cropW = Math.max(1, Math.min(bounds.maxX - bounds.minX + 1, img.width - minX));
-    var cropH = Math.max(1, Math.min(bounds.maxY - bounds.minY + 1, img.height - minY));
+    // Prefer the locked union crop so every frame shares the same whitespace
+    // box; fall back to per-frame bounds only when no union was computed.
+    var crop = placement.unionBounds || bounds;
+    if (!crop) {
+      return gifDataUrlToBareB64(canvas.toDataURL("image/png"));
+    }
+    var minX = Math.max(0, crop.minX);
+    var minY = Math.max(0, crop.minY);
+    var cropW = Math.max(1, Math.min(crop.maxX - crop.minX + 1, img.width - minX));
+    var cropH = Math.max(1, Math.min(crop.maxY - crop.minY + 1, img.height - minY));
     var dw = cropW * placement.scale;
     var dh = cropH * placement.scale;
     var dx = (panelW - dw) / 2;
@@ -389,6 +402,21 @@
     ctx.restore();
   }
 
+  function trajGifGlyphLabelFontSize(ctx, label, sizePx, borderW) {
+    // Largest bold digit size whose text bbox still fits inside the circle.
+    var innerDiam = Math.max(4, sizePx - (2 * borderW) - 1);
+    var maxR = innerDiam * 0.5;
+    var maxFs = Math.max(6, Math.floor(innerDiam));
+    for (var fs = maxFs; fs >= 6; fs--) {
+      ctx.font = "700 " + fs + 'px "Barlow", sans-serif';
+      var tw = ctx.measureText(label).width;
+      var th = fs * 0.82;
+      var halfDiag = 0.5 * Math.sqrt((tw * tw) + (th * th));
+      if (halfDiag <= maxR) return fs;
+    }
+    return 6;
+  }
+
   function drawTrajGlyphSpecOnGifCanvas(ctx, spec, exportW, exportH) {
     var pt = dataToTrajGifExportXY(spec.x, spec.y, exportW, exportH);
     if (!pt) return;
@@ -397,52 +425,35 @@
     var gifNeutral = trajGifGenerationActive();
     var sizePx = Number(spec.size) || TRAJ_MARKER_SIZE_WAYPOINT;
     if (!gifNeutral && spec.focused) {
-      sizePx = Math.max(sizePx + 5, Math.round(sizePx * 1.35));
+      sizePx = Math.max(sizePx + 4, Math.round(sizePx * 1.2));
     }
     sizePx *= drawScale;
     var color = spec.color || "#243b53";
     var fillColor = color;
-    var labelColor = color;
     if (spec.focused) {
       fillColor = trajGlyphFocusHighlightColor(color);
-      labelColor = fillColor;
     }
-    var isSquare = spec.symbol === TRAJ_MARKER_ENDPOINT;
     var borderW = (spec.focused ? 1 : 1.25) * drawScale;
     var half = sizePx * 0.5;
     ctx.save();
     ctx.fillStyle = fillColor;
     ctx.strokeStyle = spec.focused ? "#000000" : "#ffffff";
     ctx.lineWidth = borderW;
-    if (isSquare) {
-      ctx.fillRect(pt[0] - half, pt[1] - half, sizePx, sizePx);
-      ctx.strokeRect(pt[0] - half, pt[1] - half, sizePx, sizePx);
-    } else {
-      ctx.translate(pt[0], pt[1]);
-      ctx.rotate(Math.PI / 4);
-      ctx.fillRect(-half, -half, sizePx, sizePx);
-      ctx.strokeRect(-half, -half, sizePx, sizePx);
-    }
+    ctx.beginPath();
+    ctx.arc(pt[0], pt[1], half, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
 
     var label = stripTrajGifGlyphLabelHtml(spec.labelHtml);
     if (!label) return;
-    var fontSize = Number(spec.labelSize || TRAJ_TEXTFONT_SIZE) * drawScale;
-    if (spec.labelClass && String(spec.labelClass).indexOf("anchor") >= 0) {
-      fontSize = TRAJ_ANCHOR_TEXTFONT_SIZE * drawScale;
-    }
-    if (!gifNeutral && spec.focused) fontSize = 26 * drawScale;
-    var labelY = pt[1] - (7 * drawScale) - half;
+    var fontSize = trajGifGlyphLabelFontSize(ctx, label, sizePx, borderW);
     ctx.save();
     ctx.font = "700 " + fontSize + 'px "Barlow", sans-serif';
     ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    ctx.lineWidth = (spec.focused ? 3 : 5) * drawScale;
-    ctx.strokeStyle = spec.focused ? "#000000" : "#ffffff";
-    ctx.lineJoin = "round";
-    ctx.strokeText(label, pt[0], labelY);
-    ctx.fillStyle = labelColor;
-    ctx.fillText(label, pt[0], labelY);
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label, pt[0], pt[1] + (fontSize * 0.04));
     ctx.restore();
   }
 
@@ -1078,7 +1089,7 @@
     var payloads = [
       activeVolumePayload(),
       lastVolumePayload,
-      manualAnalyzeVolumePayload
+      volumePayload()
     ];
     for (var i = 0; i < payloads.length; i++) {
       var imgs = chimeraxImagesFromPayload(payloads[i]);
@@ -1406,11 +1417,7 @@
   }
   if (btnAnchorRandom) {
     btnAnchorRandom.addEventListener("click", function() {
-      postTrajectoryIndices(
-        "{{ url_for('api_trajectory_random_indices') }}",
-        "Sampling random indices…",
-        "Random indices"
-      );
+      addRandomIndicesToTrajectory();
     });
   }
   document.querySelectorAll('input[name="traj-anchor-path-order"]').forEach(function(radio) {
@@ -1421,6 +1428,9 @@
       else if (radio.value === "preserve") requestPreserveAnchorPathOrder();
     });
   });
+  if (btnAnchorManualOpen) {
+    btnAnchorManualOpen.addEventListener("click", openTrajAnchorManualModal);
+  }
   if (btnAnchorManualLoad) {
     btnAnchorManualLoad.addEventListener("click", loadManualAnchorIndices);
   }
@@ -1430,6 +1440,12 @@
         evt.preventDefault();
         loadManualAnchorIndices();
       }
+    });
+  }
+  if (trajAnchorManualModal && window.CryoDashModal) {
+    CryoDashModal.wire(trajAnchorManualModal, {
+      closeAttr: "data-traj-anchor-manual-close",
+      restoreFocusEl: btnAnchorManualOpen
     });
   }
   if (btnAnchorRemove) {
@@ -1448,7 +1464,9 @@
   }
 
   /* ── Before reloading scatter (axes / color): cancel in-flight requests, clear stale 2D state ── */
-  function preparePlotReload() {
+  function preparePlotReload(opts) {
+    opts = opts || {};
+    var preservePathIdentity = !!opts.preservePathIdentity;
     if (!shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()) {
       volumeGeneration++;
       stopDecodeProgressPoll();
@@ -1457,7 +1475,9 @@
     dragEndpoint = null;
     dragPointIndex = -1;
     clearTrajGlyphOverlay();
-    trajPlotRows = null;
+    if (!preservePathIdentity) {
+      trajPlotRows = null;
+    }
     trajMarkerColors = null;
     startXY = null;
     endXY = null;
@@ -1468,6 +1488,49 @@
       trajVolColumn.innerHTML = "";
       clearTrajectoryZPanel();
     }
+  }
+
+  function reprojectTrajectoryPathToCurrentAxes() {
+    // Catalog / PC waypoints: prefer marker.xy (from z_values.txt projection)
+    // over nearest-particle plot rows when rebuilding for new axes.
+    if (isManualTraversalMode()
+        && manualSelectedVolIds
+        && manualSelectedVolIds.length >= 2
+        && typeof scatterXYForVolumeId === "function") {
+      var markerXY = [];
+      for (var mi = 0; mi < manualSelectedVolIds.length; mi++) {
+        var mpt = scatterXYForVolumeId(manualSelectedVolIds[mi]);
+        if (!mpt) {
+          markerXY = null;
+          break;
+        }
+        markerXY.push(mpt.slice());
+      }
+      if (markerXY && markerXY.length === manualSelectedVolIds.length) {
+        if (typeof syncManualAnchorsPreview === "function") {
+          syncManualAnchorsPreview({ skipVolumeSync: true });
+        } else {
+          anchorTrajXY = markerXY;
+          editableTrajXY = null;
+        }
+        return true;
+      }
+    }
+    var rows = (trajPlotRows && trajPlotRows.length >= 2)
+      ? trajPlotRows
+      : ((anchorIndicesActive && anchorIndicesActive.length >= 2) ? anchorIndicesActive : null);
+    if (!rows || rows.length < 2 || typeof trajXYFromPlotRows !== "function") return false;
+    var xy = trajXYFromPlotRows(rows);
+    if (!xy || xy.length !== rows.length) return false;
+    anchorTrajXY = xy;
+    editableTrajXY = null;
+    if (!trajPlotRows || trajPlotRows.length < 2) {
+      // Catalog / waypoint preview: keep anchors aligned with reprojected XY.
+      if (anchorIndicesActive && anchorIndicesActive.length === xy.length) {
+        /* keep existing anchors */
+      }
+    }
+    return true;
   }
 
   function resetTrajectory() {
@@ -1487,13 +1550,13 @@
   btnResetEl.addEventListener("click", resetTrajectory);
 
   /* ── Overlay traces (markers + line) on the scatter ── */
-  var TRAJ_MARKER_ENDPOINT = "square";
-  var TRAJ_MARKER_WAYPOINT = "diamond";
-  var TRAJ_MARKER_SIZE_ENDPOINT = 14;
-  var TRAJ_MARKER_SIZE_WAYPOINT = 12;
-  var TRAJ_TEXTFONT_SIZE = 20;
-  var TRAJ_ANCHOR_MARKER_SIZE = 13;
-  var TRAJ_ANCHOR_TEXTFONT_SIZE = 23;
+  var TRAJ_MARKER_ENDPOINT = "circle";
+  var TRAJ_MARKER_WAYPOINT = "circle";
+  var TRAJ_MARKER_SIZE_ENDPOINT = 18;
+  var TRAJ_MARKER_SIZE_WAYPOINT = 18;
+  var TRAJ_TEXTFONT_SIZE = 11;
+  var TRAJ_ANCHOR_MARKER_SIZE = 18;
+  var TRAJ_ANCHOR_TEXTFONT_SIZE = 11;
 
   function trajectoryLabelCount(pointCount) {
     if (typeof pointCount === "number" && pointCount >= 2) return pointCount;
@@ -1505,9 +1568,7 @@
     var n = trajectoryLabelCount(pointCount);
     var labels = [];
     for (var i = 0; i < n; i++) {
-      if (i === 0) labels.push("<b>Start (1)</b>");
-      else if (i === n - 1) labels.push("<b>End (" + n + ")</b>");
-      else labels.push("<b>" + (i + 1) + "</b>");
+      labels.push(String(i + 1));
     }
     return labels;
   }
@@ -1528,9 +1589,31 @@
     return !!(sc.value && sc.value !== "none" && hasAnchorIndices());
   }
 
+  function refreshTrajectoryMarkerColorsFromScatter() {
+    if (!sc.value || sc.value === "none") {
+      trajMarkerColors = null;
+      if (typeof scheduleTrajGlyphOverlaySync === "function") scheduleTrajGlyphOverlaySync();
+      else if (typeof syncTrajGlyphOverlay === "function") syncTrajGlyphOverlay();
+      return true;
+    }
+    var rows = (trajPlotRows && trajPlotRows.length >= 2)
+      ? trajPlotRows
+      : ((anchorIndicesActive && anchorIndicesActive.length >= 2) ? anchorIndicesActive : null);
+    if (!rows || rows.length < 2) return false;
+    if (typeof scatterColorForPlotRow !== "function") return false;
+    trajMarkerColors = rows.map(function(row) {
+      return scatterColorForPlotRow(Number(row), null);
+    });
+    if (typeof scheduleTrajGlyphOverlaySync === "function") scheduleTrajGlyphOverlaySync();
+    else if (typeof syncTrajGlyphOverlay === "function") syncTrajGlyphOverlay();
+    return true;
+  }
+
   function onTrajCovariateStyleChanged() {
+    // Covariate / palette changes must never densify or rebuild path geometry.
+    if (refreshTrajectoryMarkerColorsFromScatter()) return;
     if (shouldRefetchTrajectoryColorsOnCovariateChange()) {
-      fetchTrajectoryCoords();
+      fetchTrajectoryCoords({ colorsOnly: true });
       return;
     }
     syncTrajGlyphOverlay();

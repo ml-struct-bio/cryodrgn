@@ -6,6 +6,8 @@
 
   var PLOT3D_TARGET_D = 128;
   var DEFAULT_ISO_PERCENTILE = 42;
+  /** Matches ChimeraX ``volume #1 sdLevel 2`` for the initial contour. */
+  var DEFAULT_CHIMERAX_SD_LEVEL = 2;
 
   function decodeFloat32Volume(b64, d) {
     var binary = atob(b64);
@@ -160,7 +162,21 @@
   }
 
   function suggestIsoDataValue(samples) {
-    return percentileValue(samples, suggestIsoPercentile(samples));
+    if (!samples || !samples.length) return 0;
+    if (samples.length === 1) return samples[0];
+    var n = samples.length;
+    var sum = 0;
+    for (var i = 0; i < n; i++) sum += samples[i];
+    var mean = sum / n;
+    if (!isFinite(mean)) return 0;
+    var varSum = 0;
+    for (var j = 0; j < n; j++) {
+      var d = samples[j] - mean;
+      varSum += d * d;
+    }
+    var std = Math.sqrt(varSum / n);
+    if (!(std > 0) || !isFinite(std)) return mean;
+    return mean + DEFAULT_CHIMERAX_SD_LEVEL * std;
   }
 
   /** Rank window for the iso slider (linear in data values, ChimeraX map units). */

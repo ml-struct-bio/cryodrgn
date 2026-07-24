@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import pytest
+
 from pathlib import Path
 
 from cryodrgn.commands import dashboard as dash_cli, train_vae
@@ -49,6 +50,8 @@ from cryodrgn.dashboard.command_builder_page import (
     main as build_command_builder_page_main,
     render_command_builder_html,
 )
+
+pytestmark = pytest.mark.dashboard
 
 
 class TestCommandModuleDocstrings:
@@ -509,8 +512,8 @@ class TestDashboardCLI:
         )
 
 
-class TestCommandBuilderManuscriptLabels:
-    def test_reconstruction_commands_mapped(self) -> None:
+class TestCommandBuilderManuscriptMeta:
+    def test_reconstruction_commands_have_labels_and_urls(self) -> None:
         assert COMMAND_BUILDER_MANUSCRIPT_LABELS["train_nn"] == "cryoDRGN1\nmanuscript"
         assert COMMAND_BUILDER_MANUSCRIPT_LABELS["train_vae"] == "cryoDRGN1\nmanuscript"
         assert (
@@ -521,14 +524,6 @@ class TestCommandBuilderManuscriptLabels:
         assert (
             COMMAND_BUILDER_MANUSCRIPT_LABELS["train_dec"] == "cryoDRGN-AI\nmanuscript"
         )
-
-    def test_analyze_commands_not_mapped(self) -> None:
-        for key in ("analyze", "analyze_landscape", "backproject_voxel"):
-            assert key not in COMMAND_BUILDER_MANUSCRIPT_LABELS
-
-
-class TestCommandBuilderManuscriptUrls:
-    def test_reconstruction_commands_mapped(self) -> None:
         assert (
             COMMAND_BUILDER_MANUSCRIPT_URLS["abinit"]
             == "https://www.nature.com/articles/s41592-025-02720-4"
@@ -545,6 +540,7 @@ class TestCommandBuilderManuscriptUrls:
 
     def test_analyze_commands_not_mapped(self) -> None:
         for key in ("analyze", "analyze_landscape", "backproject_voxel"):
+            assert key not in COMMAND_BUILDER_MANUSCRIPT_LABELS
             assert key not in COMMAND_BUILDER_MANUSCRIPT_URLS
 
 

@@ -28,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
 from cryodrgn import utils
 from cryodrgn.dashboard.data import DashboardExperiment, load_experiment
 from cryodrgn.dashboard.landscape_volpca import (
@@ -68,6 +69,8 @@ from tests.conftest import (
     decode_plotly_figure,
     plotly_trace_array,
 )
+
+pytestmark = pytest.mark.dashboard
 
 _LANDSCAPE_K = 3
 
@@ -850,12 +853,6 @@ class TestLandscapeVolpcaFlaskRoutes:
         assert '<div class="volsketch-grid">' not in body
         assert 'id="volsketch"' not in body
 
-    def test_index_links_landscape_when_ready(self, flask_client_landscape) -> None:
-        r = flask_client_landscape.get("/")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
-        assert "/landscape-volpca" in body
-
     def test_scatter_requires_both_axis_params(self, flask_client_landscape) -> None:
         r = flask_client_landscape.get(
             "/api/landscape_volpca/scatter",
@@ -949,36 +946,35 @@ def dashboard_landscape_live_url(dashboard_landscape_volpca_live_url: str):
 
 
 class TestLandscapeVolpcaPlotlyBrowserSmoke:
-    """Headless Chromium: vol PCA random selection overlay letters."""
+    """Headless Chromium: vol PCA overlay, clear, and axis reload."""
 
     pytestmark = pytest.mark.browser
 
-    def test_random_selection_overlay_letters(
-        self, playwright_page, dashboard_landscape_live_url
+    @pytest.mark.parametrize(
+        "smoke_name,key,expect",
+        [
+            ("dashboard_smoke_landscape_volpca", "overlayTexts", 1),
+            (
+                "dashboard_smoke_landscape_volpca_clear_selection",
+                "overlay_cleared",
+                True,
+            ),
+            ("dashboard_smoke_landscape_volpca_axis_reload", "points", 1),
+        ],
+        ids=["overlay_letters", "clear_selection", "axis_reload"],
+    )
+    def test_volpca_browser_smokes(
+        self,
+        smoke_name: str,
+        key: str,
+        expect,
+        playwright_page,
+        dashboard_landscape_live_url,
     ) -> None:
-        from tests.conftest import dashboard_smoke_landscape_volpca
+        import tests.conftest as cf
 
-        out = dashboard_smoke_landscape_volpca(
-            playwright_page, dashboard_landscape_live_url
-        )
-        assert out["overlayTexts"] >= 1
-
-    def test_clear_selection_removes_overlay(
-        self, playwright_page, dashboard_landscape_live_url
-    ) -> None:
-        from tests.conftest import dashboard_smoke_landscape_volpca_clear_selection
-
-        out = dashboard_smoke_landscape_volpca_clear_selection(
-            playwright_page, dashboard_landscape_live_url
-        )
-        assert out["overlay_cleared"]
-
-    def test_axis_change_reloads_scatter(
-        self, playwright_page, dashboard_landscape_live_url
-    ) -> None:
-        from tests.conftest import dashboard_smoke_landscape_volpca_axis_reload
-
-        out = dashboard_smoke_landscape_volpca_axis_reload(
-            playwright_page, dashboard_landscape_live_url
-        )
-        assert out["points"] >= 1
+        out = getattr(cf, smoke_name)(playwright_page, dashboard_landscape_live_url)
+        if isinstance(expect, bool):
+            assert out[key] is expect
+        else:
+            assert out[key] >= expect

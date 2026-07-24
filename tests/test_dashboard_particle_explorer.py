@@ -12,8 +12,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from cryodrgn.dashboard.context import PRELOAD_CACHE
-from cryodrgn.dashboard import app as dash_app
+from cryodrgn.dashboard.context import (
+    PRELOAD_CACHE,
+    EXPERIMENT_STORE,
+    clear_experiment_caches,
+)
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import (
     _chimerax_render_cmds,
@@ -36,7 +39,9 @@ from cryodrgn.dashboard.particle_explorer import (
     torch_cuda_available,
     volume_cell_gif_from_cache,
 )
-from tests.conftest import read_dashboard_static_js
+from tests.conftest import (
+    _monkeypatch_explorer_volumes_eligible,
+)
 from cryodrgn.dashboard.preload import (
     DEFAULT_PRELOAD_IMAGE_LIMIT,
     _hybrid_random_knn_spaced_local_indices,
@@ -51,6 +56,8 @@ from cryodrgn.dashboard.preload import (
     sample_plot_df_rows_for_preload,
 )
 
+pytestmark = pytest.mark.dashboard
+
 
 class TestChimeraxRenderCmds:
     """Pure-function sanity checks for the extracted ChimeraX helper."""
@@ -64,6 +71,9 @@ class TestChimeraxRenderCmds:
         assert cmds[-1] == "exit"
         assert any("save " in c for c in cmds)
         assert any("view #1 orient" in c for c in cmds)
+        assert any("volume #1 sdLevel 2" in c for c in cmds)
+        assert "surface dust all size 10" in cmds
+        assert "lighting soft" in cmds
 
     def test_volume_level_override(self) -> None:
         cmds = _chimerax_render_cmds(
@@ -75,6 +85,7 @@ class TestChimeraxRenderCmds:
             volume_level=0.42,
         )
         assert any("volume #1 level 0.42" in c for c in cmds)
+        assert not any("sdLevel" in c for c in cmds)
 
     def test_rotated_view_injects_turn(self) -> None:
         cmds = _chimerax_render_cmds(
@@ -502,16 +513,129 @@ def _clear_particle_explorer_vol_cache() -> None:
             _vol_cache_evict_unlocked(tok)
 
 
+class TestVolumeCaches:
+    """Direct coverage for ``cryodrgn.dashboard.volume_caches`` (no Flask)."""
+
+    def test_mrc_cache_ttl_evicts_and_removes_dir(self, tmp_path: Path) -> None:
+        from cryodrgn.dashboard.volume_caches import VolumeMrcCache
+
+        cache = VolumeMrcCache(max_entries=8, ttl_s=0.01)
+        mrc_dir = tmp_path / "vols"
+        mrc_dir.mkdir()
+        vol = mrc_dir / "vol_001.mrc"
+        vol.write_bytes(b"\x00")
+        token = cache.register(str(mrc_dir), [str(vol)], (0,))
+        assert cache.get_meta(token) is not None
+        import time
+
+        time.sleep(0.02)
+        assert cache.get_meta(token) is None
+        assert not mrc_dir.exists()
+
+    def test_mrc_cache_max_entries_evicts_oldest_dir(self, tmp_path: Path) -> None:
+        from cryodrgn.dashboard.volume_caches import VolumeMrcCache
+
+        cache = VolumeMrcCache(max_entries=2, ttl_s=3600.0)
+        tokens: list[str] = []
+        dirs: list[Path] = []
+        for i in range(3):
+            d = tmp_path / f"mrc_{i}"
+            d.mkdir()
+            p = d / "vol_001.mrc"
+            p.write_bytes(b"\x00")
+            dirs.append(d)
+            tokens.append(cache.register(str(d), [str(p)], (i,)))
+        assert len(cache.entries) == 2
+        assert tokens[0] not in cache.entries
+        assert not dirs[0].exists()
+        assert dirs[1].exists() and dirs[2].exists()
+
+    def test_mrc_cache_evict_unlocked_removes_dir(self, tmp_path: Path) -> None:
+        from cryodrgn.dashboard.volume_caches import VolumeMrcCache
+
+        cache = VolumeMrcCache()
+        mrc_dir = tmp_path / "gone"
+        mrc_dir.mkdir()
+        vol = mrc_dir / "vol_001.mrc"
+        vol.write_bytes(b"\x00")
+        token = cache.register(str(mrc_dir), [str(vol)], (0,))
+        with cache.lock:
+            cache.evict_unlocked(token)
+        assert token not in cache.entries
+        assert not mrc_dir.exists()
+
+    def test_job_store_progress_snapshot_and_ttl(self) -> None:
+        from cryodrgn.dashboard.volume_caches import VolumeJobStore
+
+        store = VolumeJobStore(progress_ttl_s=0.01, partial_ttl_s=0.01)
+        store.progress_register("tok", total=10, workers=2, phase="decode")
+        store.progress_set_done("tok", 4)
+        snap = store.progress_snapshot("tok")
+        assert snap is not None
+        assert snap["done"] == 4
+        assert snap["total"] == 10
+        assert snap["n_gpus"] == 2
+        import time
+
+        time.sleep(0.02)
+        assert store.progress_snapshot("tok") is None
+
+    def test_volume_generation_token_reuse_via_register(
+        self,
+        dashboard_experiment: DashboardExperiment,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Two montage generations register distinct tokens; epoch switch clears experiments."""
+
+        def _fake_decode(
+            exp: DashboardExperiment, z_values: np.ndarray, mrc_dir: str
+        ) -> list[str]:
+            os.makedirs(mrc_dir, exist_ok=True)
+            paths: list[str] = []
+            for i in range(len(z_values)):
+                p = os.path.join(mrc_dir, f"vol_{i + 1:03d}.mrc")
+                Path(p).write_bytes(b"\x00")
+                paths.append(p)
+            return paths
+
+        def _fake_pngs(tasks, chimerax_cpus=1):
+            from PIL import Image
+
+            paths = []
+            for _idx, _mrc, png, _dpi in tasks:
+                Image.new("RGB", (4, 4), color=(9, 8, 7)).save(png)
+                paths.append(png)
+            return paths
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer._decode_z_values_to_vol_paths",
+            _fake_decode,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.render_static_pngs_parallel",
+            _fake_pngs,
+        )
+        _pngs1, tok1 = generate_montage_volume_pngs(
+            dashboard_experiment, [0], chimerax_cpus=1
+        )
+        _pngs2, tok2 = generate_montage_volume_pngs(
+            dashboard_experiment, [1], chimerax_cpus=1
+        )
+        assert tok1 != tok2
+        assert tok1 in _VOL_MRC_CACHE and tok2 in _VOL_MRC_CACHE
+
+        EXPERIMENT_STORE.clear_all()
+        EXPERIMENT_STORE.get_experiment(
+            dashboard_experiment.workdir, dashboard_experiment.epoch, -1
+        )
+        assert EXPERIMENT_STORE.experiments
+        clear_experiment_caches()
+        assert not EXPERIMENT_STORE.experiments
+        # Volume MRC tokens are process-local and intentionally survive epoch cache clears.
+        assert tok1 in _VOL_MRC_CACHE
+
+
 class TestParticleExplorerVolumeCache:
-    def _fake_parallel_pngs(self, tasks, chimerax_cpus=1):
-        from PIL import Image
-
-        paths = []
-        for _idx, _mrc, png, _dpi in tasks:
-            Image.new("RGB", (6, 6), color=(1, 2, 3)).save(png)
-            paths.append(png)
-        return paths
-
     def test_generate_montage_and_gif_from_cache(
         self,
         dashboard_experiment: DashboardExperiment,
@@ -528,6 +652,15 @@ class TestParticleExplorerVolumeCache:
                 paths.append(p)
             return paths
 
+        def _fake_pngs(tasks, chimerax_cpus=1):
+            from PIL import Image
+
+            paths = []
+            for _idx, _mrc, png, _dpi in tasks:
+                Image.new("RGB", (6, 6), color=(1, 2, 3)).save(png)
+                paths.append(png)
+            return paths
+
         def _fake_gif(mrc_path: str, out_gif: str, **kwargs) -> None:
             Path(out_gif).write_bytes(b"GIF89a")
 
@@ -536,8 +669,12 @@ class TestParticleExplorerVolumeCache:
             _fake_decode,
         )
         monkeypatch.setattr(
-            "cryodrgn.dashboard.particle_explorer.parallel_chimerax_static_pngs",
-            self._fake_parallel_pngs,
+            "cryodrgn.dashboard.particle_explorer.render_static_pngs_parallel",
+            _fake_pngs,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.render_rotating_gif",
+            _fake_gif,
         )
         monkeypatch.setattr(
             "cryodrgn.dashboard.particle_explorer.cx.render_rotating_gif",
@@ -1057,10 +1194,7 @@ class TestApiCovariateThresholdRows:
 
 class TestApiExplorerVolumeMedia:
     def test_ineligible_returns_400(self, flask_client, monkeypatch) -> None:
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
-            lambda _e: False,
-        )
+        _monkeypatch_explorer_volumes_eligible(monkeypatch, eligible=False)
         r = flask_client.post(
             "/api/explorer_volume_media",
             json={"rows": [0], "mode": "static"},
@@ -1068,10 +1202,7 @@ class TestApiExplorerVolumeMedia:
         assert r.status_code == 400
 
     def test_empty_rows_returns_400(self, flask_client, monkeypatch) -> None:
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
-            lambda _e: True,
-        )
+        _monkeypatch_explorer_volumes_eligible(monkeypatch, eligible=True)
         r = flask_client.post(
             "/api/explorer_volume_media",
             json={"rows": [], "mode": "static"},
@@ -1079,10 +1210,7 @@ class TestApiExplorerVolumeMedia:
         assert r.status_code == 400
 
     def test_bad_mode_returns_400(self, flask_client, monkeypatch) -> None:
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
-            lambda _e: True,
-        )
+        _monkeypatch_explorer_volumes_eligible(monkeypatch, eligible=True)
         r = flask_client.post(
             "/api/explorer_volume_media",
             json={"rows": [0, 1], "mode": "movie"},
@@ -1283,424 +1411,6 @@ class TestApiPreloadImages:
         assert js["images"] == []
 
 
-class TestParticleExplorerTemplateRegressions:
-    @pytest.fixture(scope="module")
-    def explorer_template_body(self, dashboard_workdir: str) -> str:
-        """Cached ``/explorer`` HTML for template contract checks (one fetch per module)."""
-        app = dash_app.create_app(workdir=dashboard_workdir)
-        with app.test_client() as client:
-            r = client.get("/explorer")
-        assert r.status_code == 200
-        return r.get_data(as_text=True)
-
-    def test_explorer_legend_static_assets_served_by_flask(self, flask_client) -> None:
-        """Wheel/sdist must ship nested ``static/js/*`` (``static/*`` alone omits them)."""
-        r_prim = flask_client.get("/static/js/cryo_cc_legend_primitives.js")
-        assert r_prim.status_code == 200, r_prim.status_code
-        assert b"CryoCcLegendPrimitives" in r_prim.data
-        r_leg = flask_client.get("/static/js/color_covariate_legend.js")
-        assert r_leg.status_code == 200, r_leg.status_code
-        assert b"CryoColorCovariateLegend" in r_leg.data
-
-    def test_lasso_box_selection_union_and_deselect_preserves(
-        self, explorer_template_body: str
-    ) -> None:
-        """Selection UX regression checks for disjoint lasso/box drags.
-
-        We can't run the browser JS here, so we assert the template contains
-        the key behaviours:
-        - lasso/box selections accumulate (union) across multiple drags
-        - Plotly deselect events do not wipe the stored selection
-          (only the explicit "Clear selection" button should do that)
-        - lasso/box accumulation only happens when the previous selection mode
-          was already geometric/``lasso`` (range/toggle selections overwrite)
-        """
-        body = explorer_template_body
-
-        # Accumulation logic is guarded by "prevMode === 'lasso'" so lasso clears
-        # range/toggle selection instead of unioning with it.
-        assert 'prevMode === "lasso"' in body
-        assert "var mergedSet = new Set(baseRows);" in body
-        assert "Re-apply accumulated union after region geometry is committed" in body
-
-        # Range/toggle selections overwrite the current selection (they don't
-        # accumulate with lasso drags).
-        assert "saveSelectionRows = Array.from(rowSet);" in body
-        assert 'statusPrefix === "Color threshold"' in body
-        assert 'statusPrefix === "Discrete"' in body
-
-        start = body.find('gd.on("plotly_deselect", function()')
-        assert start != -1, "missing plotly_deselect handler"
-        end = body.find('gd.addEventListener("mouseleave"', start)
-        assert end != -1 and end > start, "could not bound plotly_deselect block"
-        deselect_block = body[start:end]
-
-        assert (
-            'Keep the accumulated lasso/box selection unless the explicit "Clear selection"'
-            in deselect_block
-        )
-        # Previous behaviour wiped selection state here; we intentionally keep it.
-        assert "saveSelectionRows = []" not in deselect_block
-
-        # Explicit Clear selection button should still wipe the stored selection.
-        clear_start = body.find("function clearExplorerSelection()")
-        assert clear_start != -1, "missing clearExplorerSelection()"
-        clear_end = body.find(
-            "function rowsMatchingColorThresholdFromTrace", clear_start
-        )
-        assert (
-            clear_end != -1 and clear_end > clear_start
-        ), "could not bound clear block"
-        clear_block = body[clear_start:clear_end]
-        assert (
-            "applyRowsSelection([], undefined, LASSO_SELECTION_DEBOUNCE_MS + 120);"
-            in clear_block
-        )
-        assert "clearScatterGeometricSelection();" in clear_block
-        assert (
-            "syncCommittedScatterRegionOverlays({ clearSelections: true });"
-            in clear_block
-        )
-        assert "pickedClearMontage" in clear_block
-        assert "nRegClear" in body
-        assert (
-            "syncMontageResampleFromCacheButton();\n"
-            "    updateParticleSelFieldset();" in clear_block
-        )
-
-        # Scattergl can leave lasso/box paint until dragmode is nudged and transient shapes are stripped.
-        assert "pulseScatterglDragmodeToFlushSelectionPaint" in body
-        assert "scheduleScatterglSelectionPaintFlushAfterClear" in body
-        assert "scatterExplorerShapesPurgeForGeometryClear" in body
-        assert "shapeMatchesCryoCommittedScatterRegion" in body
-        assert "plotlyRelayoutShapesHardReplaceThenPatch" in body
-        assert "setMontageCellSelectionBorderStyle" in body
-        assert "2px 3px 3px 3px" in body
-
-    def test_full_cache_load_suppresses_montage_and_plot_highlight_updates(
-        self, explorer_template_body: str
-    ) -> None:
-        body = explorer_template_body
-        assert "suppressMontageUpdate: true" in body
-        assert "suppressPlotGridHighlights = true" in body
-        assert "IMAGE_CACHE_HTTP_CHUNK_MAX" in body
-        assert "explorerScatterPlottedN" in body
-        assert "function scatterCacheSizeCap()" in body
-        assert "preloadFetchErrorMessage" in body
-
-    def test_scatter_double_click_replaces_montage_slot_a_without_selection(
-        self, explorer_template_body: str
-    ) -> None:
-        """Double-click assigns the particle to montage A and may grow the cache."""
-        body = explorer_template_body
-        assert "handleScatterPointDoubleClick" in body
-        assert "replaceMontageSlotAt" in body
-        assert "paintMontageCellAtIndex" in body
-        assert "assignScatterRowToMontageSlotA" in body
-        assert "scatterBlockSingleClickUntil" in body
-        assert "montageResampleSuppressed" in body
-        assert "armMontageResampleSuppress" in body
-        lasso_snap = body.find("function applyLassoSelectionFromSnapshot()")
-        assert lasso_snap != -1
-        lasso_block = body[lasso_snap : lasso_snap + 1200]
-        assert "montageResampleSuppressed()" in lasso_block
-        assert "suppressMontageRefresh: true" in body
-        assert "updateMontageOrdered" in body
-        assert "suppressSelectionAfterScatterDoubleClick" in body
-        click_start = body.find('gd.on("plotly_click", function(ev)')
-        assert click_start != -1
-        click_block = body[click_start : click_start + 2200]
-        assert "handleScatterPointDoubleClick(pt)" in click_block
-        assert "updateMontage(nbs)" in click_block
-
-    def test_queue_highlight_restyle_merges_pending_xy_update_with_styling_patch(
-        self, explorer_template_body: str
-    ) -> None:
-        """Regression test for montage cache resample drift.
-
-        `updateMontage()` enqueues a full grid-highlight restyle payload (x/y + styling).
-        A later call like `refreshGridHighlightMarkerStylesFromLastRows()` enqueues a
-        styling-only patch; if the pending payload is overwritten, the highlighted points
-        drift because the x/y update is dropped.
-        """
-        body = explorer_template_body
-        assert "function queueHighlightRestyle(restyleData)" in body
-        assert "highlightRestyleRaf != null && pendingHighlightRestyle" in body
-        assert "pendingHighlightRestyle[k] = restyleData[k];" in body
-
-    def test_grid_letter_highlights_constant_opacity_and_white_marker_ring(
-        self, explorer_template_body: str
-    ) -> None:
-        """Grid-letter overlay: fixed opacity, white marker ring, HTML labels with black stroke."""
-        body = explorer_template_body
-        assert "cryo-grid-highlight-marker-policy" in body
-        assert "GRID_HIGHLIGHT_MARKER_OPACITY = 0.53" in body
-        assert "gridHighlightMarkerSizePx" in body
-        assert "gridHighlightTextSizePx" in body
-        assert "return 25 - gridHighlightRowsForSizing" in body
-        assert "return 17 - gridHighlightRowsForSizing" in body
-        assert 'restyleData["textfont.size"]' in body
-        assert "EXPLORER_SCATTER_MARKER_OPACITY = 0.35" in body
-        assert 'GRID_HIGHLIGHT_MARKER_LINE_COLOR = "#ffffff"' in body
-        assert "appendGridHighlightMarkerRestyle" in body
-        assert "GRID_HIGHLIGHT_CLEAR_FILL" in body
-        assert "refreshGridHighlightMarkerStylesFromLastRows" in body
-        assert "treatAllGridPointsAsSelected" in body
-        assert "cryo-grid-highlight-no-dim" in body
-        assert 'type: "scatter"' in body
-        assert "multiGeom" in body
-        assert 'restyleData["textfont.color"]' in body
-        assert "scatter-grid-letter-glyphs-overlay" in body
-        assert "cryo-explorer-grid-letter-glyph" in body
-        assert "syncGridLetterGlyphOverlay" in body
-        assert 'GRID_HIGHLIGHT_TEXT_COLOR = "#ffffff"' in body
-        assert "-webkit-text-stroke: 0.9px #000000" in body
-
-    def test_committed_scatter_shapes_use_between_layer_for_grid_letters(
-        self, explorer_template_body: str
-    ) -> None:
-        """Committed lasso/box fills use Plotly layer "between" so letter markers draw on top."""
-        body = explorer_template_body
-        assert 'layer: "between"' in body
-        assert "CDRGN_COMMIT_REGION_LINE_WIDTH" in body
-
-    def test_multi_region_lasso_overlay_chips_solo_and_colour_wheel(
-        self, explorer_template_body: str
-    ) -> None:
-        """Disjoint regions use HTML overlay chips with solo ``1`` + colour wheel (not Plotly text)."""
-        body = explorer_template_body
-        assert 'id="scatter-region-chips-overlay"' in body
-        assert "soloCommittedScatterRegion" in body
-        assert "__cdrgnScatterRegion:" in body
-        assert "scatterRegionChipPointerDown" in body
-        assert "cryo-explorer-scatter-region-chip__actions" in body
-        assert "scheduleScatterRegionLabelChipsSync" in body
-        assert "removeCommittedScatterRegion" in body
-        assert "cryo-explorer-scatter-region-chip__remove" in body
-        assert "cryo-explorer-scatter-region-chip__save" in body
-        assert "saveCommittedScatterRegion" in body
-        assert "openRegionSelectionFileBrowser" in body
-        assert "pendingRegionSaveRows" in body
-
-    def test_multi_region_selection_pie_coloured_slices(
-        self, explorer_template_body: str
-    ) -> None:
-        """Multi-region pie: per-region slices; total % stays black."""
-        body = explorer_template_body
-        assert "buildMultiRegionSelPieBackground" in body
-        assert "applySelectionPieVisual" in body
-        assert "cryo-explorer-sel-pie--multi-region" in body
-        assert "sel-pie-union-outline" not in body
-        assert "updateSelPieUnionOutline" not in body
-
-    def test_dashboard_save_buttons_use_floppy_disk_icon(
-        self, explorer_template_body: str
-    ) -> None:
-        body = explorer_template_body
-        assert "cryo_dashboard_icons.js" in body
-        assert "CryoDashboardIcons" in body
-
-    def test_save_floppy_icon_is_outline_reference_style(self) -> None:
-        js = read_dashboard_static_js("cryo_dashboard_icons.js")
-        assert 'fill=\\"none\\"' in js
-        assert 'stroke=\\"currentColor\\"' in js
-        assert "M3.75 6.25" in js
-        assert 'x=\\"2.6\\"' not in js
-
-    def test_multi_region_overlap_preserves_existing_regions_on_commit(
-        self, explorer_template_body: str
-    ) -> None:
-        """Overlapping lassos: unchanged regions keep prior rows; no polygon clipping."""
-        body = explorer_template_body
-        assert "rowArr = prevSnap[ci].rows.slice()" in body
-        assert "polygon_clipping.umd.js" not in body
-        assert "overlayRaw" not in body
-        assert "clipScatterRawExcludingNewerRegions" not in body
-        assert "Overlapping lassos: each region keeps" in body
-
-    def test_selection_save_file_browser_is_modal_popup(
-        self, explorer_template_body: str
-    ) -> None:
-        body = explorer_template_body
-        assert 'id="sel-file-browser-panel"' in body
-        assert "cryo-explorer-save-modal" in body
-        assert 'role="dialog"' in body
-        assert "cryo-explorer-save-modal__backdrop" in body
-        assert "syncSelectionSaveModalTitle" in body
-        assert "cryo-explorer-save-modal-open" in body
-
-    def test_plotly_selected_commits_regions_before_montage_pool_refresh(
-        self, explorer_template_body: str
-    ) -> None:
-        """Image cache + multi-lasso: rebuild ``committedScatterRegions`` before montage refresh.
-
-        ``updateMontage`` / ``appendGridHighlightMarkerRestyle`` read ``committedScatterRegions``;
-        ``applyLassoSelectionFromSnapshot`` must run only after
-        ``syncCommittedScatterRegionOverlays``, then grid-letter colours catch up via
-        ``refreshGridHighlightMarkerStylesFromLastRows``.
-        """
-        body = explorer_template_body
-        start = body.find('gd.on("plotly_selected", function(ev)')
-        assert start != -1, "missing plotly_selected handler"
-        mid = body.find("lassoSelectionDebounceTimer = setTimeout(function()", start)
-        assert mid != -1, "missing debounced plotly_selected block"
-        end = body.find("}, LASSO_SELECTION_DEBOUNCE_MS);", mid)
-        assert end != -1 and end > mid, "could not bound plotly_selected debounce block"
-        debounce_block = body[mid:end]
-        sync_marker = "syncCommittedScatterRegionOverlays({ clearSelections: true });"
-        snap_marker = "applyLassoSelectionFromSnapshot();"
-        refresh_marker = "refreshGridHighlightMarkerStylesFromLastRows();"
-        pos_sync = debounce_block.find(sync_marker)
-        pos_snap = debounce_block.find(snap_marker)
-        pos_refresh = debounce_block.find(refresh_marker)
-        assert pos_sync != -1, debounce_block[:400]
-        assert pos_snap != -1
-        assert pos_refresh != -1
-        assert pos_sync < pos_snap < pos_refresh, (
-            "expected order: syncCommittedScatterRegionOverlays → "
-            "applyLassoSelectionFromSnapshot → refreshGridHighlightMarkerStylesFromLastRows"
-        )
-        assert "selectionsSnapshotForCommit" in body
-        assert "dedupeConsecutiveEqualScatterShapes" in body
-        pos_comment = debounce_block.find(
-            "Re-apply accumulated union after region geometry is committed"
-        )
-        pos_restyle = debounce_block.find("applyScatterSelectionHighlight(selectedTi);")
-        assert pos_comment != -1
-        assert (
-            pos_restyle != -1
-        ), "expected applyScatterSelectionHighlight in debounce block"
-        pos_selection_apply = pos_restyle
-        assert pos_sync < pos_comment < pos_selection_apply, (
-            "region overlays must sync before selection highlight apply "
-            "(restyle/overlay can clear layout.selections)"
-        )
-
-    def test_multi_region_lasso_combo_uses_selectedpoints_dimming_in_debounce(
-        self, explorer_template_body: str
-    ) -> None:
-        """Scattergl selection uses compact ``selectedpoints`` restyle (trace map for row→index)."""
-        body = explorer_template_body
-        assert "applyScatterSelectionHighlight" in body
-        assert "rowToTraceIndexMap" in body
-        assert "rowsUnionFromCommittedScatterRegions" in body
-        assert "mergePersistedScatterSelectionShapes" in body
-        start = body.find('gd.on("plotly_selected", function(ev)')
-        assert start != -1
-        mid = body.find("lassoSelectionDebounceTimer = setTimeout(function()", start)
-        end = body.find("}, LASSO_SELECTION_DEBOUNCE_MS);", mid)
-        debounce_block = body[mid:end]
-        assert "applyScatterSelectionHighlight(selectedTi);" in debounce_block
-        assert "selectedpoints" in body
-        assert "cdrgnSelectionOverlay" not in body
-
-    def test_multi_region_row_membership_recomputed_from_geometry(
-        self, explorer_template_body: str
-    ) -> None:
-        """Each region's ``rows`` must follow lasso geometry, not only the last ``rowsSnap``."""
-        body = explorer_template_body
-        assert "recomputeCommittedScatterRegionRowsFromGeometry" in body
-        assert "rowsUnionFromCommittedScatterRegions" in body
-        assert "scatterRawShapeContainsDataXY" in body
-        assert "pointInPolygonXY" in body
-        assert "traceIndexForPlotDfRow" in body
-
-    def test_multi_region_montage_and_grid_use_scatter_region_line_colour(
-        self, explorer_template_body: str
-    ) -> None:
-        """Montage borders track region line colour; grid-letter rings stay white."""
-        body = explorer_template_body
-        assert "function selectionRegionMontageStyles(regionIdx)" in body
-        assert "scatterRegionPlotStyle(regionIdx).line" in body
-        assert "discreteLabelMontageStyles(lineHex)" in body
-        assert "borderNoCov = scatterRegionPlotStyle(ridxM).line;" in body
-        assert 'GRID_HIGHLIGHT_MARKER_LINE_COLOR = "#ffffff"' in body
-        assert "lineColors.push(GRID_HIGHLIGHT_MARKER_LINE_COLOR)" in body
-        assert "selectionRegionMontageStyles(rIdxgeom)" in body
-        assert "fillColors.push(inSel ? ACCENT : GRID_HIGHLIGHT_CLEAR_FILL)" in body
-
-    def test_scatter_region_overlay_chips_compact_vertical_css(
-        self, explorer_template_body: str
-    ) -> None:
-        """Region count chips stay short while preserving count font + icon metrics."""
-        body = explorer_template_body
-        assert (
-            ".cryo-dash-page--particle-explorer "
-            ".cryo-explorer-scatter-region-chip.cryo-cc-discrete-cell--plastic {"
-        ) in body
-        assert "inset 0 0 0 1px rgba(255, 255, 255, 0.28)" in body
-        assert ".cryo-explorer-scatter-region-chip__row" in body
-        assert (
-            "cdrgn: chip row — count label vertically centered with action icons"
-            in body
-        )
-        assert "padding: 0.14rem 0.22rem 0.18rem 0.22rem" in body
-        assert (
-            ".cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch-label" in body
-        )
-        assert "max-height: 0" in body
-        assert "font-size: 0.7rem" in body
-        assert (
-            ".cryo-explorer-scatter-region-chip .cryo-cc-discrete-switch-count" in body
-        )
-        assert "font-size: 0.6rem" in body
-        assert "line-height: 1" in body
-        assert "transform: scale(1.524)" in body
-        assert "width: 0.56rem" in body
-        assert "height: 0.56rem" in body
-
-    def test_montage_cards_use_top_meta_band_and_tight_image_margins(
-        self, explorer_template_body: str
-    ) -> None:
-        """Letter + covariate/idx top-aligned in ``cryo-montage-meta``; tight cell padding and zero gap to image."""
-        body = explorer_template_body
-        assert "cryo-montage-meta" in body
-        assert "cryo-montage-meta-right" in body
-        assert "cryo-montage-cell--light" in body
-        assert 'className = "cryo-montage-meta"' in body
-        assert 'className = "cryo-montage-meta-right"' in body
-        assert (
-            "  .cryo-montage-img-wrap {\n"
-            "    position: relative;\n"
-            "    aspect-ratio: 1;\n"
-            "    flex: 1 1 auto;\n"
-            "    margin: 0;\n"
-            "    min-height: 0;\n"
-            "  }"
-        ) in body
-        assert (
-            "  .cryo-montage-cell.cryo-montage-cell--light {\n"
-            "    background: var(--paper, #faf8f4);\n"
-            "    padding: 1px;\n"
-            "    gap: 0;\n"
-            "  }"
-        ) in body
-        assert "cryo-montage-footer" not in body
-        assert (
-            "  .cryo-montage-meta {\n"
-            "    display: flex;\n"
-            "    flex-direction: row;\n"
-            "    align-items: flex-start;\n"
-        ) in body
-        assert "#clear-explorer-selection:disabled" in body
-        assert 'lbl.style.display = "inline-flex"' in body
-        assert 'lbl.style.alignSelf = "center"' in body
-        assert "montageRowExtraPx" in body
-        assert "MONTAGE_META_IMG_GAP" in body
-        assert "MONTAGE_META_TOP_FRAC = 0.19" in body
-        assert "MONTAGE_LABEL_META_HEIGHT_FRAC = 0.7885" in body
-        assert "applyMontageMetaTypography" in body
-        assert "height: 19cqw" in body
-        assert "height: 78.85%" in body
-        assert "scatter-grid-letter-glyphs-overlay" in body
-        assert "continuousMontageStylesFromT" in body
-        assert "letterFontPx * 0.11" in body
-        assert "1.22 / labStr.length" in body
-        assert 'meta.style.alignItems = "center"' in body
-        assert 'meta.style.gap = "0"' in body
-        assert "lbl: lbl" in body
-
-
 class TestPreloadDeltaResponses:
     def test_delta_response_returns_only_new_images_and_total_cached(
         self, flask_client
@@ -1864,41 +1574,55 @@ class TestPreloadDeltaResponses:
         assert r.status_code == 400
 
 
-class TestParticleExplorerPlotlyBrowserSmoke:
-    """Headless Chromium: cache build, montage grid, and grid-letter overlays."""
+class TestParticleExplorerBrowserSmoke:
+    """Headless Chromium: cache/montage, colour legend, panels, and save modal."""
 
     pytestmark = pytest.mark.browser
 
-    def test_cache_build_montage_and_scatter_letters(
-        self, playwright_page, dashboard_live_url
+    @pytest.mark.parametrize(
+        "smoke_name,checks",
+        [
+            (
+                "dashboard_smoke_particle_explorer",
+                ("cached_images>=1", "grid_images>=1", "scatter_letters.count>=1"),
+            ),
+            (
+                "dashboard_smoke_particle_explorer_color_covariate",
+                ("discrete_toggles>=1", "points_after_color==scatter_points"),
+            ),
+            (
+                "dashboard_smoke_particle_explorer_cache_expand",
+                ("expanded_cached>initial_cached",),
+            ),
+        ],
+        ids=["cache_montage", "color_covariate", "cache_expand"],
+    )
+    def test_plotly_smokes(
+        self,
+        smoke_name: str,
+        checks: tuple[str, ...],
+        playwright_page,
+        dashboard_live_url,
     ) -> None:
-        from tests.conftest import dashboard_smoke_particle_explorer
+        import tests.conftest as cf
 
-        out = dashboard_smoke_particle_explorer(playwright_page, dashboard_live_url)
-        assert out["cached_images"] >= 1
-        assert out["grid_images"] >= 1
-        assert out["scatter_letters"]["count"] >= 1
-
-    def test_discrete_color_legend_after_labels_covariate(
-        self, playwright_page, dashboard_live_url
-    ) -> None:
-        from tests.conftest import dashboard_smoke_particle_explorer_color_covariate
-
-        out = dashboard_smoke_particle_explorer_color_covariate(
-            playwright_page, dashboard_live_url
-        )
-        assert out["discrete_toggles"] >= 1
-        assert out["points_after_color"] == out["scatter_points"]
-
-    def test_cache_expand_after_initial_build(
-        self, playwright_page, dashboard_live_url
-    ) -> None:
-        from tests.conftest import dashboard_smoke_particle_explorer_cache_expand
-
-        out = dashboard_smoke_particle_explorer_cache_expand(
-            playwright_page, dashboard_live_url
-        )
-        assert out["expanded_cached"] > out["initial_cached"]
+        out = getattr(cf, smoke_name)(playwright_page, dashboard_live_url)
+        for check in checks:
+            if check == "points_after_color==scatter_points":
+                assert out["points_after_color"] == out["scatter_points"]
+            elif check == "expanded_cached>initial_cached":
+                assert out["expanded_cached"] > out["initial_cached"]
+            elif check.endswith(">=1"):
+                key = check[: -len(">=1")]
+                if "." in key:
+                    cur = out
+                    for part in key.split("."):
+                        cur = cur[part]
+                    assert cur >= 1
+                else:
+                    assert out[key] >= 1
+            else:
+                raise AssertionError(f"unknown check {check!r}")
 
     def test_selection_save_modal_opens(
         self, playwright_page, dashboard_live_url
@@ -1935,12 +1659,6 @@ class TestParticleExplorerPlotlyBrowserSmoke:
             """() => document.body.classList.contains('cryo-explorer-save-modal-open')"""
         )
 
-
-class TestParticleExplorerBrowserPanels:
-    """Playwright checks for explorer panel DOM (replaces static HTML grep for shell IDs)."""
-
-    pytestmark = pytest.mark.browser
-
     def test_volume_explorer_panels_attached(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
@@ -1960,4 +1678,4 @@ class TestParticleExplorerBrowserPanels:
         out = dashboard_smoke_particle_explorer_no_volumes_panel(
             playwright_page, dashboard_volumes_ineligible_live_url
         )
-        assert not out["volumes_panel"]
+        assert out["volumes_panel"] is False

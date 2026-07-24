@@ -24,6 +24,8 @@ from cryodrgn.dashboard.trajectory import (
     _graph_neighbor_max_dist,
     _path_has_crossings,
     _round_direct_mode_traj_xy,
+    _snap_points_to_nearest_particles,
+    _xy_already_on_particle,
     order_anchor_indices_for_direct_path,
     order_points_noncrossing_path_heuristic,
     order_points_shortest_noncrossing_path,
@@ -51,6 +53,9 @@ from cryodrgn.dashboard.trajectory import (
     validate_trajectory_plot_axes,
     z_traj_to_savetxt_str,
 )
+from tests.conftest import _monkeypatch_explorer_volumes_eligible
+
+pytestmark = pytest.mark.dashboard
 
 
 def _traj_flask_200_or_ineligible(r, experiment: DashboardExperiment) -> bool:
@@ -128,19 +133,13 @@ class TestTrajectoryEligibilityError:
 
     def test_eligible_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         app = dash_app.create_app(workdir=None)
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
-            lambda _e: True,
-        )
+        _monkeypatch_explorer_volumes_eligible(monkeypatch, eligible=True)
         with app.test_request_context():
             assert _trajectory_eligibility_error(object()) is None  # type: ignore[arg-type]
 
     def test_ineligible_returns_400_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
         app = dash_app.create_app(workdir=None)
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
-            lambda _e: False,
-        )
+        _monkeypatch_explorer_volumes_eligible(monkeypatch, eligible=False)
         with app.test_request_context():
             resp, status = _trajectory_eligibility_error(object())  # type: ignore[arg-type,misc]
         assert status == 400
@@ -262,10 +261,15 @@ class TestDashboardTrajectoryCoords:
     ) -> None:
         r = flask_client.post(
             "/api/trajectory_random_indices",
-            json={"x": "z0", "y": "z1", "mode": "direct", "n_points": 2},
+            json={"count": 10, "exclude_indices": [0, 1]},
         )
         if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
             return
+        body = r.get_json()
+        assert body.get("ok") is True
+        indices = body.get("indices") or body.get("anchor_indices") or []
+        assert len(indices) >= 1
+        assert 0 not in indices and 1 not in indices
 
     def test_default_endpoints(
         self, flask_client, dashboard_experiment: DashboardExperiment
@@ -340,6 +344,65 @@ class TestRoundDirectModeTrajXY:
         assert np.isnan(rounded[0, 0])
         assert np.isnan(rounded[1, 1])
         assert rounded[1, 0] == pytest.approx(2.345)
+
+
+class TestSnapPointsPreserveAlreadyOnParticle:
+    def test_exact_particle_xy_unchanged(self) -> None:
+        coords = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+        pts = coords.copy()
+        rows, xy = _snap_points_to_nearest_particles(coords, pts)
+        assert rows == [0, 1, 2]
+        np.testing.assert_array_equal(xy, pts)
+
+    def test_rounded_particle_xy_preserved(self) -> None:
+        coords = np.array([[0.123456, 0.987654], [5.0, 5.0]], dtype=np.float64)
+        # Direct-mode display of particle 0 (3-decimal rounding).
+        rounded = _round_direct_mode_traj_xy(coords[0:1])[0]
+        assert _xy_already_on_particle(rounded, coords[0])
+        rows, xy = _snap_points_to_nearest_particles(
+            coords, np.array([rounded, [4.9, 4.9]])
+        )
+        assert rows[0] == 0
+        np.testing.assert_allclose(xy[0], rounded)
+        # Off-particle sample still snaps to true particle coordinates.
+        assert rows[1] == 1
+        np.testing.assert_allclose(xy[1], coords[1])
+
+    def test_nearest_custom_path_keeps_on_particle_samples(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        coords = dashboard_experiment.plot_df[["UMAP1", "UMAP2"]].to_numpy(
+            dtype=np.float64
+        )
+        p0 = coords[0]
+        # Midpoint between two particles — must move under snap.
+        p_mid = 0.5 * (coords[0] + coords[min(5, len(coords) - 1)])
+        p2 = coords[min(10, len(coords) - 1)]
+        path = [
+            [float(p0[0]), float(p0[1])],
+            [float(p_mid[0]), float(p_mid[1])],
+            [float(p2[0]), float(p2[1])],
+        ]
+        body = parse_trajectory_request_body(
+            dashboard_experiment,
+            {
+                "mode": "nearest",
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "start": path[0],
+                "end": path[-1],
+                "n_points": 3,
+                "traj_xy": path,
+            },
+        )
+        _z, rows, xy = compute_trajectory_latent_path(dashboard_experiment, body)
+        assert rows is not None and len(rows) == 3
+        # Endpoints already on particles: XY must be unchanged.
+        np.testing.assert_allclose(xy[0], path[0])
+        np.testing.assert_allclose(xy[2], path[2])
+        # Free midpoint moves onto a particle coordinate.
+        assert not np.allclose(xy[1], path[1])
+        np.testing.assert_allclose(xy[1], coords[rows[1]])
 
 
 class TestTrajectoryXYOkForDirect:
@@ -535,6 +598,22 @@ class TestParseAnchorPathOrder:
 
 
 class TestComputeDirectAnchorTrajectory:
+    def test_zero_interpolation_is_pure_anchor_permutation(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """Exact/inexact path order with n_points=0 must not densify the path."""
+        anchors = [0, 10, 20, 30]
+        ordered = order_anchor_indices_for_direct_path(
+            dashboard_experiment, anchors, "z0", "z1", path_order="exact"
+        )
+        z_traj, traj_rows, traj_xy = _compute_direct_anchor_trajectory(
+            dashboard_experiment, ordered, "z0", "z1", 0
+        )
+        assert traj_rows == ordered
+        assert z_traj.shape[0] == len(ordered)
+        assert traj_xy.shape == (len(ordered), 2)
+        assert sorted(ordered) == sorted(anchors)
+
     def test_endpoints_and_interpolation_count(
         self, dashboard_experiment: DashboardExperiment
     ) -> None:
@@ -695,6 +774,62 @@ class TestComputeTrajectoryLatentPath:
         for i, r in enumerate(rows):
             np.testing.assert_allclose(z[i], dashboard_experiment.z[r])
 
+    def test_nearest_with_traj_xy_snaps_present_path_not_linear_start_end(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """Custom traj_xy (edited direct-trace) must drive nearest snap, not start/end."""
+        coords = dashboard_experiment.plot_df[["UMAP1", "UMAP2"]].to_numpy(
+            dtype=np.float64
+        )
+        # Build a bent path whose midpoints differ from the linear start→end chord.
+        p0 = coords[0]
+        p1 = coords[min(5, len(coords) - 1)]
+        p2 = coords[min(10, len(coords) - 1)]
+        bent = [
+            [float(p0[0]), float(p0[1])],
+            [float(p1[0]), float(p1[1])],
+            [float(p2[0]), float(p2[1])],
+        ]
+        linear_p = parse_trajectory_request_body(
+            dashboard_experiment,
+            {
+                "mode": "nearest",
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "start": bent[0],
+                "end": bent[-1],
+                "n_points": 3,
+            },
+        )
+        bent_p = parse_trajectory_request_body(
+            dashboard_experiment,
+            {
+                "mode": "nearest",
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "start": bent[0],
+                "end": bent[-1],
+                "n_points": 3,
+                "traj_xy": bent,
+            },
+        )
+        _z_lin, rows_lin, _xy_lin = compute_trajectory_latent_path(
+            dashboard_experiment, linear_p
+        )
+        _z_bent, rows_bent, xy_bent = compute_trajectory_latent_path(
+            dashboard_experiment, bent_p
+        )
+        assert rows_bent is not None and len(rows_bent) == 3
+        assert xy_bent.shape == (3, 2)
+        # Each custom point snaps to its own neighbourhood particle.
+        for i, pt in enumerate(bent):
+            nearest = int(np.argmin(np.sum((coords - np.asarray(pt)) ** 2, axis=1)))
+            assert rows_bent[i] == nearest
+        # A bent path must not collapse to the linear start→end snap when midpoints differ.
+        mid_linear = 0.5 * (np.asarray(bent[0]) + np.asarray(bent[-1]))
+        if np.linalg.norm(np.asarray(bent[1]) - mid_linear) > 1e-6:
+            assert rows_bent != rows_lin
+
     def test_direct_endpoints_equal_data_points(
         self, dashboard_experiment: DashboardExperiment
     ) -> None:
@@ -732,6 +867,28 @@ class TestRandomDatasetIndices:
         n = int(dashboard_experiment.z.shape[0])
         out = random_dataset_indices(dashboard_experiment, k=n + 100)
         assert len(out) == n
+
+    def test_excludes_existing_indices(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        n = int(dashboard_experiment.z.shape[0])
+        exclude = list(range(min(5, n)))
+        out = random_dataset_indices(dashboard_experiment, k=7, exclude=exclude)
+        assert len(out) == min(7, n - len(exclude))
+        assert not set(out).intersection(exclude)
+
+    def test_large_n_samples_without_full_candidate_list(self) -> None:
+        """Regression: must not build an O(n) Python list for large stacks."""
+        n = 250_000
+
+        class _Exp:
+            z = np.zeros((n, 2), dtype=np.float32)
+
+        out = random_dataset_indices(_Exp(), k=10, exclude=[0, 1, 2])
+        assert len(out) == 10
+        assert len(set(out)) == 10
+        assert not set(out).intersection({0, 1, 2})
+        assert all(0 <= i < n for i in out)
 
 
 class TestDefaultTrajectoryEndpointsXY:
@@ -942,6 +1099,63 @@ class TestSaveZPath:
         assert r.status_code == 400
 
 
+class TestTrajectoryAnchorSaveImportRoundtrip:
+    """Import anchors → coords → save z-path in one Flask session."""
+
+    def test_trajectory_anchor_save_import_roundtrip(
+        self,
+        flask_client,
+        dashboard_experiment: DashboardExperiment,
+        tmp_path,
+    ) -> None:
+        anchors_file = tmp_path / "anchors.txt"
+        anchors_file.write_text("0 5 10\n")
+        r = flask_client.post(
+            "/api/trajectory_import_anchors",
+            json={
+                "server_path": str(anchors_file),
+                "mode": "direct",
+                "x": "z0",
+                "y": "z1",
+                "n_points": 2,
+            },
+        )
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
+        js = r.get_json()
+        assert js["ok"] is True
+        anchors = js["anchor_indices"]
+        assert anchors == [0, 5, 10]
+
+        r = flask_client.post(
+            "/api/trajectory_coords",
+            json={
+                "mode": "direct",
+                "x": "z0",
+                "y": "z1",
+                "anchor_indices": anchors,
+                "n_points": 2,
+            },
+        )
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
+        coords = r.get_json()
+        assert len(coords["z_traj"]) >= 2
+        z_txt = z_traj_to_savetxt_str(np.asarray(coords["z_traj"], dtype=np.float64))
+        out_path = str(tmp_path / "z-path-roundtrip.txt")
+        r = flask_client.post(
+            "/api/trajectory_save_zpath",
+            json={"z_path_txt": z_txt, "out_path": out_path},
+        )
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
+        assert r.get_json().get("ok") is True
+        assert os.path.isfile(out_path)
+        loaded = np.loadtxt(out_path)
+        assert loaded.ndim == 2
+        assert loaded.shape[0] >= 2
+
+
 class TestTrajectoryVolumeApis:
     """HTTP coverage for trajectory volume generation and save routes."""
 
@@ -954,28 +1168,27 @@ class TestTrajectoryVolumeApis:
         "n_points": 3,
     }
 
-    def test_trajectory_volumes_ineligible_is_400(
-        self, flask_client, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        "path,payload",
+        [
+            ("/api/trajectory_volumes", _DIRECT_BODY),
+            (
+                "/api/trajectory_save_volumes",
+                {"volume_cache_id": "tok", "out_dir": "/tmp/out"},
+            ),
+            ("/api/trajectory_save_gif", {"images": ["a", "b"], "fps": 4}),
+        ],
+        ids=["volumes", "save_volumes", "save_gif"],
+    )
+    def test_ineligible_volume_apis_are_400(
+        self,
+        flask_client,
+        monkeypatch: pytest.MonkeyPatch,
+        path: str,
+        payload: dict,
     ) -> None:
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
-            lambda _e: False,
-        )
-        r = flask_client.post("/api/trajectory_volumes", json=self._DIRECT_BODY)
-        assert r.status_code == 400
-        assert r.get_json().get("error") == _TRAJECTORY_INELIGIBLE_MSG
-
-    def test_trajectory_save_volumes_ineligible_is_400(
-        self, flask_client, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
-            lambda _e: False,
-        )
-        r = flask_client.post(
-            "/api/trajectory_save_volumes",
-            json={"volume_cache_id": "tok", "out_dir": "/tmp/out"},
-        )
+        _monkeypatch_explorer_volumes_eligible(monkeypatch, eligible=False)
+        r = flask_client.post(path, json=payload)
         assert r.status_code == 400
         assert r.get_json().get("error") == _TRAJECTORY_INELIGIBLE_MSG
 
@@ -1027,20 +1240,6 @@ class TestTrajectoryVolumeApis:
         assert j["ok"] is True
         assert j["n_saved"] == 1
         assert j["files"] == [saved_path]
-
-    def test_trajectory_save_gif_ineligible_is_400(
-        self, flask_client, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(
-            "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",
-            lambda _e: False,
-        )
-        r = flask_client.post(
-            "/api/trajectory_save_gif",
-            json={"images": ["a", "b"], "fps": 4},
-        )
-        assert r.status_code == 400
-        assert r.get_json().get("error") == _TRAJECTORY_INELIGIBLE_MSG
 
     def test_trajectory_save_gif_requires_two_frames(
         self, flask_client_volumes_eligible
@@ -1259,6 +1458,33 @@ class TestManualTrajectoryParticleSnap:
             dashboard_experiment, p
         )
         assert len(traj_rows) == len(z_traj) == len(traj_xy) == 19
+
+    def test_direct_line_custom_traj_xy_preserved_for_display(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """Client densified PC/catalog polyline must not be replaced by particle XY."""
+        n = int(dashboard_experiment.z.shape[0])
+        rows = [0, min(10, n - 1), min(20, n - 1)]
+        custom = [[float(i), float(i) * 0.5] for i in range(5)]
+        p = parse_trajectory_request_body(
+            dashboard_experiment,
+            {
+                "anchor_indices": rows,
+                "mode": "direct",
+                "x": "z0",
+                "y": "z1",
+                "n_points": 1,
+                "traj_xy": custom,
+            },
+        )
+        assert p["traj_xy_custom"] == custom
+        assert p["snap_to_nearest_particles"] is False
+        z_traj, traj_rows, traj_xy = compute_trajectory_latent_path(
+            dashboard_experiment, p
+        )
+        assert traj_rows is None
+        assert len(z_traj) == len(traj_xy) == 5
+        np.testing.assert_allclose(traj_xy, np.asarray(custom, dtype=np.float64))
 
     def test_snap_coords_api_payload(
         self, flask_client, dashboard_experiment: DashboardExperiment

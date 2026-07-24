@@ -18,6 +18,8 @@ from cryodrgn.dashboard.plots import (
 )
 from cryodrgn.dashboard.plots_color_covariate import covariate_row_filter_key
 
+pytestmark = pytest.mark.dashboard
+
 
 class TestDashboardPairPlot:
     """``pair_grid_png`` rendering via both the Flask route and direct import."""
@@ -106,25 +108,28 @@ class TestDashboardPairPlot:
         assert len(cells_a) == dashboard_experiment.z.shape[1] ** 2
 
 
-class TestContinuousSeriesStats:
-    def test_constant_series_has_finite_span(self) -> None:
-        s = pd.Series([2.0, 2.0, 2.0])
-        _, cmin, cmax = _continuous_series_stats(s)
-        assert cmin < cmax
+class TestPairGridHelpers:
+    @pytest.mark.parametrize(
+        "values,cmin,cmax",
+        [
+            ([2.0, 2.0, 2.0], None, None),  # constant → finite span
+            ([np.nan, np.nan], 0.0, 1.0),
+            ([1.0, np.nan, 3.0, 5.0], 1.0, 5.0),
+        ],
+        ids=["constant", "all_nan", "mixed"],
+    )
+    def test_continuous_series_stats(
+        self, values: list, cmin: float | None, cmax: float | None
+    ) -> None:
+        s = pd.Series(values)
+        vals, lo, hi = _continuous_series_stats(s)
+        if cmin is None:
+            assert lo < hi
+        else:
+            assert lo == cmin and hi == cmax
+        if all(isinstance(v, float) and np.isnan(v) for v in values):
+            assert np.isnan(vals).all()
 
-    def test_all_nan_falls_back(self) -> None:
-        s = pd.Series([np.nan, np.nan])
-        vals, cmin, cmax = _continuous_series_stats(s)
-        assert cmin == 0.0 and cmax == 1.0
-        assert np.isnan(vals).all()
-
-    def test_mixed_series_uses_extrema(self) -> None:
-        s = pd.Series([1.0, np.nan, 3.0, 5.0])
-        _, cmin, cmax = _continuous_series_stats(s)
-        assert cmin == 1.0 and cmax == 5.0
-
-
-class TestPairGridHexAndSkeleton:
     def test_hex_style_is_png_and_deterministic(
         self, dashboard_experiment: DashboardExperiment
     ) -> None:

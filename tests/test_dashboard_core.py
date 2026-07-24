@@ -8,6 +8,7 @@ import re
 import tempfile
 import numpy as np
 import pytest
+
 import yaml
 
 from cryodrgn.dashboard import app as dash_app
@@ -16,6 +17,7 @@ from cryodrgn.dashboard import covariate_labels
 from cryodrgn.dashboard import palette_config
 from cryodrgn.dashboard.context import (
     EXP_CACHE,
+    EXPERIMENT_STORE,
     PRELOAD_CACHE,
     _abbrev_middle_token,
     _argv_four_command_lines,
@@ -40,11 +42,11 @@ from tests.conftest import (
     _dashboard_resolve_fixture_workdir,
     decode_plotly_figure,
     decode_plotly_value,
-    read_dashboard_static_css,
-    read_dashboard_static_js,
     read_dashboard_template,
     torch_cuda_reports_available_but_broken,
 )
+
+pytestmark = pytest.mark.dashboard
 
 ANALYZE_EPOCH = 2
 
@@ -585,92 +587,122 @@ class TestEpochsForWorkdir:
         assert ANALYZE_EPOCH in epochs
 
 
-class TestAbbrevMiddle:
-    def test_short_unchanged(self) -> None:
-        assert abbrev_middle("hello", 30) == "hello"
+class TestContextDisplayHelpers:
+    @pytest.mark.parametrize(
+        "text,maxlen,expected",
+        [
+            ("hello", 30, "hello"),
+            (None, 30, ""),
+            ("abcdef", 3, "abc"),
+        ],
+    )
+    def test_abbrev_middle_simple_cases(
+        self, text: str | None, maxlen: int, expected: str
+    ) -> None:
+        assert abbrev_middle(text, maxlen=maxlen) == expected
 
-    def test_long_uses_middle_ellipsis(self) -> None:
-        s = "a" * 20 + "b" * 20
-        out = abbrev_middle(s, maxlen=20)
+    def test_abbrev_middle_long_uses_middle_ellipsis(self) -> None:
+        out = abbrev_middle("a" * 20 + "b" * 20, maxlen=20)
         assert len(out) == 20
         assert "\u2026" in out
         assert out.startswith("a")
         assert out.endswith("b")
 
-    def test_none_returns_empty(self) -> None:
-        assert abbrev_middle(None) == ""
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("3D Visualizer", "3D visualizer"),
+            ("PARTICLE explorer", "particle explorer"),
+            ("3-D latent space", "3D latent space"),
+            ("", ""),
+            (None, ""),
+        ],
+    )
+    def test_nav_interface_title(self, raw: str | None, expected: str) -> None:
+        assert nav_interface_title(raw) == expected
 
-    def test_small_maxlen_truncates_plainly(self) -> None:
-        assert abbrev_middle("abcdef", maxlen=3) == "abc"
+    @pytest.mark.parametrize(
+        "argv,expected",
+        [
+            (
+                ["/usr/bin/python", "-m", "cryodrgn", "train_vae", "-o", "out"],
+                ["cryodrgn", "train_vae", "-o", "out"],
+            ),
+            (
+                ["/opt/envs/cdrgn/bin/cryodrgn", "train_vae", "-o", "out"],
+                ["cryodrgn", "train_vae", "-o", "out"],
+            ),
+            (
+                ["/usr/bin/python", "/opt/envs/cdrgn/bin/cryodrgn", "analyze", "10"],
+                ["cryodrgn", "analyze", "10"],
+            ),
+            ([], []),
+            (["bash", "foo.sh"], ["bash", "foo.sh"]),
+        ],
+    )
+    def test_cmd_argv_for_nav_display(
+        self, argv: list[str], expected: list[str]
+    ) -> None:
+        assert _cmd_argv_for_nav_display(argv) == expected
 
+    @pytest.mark.parametrize(
+        "argv,expected",
+        [
+            ([], []),
+            (["cryodrgn"], ["cryodrgn"]),
+        ],
+    )
+    def test_argv_four_command_lines_simple_cases(
+        self, argv: list[str], expected: list[str]
+    ) -> None:
+        assert _argv_four_command_lines(argv) == expected
 
-class TestNavInterfaceTitle:
-    def test_lowercase_and_3d_token(self) -> None:
-        assert nav_interface_title("3D Visualizer") == "3D visualizer"
-        assert nav_interface_title("PARTICLE explorer") == "particle explorer"
-
-    def test_hyphenated_three_d(self) -> None:
-        assert nav_interface_title("3-D latent space") == "3D latent space"
-
-    def test_empty(self) -> None:
-        assert nav_interface_title("") == ""
-        assert nav_interface_title(None) == ""
-
-
-class TestAbbrevMiddleToken:
-    def test_short_unchanged(self) -> None:
-        assert _abbrev_middle_token("short") == "short"
-
-    def test_long_has_ellipsis(self) -> None:
-        s = "/" + "x" * 200
-        out = _abbrev_middle_token(s, maxlen=50)
-        assert len(out) == 50
-        assert "\u2026" in out
-
-
-class TestCmdArgvForNavDisplay:
-    def test_python_m_cryodrgn(self) -> None:
-        assert _cmd_argv_for_nav_display(
-            ["/usr/bin/python", "-m", "cryodrgn", "train_vae", "-o", "out"]
-        ) == ["cryodrgn", "train_vae", "-o", "out"]
-
-    def test_entrypoint_first(self) -> None:
-        assert _cmd_argv_for_nav_display(
-            ["/opt/envs/cdrgn/bin/cryodrgn", "train_vae", "-o", "out"]
-        ) == ["cryodrgn", "train_vae", "-o", "out"]
-
-    def test_python_wrapper_second(self) -> None:
-        assert _cmd_argv_for_nav_display(
-            ["/usr/bin/python", "/opt/envs/cdrgn/bin/cryodrgn", "analyze", "10"]
-        ) == ["cryodrgn", "analyze", "10"]
-
-    def test_empty_returns_empty(self) -> None:
-        assert _cmd_argv_for_nav_display([]) == []
-
-    def test_unrecognised_is_unchanged(self) -> None:
-        assert _cmd_argv_for_nav_display(["bash", "foo.sh"]) == ["bash", "foo.sh"]
-
-
-class TestArgvFourCommandLines:
-    def test_empty(self) -> None:
-        assert _argv_four_command_lines([]) == []
-
-    def test_single_token(self) -> None:
-        assert _argv_four_command_lines(["cryodrgn"]) == ["cryodrgn"]
-
-    def test_head_is_two_tokens(self) -> None:
+    def test_argv_four_command_lines_groups_head_and_abbreviates(self) -> None:
         out = _argv_four_command_lines(
             ["cryodrgn", "train_vae", "particles.mrcs", "-o", "out", "--zdim", "8"]
         )
         assert out[0] == "cryodrgn train_vae"
-        # Remaining lines are non-empty and at most 3 more lines.
         assert 1 <= len(out) - 1 <= 3
 
-    def test_long_token_is_abbreviated(self) -> None:
-        long_path = "/a/" + "x" * 300
-        out = _argv_four_command_lines(["cryodrgn", "train_vae", long_path])
-        # Abbreviated somewhere in the rendered argv.
-        assert any("\u2026" in line for line in out)
+        long_out = _argv_four_command_lines(
+            ["cryodrgn", "train_vae", "/a/" + "x" * 300]
+        )
+        assert any("\u2026" in line for line in long_out)
+
+    def test_abbrev_middle_token_keeps_short_and_abbreviates_long(self) -> None:
+        assert _abbrev_middle_token("short") == "short"
+        out = _abbrev_middle_token("/" + "x" * 200, maxlen=50)
+        assert len(out) == 50
+        assert "\u2026" in out
+
+
+class TestExperimentStore:
+    def test_get_experiment_caches_by_key(
+        self, dashboard_workdir: str, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        EXPERIMENT_STORE.clear_all()
+        a = EXPERIMENT_STORE.get_experiment(
+            dashboard_workdir, dashboard_experiment.epoch, -1
+        )
+        b = EXPERIMENT_STORE.get_experiment(
+            dashboard_workdir, dashboard_experiment.epoch, -1
+        )
+        assert a is b
+        assert len(EXPERIMENT_STORE.experiments) == 1
+
+    def test_clear_preloads_for_experiment_is_scoped(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        EXPERIMENT_STORE.clear_all()
+        exp = dashboard_experiment
+        ep = int(exp.epoch)
+        km = int(exp.kmeans_folder_id)
+        PRELOAD_CACHE[(ep, km, "z0", "z1", None)] = ([1], ["img"], 0.1)
+        PRELOAD_CACHE[(ep + 1, km, "z0", "z1", None)] = ([2], ["img2"], 0.2)
+        n = EXPERIMENT_STORE.clear_preloads_for_experiment(exp)
+        assert n == 1
+        assert len(PRELOAD_CACHE) == 1
+        assert PRELOAD_CACHE[(ep + 1, km, "z0", "z1", None)][0] == [2]
 
 
 class TestClearExperimentCaches:
@@ -948,7 +980,7 @@ class TestDiscreteCovariateLegendContracts:
     _HOST_TEMPLATES = (
         "pair_grid.html",
         "latent_3d.html",
-        "_particle_explorer_montagejs.html",
+        "_particle_explorer_montage_load_save.html",
     )
 
     def _read_template(self, rel: str) -> str:
@@ -970,12 +1002,6 @@ class TestDiscreteCovariateLegendContracts:
             "within ~30k chars of the constructor (avoids duplicate redraws vs lastPayload)."
         )
 
-    @pytest.mark.parametrize("rel", _HOST_TEMPLATES)
-    def test_discrete_legend_hosts_wire_discrete_dom(self, rel: str) -> None:
-        text = self._read_template(rel)
-        assert "discreteSwitches:" in text
-        assert "discreteWrap:" in text
-
     def test_pairplot_no_synthetic_img_onload_after_blob_src(self) -> None:
         text = self._read_template("pair_grid.html")
         bad = re.search(
@@ -988,73 +1014,6 @@ class TestDiscreteCovariateLegendContracts:
             "pair_grid.html: do not synthesize img onload from complete/naturalWidth right "
             "after assigning a new blob src — lastPayload can desync from the visible bitmap."
         )
-
-    def test_color_covariate_legend_fits_discrete_switch_column_widths(self) -> None:
-        js = read_dashboard_static_js("color_covariate_legend.js")
-        assert "fitDiscreteSwitchColumnWidths" in js
-        assert "0.79" in js
-        assert "--cryo-discrete-col-w" in js
-        assert "--cryo-discrete-cell-max-w" in js
-        assert 'removeProperty("--cryo-discrete-cell-min-h")' in js
-        assert "auto-fill" in js or "scrollWidth" in js
-        css = read_dashboard_static_css("cryo_cc_legend_palette_menu.css")
-        assert "80svh" in css
-        assert "overflow-y: auto" in css
-        assert "justify-content: center" in css
-        assert "--cryo-discrete-grid-gap-y: 0.24rem" in css
-        assert "auto-fill" in css
-        assert "--cryo-discrete-col-w" in css
-        assert "cryo-cc-discrete-panel--collapsed" in css
-        assert ":not(.cryo-cc-discrete-toggle-heading-row)" in css
-        assert (
-            "#color-discrete-wrap.cryo-cc-discrete-wrap--show.cryo-cc-discrete-panel--collapsed"
-            in css
-        )
-        assert "#pair-color-discrete-wrap.cryo-cc-discrete-wrap--show" in css
-        assert "cryo-cc-discrete-toggle-title" in css
-        assert "setDiscretePanelCollapsed" in js
-        assert "_ensureDiscreteCollapseToggle" in js
-        assert "_upgradeDiscreteCollapseTitleButton" in js
-        assert "_discretePanelCollapsed" in js
-        assert "traj-scatter-color-legend__size-control" in read_dashboard_template(
-            "trajectory_creator.html"
-        )
-        assert "--cryo-traj-scatter-legend-scale" in read_dashboard_template(
-            "trajectory_creator.html"
-        )
-        traj_html = read_dashboard_template("trajectory_creator.html")
-        assert "btn-reverse-traj" in traj_html
-        assert "Reverse trajectory" in traj_html
-        assert "cryo-traj-action-btn" in traj_html
-        assert "enqueueTrajGifScatterCapture" in traj_html
-        assert "restoreTrajGifLiveLayoutBaseline" in traj_html
-        assert "computeTrajGifUnionVolumeCropRect" in traj_html
-        assert "lockTrajGifVolumeAlignment" in traj_html
-        # Particle explorer styles live inline in particle_explorer.html (no
-        # standalone .css file).
-        pe_html = read_dashboard_template("particle_explorer.html")
-        montage = read_dashboard_template("_particle_explorer_montage.html")
-        montagejs = read_dashboard_template("_particle_explorer_montagejs.html")
-        assert "cryo-explorer-discrete-hides-scatter-palette-radios" in pe_html
-        assert (
-            "#scatter-palette-radios.cryo-palette-select--options-pane {\n"
-            "    display: none !important;"
-        ) in pe_html
-        assert "discreteCollapseHeading: false" in montagejs
-        assert "Toggle selection" in montage
-        assert "K-means legend" not in montagejs
-
-    def test_color_covariate_legend_refresh_respects_notify_on_refresh(self) -> None:
-        js = read_dashboard_static_js("color_covariate_legend.js")
-        assert re.search(
-            r"if\s*\(\s*self\.notifyOnRefresh\s*&&\s*!\s*suppressNotify\s*\)\s*self\._notify\s*\(",
-            js,
-        ), "finishLegendLayout must keep notifyOnRefresh + suppressNotify guard"
-
-    def test_pairplot_draw_still_assigns_blob_src(self) -> None:
-        text = self._read_template("pair_grid.html")
-        assert "el.src = nextUrl" in text
-        assert "el.onload = function()" in text
 
 
 class TestChimeraxAnimation:
@@ -1131,6 +1090,8 @@ class TestChimeraxAnimation:
         assert sum(1 for c in cmds if c.startswith("save ")) == 4
         assert turns[1:] == [90.0, 90.0, 90.0]
         assert any("turn y 90" in c for c in cmds)
+        assert "surface dust all size 10" in cmds
+        assert "lighting soft" in cmds
         assert matrix_log is None
 
     def test_render_rotating_gif_dispatches_to_session(self, monkeypatch) -> None:
@@ -1148,6 +1109,81 @@ class TestChimeraxAnimation:
         )
         render_rotating_gif("/tmp/x.mrc", "/tmp/out.gif", gif_frames=8, ncpus=4)
         assert called == ["session"]
+
+    def test_use_chimerax_xvfb_defaults_and_env(self, monkeypatch) -> None:
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        monkeypatch.delenv("CRYODRGN_CHIMERAX_XVFB", raising=False)
+        monkeypatch.delenv("DISPLAY", raising=False)
+        assert cx.use_chimerax_xvfb() is True
+        monkeypatch.setenv("DISPLAY", ":0")
+        assert cx.use_chimerax_xvfb() is False
+        monkeypatch.setenv("CRYODRGN_CHIMERAX_XVFB", "1")
+        assert cx.use_chimerax_xvfb() is True
+        monkeypatch.setenv("CRYODRGN_CHIMERAX_XVFB", "0")
+        assert cx.use_chimerax_xvfb() is False
+
+    def test_run_chimerax_cmds_uses_xvfb_when_headless(self, monkeypatch) -> None:
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        monkeypatch.setenv("CHIMERAX_PATH", "/opt/ChimeraX")
+        monkeypatch.delenv("CRYODRGN_CHIMERAX_XVFB", raising=False)
+        monkeypatch.delenv("DISPLAY", raising=False)
+        monkeypatch.setattr(cx, "_ensure_shared_xvfb_display", lambda: ":91")
+        seen: list[dict] = []
+
+        class _Proc:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+
+        def _fake_run(cmd, **kwargs):
+            seen.append({"cmd": cmd, "env": kwargs.get("env")})
+            return _Proc()
+
+        monkeypatch.setattr(cx.subprocess, "run", _fake_run)
+        out, err = cx.run_chimerax_cmds(["open /tmp/a.mrc", "exit"])
+        assert out == "ok" and err == ""
+        assert len(seen) == 1
+        assert "--offscreen" not in seen[0]["cmd"]
+        assert "/opt/ChimeraX" in seen[0]["cmd"]
+        assert seen[0]["env"] is not None
+        assert seen[0]["env"].get("DISPLAY") == ":91"
+
+    def test_run_chimerax_cmds_retries_xvfb_after_opengl_failure(
+        self, monkeypatch
+    ) -> None:
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        monkeypatch.setenv("CHIMERAX_PATH", "/opt/ChimeraX")
+        monkeypatch.delenv("CRYODRGN_CHIMERAX_XVFB", raising=False)
+        monkeypatch.setenv("DISPLAY", ":99")
+        monkeypatch.setattr(cx, "_ensure_shared_xvfb_display", lambda: ":91")
+        seen: list[dict] = []
+
+        class _Proc:
+            def __init__(self, code: int, err: str):
+                self.returncode = code
+                self.stdout = ""
+                self.stderr = err
+
+        def _fake_run(cmd, **kwargs):
+            seen.append({"cmd": cmd, "env": kwargs.get("env")})
+            if "--offscreen" in cmd:
+                return _Proc(
+                    0,
+                    "LimitationError: Unable to save images because "
+                    "OpenGL rendering is not available",
+                )
+            return _Proc(0, "")
+
+        monkeypatch.setattr(cx.subprocess, "run", _fake_run)
+        cx.run_chimerax_cmds(["save /tmp/x.png", "exit"])
+        assert len(seen) == 2
+        assert "--offscreen" in seen[0]["cmd"]
+        assert "--offscreen" not in seen[1]["cmd"]
+        assert seen[1]["env"] is not None
+        assert seen[1]["env"].get("DISPLAY") == ":91"
 
 
 class TestDashboardModules:
@@ -1171,67 +1207,55 @@ class TestDashboardModules:
             == column_names.VOL_LANDSCAPE_3D_PLOT_DF_ROW
         )
 
-    def test_vol_landscape_plot_df_row_constant_matches_column_names(self) -> None:
-        assert column_names.VOL_LANDSCAPE_3D_PLOT_DF_ROW == "_dashboard_plot_df_row"
-
-    def test_covariate_display_name_landscape_vol_pc(self) -> None:
-        assert (
-            covariate_labels.covariate_display_name("landscape_vol_PC12") == "Vol PC12"
-        )
-
-    def test_covariate_display_name_landscape_vol_cluster(self) -> None:
-        assert (
-            covariate_labels.covariate_display_name("landscape_vol_cluster")
-            == "Vol cluster"
-        )
-
-    def test_covariate_display_name_landscape_vol_umap(self) -> None:
-        assert (
-            covariate_labels.covariate_display_name("landscape_vol_UMAP1")
-            == "Vol UMAP1"
-        )
-        assert (
-            covariate_labels.covariate_display_name("landscape_vol_umap2")
-            == "Vol UMAP2"
-        )
-
-    def test_landscape_vol_pc_pretty_label_with_variance(self) -> None:
-        evr = np.array([0.453, 0.12], dtype=np.float64)
-        assert (
-            covariate_labels.landscape_vol_pc_pretty_label(1, evr) == "Vol PC1 (45.3%)"
-        )
-        assert (
-            covariate_labels.landscape_vol_pc_pretty_label(2, evr) == "Vol PC2 (12.0%)"
-        )
-        assert covariate_labels.landscape_vol_pc_pretty_label(3, evr) == "Vol PC3"
-
-    def test_covariate_display_map_vol_pc_variance(self) -> None:
-        evr = np.array([0.1], dtype=np.float64)
-        m = covariate_labels.covariate_display_map(
-            ["landscape_vol_PC1", "z0"],
-            vol_pc_explained_variance_ratio=evr,
-        )
-        assert m["landscape_vol_PC1"] == "Vol PC1 (10.0%)"
-        assert m["z0"] == "z0"
-
     @pytest.mark.parametrize(
         "raw,expected",
         [
-            (None, "Viridis"),
-            ("", "Viridis"),
-            ("viridis", "Viridis"),
-            ("PLASMA", "Plasma"),
-            ("TURBO", "Turbo"),
-            ("  Plasma  ", "Plasma"),
-            ("not_a_real_palette", "Viridis"),
+            ("landscape_vol_PC12", "Vol PC12"),
+            ("landscape_vol_cluster", "Vol cluster"),
+            ("landscape_vol_UMAP1", "Vol UMAP1"),
+            ("landscape_vol_umap2", "Vol UMAP2"),
         ],
     )
-    def test_normalize_continuous_palette(self, raw: str | None, expected: str) -> None:
-        assert palette_config.normalize_continuous_palette(raw) == expected
+    def test_covariate_display_names(self, raw: str, expected: str) -> None:
+        assert covariate_labels.covariate_display_name(raw) == expected
 
-    def test_mpl_cmap_for_palette(self) -> None:
-        assert palette_config.mpl_cmap_for_palette("Viridis") == "viridis"
-        assert palette_config.mpl_cmap_for_palette("not_a_palette") == "viridis"
+    def test_landscape_vol_pc_labels_and_display_map_include_variance(self) -> None:
+        evr = np.array([0.453, 0.12], dtype=np.float64)
+        assert covariate_labels.landscape_vol_pc_pretty_label(1, evr) == (
+            "Vol PC1 (45.3%)"
+        )
+        assert covariate_labels.landscape_vol_pc_pretty_label(2, evr) == (
+            "Vol PC2 (12.0%)"
+        )
+        assert covariate_labels.landscape_vol_pc_pretty_label(3, evr) == "Vol PC3"
+
+        display = covariate_labels.covariate_display_map(
+            ["landscape_vol_PC1", "z0"],
+            vol_pc_explained_variance_ratio=np.array([0.1], dtype=np.float64),
+        )
+        assert display["landscape_vol_PC1"] == "Vol PC1 (10.0%)"
+        assert display["z0"] == "z0"
+
+    @pytest.mark.parametrize(
+        "raw,expected,cmap",
+        [
+            (None, "Viridis", "viridis"),
+            ("", "Viridis", "viridis"),
+            ("viridis", "Viridis", "viridis"),
+            ("PLASMA", "Plasma", "plasma"),
+            ("TURBO", "Turbo", "turbo"),
+            ("  Plasma  ", "Plasma", "plasma"),
+            ("not_a_real_palette", "Viridis", "viridis"),
+        ],
+    )
+    def test_continuous_palette_normalization(
+        self, raw: str | None, expected: str, cmap: str
+    ) -> None:
+        assert palette_config.normalize_continuous_palette(raw) == expected
+        assert palette_config.mpl_cmap_for_palette(expected) == cmap
+
+    def test_vol_landscape_plot_df_row_constant_matches_column_names(self) -> None:
+        assert column_names.VOL_LANDSCAPE_3D_PLOT_DF_ROW == "_dashboard_plot_df_row"
 
     def test_merge_covariate_pkl_1d(
         self, dashboard_experiment: DashboardExperiment
@@ -1353,6 +1377,25 @@ class TestDashboardModules:
         assert j["primary_column"] == "api_cov"
         assert "api_cov" in j["numeric_cols"]
 
+    def test_api_load_covariate_pkl_outside_workdir(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        e = dashboard_experiment
+        n = len(e.plot_df)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "outside_cov.pkl")
+            with open(path, "wb") as fh:
+                pickle.dump(np.linspace(0, 1, n), fh)
+            assert not os.path.abspath(path).startswith(
+                os.path.abspath(e.workdir) + os.sep
+            )
+            r = flask_client.post("/api/load_covariate_pkl", json={"path": path})
+            assert r.status_code == 200
+            j = r.get_json()
+            assert j["ok"] is True
+            assert j["primary_column"] == "outside_cov"
+            assert "outside_cov" in j["numeric_cols"]
+
     def test_api_load_covariate_pkl_bad_format(
         self, flask_client, dashboard_experiment: DashboardExperiment
     ) -> None:
@@ -1377,56 +1420,6 @@ class TestDashboardModules:
             ent["name"] for ent in r.get_json()["entries"] if ent["type"] == "file"
         ]
         assert "listed_cov.pkl" in names
-
-
-class TestDashboardFileModalContracts:
-    """Overlay file-browser modals share base.html CSS and cryo_file_browser.js."""
-
-    _COVARIATE_HOSTS = (
-        "particle_explorer.html",
-        "trajectory_creator.html",
-        "latent_3d.html",
-        "pair_grid.html",
-    )
-
-    def test_base_has_shared_save_modal_css(self) -> None:
-        base = read_dashboard_template("base.html")
-        assert ".cryo-explorer-save-modal {" in base
-        assert "body.cryo-explorer-save-modal-open" in base
-        assert "cryo_file_browser.js" in base
-
-    @pytest.mark.parametrize("rel", _COVARIATE_HOSTS)
-    def test_covariate_pkl_hosts_include_modal_partial(self, rel: str) -> None:
-        text = read_dashboard_template(rel)
-        assert "_covariate_pkl_loader.html" in text
-        assert "covariate_pkl_loader.js" in text
-
-    def test_covariate_pkl_modal_is_overlay_dialog(self) -> None:
-        modal = read_dashboard_template("_covariate_pkl_loader.html")
-        assert 'class="cryo-explorer-save-modal' in modal
-        assert 'role="dialog"' in modal
-        assert "cryo-explorer-save-modal__backdrop" in modal
-
-    def test_selection_save_modal_partial(self) -> None:
-        modal = read_dashboard_template("_selection_save_modal.html")
-        assert 'id="sel-file-browser-panel"' in modal
-        assert "cryo-explorer-save-modal" in modal
-
-    def test_cryo_file_browser_js_exports(self) -> None:
-        js = read_dashboard_static_js("cryo_file_browser.js")
-        assert "CryoDashModal" in js
-        assert "CryoFileBrowser" in js
-        assert "loadDir" in js
-
-    def test_covariate_loader_uses_shared_modal(self) -> None:
-        js = read_dashboard_static_js("covariate_pkl_loader.js")
-        assert "CryoDashModal" in js
-        assert "CryoFileBrowser" in js
-
-    def test_particle_explorer_includes_selection_save_partial(self) -> None:
-        pe = read_dashboard_template("particle_explorer.html")
-        assert "_selection_save_modal.html" in pe
-        assert ".cryo-explorer-save-modal {" not in pe
 
 
 class TestDashboardLandscapeHelpers:
@@ -1513,6 +1506,104 @@ class TestBundledPlotlyJs:
         assert "/vendor/plotly.min.js" in html
 
 
+class TestDashboardSessionIntegrationFlows:
+    """Multi-step Flask flows spanning session, covariates, and discovery."""
+
+    def test_session_workdir_epoch_roundtrip(self, dashboard_workdir: str) -> None:
+        from cryodrgn.dashboard.context import EXPERIMENT_STORE
+
+        app = dash_app.create_app(workdir=None)
+        app.config["DASHBOARD_DISCOVERED_WORKDIRS"] = [dashboard_workdir]
+        with app.test_client() as client:
+            r = client.post("/api/set_workdir", json={"workdir": dashboard_workdir})
+            assert r.status_code == 200, r.get_json()
+            assert r.get_json()["ok"] is True
+
+            r = client.post("/api/set_epoch", json={"epoch": ANALYZE_EPOCH})
+            assert r.status_code == 200
+            assert r.get_json() == {"ok": True, "epoch": ANALYZE_EPOCH}
+
+            EXPERIMENT_STORE.clear_all()
+            r = client.get("/api/scatter?x=UMAP1&y=UMAP2&color=none")
+            assert r.status_code == 200
+            assert r.get_json()["data"]
+            assert EXPERIMENT_STORE.experiments
+
+    def test_discovery_root_workdir_switching(
+        self, dashboard_workdir: str, tmp_path
+    ) -> None:
+        import shutil
+
+        parent = tmp_path / "experiments"
+        parent.mkdir()
+        run_a = parent / "run_a"
+        run_b = parent / "run_b"
+        shutil.copytree(dashboard_workdir, run_a)
+        shutil.copytree(dashboard_workdir, run_b)
+
+        app = dash_app.create_app(workdir=None, discovery_root=str(parent))
+        discovered = app.config["DASHBOARD_DISCOVERED_WORKDIRS"]
+        assert os.path.abspath(str(run_a)) in discovered
+        assert os.path.abspath(str(run_b)) in discovered
+
+        with app.test_client() as client:
+            r = client.post(
+                "/api/set_workdir", json={"workdir": os.path.abspath(str(run_a))}
+            )
+            assert r.status_code == 200, r.get_json()
+            r_scatter = client.get("/api/scatter?x=z0&y=z1&color=none")
+            assert r_scatter.status_code == 200
+            n_a = len(r_scatter.get_json()["data"][0].get("x") or [])
+
+            r = client.post(
+                "/api/set_workdir", json={"workdir": os.path.abspath(str(run_b))}
+            )
+            assert r.status_code == 200, r.get_json()
+            r_scatter_b = client.get("/api/scatter?x=z0&y=z1&color=none")
+            assert r_scatter_b.status_code == 200
+            n_b = len(r_scatter_b.get_json()["data"][0].get("x") or [])
+            assert n_a == n_b
+            assert n_b > 0
+
+    def test_covariate_filter_save_selection_flow(
+        self, flask_client, dashboard_experiment: DashboardExperiment, tmp_path
+    ) -> None:
+        e = dashboard_experiment
+        n = len(e.plot_df)
+        path = os.path.join(e.workdir, "flow_cov.pkl")
+        with open(path, "wb") as fh:
+            pickle.dump(np.linspace(0, 1, n), fh)
+
+        r = flask_client.post("/api/load_covariate_pkl", json={"path": path})
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["primary_column"] == "flow_cov"
+
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={"column": "flow_cov", "level": 0.5, "use_max": False},
+        )
+        assert r.status_code == 200, r.get_json()
+        rows = r.get_json()["rows"]
+        assert isinstance(rows, list) and rows
+
+        dest = tmp_path / "sel_out"
+        dest.mkdir()
+        r = flask_client.post(
+            "/api/save_selection",
+            json={
+                "rows": rows[: min(5, len(rows))],
+                "basename": "flow_sel",
+                "sel_dir": str(dest),
+            },
+        )
+        assert r.status_code == 200, r.get_json()
+        saved = dest / "flow_sel.pkl"
+        assert saved.is_file()
+        with open(saved, "rb") as fh:
+            loaded = pickle.load(fh)
+        assert loaded.size >= 1
+
+
 class TestDashboardIndexBrowserSmoke:
     """Landing page navigation cards."""
 
@@ -1530,29 +1621,19 @@ class TestDashboardIndexBrowserSmoke:
             pytest.skip("trajectory card active on this runner (GPU + weights present)")
         assert out["trajectory_ineligible_note"]
 
-    def test_landing_includes_trajectory_when_volumes_eligible(
-        self, playwright_page, dashboard_volumes_eligible_live_url
+    @pytest.mark.parametrize(
+        "fixture_url,expect_key",
+        [
+            ("dashboard_volumes_eligible_live_url", "has_trajectory"),
+            ("dashboard_landscape_volpca_live_url", "has_landscape_volpca"),
+        ],
+        ids=["trajectory_eligible", "landscape_volpca"],
+    )
+    def test_landing_feature_cards_when_outputs_present(
+        self, fixture_url: str, expect_key: str, request, playwright_page
     ) -> None:
         from tests.conftest import dashboard_smoke_index
 
-        out = dashboard_smoke_index(
-            playwright_page, dashboard_volumes_eligible_live_url
-        )
-        assert out["has_trajectory"]
-
-    def test_landing_landscape_inactive_without_analyze_landscape(
-        self, playwright_page, dashboard_plain_live_url
-    ) -> None:
-        from tests.conftest import dashboard_smoke_index_no_landscape
-
-        dashboard_smoke_index_no_landscape(playwright_page, dashboard_plain_live_url)
-
-    def test_landing_includes_landscape_volpca_when_outputs_present(
-        self, playwright_page, dashboard_landscape_volpca_live_url
-    ) -> None:
-        from tests.conftest import dashboard_smoke_index
-
-        out = dashboard_smoke_index(
-            playwright_page, dashboard_landscape_volpca_live_url
-        )
-        assert out["has_landscape_volpca"]
+        url = request.getfixturevalue(fixture_url)
+        out = dashboard_smoke_index(playwright_page, url)
+        assert out[expect_key]

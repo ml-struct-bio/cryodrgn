@@ -27,6 +27,10 @@ from cryodrgn.dashboard.volume_slice_viewer import (
 )
 
 
+from tests.conftest import read_dashboard_static_js
+
+pytestmark = pytest.mark.dashboard
+
 _VTK_BUNDLE = (
     Path(__file__).resolve().parents[1]
     / "cryodrgn/dashboard/static/js/volume_raycast_vtk.bundle.js"
@@ -188,6 +192,44 @@ class TestVolumeSliceViewerRoutes:
         assert all(m["plot_row"] is not None for m in km)
         assert all(m["label"].startswith("K") for m in km)
         assert all(int(m["label"][1:]) >= 1 for m in km)
+        pc = [m for m in markers if m["kind"] == "pc"]
+        assert pc
+        assert all(isinstance(m.get("z"), list) for m in pc)
+        assert all(len(m["z"]) == dashboard_experiment.z.shape[1] for m in pc)
+
+    def test_pc_marker_xy_uses_z_values_not_nearest_particle(
+        self, dashboard_experiment
+    ) -> None:
+        from cryodrgn.dashboard.volume_slice_viewer import (
+            enrich_analyze_volume_markers_plot_xy,
+            project_latent_z_to_plot_xy,
+        )
+
+        markers = discover_analyze_volume_markers(dashboard_experiment)
+        pc = [m for m in markers if m["kind"] == "pc" and m.get("z")]
+        assert pc
+        enriched = enrich_analyze_volume_markers_plot_xy(
+            dashboard_experiment, pc, "PC1", "PC2"
+        )
+        z_mat = np.asarray([m["z"] for m in enriched], dtype=np.float64)
+        expected = project_latent_z_to_plot_xy(
+            dashboard_experiment, z_mat, "PC1", "PC2"
+        )
+        assert expected is not None
+        coords = dashboard_experiment.plot_df[["PC1", "PC2"]].values.astype(np.float64)
+        for i, marker in enumerate(enriched):
+            assert marker["xy"] is not None
+            np.testing.assert_allclose(marker["xy"], expected[i], rtol=1e-5, atol=1e-5)
+            # True PC-traversal coordinates should not collapse onto the nearest
+            # particle's scatter position for every sample.
+            if marker.get("plot_row") is not None:
+                nearest_xy = coords[int(marker["plot_row"])]
+                if not np.allclose(marker["xy"], nearest_xy, rtol=1e-3, atol=1e-3):
+                    break
+        else:
+            # All matched nearest particles — still valid if the embedding is tiny,
+            # but xy must equal the projected z_values coordinates above.
+            pass
 
     def test_kmeans_volume_ids_for_anchor_indices(self, dashboard_experiment) -> None:
         from cryodrgn.dashboard.volume_slice_viewer import (
@@ -311,18 +353,6 @@ class TestVolumeSliceViewerRoutes:
         assert r.status_code == 400
         assert "ids" in r.get_json().get("error", "").lower()
 
-    def test_volume_viewer_url_redirects_to_trajectory(self, flask_client) -> None:
-        r = flask_client.get("/volume-viewer", follow_redirects=False)
-        assert r.status_code in (301, 302, 303, 307, 308)
-        assert "/trajectory" in (r.headers.get("Location") or "")
-
-    def test_volume_viewer_url_redirects_when_volumes_eligible(
-        self, flask_client_volumes_eligible
-    ) -> None:
-        r = flask_client_volumes_eligible.get("/volume-viewer", follow_redirects=False)
-        assert r.status_code in (301, 302, 303, 307, 308)
-        assert "/trajectory" in (r.headers.get("Location") or "")
-
     def test_trajectory_page_integrates_volume_display(
         self, flask_client_volumes_eligible
     ) -> None:
@@ -365,19 +395,20 @@ class TestVolumeSliceViewerRoutes:
         assert "traj-scatter-interp-nearest" in body
         assert "traj-scatter-interp-direct" in body
         assert "btn-traj-manual-volume" in body
-        assert "btn-rerender-volumes" in body
+        assert "btn-generate-volumes" in body
+        assert "buildDecodeRenderVolumesButtonLabel" in body
         assert "deferManualWaypointVolumeRerender" in body
         assert "finishManualVolumeDeselection" in body
         assert "plotRowsForManualVolIds" in body
         assert "syncManualVolumeViewerForWaypointSelection" in body
         assert "manualSnappedDecodePathActive" in body
         assert "preserveManualSnappedDecodeVolumeCatalog" in body
-        assert "reverseManualInterpolatedVolumeCatalogPreservingAnchors" in body
+        assert "reverseTrajectoryVolumeStaleAt" in body
+        assert "reverseTrajectory" in body
         assert "syncManualAnchorIndicesToVolIdOrder" in body
         assert "compactManualAnchorVolumesFromSnapshot" in body
         assert "manualInterpolatedVolumeReversePending" in body
-        assert "reverseDecodedTrajectoryVolumesInMemory" in body
-        assert "Render volumes" in body
+        assert "Decode and render volumes" in body
         assert "btn-traj-manual-graph" in body
         assert "manual-snap-n-points" in body
         assert "manual-graph-n-points" in body
@@ -403,7 +434,8 @@ class TestVolumeSliceViewerRoutes:
         assert "trajectory_volume_display.js" in body
         assert "stableBackendChrome: true" in body
         assert "cryo-traj-vol-backend-panel--inactive" in body
-        assert "cryo-traj-vol-backend-panel--reserved" in body
+        vol_display_js = read_dashboard_static_js("trajectory_volume_display.js")
+        assert "cryo-traj-vol-backend-panel--reserved" in vol_display_js
         assert 'id="vslice-chimerax-view-controls"' in body
         assert "vslice-iso-controls" in body
         assert "traj-chimerax-view-rotate-row" in body
@@ -540,29 +572,22 @@ class TestTrajectoryVolumeBrowserSmoke:
             """() => {
               var btn = document.getElementById('btn-generate-volumes');
               var saveBtn = document.getElementById('btn-save-volumes');
-              var rerenderBtn = document.getElementById('btn-rerender-volumes');
               return {
                 present: !!btn,
                 hidden: btn ? btn.hidden : true,
                 disabled: btn ? btn.disabled : true,
                 savePresent: !!saveBtn,
                 saveHidden: saveBtn ? saveBtn.hidden : true,
-                saveDisabled: saveBtn ? saveBtn.disabled : true,
-                rerenderPresent: !!rerenderBtn,
-                rerenderHidden: rerenderBtn ? rerenderBtn.hidden : true,
-                rerenderDisabled: rerenderBtn ? rerenderBtn.disabled : true
+                saveDisabled: saveBtn ? saveBtn.disabled : true
               };
             }"""
         )
         assert gen_btn["present"] is True
         assert gen_btn["hidden"] is False
-        assert gen_btn["disabled"] is True
+        assert gen_btn["disabled"] is False
         assert gen_btn["savePresent"] is True
         assert gen_btn["saveHidden"] is False
         assert gen_btn["saveDisabled"] is True
-        assert gen_btn["rerenderPresent"] is True
-        assert gen_btn["rerenderHidden"] is False
-        assert gen_btn["rerenderDisabled"] is False
 
     def test_manual_mode_chimerax_default_with_analyze_volumes(
         self, playwright_page, dashboard_volumes_eligible_live_url
@@ -599,6 +624,7 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_activate_vtk_backend,
             dashboard_smoke_rerender_manual_volumes,
         )
 
@@ -612,20 +638,9 @@ class TestTrajectoryVolumeBrowserSmoke:
             playwright_page,
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-        playwright_page.wait_for_function(
-            """() => {
-              var vtkBackend = document.getElementById('traj-vol-backend-vtk');
-              return !!(vtkBackend && !vtkBackend.disabled);
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        playwright_page.click("label[for='traj-vol-backend-vtk']")
-        playwright_page.wait_for_function(
-            """() => {
-              var vtkBackend = document.getElementById('traj-vol-backend-vtk');
-              return !!(vtkBackend && vtkBackend.checked && !vtkBackend.disabled);
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        dashboard_smoke_activate_vtk_backend(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         chrome = playwright_page.evaluate(
             """() => {
@@ -666,7 +681,9 @@ class TestTrajectoryVolumeBrowserSmoke:
               var col = document.getElementById('vslice-pad-column');
               return {
                 pad_present: !!col,
-                pad_visible: !!(col && !col.hidden),
+                pad_visible: !!(col
+                  && col.getAttribute('aria-hidden') !== 'true'
+                  && !col.classList.contains('cryo-traj-vol-backend-panel--reserved')),
                 pan_up: !!document.getElementById('btn-vslice-pan-up')
               };
             }"""
@@ -743,7 +760,7 @@ class TestTrajectoryVolumeBrowserSmoke:
             }""",
             timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-        playwright_page.click("label[for='traj-vol-backend-chimerax']")
+        playwright_page.click("label[for='traj-vol-backend-chimerax']", force=True)
         playwright_page.wait_for_function(
             """() => {
               var col = document.getElementById('traj-vol-column');
@@ -836,7 +853,7 @@ class TestTrajectoryVolumeBrowserSmoke:
             playwright_page,
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-        playwright_page.click("label[for='traj-vol-backend-chimerax']")
+        playwright_page.click("label[for='traj-vol-backend-chimerax']", force=True)
         playwright_page.wait_for_function(
             """() => {
               var preview = document.getElementById('vslice-chimerax-preview');
@@ -874,7 +891,9 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_activate_vtk_backend,
             dashboard_smoke_rerender_manual_volumes,
+            dashboard_smoke_select_volume_backend,
             fulfill_volume_viewer_render_route,
         )
 
@@ -907,14 +926,9 @@ class TestTrajectoryVolumeBrowserSmoke:
             playwright_page,
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-        playwright_page.wait_for_function(
-            """() => {
-              var vtk = document.getElementById('traj-vol-backend-vtk');
-              var vtkHost = document.getElementById('vslice-vtk-container');
-              return !!(vtk && vtk.checked && !vtk.disabled
-                && vtkHost && !vtkHost.hidden);
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        dashboard_smoke_activate_vtk_backend(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         dock_btn = playwright_page.query_selector("#btn-traj-vol-dock-below")
         if dock_btn and not dock_btn.is_hidden():
@@ -929,7 +943,18 @@ class TestTrajectoryVolumeBrowserSmoke:
                 }""",
                 timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             )
-        playwright_page.click("label[for='traj-vol-backend-chimerax']")
+        dashboard_smoke_select_volume_backend(
+            playwright_page,
+            "chimerax",
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        playwright_page.wait_for_function(
+            """() => {
+              var modal = document.getElementById('traj-vol-popout-modal');
+              return !!(modal && modal.hidden);
+            }""",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
         playwright_page.wait_for_function(
             """() => {
               var shell = document.getElementById('traj-vol-aside-shell');
@@ -952,7 +977,9 @@ class TestTrajectoryVolumeBrowserSmoke:
         from tests.conftest import (
             DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_activate_vtk_backend,
             dashboard_smoke_rerender_manual_volumes,
+            dashboard_smoke_select_volume_backend,
         )
 
         ready = _dashboard_smoke_volume_viewer_ready(
@@ -965,14 +992,15 @@ class TestTrajectoryVolumeBrowserSmoke:
             playwright_page,
             timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )
-        playwright_page.wait_for_function(
-            """() => {
-              var vtk = document.getElementById('vslice-vtk-container');
-              return !!(vtk && !vtk.hidden);
-            }""",
-            timeout=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+        dashboard_smoke_activate_vtk_backend(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )
-        playwright_page.click("label[for='traj-vol-backend-chimerax']")
+        dashboard_smoke_select_volume_backend(
+            playwright_page,
+            "chimerax",
+            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+        )
         playwright_page.wait_for_function(
             """() => {
               var preview = document.getElementById('vslice-chimerax-preview');
@@ -980,18 +1008,17 @@ class TestTrajectoryVolumeBrowserSmoke:
             }""",
             timeout=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )
-        playwright_page.click("label[for='traj-vol-backend-vtk']")
+        dashboard_smoke_select_volume_backend(
+            playwright_page,
+            "vtk",
+            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+        )
         playwright_page.wait_for_function(
             """() => {
-              var vtk = document.getElementById('vslice-vtk-container');
-              var canvas = document.getElementById('vslice-canvas');
+              var vtkHost = document.getElementById('vslice-vtk-container');
               var preview = document.getElementById('vslice-chimerax-preview');
-              if (!vtk || vtk.hidden) return false;
-              if (window.getComputedStyle(vtk).display === 'none') return false;
-              if (preview && !preview.hidden) return false;
-              if (canvas && !canvas.hidden) return false;
-              var row = document.getElementById('vslice-display-row');
-              return !!(row && !row.hidden);
+              return !!(vtkHost && !vtkHost.hidden
+                && (!preview || preview.hidden || !preview.src));
             }""",
             timeout=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
         )

@@ -661,6 +661,36 @@
   };
 
   /**
+   * Map a direct-trace latent polyline to dataset plot rows when only XY is
+   * stored (e.g. endpoint line before densify row materialization).
+   */
+  DirectTracePath.prototype._derivePlotRowsForXY = function (xy) {
+    xy = cloneXYList(xy);
+    if (!xy || xy.length < 2) return null;
+    var hooks = this.hooks || {};
+    if (typeof hooks.plotRowsForPathXY === "function") {
+      var batch = hooks.plotRowsForPathXY(xy);
+      if (batch && batch.length === xy.length) {
+        return cloneRowList(batch).map(Number).filter(function (r) {
+          return Number.isFinite(r) && r >= 0;
+        }).length === xy.length ? cloneRowList(batch) : null;
+      }
+    }
+    if (typeof hooks.nearestPlotRowForXY === "function") {
+      var rows = [];
+      for (var i = 0; i < xy.length; i++) {
+        var pt = xy[i];
+        if (!pt || pt.length < 2) return null;
+        var row = Number(hooks.nearestPlotRowForXY(Number(pt[0]), Number(pt[1])));
+        if (!Number.isFinite(row) || row < 0) return null;
+        rows.push(row);
+      }
+      return rows;
+    }
+    return null;
+  };
+
+  /**
    * Snapshot the live direct-trace polyline (densified samples or anchors).
    */
   DirectTracePath.prototype._livePathRowsAndXY = function () {
@@ -700,8 +730,18 @@
       rows = (samples && samples.length === editable.length)
         ? samples.slice()
         : ((anchors && anchors.length === editable.length) ? anchors.slice() : null);
+      if (!rows || rows.length !== editable.length) {
+        rows = this._derivePlotRowsForXY(editable);
+      }
+      if (rows && rows.length === editable.length) {
+        return {
+          rows: rows,
+          xy: cloneXYList(editable),
+          usedEditable: true
+        };
+      }
       return {
-        rows: rows,
+        rows: null,
         xy: cloneXYList(editable),
         usedEditable: true
       };
@@ -739,7 +779,10 @@
         return { ok: false, reason: "row-xy-mismatch", useRebuild: true };
       }
     } else if (!rows) {
-      return { ok: false, reason: "no-row-map", useRebuild: true };
+      rows = this._derivePlotRowsForXY(xy);
+      if (!rows || rows.length !== xy.length) {
+        return { ok: false, reason: "no-row-map", useRebuild: true };
+      }
     }
 
     var seen = {};

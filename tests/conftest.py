@@ -485,7 +485,7 @@ def abinit_dir(request, tmpdir_factory) -> AbInitioDir:
 
 
 # ---------------------------------------------------------------------------
-# Dashboard split-suite shared fixtures
+# Dashboard fixtures: trained workdirs, landscape variants, Flask clients
 # ---------------------------------------------------------------------------
 
 DASHBOARD_TRAIN_EPOCHS = 3
@@ -861,7 +861,7 @@ def flask_client(dashboard_workdir: str):
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers for dashboard test modules
+# Dashboard helpers: Plotly decode, template/static readers, PNG stubs
 # ---------------------------------------------------------------------------
 
 
@@ -962,7 +962,7 @@ def js_function_body(source: str, fn_marker: str, until_marker: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Dashboard Plotly browser smoke (Playwright; optional ``dev`` extra)
+# Dashboard live servers, Playwright fixtures, volume-viewer route stubs
 # ---------------------------------------------------------------------------
 
 DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS = 120_000
@@ -1375,6 +1375,11 @@ def _dashboard_smoke_ensure_panel_open(page, toggle_id: str) -> None:
     )
     if not expanded:
         page.click(f"#{toggle_id}")
+
+
+# ---------------------------------------------------------------------------
+# Dashboard browser smoke orchestrators (thin wrappers used by *BrowserSmoke)
+# ---------------------------------------------------------------------------
 
 
 def dashboard_smoke_particle_explorer(
@@ -1793,7 +1798,11 @@ def dashboard_smoke_trajectory(
         """() => {
           var st = document.getElementById('traj-status');
           var txt = st ? st.textContent || '' : '';
-          return /manual selection ready|anchor path|latent z ready|selection and volumes ready/i.test(txt);
+          if (/manual selection ready|anchor path|latent z ready|selection and volumes ready|added \\d+ random/i.test(txt)) {
+            return true;
+          }
+          var overlay = document.getElementById('traj-glyph-overlay');
+          return !!(overlay && overlay.querySelectorAll('.cryo-traj-glyph-marker').length >= 2);
         }""",
         timeout=timeout_ms,
     )
@@ -1876,35 +1885,99 @@ def dashboard_smoke_rerender_manual_volumes(
     *,
     timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
 ) -> None:
-    """Trajectory creator: click Render volumes and wait for analyze load to finish."""
+    """Trajectory creator: click Decode/render volumes and wait for ChimeraX load."""
     page.wait_for_function(
         """() => {
-          var btn = document.getElementById('btn-rerender-volumes');
+          var btn = document.getElementById('btn-generate-volumes');
           return !!(btn && !btn.hidden);
         }""",
         timeout=timeout_ms,
     )
     page.wait_for_function(
         """() => {
-          var btn = document.getElementById('btn-rerender-volumes');
+          var btn = document.getElementById('btn-generate-volumes');
           return !!(btn && !btn.disabled);
         }""",
         timeout=timeout_ms,
     )
-    page.click("#btn-rerender-volumes")
+    page.click("#btn-generate-volumes")
     page.wait_for_function(
         """() => {
-          var btn = document.getElementById('btn-rerender-volumes');
-          if (btn && btn.textContent.indexOf('Rendering volumes') >= 0) return false;
+          var btn = document.getElementById('btn-generate-volumes');
+          var txt = btn ? (btn.textContent || '') : '';
+          if (/decoding|rendering/i.test(txt)) return false;
           var overlay = document.getElementById('vslice-rendering-overlay');
           if (overlay && !overlay.hidden) return false;
           var preview = document.getElementById('vslice-chimerax-preview');
           if (preview && !preview.hidden && preview.src) return true;
           var cx = document.getElementById('traj-vol-backend-chimerax');
           if (cx && cx.checked && !cx.disabled) return true;
+          var title = btn ? (btn.title || '') : '';
           return !!(btn && btn.disabled
-            && (btn.title || '').indexOf('already match') >= 0);
+            && /already (available|match)|volumes and chimeraX images are already available/i.test(title));
         }""",
+        timeout=timeout_ms,
+    )
+
+
+def dashboard_smoke_activate_vtk_backend(
+    page,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> None:
+    """Load slice volume data, then switch to VTK (needs ``volume_b64``)."""
+    page.wait_for_function(
+        """() => {
+          var slice = document.getElementById('traj-vol-backend-slice');
+          var vtk = document.getElementById('traj-vol-backend-vtk');
+          return !!(slice && !slice.disabled && vtk && !vtk.disabled);
+        }""",
+        timeout=timeout_ms,
+    )
+    page.click("label[for='traj-vol-backend-slice']")
+    page.wait_for_function(
+        """() => {
+          var slice = document.getElementById('traj-vol-backend-slice');
+          var canvas = document.getElementById('vslice-canvas');
+          return !!(slice && slice.checked && canvas && !canvas.hidden);
+        }""",
+        timeout=timeout_ms,
+    )
+    page.click("label[for='traj-vol-backend-vtk']")
+    page.wait_for_function(
+        """() => {
+          var vtk = document.getElementById('traj-vol-backend-vtk');
+          var vtkHost = document.getElementById('vslice-vtk-container');
+          return !!(vtk && vtk.checked && !vtk.disabled
+            && vtkHost && !vtkHost.hidden);
+        }""",
+        timeout=timeout_ms,
+    )
+
+
+def dashboard_smoke_select_volume_backend(
+    page,
+    backend: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+) -> None:
+    """Select a volume render backend via the radio ``change`` handler."""
+    backend = backend.lower()
+    radio_id = f"traj-vol-backend-{backend}"
+    page.evaluate(
+        """(rid) => {
+          var el = document.getElementById(rid);
+          if (!el || el.disabled) throw new Error('backend unavailable: ' + rid);
+          el.checked = true;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }""",
+        radio_id,
+    )
+    page.wait_for_function(
+        f"""() => {{
+          var el = document.getElementById('{radio_id}');
+          return !!(el && el.checked && !el.disabled);
+        }}""",
         timeout=timeout_ms,
     )
 

@@ -47,7 +47,6 @@ from cryodrgn.dashboard.landscape_full_3d import (
 )
 from cryodrgn.dashboard.landscape_volpca import (
     landscape_analysis_ready,
-    landscape_dir_for_epoch,
     load_pca_explained_variance,
 )
 from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
@@ -119,13 +118,13 @@ def _scatter3d_no_subsample_for_discrete_gif_frame(
 
 
 def _landscape_full_vol_pc_explained_variance(
-    workdir: str, epoch: int
+    exp: DashboardExperiment,
 ) -> np.ndarray | None:
     """Explained variance ratios from ``landscape.{epoch}/vol_pca_obj.pkl``.
 
     Returns None when missing.
     """
-    return load_pca_explained_variance(landscape_dir_for_epoch(workdir, int(epoch)))
+    return load_pca_explained_variance(exp.landscape_dir)
 
 
 _LEAD_LATENT_3D = (
@@ -826,7 +825,7 @@ def landscape_full_3d_page():
         )
     dx, dy, dz = vol_axes[0], vol_axes[1], vol_axes[2]
     cols = landscape_full_sampled_numeric_covariates(sampled)
-    vol_evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
+    vol_evr = _landscape_full_vol_pc_explained_variance(e)
     vol_anim = landscape_analysis_ready(e.workdir, e.epoch)
     return render_template(
         "latent_3d.html",
@@ -948,7 +947,7 @@ def api_scatter3d_z_landscape_full():
         )
     ax_allow = frozenset(vol_axes)
     d0, d1, d2 = vol_axes[0], vol_axes[1], vol_axes[2]
-    evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
+    evr = _landscape_full_vol_pc_explained_variance(e)
 
     def _vol_landscape_scene_titles(xc: str, yc: str, zc: str) -> tuple[str, str, str]:
         return (
@@ -1125,7 +1124,7 @@ def api_latent3d_landscape_full_discrete_gif():
         )
     ax_allow = frozenset(vol_axes)
     d0, d1, d2 = vol_axes[0], vol_axes[1], vol_axes[2]
-    evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
+    evr = _landscape_full_vol_pc_explained_variance(e)
 
     def _scene_titles(xc: str, yc: str, zc: str) -> tuple[str, str, str]:
         return (

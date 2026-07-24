@@ -688,8 +688,8 @@
     if (!plotArea) return null;
     var plotRect = plotArea.getBoundingClientRect();
     var stackRect = trajGlyphOverlayEl.parentElement.getBoundingClientRect();
-    var xr = fl.xaxis.range;
-    var yr = fl.yaxis.range;
+    var xr = (trajGlyphPanAxisRanges && trajGlyphPanAxisRanges.xr) || fl.xaxis.range;
+    var yr = (trajGlyphPanAxisRanges && trajGlyphPanAxisRanges.yr) || fl.yaxis.range;
     if (!xr || xr.length < 2 || !yr || yr.length < 2) return null;
     if (xr[1] === xr[0] || yr[1] === yr[0]) return null;
     var fracX = (dataX - xr[0]) / (xr[1] - xr[0]);
@@ -1276,11 +1276,27 @@
       }
       pushRows(manualActiveCustomPlotRows);
     }
+    if (typeof directTraceTraversalMode === "function" && directTraceTraversalMode()) {
+      pushRows(directTraceLivePlotRowsForAppend());
+    }
     pushRows(anchorIndicesActive);
     if (trajPlotRows && trajPlotRows.length) {
       pushRows(trajPlotRows);
     }
     return out;
+  }
+
+  function directTraceLivePlotRowsForAppend() {
+    if (typeof directTraceTraversalMode !== "function" || !directTraceTraversalMode()) {
+      return [];
+    }
+    var path = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+    if (!path || path.kind !== "direct" || typeof path._livePathRowsAndXY !== "function") {
+      return [];
+    }
+    var live = path._livePathRowsAndXY();
+    if (live && live.rows && live.rows.length >= 2) return live.rows.slice();
+    return [];
   }
 
   function finishRandomPlotRowAppendUi(opts) {
@@ -1314,6 +1330,9 @@
       return Number.isFinite(row) && row >= 0;
     });
     if (!addedRows.length) return false;
+    if (typeof ensureExistingWaypointsTrackedBeforeRandomAppend === "function") {
+      ensureExistingWaypointsTrackedBeforeRandomAppend();
+    }
     resetAnchorPathOrderToDefault();
 
     var selectionDriven = isManualTraversalMode() || directTraceTraversalMode();

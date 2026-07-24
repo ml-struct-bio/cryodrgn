@@ -225,7 +225,7 @@ _ANALYZE_VOL_CACHE_LOCK = threading.Lock()
 
 
 def _analyze_dir(exp: DashboardExperiment) -> str:
-    return os.path.join(exp.workdir, f"analyze.{int(exp.epoch)}")
+    return exp.analyze_dir
 
 
 def _sorted_vol_mrc_paths(directory: str) -> list[tuple[int, str]]:

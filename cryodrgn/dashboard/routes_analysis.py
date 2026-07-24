@@ -37,8 +37,8 @@ from cryodrgn.dashboard.chimerax_animation import (
 from cryodrgn.dashboard.particle_explorer import (
     DEFAULT_CHIMERAX_PARALLEL,
     cuda_gpu_count_for_decode,
-    decode_progress_snapshot,
-    decode_progress_unregister,
+    volume_job_progress_snapshot,
+    volume_job_progress_unregister,
     explorer_volumes_eligible,
     generate_trajectory_volume_b64_list,
     generate_trajectory_volume_pngs,
@@ -640,7 +640,7 @@ def api_trajectory_volumes_decode_progress():
     token = str(request.args.get("job_id", "") or "").strip()
     if not token:
         return jsonify(ok=False, error="Missing job_id."), 400
-    snap = decode_progress_snapshot(token)
+    snap = volume_job_progress_snapshot(token)
     if snap is None:
         # 200 (not 404) so in-flight progress polls do not spam the browser
         # console before the server registers the job or after it unregisters.
@@ -898,7 +898,7 @@ def api_trajectory_volumes():
         return jsonify(error=str(err)), 500
     finally:
         if progress_token:
-            decode_progress_unregister(progress_token)
+            volume_job_progress_unregister(progress_token)
             volume_job_partial_unregister(progress_token)
 
 

@@ -28,10 +28,10 @@ from cryodrgn.dashboard.plots_color_covariate import (
 if TYPE_CHECKING:
     from scipy.sparse import csr_matrix as _csr_matrix
 
+from cryodrgn.dashboard.experiment_store import EXPERIMENT_STORE
+
 # (workdir, epoch, max_neighbors, avg_neighbors) -> (neighbor_ids, dists, csr_graph)
-_TRAJ_GRAPH_NEIGHBOR_CACHE: dict[
-    tuple[str, int, int, int], tuple[np.ndarray, np.ndarray, "_csr_matrix"]
-] = {}
+_TRAJ_GRAPH_NEIGHBOR_CACHE = EXPERIMENT_STORE.traj_graph_neighbors
 
 _CSGRAPH_MISSING_PREDECESSOR = -9999
 
@@ -57,15 +57,9 @@ def has_pc_columns(exp: DashboardExperiment) -> bool:
 
 def trajectory_default_xy_cols(cols: list[str], zdim: int) -> tuple[str, str]:
     """Pick default X/Y from the trajectory-allowed axis list only."""
-    if zdim > 2 and "PC1" in cols and "PC2" in cols:
-        return "PC1", "PC2"
-    if "UMAP1" in cols and "UMAP2" in cols:
-        return "UMAP1", "UMAP2"
-    if len(cols) >= 2:
-        return cols[0], cols[1]
-    if len(cols) == 1:
-        return cols[0], cols[0]
-    return cols[0] if cols else "z0", cols[1] if len(cols) > 1 else "z1"
+    from cryodrgn.dashboard.route_helpers import default_embedding_xy_cols
+
+    return default_embedding_xy_cols(cols, zdim=zdim, prefer_pc=True)
 
 
 def trajectory_plot_axis_columns(e: DashboardExperiment) -> list[str]:

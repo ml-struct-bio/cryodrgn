@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 import numpy as np
 from flask import jsonify, redirect, url_for
@@ -82,11 +82,27 @@ def _particle_explorer_scatter_cap_from_env() -> bool:
     return _scatter_cap(200_000)[1]
 
 
+def default_embedding_xy_cols(
+    cols: list[str],
+    *,
+    zdim: int | None = None,
+    prefer_pc: bool = False,
+) -> tuple[str, str]:
+    """Pick default X/Y axes from an allowed column list."""
+    if prefer_pc and zdim is not None and zdim > 2 and "PC1" in cols and "PC2" in cols:
+        return "PC1", "PC2"
+    if "UMAP1" in cols and "UMAP2" in cols:
+        return "UMAP1", "UMAP2"
+    if len(cols) >= 2:
+        return cols[0], cols[1]
+    if len(cols) == 1:
+        return cols[0], cols[0]
+    return cols[0] if cols else "z0", cols[1] if len(cols) > 1 else "z1"
+
+
 def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
     """Pick sensible default X/Y axes (UMAP if available, else first two)."""
-    x = "UMAP1" if "UMAP1" in cols else cols[0]
-    y = "UMAP2" if "UMAP2" in cols else cols[min(1, len(cols) - 1)]
-    return x, y
+    return default_embedding_xy_cols(cols)
 
 
 def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str | None]:
@@ -263,7 +279,12 @@ def _add_direct_anchor_pidx(
     payload["anchor_path_order"] = p.get("anchor_path_order", "preserve")
 
 
-def _api_try(fn: callable, msg: str, *, logger: Any = None) -> tuple:
+_T = TypeVar("_T")
+
+
+def _api_try(
+    fn: Callable[[], _T], msg: str, *, logger: Any = None
+) -> _T | tuple[Any, int]:
     """Execute ``fn`` and return Flask response with standardized error handling.
 
     - ValueError -> 400 with error message

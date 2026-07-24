@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -360,6 +361,7 @@ def module_summary_from_command_py(path: Path) -> str:
     return first[0].strip() if first else ""
 
 
+@lru_cache(maxsize=1)
 def load_command_module_docstrings() -> dict[str, str]:
     """Map command keys to one-line module summaries for the command builder."""
     cmd_dir = Path(__file__).resolve().parent.parent / "commands"

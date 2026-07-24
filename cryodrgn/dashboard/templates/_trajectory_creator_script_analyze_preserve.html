@@ -585,6 +585,10 @@
   }
 
   function saveVolumesActionEnabled() {
+    if (typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()) {
+      return false;
+    }
     if (isManualTraversalMode()) return false;
     if (analyzeVolumeCatalogFullyCoversPath()) return false;
     if (!lastTrajectoryVolumeCacheId) return false;
@@ -593,6 +597,10 @@
 
   function saveVolumesButtonTitle(saveEnabled) {
     if (saveEnabled) return "";
+    if (typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()) {
+      return "Save volumes is only available in ChimeraX mode.";
+    }
     if (isManualTraversalMode() || analyzeVolumeCatalogFullyCoversPath()) {
       return "Volumes are loaded from cryodrgn analyze output; nothing new to save.";
     }
@@ -609,7 +617,10 @@
       var genEnabled = decodeRenderVolumesActionEnabled();
       btnGenerateVolumesEl.disabled = !genEnabled;
       btnGenerateVolumesEl.title = !genEnabled && !trajectoryVolumeActionBusy()
-        ? (catalogDecodedTrajectoryFullyCoversPath()
+        ? ((typeof isInteractiveVolumeBackend === "function"
+            && isInteractiveVolumeBackend())
+          ? "Decode and render volumes are only available in ChimeraX mode."
+          : (catalogDecodedTrajectoryFullyCoversPath()
           && trajectoryVolumesOutstandingRenderCount() < 1
           ? "Volumes and ChimeraX images are already available."
           : ((isManualTraversalMode()
@@ -619,7 +630,7 @@
             ? "Decode and/or render volumes for the current trajectory."
             : (scatterTrajectoryPathReady() && !isManualTraversalMode()
               ? "Volumes for the current selection are already loaded."
-              : "")))
+              : ""))))
         : (genEnabled
           ? "Decode outstanding volumes and render ChimeraX images."
           : "");
@@ -762,6 +773,10 @@
 
   function decodeRenderVolumesActionEnabled() {
     reconcileChimeraxRenderingFlag();
+    if (typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()) {
+      return false;
+    }
     if (trajectoryVolumeActionBusy()) return false;
     if (typeof manualCompactCatalogDebtModeActive === "function"
         && manualCompactCatalogDebtModeActive()) {
@@ -1111,6 +1126,71 @@
     persistManualVolumeSelection();
     if (!skipPickerRebuild) buildManualPickerRows();
     return true;
+  }
+
+  /**
+   * Before Add-random append, register live path waypoints in catalog/custom
+   * selection so rebuildFromSelection does not replace the path with only the
+   * newly sampled indices.
+   */
+  function ensureExistingWaypointsTrackedBeforeRandomAppend() {
+    if (typeof isManualTraversalMode === "function" && !isManualTraversalMode()
+        && typeof directTraceTraversalMode === "function" && !directTraceTraversalMode()) {
+      return;
+    }
+    var pathRows = typeof directTraceTraversalMode === "function" && directTraceTraversalMode()
+      && typeof directTraceLivePlotRowsForAppend === "function"
+      ? directTraceLivePlotRowsForAppend()
+      : [];
+    if (!pathRows || pathRows.length < 2) {
+      pathRows = typeof visitOrderAnchorPlotRows === "function"
+        ? visitOrderAnchorPlotRows()
+        : (anchorIndicesActive && anchorIndicesActive.length >= 2
+          ? anchorIndicesActive.slice()
+          : []);
+    }
+    if (!pathRows || pathRows.length < 2) return;
+
+    var customToRegister = [];
+    var volIdsToAdd = [];
+    var volSeen = {};
+    (manualSelectedVolIds || []).forEach(function(id) {
+      volSeen[String(id)] = true;
+    });
+
+    pathRows.forEach(function(row) {
+      row = Number(row);
+      if (!Number.isFinite(row) || row < 0) return;
+      if (manualActiveCustomPlotRows && manualActiveCustomPlotRows.indexOf(row) >= 0) return;
+      if (typeof manualCatalogSelectedPlotRows === "function"
+          && manualCatalogSelectedPlotRows().indexOf(row) >= 0) {
+        return;
+      }
+      if (typeof isCatalogAnchorPlotRow === "function" && isCatalogAnchorPlotRow(row)) {
+        var marker = manualMarkersByPlotRow && manualMarkersByPlotRow[row];
+        if (marker && marker.vol_id != null) {
+          var vid = String(marker.vol_id);
+          if (!volSeen[vid]) {
+            volIdsToAdd.push(vid);
+            volSeen[vid] = true;
+          }
+        }
+        return;
+      }
+      customToRegister.push(row);
+    });
+
+    if (volIdsToAdd.length) {
+      manualSelectedVolIds = (manualSelectedVolIds || []).concat(volIdsToAdd);
+      persistManualVolumeSelection();
+    }
+    if (customToRegister.length) {
+      mergeManualCustomPlotRows(customToRegister, {
+        activate: true,
+        activateNewOnly: false,
+        skipPickerRebuild: true
+      });
+    }
   }
 
   function deactivateManualCustomPlotRows(rows) {

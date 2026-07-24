@@ -107,6 +107,30 @@ class DashboardExperiment:
     def can_preview_particles(self) -> bool:
         return self.enc_mode != "tilt"
 
+    @property
+    def analyze_dir(self) -> str:
+        return os.path.join(self.workdir, f"analyze.{self.epoch}")
+
+    @property
+    def kmeans_dir(self) -> str:
+        return os.path.join(self.analyze_dir, f"kmeans{self.kmeans_folder_id}")
+
+    @property
+    def weights_path(self) -> str:
+        return os.path.join(self.workdir, f"weights.{self.epoch}.pkl")
+
+    @property
+    def z_pkl_path(self) -> str:
+        return os.path.join(self.workdir, f"z.{self.epoch}.pkl")
+
+    @property
+    def landscape_dir(self) -> str:
+        return os.path.join(self.workdir, f"landscape.{self.epoch}")
+
+    @property
+    def landscape_full_dir(self) -> str:
+        return os.path.join(self.workdir, f"landscape_full.{self.epoch}")
+
     def particle_image_source(self):
         """Lazily opened particle stack shared by explorer thumbnail preload."""
         if self._image_source is None:

@@ -7,10 +7,8 @@ trajectory creator).
 
 from __future__ import annotations
 
-import base64
 import os
 import re
-import secrets
 import shutil
 import tempfile
 import threading
@@ -19,6 +17,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 import numpy as np
 from cryodrgn.dashboard import chimerax_animation as cx
 from cryodrgn.dashboard.data import DashboardExperiment
+from cryodrgn.dashboard.volume_caches import VolumeJobStore, VolumeMrcCache
 
 # Re-export unified ChimeraX animation API (backward compatible).
 DEFAULT_GIF_FRAMES = cx.DEFAULT_GIF_FRAMES
@@ -80,45 +79,27 @@ def montage_cell_label(idx: int) -> str:
     return letters[j // n] + letters[j % n]
 
 
-_VOL_MRC_CACHE: dict[str, dict] = {}
-_VOL_CACHE_LOCK = threading.Lock()
-_VOL_CACHE_MAX_ENTRIES = 32
-_VOL_CACHE_TTL_S = 7200.0
+_mrc_cache = VolumeMrcCache()
+_job_store = VolumeJobStore()
+
+# Test / diagnostic aliases (backward compatible).
+_VOL_MRC_CACHE = _mrc_cache.entries
+_VOL_CACHE_LOCK = _mrc_cache.lock
+_VOL_CACHE_MAX_ENTRIES = _mrc_cache._max_entries
 
 
 def _vol_cache_evict_unlocked(token: str) -> None:
-    meta = _VOL_MRC_CACHE.pop(token, None)
-    if meta and meta.get("mrc_dir"):
-        shutil.rmtree(meta["mrc_dir"], ignore_errors=True)
+    _mrc_cache.evict_unlocked(token)
 
 
 def _vol_cache_prune_unlocked() -> None:
-    now = time.monotonic()
-    dead = [
-        tok
-        for tok, meta in _VOL_MRC_CACHE.items()
-        if now - meta["t0"] > _VOL_CACHE_TTL_S
-    ]
-    for tok in dead:
-        _vol_cache_evict_unlocked(tok)
-    while len(_VOL_MRC_CACHE) >= _VOL_CACHE_MAX_ENTRIES:
-        oldest = min(_VOL_MRC_CACHE.items(), key=lambda kv: kv[1]["t0"])[0]
-        _vol_cache_evict_unlocked(oldest)
+    _mrc_cache.prune_unlocked()
 
 
 def _register_vol_mrc_cache(
     mrc_dir: str, vol_files: list[str], rows: tuple[int, ...]
 ) -> str:
-    with _VOL_CACHE_LOCK:
-        _vol_cache_prune_unlocked()
-        token = secrets.token_urlsafe(24)
-        _VOL_MRC_CACHE[token] = {
-            "mrc_dir": mrc_dir,
-            "vol_files": list(vol_files),
-            "rows": rows,
-            "t0": time.monotonic(),
-        }
-        return token
+    return _mrc_cache.register(mrc_dir, vol_files, rows)
 
 
 def volume_cell_gif_from_cache(
@@ -138,19 +119,13 @@ def volume_cell_gif_from_cache(
         gif_frames = explorer_rotation_gif_frames(chimerax_cpus)
     else:
         gif_frames = max(4, min(int(gif_frames), 120))
-    with _VOL_CACHE_LOCK:
-        meta = _VOL_MRC_CACHE.get(token)
-        if not meta:
-            raise ValueError("Unknown or expired volume cache id.")
-        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
-            _vol_cache_evict_unlocked(token)
-            raise ValueError("Volume cache expired. Generate volumes again.")
-        if meta["rows"] != rows_expected:
-            raise ValueError("Montage rows do not match cached volumes.")
-        vfs = meta["vol_files"]
-        if cell_index < 0 or cell_index >= len(vfs):
-            raise ValueError("cell_index out of range for cached volumes.")
-        mrc_path = vfs[cell_index]
+    # ``require_meta`` already holds ``_mrc_cache.lock`` (``_VOL_CACHE_LOCK``);
+    # do not nest another acquire — ``threading.Lock`` is not re-entrant.
+    meta = _mrc_cache.require_meta(token, rows_expected=rows_expected)
+    vfs = meta["vol_files"]
+    if cell_index < 0 or cell_index >= len(vfs):
+        raise ValueError("cell_index out of range for cached volumes.")
+    mrc_path = vfs[cell_index]
     with tempfile.TemporaryDirectory(prefix="cryodrgn_explorer_gif_") as gif_dir:
         out_gif = os.path.join(gif_dir, "cell.gif")
         cx.render_rotating_gif(
@@ -177,14 +152,8 @@ def save_cached_volumes_to_dir(
     if not out_dir:
         raise ValueError("Choose an output folder.")
     out_dir = os.path.abspath(out_dir)
-    with _VOL_CACHE_LOCK:
-        meta = _VOL_MRC_CACHE.get(token)
-        if not meta:
-            raise ValueError("Unknown or expired volume cache id.")
-        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
-            _vol_cache_evict_unlocked(token)
-            raise ValueError("Volume cache expired. Generate volumes again.")
-        vol_files = list(meta["vol_files"])
+    meta = _mrc_cache.require_meta(token)
+    vol_files = list(meta["vol_files"])
     if not vol_files:
         raise ValueError("No cached volumes available to save.")
     os.makedirs(out_dir, exist_ok=True)
@@ -216,8 +185,7 @@ def explorer_volumes_eligible(exp: DashboardExperiment) -> bool:
         return False
     if not torch_cuda_available():
         return False
-    w = os.path.join(exp.workdir, f"weights.{exp.epoch}.pkl")
-    return os.path.isfile(w)
+    return os.path.isfile(exp.weights_path)
 
 
 def _config_yaml_path(workdir: str) -> str:
@@ -234,12 +202,31 @@ def _is_drgnai_config(train_configs: dict) -> bool:
     return "data_norm_mean" in train_configs
 
 
-_DECODE_PROGRESS_LOCK = threading.Lock()
-_VOLUME_JOB_PROGRESS: dict[str, dict[str, object]] = {}
-_VOLUME_JOB_PROGRESS_TTL_S = 600.0
-_VOLUME_JOB_PARTIAL_LOCK = threading.Lock()
-_VOLUME_JOB_PARTIAL: dict[str, dict[str, object]] = {}
-_VOLUME_JOB_PARTIAL_TTL_S = 600.0
+_DECODE_PROGRESS_LOCK = _job_store._progress_lock
+_VOLUME_JOB_PARTIAL_LOCK = _job_store._partial_lock
+
+
+def volume_job_progress_register(
+    token: str,
+    total: int,
+    workers: int,
+    phase: str,
+    *,
+    rerender: bool = False,
+) -> None:
+    _job_store.progress_register(token, total, workers, phase, rerender=rerender)
+
+
+def volume_job_progress_set_done(token: str, done: int) -> None:
+    _job_store.progress_set_done(token, done)
+
+
+def volume_job_progress_snapshot(token: str) -> dict[str, object] | None:
+    return _job_store.progress_snapshot(token)
+
+
+def volume_job_progress_unregister(token: str) -> None:
+    _job_store.progress_unregister(token)
 
 
 def cuda_gpu_count_for_decode() -> int:
@@ -252,95 +239,6 @@ def cuda_gpu_count_for_decode() -> int:
     except Exception:
         pass
     return 1
-
-
-def volume_job_progress_register(
-    token: str,
-    total: int,
-    workers: int,
-    phase: str,
-    *,
-    rerender: bool = False,
-) -> None:
-    with _DECODE_PROGRESS_LOCK:
-        _VOLUME_JOB_PROGRESS[token] = {
-            "total": max(0, int(total)),
-            "done": 0,
-            "workers": max(1, int(workers)),
-            "phase": str(phase),
-            "rerender": bool(rerender),
-            "t0": time.monotonic(),
-        }
-
-
-def volume_job_progress_set_done(token: str, done: int) -> None:
-    with _DECODE_PROGRESS_LOCK:
-        entry = _VOLUME_JOB_PROGRESS.get(token)
-        if not entry:
-            return
-        total = int(entry["total"])
-        entry["done"] = max(0, min(total, int(done)))
-
-
-def volume_job_progress_snapshot(token: str) -> dict[str, object] | None:
-    with _DECODE_PROGRESS_LOCK:
-        entry = _VOLUME_JOB_PROGRESS.get(token)
-        if not entry:
-            return None
-        if time.monotonic() - float(entry["t0"]) > _VOLUME_JOB_PROGRESS_TTL_S:
-            _VOLUME_JOB_PROGRESS.pop(token, None)
-            return None
-        total = int(entry["total"])
-        done = int(entry["done"])
-        pct = (100.0 * done / total) if total else 0.0
-        phase = str(entry.get("phase") or "decode")
-        workers = int(entry["workers"])
-        display_total = entry.get("display_total")
-        snap_total = int(display_total) if display_total is not None else total
-        snap: dict[str, object] = {
-            "total": snap_total,
-            "done": done,
-            "workers": workers,
-            "percent": round(pct, 1),
-            "phase": phase,
-            "rerender": bool(entry.get("rerender")),
-        }
-        if phase == "decode":
-            snap["n_gpus"] = workers
-        elif phase == "pipeline":
-            snap["n_gpus"] = int(entry.get("n_gpus") or workers)
-            snap["n_cpus"] = int(entry.get("n_cpus") or 1)
-            decode_done = int(entry.get("decode_done") or 0)
-            render_done = int(entry.get("render_done") or done)
-            if snap_total > 0:
-                decode_done = min(snap_total, decode_done)
-                render_done = min(snap_total, render_done)
-            snap["decode_done"] = decode_done
-            snap["render_done"] = render_done
-        else:
-            snap["n_cpus"] = workers
-        return snap
-
-
-def volume_job_progress_unregister(token: str) -> None:
-    with _DECODE_PROGRESS_LOCK:
-        _VOLUME_JOB_PROGRESS.pop(token, None)
-
-
-def decode_progress_register(token: str, total: int, n_gpus: int) -> None:
-    volume_job_progress_register(token, total, n_gpus, "decode")
-
-
-def decode_progress_set_done(token: str, done: int) -> None:
-    volume_job_progress_set_done(token, done)
-
-
-def decode_progress_snapshot(token: str) -> dict[str, object] | None:
-    return volume_job_progress_snapshot(token)
-
-
-def decode_progress_unregister(token: str) -> None:
-    volume_job_progress_unregister(token)
 
 
 def trajectory_volume_pipeline_enabled() -> bool:
@@ -357,27 +255,9 @@ def volume_job_progress_register_pipeline(
     n_cpus: int,
     display_total: int | None = None,
 ) -> None:
-    with _DECODE_PROGRESS_LOCK:
-        internal_total = max(0, int(total))
-        progress_total = (
-            max(0, int(display_total)) if display_total is not None else internal_total
-        )
-        entry: dict[str, object] = {
-            "total": progress_total,
-            "done": 0,
-            "workers": max(1, int(n_gpus)),
-            "phase": "pipeline",
-            "rerender": False,
-            "n_gpus": max(1, int(n_gpus)),
-            "n_cpus": max(1, int(n_cpus)),
-            "decode_done": 0,
-            "render_done": 0,
-            "t0": time.monotonic(),
-        }
-        if display_total is not None:
-            entry["display_total"] = progress_total
-            entry["internal_total"] = internal_total
-        _VOLUME_JOB_PROGRESS[token] = entry
+    _job_store.progress_register_pipeline(
+        token, total, n_gpus=n_gpus, n_cpus=n_cpus, display_total=display_total
+    )
 
 
 def volume_job_progress_update_pipeline(
@@ -386,96 +266,35 @@ def volume_job_progress_update_pipeline(
     decode_done: int | None = None,
     render_done: int | None = None,
 ) -> None:
-    with _DECODE_PROGRESS_LOCK:
-        entry = _VOLUME_JOB_PROGRESS.get(token)
-        if not entry:
-            return
-        total = int(entry["total"])
-        if decode_done is not None:
-            entry["decode_done"] = max(0, min(total, int(decode_done)))
-        if render_done is not None:
-            rd = max(0, min(total, int(render_done)))
-            entry["render_done"] = rd
-            entry["done"] = rd
-        entry["phase"] = "pipeline"
+    _job_store.progress_update_pipeline(
+        token, decode_done=decode_done, render_done=render_done
+    )
 
 
 def volume_job_partial_register(token: str, total: int) -> None:
-    with _VOLUME_JOB_PARTIAL_LOCK:
-        _VOLUME_JOB_PARTIAL[token] = {
-            "total": max(0, int(total)),
-            "decode_done": 0,
-            "render_done": 0,
-            "images": {},
-            "view_matrix": None,
-            "complete": False,
-            "error": None,
-            "t0": time.monotonic(),
-        }
+    _job_store.partial_register(token, total)
 
 
 def volume_job_partial_set_image(token: str, index: int, png_bytes: bytes) -> None:
-    b64 = base64.standard_b64encode(png_bytes).decode("ascii")
-    with _VOLUME_JOB_PARTIAL_LOCK:
-        entry = _VOLUME_JOB_PARTIAL.get(token)
-        if not entry:
-            return
-        images = entry.get("images")
-        if not isinstance(images, dict):
-            images = {}
-            entry["images"] = images
-        images[int(index)] = b64
-        entry["render_done"] = len(images)
+    _job_store.partial_set_image(token, index, png_bytes)
 
 
 def volume_job_partial_update_decode(token: str, decode_done: int) -> None:
-    with _VOLUME_JOB_PARTIAL_LOCK:
-        entry = _VOLUME_JOB_PARTIAL.get(token)
-        if not entry:
-            return
-        total = int(entry["total"])
-        entry["decode_done"] = max(0, min(total, int(decode_done)))
+    _job_store.partial_update_decode(token, decode_done)
 
 
 def volume_job_partial_mark_complete(
     token: str, view_matrix: str | None = None
 ) -> None:
-    with _VOLUME_JOB_PARTIAL_LOCK:
-        entry = _VOLUME_JOB_PARTIAL.get(token)
-        if not entry:
-            return
-        entry["complete"] = True
-        if view_matrix:
-            entry["view_matrix"] = view_matrix
+    _job_store.partial_mark_complete(token, view_matrix)
 
 
 def volume_job_partial_snapshot(token: str) -> dict[str, object] | None:
-    with _VOLUME_JOB_PARTIAL_LOCK:
-        entry = _VOLUME_JOB_PARTIAL.get(token)
-        if not entry:
-            return None
-        if time.monotonic() - float(entry["t0"]) > _VOLUME_JOB_PARTIAL_TTL_S:
-            _VOLUME_JOB_PARTIAL.pop(token, None)
-            return None
-        total = int(entry["total"])
-        images_raw = entry.get("images")
-        images_list: list[dict[str, object]] = []
-        if isinstance(images_raw, dict):
-            for idx in sorted(images_raw):
-                images_list.append({"index": int(idx), "b64": str(images_raw[idx])})
-        return {
-            "total": total,
-            "decode_done": int(entry.get("decode_done") or 0),
-            "render_done": int(entry.get("render_done") or 0),
-            "complete": bool(entry.get("complete")),
-            "images": images_list,
-            "view_matrix": entry.get("view_matrix"),
-        }
+    return _job_store.partial_snapshot(token)
 
 
 def volume_job_partial_unregister(token: str) -> None:
-    with _VOLUME_JOB_PARTIAL_LOCK:
-        _VOLUME_JOB_PARTIAL.pop(token, None)
+    _job_store.partial_unregister(token)
 
 
 def _vol_mrc_index_from_name(name: str) -> int | None:
@@ -545,11 +364,11 @@ def _run_decode_with_mrc_progress(
 
     def _watch() -> None:
         while not stop.is_set():
-            decode_progress_set_done(progress_token, _count_vol_mrc_in_dir(mrc_dir))
+            volume_job_progress_set_done(progress_token, _count_vol_mrc_in_dir(mrc_dir))
             if _count_vol_mrc_in_dir(mrc_dir) >= n_total:
                 break
             time.sleep(0.15)
-        decode_progress_set_done(progress_token, n_total)
+        volume_job_progress_set_done(progress_token, n_total)
 
     watcher = threading.Thread(target=_watch, daemon=True)
     watcher.start()
@@ -558,7 +377,7 @@ def _run_decode_with_mrc_progress(
     finally:
         stop.set()
         watcher.join(timeout=2.0)
-        decode_progress_set_done(progress_token, n_total)
+        volume_job_progress_set_done(progress_token, n_total)
 
 
 def _count_png_in_dir(png_dir: str) -> int:
@@ -854,7 +673,7 @@ def _decode_z_values_to_vol_paths(
             _decode_z_values_parallel_impl(exp, z_values, mrc_dir, n_gpus)
 
     if progress_token:
-        decode_progress_register(progress_token, n_total, n_gpus)
+        volume_job_progress_register(progress_token, n_total, n_gpus, "decode")
         _run_decode_with_mrc_progress(mrc_dir, n_total, progress_token, _decode)
     else:
         _decode()
@@ -993,14 +812,8 @@ def rerender_chimerax_pngs_from_volume_cache(
     progress_token: str | None = None,
 ) -> tuple[list[bytes], str | None]:
     """Re-render ChimeraX PNGs from a prior trajectory/montage decode cache."""
-    with _VOL_CACHE_LOCK:
-        meta = _VOL_MRC_CACHE.get(token)
-        if not meta:
-            raise ValueError("Unknown or expired volume cache id.")
-        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
-            _vol_cache_evict_unlocked(token)
-            raise ValueError("Volume cache expired. Generate volumes again.")
-        vol_files = list(meta["vol_files"])
+    meta = _mrc_cache.require_meta(token)
+    vol_files = list(meta["vol_files"])
     return _chimerax_png_bytes_from_mrc_paths(
         vol_files,
         chimerax_cpus=chimerax_cpus,
@@ -1014,12 +827,11 @@ def rerender_chimerax_pngs_from_volume_cache(
 
 def primary_mrc_path_from_volume_cache(token: str) -> str | None:
     """First cached ``.mrc`` path for a volume cache token, if any."""
-    with _VOL_CACHE_LOCK:
-        meta = _VOL_MRC_CACHE.get(token)
-        if not meta:
-            return None
-        vol_files = meta.get("vol_files") or []
-        return str(vol_files[0]) if vol_files else None
+    meta = _mrc_cache.get_meta(token)
+    if not meta:
+        return None
+    vol_files = meta.get("vol_files") or []
+    return str(vol_files[0]) if vol_files else None
 
 
 def volume_cache_slot_indices(token: str) -> tuple[int, ...]:
@@ -1029,17 +841,11 @@ def volume_cache_slot_indices(token: str) -> tuple[int, ...]:
     :func:`generate_trajectory_volume_pngs`, the stored ``rows`` metadata
     aligns each cached PNG back onto the corresponding slider index.
     """
-    with _VOL_CACHE_LOCK:
-        meta = _VOL_MRC_CACHE.get(token)
-        if not meta:
-            raise ValueError("Unknown or expired volume cache id.")
-        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
-            _vol_cache_evict_unlocked(token)
-            raise ValueError("Volume cache expired. Generate volumes again.")
-        rows = meta.get("rows") or ()
-        if not rows:
-            return ()
-        return tuple(int(r) for r in rows)
+    meta = _mrc_cache.require_meta(token)
+    rows = meta.get("rows") or ()
+    if not rows:
+        return ()
+    return tuple(int(r) for r in rows)
 
 
 def trajectory_volume_b64_list_from_cache(
@@ -1053,14 +859,8 @@ def trajectory_volume_b64_list_from_cache(
     )
     from cryodrgn.mrcfile import parse_mrc
 
-    with _VOL_CACHE_LOCK:
-        meta = _VOL_MRC_CACHE.get(token)
-        if not meta:
-            raise ValueError("Unknown or expired volume cache id.")
-        if time.monotonic() - meta["t0"] > _VOL_CACHE_TTL_S:
-            _vol_cache_evict_unlocked(token)
-            raise ValueError("Volume cache expired. Generate volumes again.")
-        vol_files = list(meta["vol_files"])
+    meta = _mrc_cache.require_meta(token)
+    vol_files = list(meta["vol_files"])
 
     payloads: list[dict[str, object]] = []
     for i, vf in enumerate(vol_files):

@@ -1132,15 +1132,15 @@
   };
 
   TrajectoryVolumeDisplay.prototype._volumeNavCount = function () {
-    var isVtk = this.backend === "vtk";
     var isChimeraX = this.backend === "chimerax";
+    var isInteractive = this.backend === "vtk" || this.backend === "slice";
     if (isChimeraX) {
       if (this.expectedVolumeCount != null && this.expectedVolumeCount > 0) {
         return this.expectedVolumeCount;
       }
       return this.chimeraxImages.length;
     }
-    if (isVtk) {
+    if (isInteractive) {
       if (this.expectedVolumeCount != null && this.expectedVolumeCount > 0) {
         return this.expectedVolumeCount;
       }

@@ -23,7 +23,8 @@ from cryodrgn.dashboard.command_builder_data import (
     COMMAND_BUILDER_SCHEMA,
     default_outdir_for_command,
 )
-from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs, load_experiment
+from cryodrgn.dashboard.data import DashboardExperiment
+from cryodrgn.dashboard.experiment_store import EXPERIMENT_STORE
 
 # ---------------------------------------------------------------------------
 # Template helpers (version / epoch stamp)
@@ -69,6 +70,11 @@ _RUN_LOG_CRYODRGN_VERSION_RE = re.compile(r"(?i)cryodrgn\s+([0-9]\S*)")
 _RUN_LOG_HEAD_SCAN_LINES = 900
 
 
+_RUN_LOG_VERSION_CACHE: dict[
+    tuple[str, float], tuple[str | None, str | None, str | None]
+] = {}
+
+
 def _run_log_cryodrgn_version(
     workdir: str,
 ) -> tuple[str | None, str | None, str | None]:
@@ -81,6 +87,14 @@ def _run_log_cryodrgn_version(
     path = os.path.join(workdir, "run.log")
     if not os.path.isfile(path):
         return None, None, None
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None, None, None
+    cache_key = (workdir, mtime)
+    if cache_key in _RUN_LOG_VERSION_CACHE:
+        return _RUN_LOG_VERSION_CACHE[cache_key]
+    result: tuple[str | None, str | None, str | None] = (None, None, None)
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             for i, line in enumerate(fh):
@@ -96,23 +110,30 @@ def _run_log_cryodrgn_version(
                 if not short:
                     continue
                 title = f"{path} — cryoDRGN version from training log: {full}"
-                return full, short, title
+                result = full, short, title
+                break
     except OSError:
-        return None, None, None
-    return None, None, None
+        result = (None, None, None)
+    if len(_RUN_LOG_VERSION_CACHE) > 64:
+        _RUN_LOG_VERSION_CACHE.clear()
+    _RUN_LOG_VERSION_CACHE[cache_key] = result
+    return result
 
 
 # ---------------------------------------------------------------------------
-# Module-level caches (invalidated whenever the active workdir/epoch changes).
+# Experiment / preload caches (owned by :data:`EXPERIMENT_STORE`).
 # ---------------------------------------------------------------------------
 
-EXP_CACHE: dict[tuple[str, int, int], DashboardExperiment] = {}
-# (epoch, kmeans, xcol, ycol, selection_tuple_or_None) -> (rows, images_b64, elapsed_s).
-PRELOAD_CACHE: dict[
-    tuple[int, int, str, str, tuple[int, ...] | None],
-    tuple[list[int], list[str], float],
-] = {}
-_EPOCHS_BY_WORKDIR_CACHE: dict[str, list[int]] = {}
+EXP_CACHE = EXPERIMENT_STORE.experiments
+PRELOAD_CACHE = EXPERIMENT_STORE.preloads
+
+__all__ = [
+    "EXPERIMENT_STORE",
+    "EXP_CACHE",
+    "PRELOAD_CACHE",
+    "clear_experiment_caches",
+    "clear_preload_cache_for_experiment",
+]
 
 
 def clear_preload_cache_for_experiment(e: object) -> int:
@@ -122,6 +143,8 @@ def clear_preload_cache_for_experiment(e: object) -> int:
     the first two components of :data:`PRELOAD_CACHE` keys:
     ``(epoch, kmeans_folder_id, ...)``.
     """
+    if isinstance(e, DashboardExperiment):
+        return EXPERIMENT_STORE.clear_preloads_for_experiment(e)
     epoch = int(getattr(e, "epoch"))
     km = int(getattr(e, "kmeans_folder_id"))
     prefix = (epoch, km)
@@ -133,11 +156,7 @@ def clear_preload_cache_for_experiment(e: object) -> int:
 
 def clear_experiment_caches() -> None:
     """Drop cached experiments / preloads / graph neighbors across the process."""
-    from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
-
-    EXP_CACHE.clear()
-    PRELOAD_CACHE.clear()
-    _TRAJ_GRAPH_NEIGHBOR_CACHE.clear()
+    EXPERIMENT_STORE.clear_all()
 
 
 # Endpoints that require a loaded experiment; every other endpoint is reachable
@@ -281,12 +300,7 @@ def active_workdir(app: Flask) -> str | None:
 
 def epochs_for_workdir(workdir: str) -> list[int]:
     """Epochs with both ``z.N.pkl`` and ``analyze.N/`` (memoised per workdir)."""
-    cached = _EPOCHS_BY_WORKDIR_CACHE.get(workdir)
-    if cached is not None:
-        return cached
-    epochs = list_z_epochs(workdir)
-    _EPOCHS_BY_WORKDIR_CACHE[workdir] = epochs
-    return epochs
+    return EXPERIMENT_STORE.epochs_for_workdir(workdir)
 
 
 def resolve_epoch(app: Flask) -> int:
@@ -326,10 +340,7 @@ def get_dashboard_exp(app: Flask) -> DashboardExperiment:
         raise RuntimeError("No output directory selected.")
     ep = resolve_epoch(app)
     km = int(app.config["DASHBOARD_KMEANS"])
-    key = (wd, ep, km)
-    if key not in EXP_CACHE:
-        EXP_CACHE[key] = load_experiment(wd, epoch=ep, kmeans=km)
-    return EXP_CACHE[key]
+    return EXPERIMENT_STORE.get_experiment(wd, ep, km)
 
 
 def bind_dashboard_exp() -> None:
@@ -547,12 +558,12 @@ def _argv_four_command_lines(argv: list[str]) -> list[str]:
     """
 
     def _display_join(tokens: list[str]) -> str:
-        return " ".join(_abbrev_middle_token(t) for t in tokens)
+        return " ".join(abbrev_middle(t, 120) for t in tokens)
 
     if not argv:
         return []
     if len(argv) == 1:
-        return [_abbrev_middle_token(argv[0])]
+        return [abbrev_middle(argv[0], 120)]
     if len(argv) == 2:
         return [_display_join(argv)]
 
@@ -573,13 +584,13 @@ def _argv_four_command_lines(argv: list[str]) -> list[str]:
         return sum(len(x) for x in chunk) + max(0, len(chunk) - 1)
 
     if len(rest) == 1:
-        return [head, _abbrev_middle_token(rest[0])]
+        return [head, abbrev_middle(rest[0], 120)]
     if len(rest) == 2:
         if _can_break_after(rest[0]):
             return [
                 head,
-                _abbrev_middle_token(rest[0]),
-                _abbrev_middle_token(rest[1]),
+                abbrev_middle(rest[0], 120),
+                abbrev_middle(rest[1], 120),
             ]
         return [head, _display_join(rest)]
 

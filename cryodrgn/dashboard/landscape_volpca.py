@@ -174,15 +174,30 @@ def load_vol_pca_matrix(landscape_dir: str, k_sketch: int) -> np.ndarray:
     return pc
 
 
+_PCA_EXPLAINED_VARIANCE_CACHE: dict[tuple[str, float], np.ndarray | None] = {}
+
+
 def load_pca_explained_variance(landscape_dir: str) -> np.ndarray | None:
     obj_path = os.path.join(landscape_dir, "vol_pca_obj.pkl")
     if not os.path.isfile(obj_path):
         return None
+    try:
+        mtime = os.path.getmtime(obj_path)
+    except OSError:
+        return None
+    cache_key = (landscape_dir, mtime)
+    if cache_key in _PCA_EXPLAINED_VARIANCE_CACHE:
+        return _PCA_EXPLAINED_VARIANCE_CACHE[cache_key]
     pca = utils.load_pkl(obj_path)
     evr = getattr(pca, "explained_variance_ratio_", None)
     if evr is None:
-        return None
-    return np.asarray(evr, dtype=np.float64)
+        result = None
+    else:
+        result = np.asarray(evr, dtype=np.float64)
+    if len(_PCA_EXPLAINED_VARIANCE_CACHE) > 64:
+        _PCA_EXPLAINED_VARIANCE_CACHE.clear()
+    _PCA_EXPLAINED_VARIANCE_CACHE[cache_key] = result
+    return result
 
 
 def _first_sketch_clustering_dir(landscape_dir: str) -> str | None:

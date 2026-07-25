@@ -1,0 +1,2015 @@
+{# Trajectory volume: display sync, popout UI, palette/select helpers, progress poll #}
+  function syncManualChimeraxDisplay(opts) {
+    opts = opts || {};
+    if (typeof directTraceBlocksCatalogAutoRender === "function"
+        && directTraceBlocksCatalogAutoRender(opts)) {
+      return false;
+    }
+    // Direct-trace post-Generate: endpoints stay catalog-backed while interiors
+    // are cache-backed — allow the catalog+cache bridge even though
+    // analyzeVolumeCatalogSelectionActive() flips off after Generate.
+    if (!analyzeVolumeCatalogSelectionActive()
+        && !(typeof directTraceCatalogCacheRenderBridgeActive === "function"
+          && directTraceCatalogCacheRenderBridgeActive())) {
+      return false;
+    }
+    var includeCacheRerender = !!(opts.includeCacheRerender && lastTrajectoryVolumeCacheId);
+    var pipelineRenderIndices = Array.isArray(opts.renderIndices) && opts.renderIndices.length
+      ? opts.renderIndices.map(function(i) { return Math.floor(Number(i)); }).filter(function(i) {
+        return Number.isFinite(i) && i >= 0;
+      })
+      : null;
+    var snapshot = chimeraxCatalogRerenderSnapshot();
+    var ids = snapshot.renderIds;
+    // Freely moved direct-trace endpoints are skipped from catalog renderIds
+    // (stale/detached). Empty catalog ids must still enter the cache bridge
+    // after Decode — otherwise endpoints stay blank and the slider falls back
+    // to the two interior frames.
+    if (!ids.length && !includeCacheRerender) return false;
+    var cxGen = ++manualChimeraxLoadGeneration;
+    var volumeGen = opts.volumeGen;
+    var pathExpected = Math.max(
+      snapshot.expectedCount || 0,
+      (typeof trajectoryDebtPathLength === "function" ? trajectoryDebtPathLength() : 0) || 0,
+      (typeof latentTrajectoryPointCount === "function" ? latentTrajectoryPointCount() : 0) || 0
+    );
+    // Progress denominator: the active Decode/Render batch size only. If the
+    // pipeline already began a batch (onRenderStart), reuse that exact count.
+    // Otherwise adopt pipeline render indices or path missing frames once —
+    // never catalog renderIds.length alone.
+    var missingOnPath = 0;
+    for (var pti = 0; pti < pathExpected; pti++) {
+      if (!normalizeChimeraxImageB64(
+          pti < snapshot.images.length ? snapshot.images[pti] : null
+        )) {
+        missingOnPath++;
+      }
+    }
+    var trajectoryJob = !!(includeCacheRerender || hasGeneratedTrajectoryVolumes())
+      && pathExpected > Math.max(manualSelectedVolIds.length, 1);
+    function adoptCatalogChimeraxProgressTotal(n) {
+      n = Math.max(0, Math.floor(Number(n)) || 0);
+      if (n < 1) return 0;
+      // Catalog gallery prefetch: progress bookkeeping only — do not freeze
+      // view/iso via beginActiveVolumeJob (that belongs to Decode/Render batches).
+      return setActiveVolumeJobTotal("chimerax", n);
+    }
+    var progressTotal = activeVolumeJobTotal("chimerax");
+    if (progressTotal < 1) {
+      if (pipelineRenderIndices && pipelineRenderIndices.length) {
+        progressTotal = beginActiveVolumeJob("chimerax", pipelineRenderIndices);
+      } else if (trajectoryJob || includeCacheRerender || pathExpected > Math.max(ids.length, 1)) {
+        progressTotal = adoptCatalogChimeraxProgressTotal(
+          missingOnPath > 0 ? missingOnPath : ids.length
+        );
+      } else {
+        progressTotal = adoptCatalogChimeraxProgressTotal(ids.length);
+      }
+    } else if (pipelineRenderIndices && pipelineRenderIndices.length > progressTotal) {
+      progressTotal = beginActiveVolumeJob("chimerax", pipelineRenderIndices);
+    }
+    function releaseCatalogChimeraxProgressJob() {
+      if (pipelineRenderIndices && pipelineRenderIndices.length) return;
+      if (includeCacheRerender) return;
+      if (typeof endActiveVolumeJob === "function") endActiveVolumeJob();
+    }
+    var progressOpts = (trajectoryJob || includeCacheRerender || pathExpected > ids.length)
+      ? { trajectory: true }
+      : {};
+    if (trajVolDisplay) {
+      var rerenderExisting = typeof chimeraxProgressSaysRerender === "function"
+        ? chimeraxProgressSaysRerender(
+            { rerenderAll: !!opts.rerenderAll, forceAll: !!opts.forceAll },
+            pipelineRenderIndices || (typeof activeRenderBatchIndices === "function"
+              ? activeRenderBatchIndices()
+              : null),
+            snapshot.images
+          )
+        : false;
+      trajVolDisplay.setChimeraxRendering(true, rerenderExisting ? { rerender: true } : {});
+    }
+    // Freeze view/iso once for this catalog (+ optional cache bridge) job.
+    var viewSnap = typeof beginActiveRenderViewBatch === "function"
+      ? beginActiveRenderViewBatch()
+      : null;
+    syncAnalyzeVolumeChimeraxLoadProgress(0, progressTotal, progressOpts);
+    syncTrajChimeraxViewControls();
+    var renderTurns = (viewSnap && viewSnap.view_turns) ? viewSnap.view_turns.slice() : [];
+    var renderVm = (viewSnap && viewSnap.view_matrix) ? viewSnap.view_matrix : "";
+    if (!viewSnap) {
+      renderTurns = chimeraxViewTurnsForRender();
+      renderVm = chimeraxViewMatrixForRender();
+    }
+    var slotImages = ids.map(function() { return null; });
+    var loadCleared = false;
+    function clearLoadOnce() {
+      if (loadCleared) return;
+      loadCleared = true;
+      clearAnalyzeVolumeLoadStatusIfCurrent(volumeGen);
+    }
+    function notifyPipelineComplete(mergedPayload) {
+      if (typeof opts.onPipelineComplete !== "function") return;
+      try {
+        opts.onPipelineComplete(mergedPayload || {
+          images: [],
+          ids: (snapshot.ids || []).slice(),
+          volumes: (snapshot.volumes || []).slice(),
+          expectedVolumeCount: snapshot.expectedCount,
+          expected_volume_count: snapshot.expectedCount
+        });
+      } catch (errNotify) { /* ignore */ }
+    }
+    function abortChimeraxPipeline(statusMsg) {
+      clearLoadOnce();
+      if (statusMsg) setTrajStatus(statusMsg, false);
+      releaseCatalogChimeraxProgressJob();
+      if (typeof endActiveRenderViewBatch === "function") endActiveRenderViewBatch();
+      if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+      syncTrajChimeraxViewControls();
+      notifyPipelineComplete({
+        images: (function() {
+          var imgs = slotImages.slice();
+          while (imgs.length < snapshot.expectedCount) imgs.push(null);
+          // Prefer any frames already merged into the snapshot / payload.
+          if (!countNonemptyChimeraxSlots(imgs) && snapshot.images) {
+            imgs = snapshot.images.slice();
+            while (imgs.length < snapshot.expectedCount) imgs.push(null);
+          }
+          return imgs;
+        })(),
+        ids: (snapshot.ids || []).slice(),
+        volumes: (snapshot.volumes || []).slice(),
+        expectedVolumeCount: snapshot.expectedCount,
+        expected_volume_count: snapshot.expectedCount,
+        aborted: true
+      });
+    }
+    function accumulateChimeraxChunk(offset, compactImages, res) {
+      for (var ii = 0; ii < compactImages.length; ii++) {
+        var slotIdx = offset + ii;
+        if (slotIdx >= 0 && slotIdx < slotImages.length) {
+          slotImages[slotIdx] = compactImages[ii];
+        }
+      }
+      if (res && res.j) {
+        noteChimeraxRenderViewMatrix(res.j.view_matrix || renderVm);
+        noteChimeraxRenderViewTurns(res.j.view_turns || renderTurns);
+        applyChimeraxIsoMetadata(res.j);
+      }
+      syncAnalyzeVolumeChimeraxLoadProgress(
+        countNonemptyChimeraxSlots(slotImages),
+        progressTotal,
+        progressOpts
+      );
+    }
+    function showMergedChimeraxPayload(mergedPayload) {
+      var n = mergedPayload.expectedVolumeCount;
+      var imgs = mergedPayload.images.slice();
+      while (imgs.length < n) imgs.push(null);
+      commitVolumePayload({
+        volumes: snapshot.volumes.slice(),
+        images: imgs,
+        ids: mergedPayload.ids.slice(),
+        expectedVolumeCount: n
+      }, { ready: true });
+      lastVolumePayload = mergeVolumePayload(typeof volumePayload === "function" ? volumePayload() : volumePayload());
+      var shown = 0;
+      if (trajVolDisplay && n > 0 && imgs.length === n) {
+        applyChimeraxBatchDisplay({
+          volumes: snapshot.volumes.slice(),
+          images: imgs,
+          expectedVolumeCount: n
+        });
+        shown = countNonemptyChimeraxSlots(imgs);
+        syncTrajVolBottomRegion("chimerax");
+        syncTrajVolDockButton();
+        syncTrajVolBackendChrome();
+        syncManualVolumeScatterHighlight();
+        syncTrajChimeraxViewControls();
+        syncTrajGifRecordButton();
+        syncTrajReverseButton();
+      } else {
+        var cxPayload = Object.assign({}, volumePayload(), {
+          render_backend: "chimerax"
+        });
+        shown = showChimeraxVolumeGallery(cxPayload);
+      }
+      if (manualInterpolatedCatalogActive()) {
+        syncDirectModeVolumePendingOverlay();
+        scheduleTrajGlyphOverlaySync();
+      }
+      if (shown > 0) {
+        setManualInterpolatedTrajectoryStatus({ chimeraxReady: shown });
+      }
+      updateGenerateVolumesButtonLabel();
+
+      notifyPipelineComplete({
+        images: imgs.slice(),
+        ids: mergedPayload.ids.slice(),
+        volumes: snapshot.volumes.slice(),
+        expectedVolumeCount: n,
+        expected_volume_count: n
+      });
+      return shown;
+    }
+    function finalizeChimeraxCatalogBatch() {
+      if (!countNonemptyChimeraxSlots(slotImages) && !includeCacheRerender) return 0;
+      var merged = countNonemptyChimeraxSlots(slotImages)
+        ? mergeChimeraxRerenderByVolId(
+            snapshot.images,
+            snapshot.ids,
+            slotImages,
+            ids
+          )
+        : {
+            images: snapshot.images.slice(),
+            ids: snapshot.ids.slice(),
+            expectedVolumeCount: snapshot.expectedCount
+          };
+      if (!includeCacheRerender) {
+        return showMergedChimeraxPayload(merged);
+      }
+      while (merged.images.length < merged.expectedVolumeCount) merged.images.push(null);
+      var catalogDoneForProgress = Math.min(
+        progressTotal,
+        Math.max(ids.length, countNonemptyChimeraxSlots(slotImages))
+      );
+      syncAnalyzeVolumeChimeraxLoadProgress(
+        catalogDoneForProgress,
+        progressTotal,
+        progressOpts
+      );
+      var cacheSlotsForJob = trajectoryCacheBackedSlotIndices(
+        merged.expectedVolumeCount,
+        merged.images
+      );
+      if (pipelineRenderIndices && pipelineRenderIndices.length) {
+        cacheSlotsForJob = pipelineRenderIndices.filter(function(si) {
+          si = Math.floor(Number(si));
+          if (!Number.isFinite(si) || si < 0 || si >= merged.expectedVolumeCount) {
+            return false;
+          }
+          return !normalizeChimeraxImageB64(
+            si < merged.images.length ? merged.images[si] : null
+          );
+        });
+      }
+      var cacheN = Math.max(0, cacheSlotsForJob.length);
+      var bridgeProgressN = activeVolumeJobTotal("chimerax") || progressTotal;
+      if (pipelineRenderIndices && pipelineRenderIndices.length) {
+        bridgeProgressN = Math.max(bridgeProgressN, pipelineRenderIndices.length);
+      } else if (cacheN > 0) {
+        bridgeProgressN = Math.max(bridgeProgressN, cacheN);
+      }
+      var bridgeJobId = newDecodeJobId();
+      fetchTrajectoryCacheChimeraxRerender({
+        trackJob: true,
+        startProgress: cacheN > 0 || bridgeProgressN > 0,
+        decodeJobId: bridgeJobId,
+        nVolumes: bridgeProgressN,
+        indices: cacheSlotsForJob.length ? cacheSlotsForJob.slice() : null,
+        viewSnapshot: viewSnap || (typeof activeRenderViewBatch === "function"
+          ? activeRenderViewBatch()
+          : null)
+      })
+        .then(function(res) {
+          if (cxGen !== manualChimeraxLoadGeneration) {
+            // Newer catalog load superseded this job — resolve the waiter.
+            notifyPipelineComplete({
+              images: merged.images.slice(),
+              ids: merged.ids.slice(),
+              volumes: snapshot.volumes.slice(),
+              expectedVolumeCount: merged.expectedVolumeCount,
+              expected_volume_count: merged.expectedVolumeCount,
+              aborted: true
+            });
+            return 0;
+          }
+          if (!res.ok || !res.j || !res.j.ok) {
+            var errText = (res.j && res.j.error) || "ChimeraX rendering failed.";
+            if (res.j && res.j.need_chimerax) {
+              window.alert(res.j.error || "Set CHIMERAX_PATH and try again.");
+            }
+            setTrajStatus(errText, false);
+            if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+            syncTrajChimeraxViewControls();
+            // Surface catalog endpoint frames only — do not mark interior cache
+            // slots rendered when the cache bridge failed.
+            if (countNonemptyChimeraxSlots(merged.images)) {
+              showMergedChimeraxPayload(merged);
+            }
+            notifyPipelineComplete({
+              images: merged.images.slice(),
+              ids: merged.ids.slice(),
+              volumes: snapshot.volumes.slice(),
+              expectedVolumeCount: merged.expectedVolumeCount,
+              expected_volume_count: merged.expectedVolumeCount,
+              aborted: true,
+              error: errText
+            });
+            return 0;
+          }
+          applyChimeraxIsoMetadata(res.j);
+          noteChimeraxRenderViewMatrix(res.j.view_matrix || "");
+          noteChimeraxRenderViewTurns(res.j.view_turns || []);
+          var denseImgs = Array.isArray(res.j.images) ? res.j.images : [];
+          var cacheSlots = null;
+          if (Array.isArray(res.j.slot_indices)
+              && res.j.slot_indices.length === denseImgs.length) {
+            cacheSlots = res.j.slot_indices.map(function(si) {
+              return Math.floor(Number(si));
+            });
+          } else {
+            cacheSlots = cacheSlotsForJob;
+          }
+          merged.images = mergeChimeraxRerenderIntoSparseSlots(
+            merged.images,
+            denseImgs,
+            merged.expectedVolumeCount,
+            null,
+            null,
+            cacheSlots
+          );
+          if (!countNonemptyChimeraxSlots(merged.images)) {
+            notifyPipelineComplete({
+              images: merged.images.slice(),
+              ids: merged.ids.slice(),
+              volumes: snapshot.volumes.slice(),
+              expectedVolumeCount: merged.expectedVolumeCount,
+              expected_volume_count: merged.expectedVolumeCount
+            });
+            return 0;
+          }
+          if (trajectoryJob) {
+            syncAnalyzeVolumeChimeraxLoadProgress(progressTotal, progressTotal, progressOpts);
+          }
+          return showMergedChimeraxPayload(merged);
+        })
+        .catch(function() {
+          if (cxGen !== manualChimeraxLoadGeneration) {
+            notifyPipelineComplete({
+              images: merged.images.slice(),
+              ids: merged.ids.slice(),
+              volumes: snapshot.volumes.slice(),
+              expectedVolumeCount: merged.expectedVolumeCount,
+              expected_volume_count: merged.expectedVolumeCount,
+              aborted: true
+            });
+            return;
+          }
+          setTrajStatus("ChimeraX rendering request failed.", false);
+          if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+          syncTrajChimeraxViewControls();
+          if (countNonemptyChimeraxSlots(merged.images)) {
+            showMergedChimeraxPayload(merged);
+            return;
+          }
+          notifyPipelineComplete({
+            images: merged.images.slice(),
+            ids: merged.ids.slice(),
+            volumes: snapshot.volumes.slice(),
+            expectedVolumeCount: merged.expectedVolumeCount,
+            expected_volume_count: merged.expectedVolumeCount
+          });
+        })
+        .finally(function() {
+          if (cxGen !== manualChimeraxLoadGeneration) return;
+          if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+          syncTrajChimeraxViewControls();
+          clearVolumeViewerJobStatus();
+        });
+      return 1;
+    }
+    function loadChunk(offset) {
+      if (cxGen !== manualChimeraxLoadGeneration) {
+        // Do not clear live chrome — a newer catalog job owns it.
+        notifyPipelineComplete({
+          images: slotImages.slice(),
+          ids: (snapshot.ids || []).slice(),
+          volumes: (snapshot.volumes || []).slice(),
+          expectedVolumeCount: snapshot.expectedCount,
+          expected_volume_count: snapshot.expectedCount,
+          aborted: true
+        });
+        return;
+      }
+      if (offset >= ids.length) {
+        if (!includeCacheRerender) {
+          clearLoadOnce();
+        } else {
+          syncAnalyzeVolumeChimeraxLoadProgress(
+            Math.min(progressTotal, ids.length),
+            progressTotal,
+            progressOpts
+          );
+        }
+        if (!finalizeChimeraxCatalogBatch()) {
+          if (!includeCacheRerender) {
+            abortChimeraxPipeline("ChimeraX returned no displayable images.");
+          } else {
+            // includeCacheRerender path always starts the cache bridge (returns 1)
+            // or showMerged; a 0 here means nothing to do — still resolve waiter.
+            abortChimeraxPipeline(null);
+          }
+        } else if (!includeCacheRerender) {
+          releaseCatalogChimeraxProgressJob();
+          if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+          syncTrajChimeraxViewControls();
+        }
+        return;
+      }
+      var chunkIds = ids.slice(offset, offset + MANUAL_VOLUME_PREFETCH_CHUNK);
+      var body = { ids: chunkIds, chimerax_cpus: trajChimeraxCpus };
+      appendChimeraxIsoPayloadFields(body, viewSnap);
+      if (typeof appendChimeraxViewPayloadFields === "function") {
+        appendChimeraxViewPayloadFields(body, viewSnap);
+      } else if (renderVm) {
+        body.view_matrix = renderVm;
+      } else if (renderTurns.length) {
+        body.view_turns = renderTurns;
+      }
+      fetch("{{ url_for('api_volume_viewer_analyze_volumes_chimerax_batch') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (cxGen !== manualChimeraxLoadGeneration) {
+            notifyPipelineComplete({
+              images: slotImages.slice(),
+              ids: (snapshot.ids || []).slice(),
+              volumes: (snapshot.volumes || []).slice(),
+              expectedVolumeCount: snapshot.expectedCount,
+              expected_volume_count: snapshot.expectedCount,
+              aborted: true
+            });
+            return;
+          }
+          if (!res.ok || !res.j || !res.j.ok) {
+            var errText = (res.j && res.j.error) || "ChimeraX rendering failed.";
+            if (res.j && res.j.need_chimerax) {
+              window.alert(res.j.error || "Set CHIMERAX_PATH and try again.");
+            }
+            abortChimeraxPipeline(errText);
+            return;
+          }
+          accumulateChimeraxChunk(offset, res.j.images || [], res);
+          loadChunk(offset + chunkIds.length);
+        })
+        .catch(function() {
+          if (cxGen !== manualChimeraxLoadGeneration) {
+            notifyPipelineComplete({
+              images: slotImages.slice(),
+              ids: (snapshot.ids || []).slice(),
+              volumes: (snapshot.volumes || []).slice(),
+              expectedVolumeCount: snapshot.expectedCount,
+              expected_volume_count: snapshot.expectedCount,
+              aborted: true
+            });
+            return;
+          }
+          abortChimeraxPipeline("ChimeraX rendering request failed.");
+        });
+    }
+    loadChunk(0);
+    return true;
+  }
+
+  function applyVolumePayloadDisplay(j, backend) {
+    if (!j) j = {};
+    // Preserve live ChimeraX frames that are about to be replaced / dropped.
+    if (typeof stashActiveChimeraxRenderingsToHeap === "function"
+        && backend === "chimerax"
+        && trajVolDisplay && Array.isArray(trajVolDisplay.chimeraxImages)
+        && countNonemptyChimeraxSlots(trajVolDisplay.chimeraxImages) > 0) {
+      stashActiveChimeraxRenderingsToHeap({ images: trajVolDisplay.chimeraxImages });
+    }
+    var sparseExpected = null;
+    var sparseImagesBefore = null;
+    var sparseSlotIdsBefore = null;
+    var cacheBackedSlotIndices = null;
+    if (Array.isArray(j.images) && j.images.length) {
+      if (volumePayload() && volumeExpectedCount() != null) {
+        sparseExpected = Math.max(0, parseInt(volumeExpectedCount(), 10) || 0);
+      } else if (trajVolDisplay && trajVolDisplay.expectedVolumeCount != null) {
+        sparseExpected = Math.max(0, parseInt(trajVolDisplay.expectedVolumeCount, 10) || 0);
+      } else if (directEndpointPathConfigured()) {
+        sparseExpected = currentVolumeCount();
+      }
+      // Prefer the live densified path / slider length. A cache ChimeraX
+      // subset response often has expected_volume_count === images.length
+      // (e.g. 9 interiors); that must not shrink a 19-tick slider.
+      var livePathN = typeof latentTrajectoryPointCount === "function"
+        ? latentTrajectoryPointCount()
+        : 0;
+      if (typeof liveTrajectoryDisplaySlotCount === "function") {
+        livePathN = Math.max(livePathN, liveTrajectoryDisplaySlotCount());
+      }
+      if (livePathN >= 2) {
+        // Live path is authoritative for slider length (shrink and grow).
+        sparseExpected = livePathN;
+      } else if (typeof trajectoryVolumeExpectedCount === "function") {
+        var trajExpected = trajectoryVolumeExpectedCount();
+        if (trajExpected >= 2) {
+          sparseExpected = Math.max(sparseExpected || 0, trajExpected);
+        }
+      }
+      // Partial-decode / cache subset: adopt j.expected only when no live path
+      // length is available yet (otherwise live path already won above).
+      if (j && j.expected_volume_count != null && !(livePathN >= 2)) {
+        var jExpected = Math.floor(Number(j.expected_volume_count));
+        if (Number.isFinite(jExpected) && jExpected >= 0 && jExpected === j.images.length) {
+          var liveExpected = Math.max(sparseExpected || 0, livePathN || 0);
+          if (!(liveExpected > jExpected)) {
+            sparseExpected = jExpected;
+          }
+        }
+      }
+      // Subset cache PNGs with explicit slot_indices always merge into the
+      // live sparse slider, even when lengths happen to match.
+      var subsetSlotMap = Array.isArray(j.slot_indices)
+        && j.slot_indices.length === j.images.length
+        && j.slot_indices.length > 0;
+      if (sparseExpected > j.images.length || subsetSlotMap) {
+        if (!(sparseExpected > j.images.length) && subsetSlotMap) {
+          sparseExpected = Math.max(
+            sparseExpected || 0,
+            livePathN || 0,
+            Math.max.apply(null, j.slot_indices.map(function(si) {
+              return Math.floor(Number(si)) || 0;
+            })) + 1
+          );
+        }
+        var payloadImages = (volumePayload() && Array.isArray(volumeImages()))
+          ? volumeImages().slice()
+          : [];
+        var displayImagesBefore = (trajVolDisplay && Array.isArray(trajVolDisplay.chimeraxImages))
+          ? trajVolDisplay.chimeraxImages.slice()
+          : [];
+        // During ChimeraX re-render (`setChimeraxRendering(true, { rerender: true })`),
+        // `TrajectoryVolumeDisplay` temporarily clears `trajVolDisplay.chimeraxImages`
+        // and keeps only a readiness mask. In that case, we must preserve the
+        // previously-rendered images from `lastVolumePayload` (which is not cleared)
+        // rather than from the display.
+        var lastImagesBefore = (lastVolumePayload && Array.isArray(lastVolumePayload.images))
+          ? lastVolumePayload.images.slice()
+          : [];
+        var displayNonempty = countNonemptyChimeraxSlots(displayImagesBefore);
+        var payloadNonempty = countNonemptyChimeraxSlots(payloadImages);
+        var lastNonempty = countNonemptyChimeraxSlots(lastImagesBefore);
+        // Prefer the preserved snapshot from `lastVolumePayload` when it is
+        // shaped like the full sparse slider array. This avoids selecting
+        // `volumeImages()`, which may be a compact subset,
+        // after we temporarily clear `trajVolDisplay.chimeraxImages`.
+        if (lastImagesBefore.length >= sparseExpected && lastNonempty > 0) {
+          sparseImagesBefore = lastImagesBefore;
+        } else if (lastNonempty > displayNonempty && lastNonempty >= payloadNonempty && lastImagesBefore.length) {
+          // If the preserved snapshot is a compact list (null placeholders trimmed),
+          // index-based merging can mis-map images into the wrong slot indices and
+          // cause formerly-ready ticks to appear inactive after a ChimeraX rerender.
+          // When rerender is in-flight, `TrajectoryVolumeDisplay` retains a readiness
+          // mask for the slot indices that were previously rendered; use that mask
+          // to reconstruct an index-aligned sparse baseline.
+          var rerenderMask = trajVolDisplay && trajVolDisplay._chimeraxRerenderReadyMask;
+          var remapped = null;
+          if (Array.isArray(rerenderMask) && sparseExpected > 0 && rerenderMask.length) {
+            var compactReady = [];
+            for (var ci = 0; ci < lastImagesBefore.length; ci++) {
+              var nb = normalizeChimeraxImageB64(lastImagesBefore[ci]);
+              if (nb) compactReady.push(nb);
+            }
+            if (compactReady.length) {
+              remapped = new Array(sparseExpected);
+              for (var ri = 0; ri < sparseExpected; ri++) remapped[ri] = null;
+              var di = 0;
+              var limit = Math.min(sparseExpected, rerenderMask.length);
+              for (var mi = 0; mi < limit; mi++) {
+                if (rerenderMask[mi]) {
+                  remapped[mi] = di < compactReady.length ? compactReady[di] : null;
+                  di++;
+                }
+              }
+            }
+          }
+          sparseImagesBefore = remapped || lastImagesBefore;
+        } else if (displayNonempty >= payloadNonempty) {
+          sparseImagesBefore = displayImagesBefore;
+        } else if (payloadImages.length) {
+          sparseImagesBefore = payloadImages;
+          if (volumePayload() && Array.isArray(volumeDisplayIds())) {
+            sparseSlotIdsBefore = volumeDisplayIds().slice();
+          }
+        } else if (displayImagesBefore.length) {
+          sparseImagesBefore = displayImagesBefore;
+        }
+        while (sparseImagesBefore && sparseImagesBefore.length < sparseExpected) {
+          sparseImagesBefore.push(null);
+        }
+        if (sparseImagesBefore) {
+          // If `j.images` comes from a ChimeraX cache token created via a
+          // *partial decode*, then backend re-render returns PNGs for only the
+          // newly-decoded subset. In that case, `sparseImagesBefore`
+          // contains images from *all* previously-ready slots, so inferring
+          // `targetSlotIndices` from it will mis-map the dense PNG list.
+          // Prefer an explicit index mapping remembered from the decode job.
+          var cacheSlotIndicesOverride = null;
+          if (j && Array.isArray(j.slot_indices)
+              && Array.isArray(j.images)
+              && j.slot_indices.length === j.images.length) {
+            cacheSlotIndicesOverride = j.slot_indices.slice();
+          } else
+          if (j && j.volume_cache_id != null
+              && String(j.volume_cache_id) === String(lastTrajectoryVolumeCacheId)
+              && Array.isArray(lastTrajectoryVolumeCacheSlotIndices)
+              && lastTrajectoryVolumeCacheSlotIndices.length === j.images.length) {
+            cacheSlotIndicesOverride = lastTrajectoryVolumeCacheSlotIndices.slice();
+          }
+          cacheBackedSlotIndices = cacheSlotIndicesOverride
+            || trajectoryCacheBackedSlotIndices(sparseExpected, sparseImagesBefore);
+        }
+      }
+    }
+    var displaySession = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    if (displaySession && displaySession.volumes && displaySession.volumes()) {
+      var displayVolumes = displaySession.volumes();
+      var expectedForSession = Math.max(
+        Math.floor(Number(j.expectedVolumeCount || j.expected_volume_count)) || 0,
+        typeof latentTrajectoryPointCount === "function" ? latentTrajectoryPointCount() : 0,
+        Array.isArray(j.ids) ? j.ids.length : 0,
+        Array.isArray(j.volumes) ? j.volumes.length : 0,
+        Array.isArray(j.images) ? j.images.length : 0
+      );
+      if (typeof clampVolumeCountToLivePath === "function") {
+        expectedForSession = clampVolumeCountToLivePath(expectedForSession);
+      }
+      if (expectedForSession >= 2 && typeof syncSessionVolumesToPath === "function") {
+        syncSessionVolumesToPath({
+          pathN: expectedForSession,
+          seedCatalog: isManualTraversalMode() && manualInterpolatedCatalogActive(),
+          syncCache: false
+        });
+      }
+      if (j.volumes && typeof displayVolumes.applyDecodeResult === "function") {
+        displayVolumes.applyDecodeResult(j);
+      }
+      if (j.images && typeof displayVolumes.applyRenderResult === "function") {
+        displayVolumes.applyRenderResult(j);
+      }
+      if (typeof clearTrajectoryVolumeInvalidationForPayload === "function") {
+        clearTrajectoryVolumeInvalidationForPayload(j, expectedForSession);
+      }
+      // Re-clamp after applyRenderResult (setRendered can grow past pathN).
+      if (expectedForSession >= 2 && typeof syncSessionVolumesToPath === "function") {
+        syncSessionVolumesToPath({
+          pathN: expectedForSession,
+          seedCatalog: false,
+          syncCache: false
+        });
+      }
+    }
+    mergeVolumePayload(j);
+    if (sparseExpected && sparseImagesBefore && Array.isArray(lastVolumePayload.images)) {
+      lastVolumePayload.images = mergeChimeraxRerenderIntoSparseSlots(
+        sparseImagesBefore,
+        lastVolumePayload.images,
+        sparseExpected,
+        sparseSlotIdsBefore,
+        null,
+        cacheBackedSlotIndices
+      );
+      lastVolumePayload.expected_volume_count = sparseExpected;
+      if (typeof volumePayload === "function" ? volumePayload() : volumePayload()) {
+        patchVolumePayload({
+          images: lastVolumePayload.images.slice(),
+          expectedVolumeCount: sparseExpected
+        }, { skipLastPayload: true });
+      }
+    }
+    applyChimeraxIsoMetadata(j);
+    backend = backend || (j && j.render_backend) || currentVolumeRenderBackend();
+    var slotImages = volumeSlotImagesFromPayload(lastVolumePayload);
+    var chimeraxImgs = backend === "chimerax" ? chimeraxImagesFromPayload(lastVolumePayload) : [];
+    var volumes = lastVolumePayload.volumes || [];
+    if ((!volumes || !volumes.length)
+        && volumePayload() && volumeSlots()) {
+      volumes = volumeSlots();
+    }
+    if (trajVolDisplay) {
+      var displayImages = slotImages.length
+        ? slotImages
+        : (chimeraxImgs.length ? chimeraxImgs : (lastVolumePayload.images || []));
+      var payload = {
+        volumes: volumes,
+        images: displayImages
+      };
+      var expectedCount = (volumePayload() && volumeExpectedCount())
+        || (trajVolDisplay && trajVolDisplay.expectedVolumeCount)
+        || (typeof latentTrajectoryPointCount === "function" ? latentTrajectoryPointCount() : 0)
+        || (directEndpointPathConfigured() ? currentVolumeCount() : 0)
+        || (displayImages && displayImages.length)
+        || volumes.length
+        || currentVolumeCount();
+      // Prefer live path length: subset cache must not shrink below it, and a
+      // stale longer response (PC1×10 after nPoints→4) must not expand past it.
+      var liveDisplayN = typeof liveTrajectoryDisplaySlotCount === "function"
+        ? liveTrajectoryDisplaySlotCount()
+        : (typeof latentTrajectoryPointCount === "function" ? latentTrajectoryPointCount() : 0);
+      if (liveDisplayN >= 2) {
+        expectedCount = liveDisplayN;
+      } else if (j.expected_volume_count != null) {
+        var jExp = Math.floor(Number(j.expected_volume_count));
+        if (Number.isFinite(jExp) && jExp > expectedCount) expectedCount = jExp;
+      }
+      if (sparseExpected && sparseExpected > expectedCount
+          && !(liveDisplayN >= 2 && sparseExpected > liveDisplayN)) {
+        expectedCount = sparseExpected;
+      }
+      if (typeof clampVolumeCountToLivePath === "function") {
+        expectedCount = clampVolumeCountToLivePath(expectedCount);
+      }
+      if (expectedCount) {
+        payload.expectedVolumeCount = expectedCount;
+        payload.volumes = volumes.slice();
+        while (payload.volumes.length < expectedCount) payload.volumes.push(null);
+        payload.images = displayImages.slice();
+        while (payload.images.length < expectedCount) payload.images.push(null);
+      }
+      if (backend === "chimerax") {
+        if (!chimeraxImgs.length) {
+          applyChimeraxBatchDisplay(payload);
+        }
+      } else {
+        trajVolDisplay.loadPayload(payload, { deferRender: true });
+        trajVolDisplay.setBackend(backend);
+      }
+    }
+    if (backend === "chimerax") {
+      if (trajVolDisplay && trajVolDisplay.expandedBelow) {
+        trajVolDisplay.setExpandedBelow(false);
+      }
+      if (chimeraxImgs.length) {
+        var sparseDisplayCount = slotImages.length
+          || (lastVolumePayload && lastVolumePayload.expected_volume_count)
+          || (volumePayload() && volumeExpectedCount())
+          || 0;
+        if (slotImages.length > 0 && sparseDisplayCount > slotImages.length) {
+          while (slotImages.length < sparseDisplayCount) slotImages.push(null);
+        }
+        if (slotImages.length > 1 && sparseDisplayCount === slotImages.length) {
+          applyChimeraxBatchDisplay({
+            volumes: volumes,
+            images: slotImages,
+            expectedVolumeCount: sparseDisplayCount
+          });
+          lastVolumePayload = mergeVolumePayload({
+            volumes: volumes,
+            images: slotImages.slice(),
+            expected_volume_count: sparseDisplayCount,
+            render_backend: "chimerax"
+          });
+          if (typeof volumePayload === "function" ? volumePayload() : volumePayload()) {
+            patchVolumePayload({
+              images: slotImages.slice(),
+              expectedVolumeCount: sparseDisplayCount
+            }, { skipLastPayload: true });
+          }
+          syncTrajVolBottomRegion("chimerax");
+          syncTrajVolDockButton();
+          syncTrajVolBackendChrome();
+          syncManualVolumeScatterHighlight();
+          syncTrajChimeraxViewControls();
+          syncTrajGifRecordButton();
+          syncTrajReverseButton();
+        } else {
+          showChimeraxVolumeGallery(lastVolumePayload);
+        }
+        if (!trajectoryVolumeFetchInFlight
+            && !(typeof trajectoryInteractiveVolumeLoadInFlight === "function"
+              && trajectoryInteractiveVolumeLoadInFlight())
+            && trajectoryHasDisplayableVolumes()) {
+          clearVolumeViewerJobStatus();
+        }
+        syncDirectModeVolumePendingOverlay();
+        updateGenerateVolumesButtonLabel();
+        return;
+      }
+      renderChimeraxVolumeGallery(lastVolumePayload);
+    } else if (trajVolColumn) {
+      trajVolColumn.innerHTML = "";
+    }
+    if (bottomVolExpanded && backend !== "chimerax") {
+      closeTrajVolPopoutModal();
+    }
+    syncTrajVolBottomRegion(backend);
+    syncTrajVolDockButton();
+    syncTrajVolBackendChrome();
+    syncTrajChimeraxViewControls();
+    snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
+    syncManualVolumeScatterHighlight();
+    syncTrajGlyphOverlay();
+    syncTrajGifRecordButton();
+    syncTrajReverseButton();
+    if (!trajectoryVolumeFetchInFlight
+        && !(typeof trajectoryInteractiveVolumeLoadInFlight === "function"
+          && trajectoryInteractiveVolumeLoadInFlight())
+        && trajectoryHasDisplayableVolumes()) {
+      clearVolumeViewerJobStatus();
+      if (typeof trajVolDisplay.setIncompleteVolumeOverlay === "function") {
+        trajVolDisplay.setIncompleteVolumeOverlay(false);
+      }
+    }
+    syncDirectModeVolumePendingOverlay();
+    if (!isManualTraversalMode()) updateGenerateVolumesButtonLabel();
+  }
+
+  function onTrajVolumeBackendChange(backend) {
+    backend = String(backend || "slice").toLowerCase();
+    volumeBackendUserSet = true;
+    if (trajVolDisplay && backend !== "chimerax") {
+      trajVolDisplay.setChimeraxRendering(false);
+    }
+    if ((backend === "vtk" || backend === "chimerax") && !canUseVtkOrChimeraxBackend()) {
+      ensureSliceBackendWhenVolumesMissing();
+      syncTrajVolBackendChrome();
+      return;
+    }
+    if (backend === "chimerax") {
+      var cxPayload = activeVolumePayload() || {};
+      if (trajVolDisplay) trajVolDisplay.setBackend("chimerax");
+      var hasCxImages = chimeraxImagesFromPayload(cxPayload).length > 0;
+      var needsRerender = !hasCxImages || chimeraXViewNeedsRerender();
+      if (needsRerender) {
+        if (typeof directTraceBlocksCatalogAutoRender === "function"
+            && directTraceBlocksCatalogAutoRender()) {
+          if (trajVolDisplay) {
+            trajVolDisplay.setChimeraxRendering(false);
+            if (typeof applyDirectTraceCatalogChromePreservingDisplay === "function") {
+              applyDirectTraceCatalogChromePreservingDisplay();
+            } else if (typeof applyDirectTraceCatalogChromeWithoutAutoRender === "function") {
+              applyDirectTraceCatalogChromeWithoutAutoRender();
+            }
+          }
+          updateGenerateVolumesButtonLabel();
+          return;
+        }
+        if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true);
+        syncTrajChimeraxViewControls();
+        if (analyzeVolumeCatalogSelectionActive() && !hasGeneratedTrajectoryVolumes()) {
+          if (deferManualWaypointVolumeRerender()
+              && !pendingCombinedRenderAfterDecode) {
+            if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+            updateGenerateVolumesButtonLabel();
+            if (typeof syncGenerateVolumesButtonVisibility === "function") {
+              syncGenerateVolumesButtonVisibility();
+            }
+            return;
+          }
+          if (syncManualChimeraxDisplay()) return;
+        }
+        if (shouldTriggerVolumeGenerationOnBackendSwitch()) {
+          generateTrajectory();
+          return;
+        }
+        if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+      } else if (trajVolDisplay) {
+        trajVolDisplay.setChimeraxRendering(false);
+      }
+      applyVolumePayloadDisplay(cxPayload, "chimerax");
+      syncTrajChimeraxViewControls();
+      syncGenerateVolumesButtonVisibility();
+      return;
+    }
+    if (backend === "vtk" || backend === "slice") {
+      if (bottomVolExpanded) closeTrajVolPopoutModal();
+      var volPayload = activeVolumePayload() || {};
+      if (analyzeVolumeCatalogSelectionActive()) {
+        if (typeof ensureInteractiveBackendVolumes === "function") {
+          ensureInteractiveBackendVolumes(backend, { userInitiated: true });
+        } else {
+          selectTrajVolumeBackend(backend);
+          syncAnalyzeVolumeDisplay();
+        }
+        syncGenerateVolumesButtonVisibility();
+        updateGenerateVolumesButtonLabel();
+        return;
+      }
+      if (!payloadHasVolumeB64(volPayload) && lastTrajectoryVolumeCacheId) {
+        if (fetchTrajectoryVolumesFromCache(backend)) {
+          syncGenerateVolumesButtonVisibility();
+          return;
+        }
+      }
+      if (!payloadHasVolumeB64(volPayload)) {
+        if (shouldTriggerVolumeGenerationOnBackendSwitch()) {
+          generateTrajectory();
+          return;
+        }
+      }
+      applyVolumePayloadDisplay(volPayload, backend);
+      syncManualVolumeScatterHighlight();
+      syncGenerateVolumesButtonVisibility();
+      return;
+    }
+    if (trajVolDisplay) trajVolDisplay.setBackend(backend);
+    syncGenerateVolumesButtonVisibility();
+  }
+
+  function volumeNavTickLabels(total) {
+    total = Number(total);
+    if (!isFinite(total) || total < 1) return [];
+    var labelSession = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    var labelVolumes = labelSession && labelSession.volumes ? labelSession.volumes() : null;
+    if (labelVolumes && typeof labelVolumes.matchAt === "function"
+        && typeof labelVolumes.tickLabelAt === "function"
+        && labelVolumes.slotCount && labelVolumes.slotCount() >= total) {
+      var matchLabels = [];
+      for (var li = 0; li < total; li++) {
+        if (!isManualTraversalMode() && !hasAnchorIndices()
+            && typeof isScatterDirectOrNearestMode === "function"
+            && isScatterDirectOrNearestMode()
+            && (trajectoryTickIsDetachedFromParticle(li)
+              || (trajectoryMode === "direct"
+                && typeof trajectorySlotVolumeInvalidated === "function"
+                && trajectorySlotVolumeInvalidated(li)))) {
+          matchLabels.push(volumeSliderTrajTickLabel(li));
+          continue;
+        }
+        // Nearest snap: labels follow live trajPlotRows particle identity.
+        // Always take this branch when a row exists — custom:* has no catalog
+        // label (traj-vol), and we must not fall through to leftover Session
+        // catalog endpoint ids (pc1:0 / pc1:9) after clearDetached.
+        if (!isManualTraversalMode() && !hasAnchorIndices()
+            && trajectoryMode === "nearest"
+            && trajPlotRows && trajPlotRows.length === total) {
+          var nearRow = Number(trajPlotRows[li]);
+          if (Number.isFinite(nearRow) && nearRow >= 0) {
+            // Prefer particle-keyed custom:* (dataset row) over catalog vol_id
+            // so snapped ends are not relabelled PC1 merely because that row
+            // also appears in the analyze catalog.
+            var particleId = "custom:" + String(nearRow);
+            var nearLabel = volumeSliderTickLabelFromVolId(particleId);
+            matchLabels.push(nearLabel || volumeSliderTrajTickLabel(li));
+            continue;
+          }
+        }
+        var match = labelVolumes.matchAt(li);
+        if (!isManualTraversalMode() && trajectoryMode === "direct"
+            && match && match.matched === false) {
+          matchLabels.push(volumeSliderTrajTickLabel(li));
+          continue;
+        }
+        var labelId = labelVolumes.tickLabelAt(li);
+        var label = labelId ? volumeSliderTickLabelFromVolId(labelId) : "";
+        if (!label && match && match.plot_row != null
+            && typeof manualVolumeSlotIdForPlotRow === "function") {
+          var rowId = manualVolumeSlotIdForPlotRow(match.plot_row);
+          label = rowId ? volumeSliderTickLabelFromVolId(rowId) : "";
+        }
+        matchLabels.push(label || volumeSliderTrajTickLabel(li));
+      }
+      return matchLabels;
+    }
+    if (isManualTraversalMode()) {
+      var pathOwnedIds = typeof manualVolumeDisplayIdsForCurrentPath === "function"
+        ? manualVolumeDisplayIdsForCurrentPath()
+        : [];
+      if (pathOwnedIds.length === total) {
+        return pathOwnedIds.map(function(id, idx) {
+          if (trajectoryTickIsDetachedFromParticle(idx)) {
+            return volumeSliderTrajTickLabel(idx);
+          }
+          var pathLabel = id ? volumeSliderTickLabelFromVolId(id) : "";
+          if (pathLabel) return pathLabel;
+          // After Other is deselected, retained PC slots can still have
+          // path-owned synthetic ids while media rematch settles. Labels should
+          // nevertheless revert to the visible catalog trajectory labels.
+          if ((!manualActiveCustomPlotRows || !manualActiveCustomPlotRows.length)
+              && manualSelectedVolIds
+              && manualSelectedVolIds.length === total
+              && idx < manualSelectedVolIds.length
+              && !(typeof manualPathEndpointsDisplacedFromDefaults === "function"
+                && manualPathEndpointsDisplacedFromDefaults())) {
+            var selectedLabel = volumeSliderTickLabelFromVolId(manualSelectedVolIds[idx]);
+            if (selectedLabel) return selectedLabel;
+          }
+          return volumeSliderTrajTickLabel(idx);
+        });
+      }
+      if (manualDirectSnapActive() && total > manualSelectedVolIds.length) {
+        var nAnchors = manualSelectedVolIds.length;
+        var nPoints = currentNPoints();
+        var anchorSlots = manualAnchorSlotsOnInterpolatedPath(nAnchors, nPoints);
+        var interpLabels = [];
+        for (var ti = 0; ti < total; ti++) {
+          if (trajectoryTickIsDetachedFromParticle(ti)) {
+            interpLabels.push(volumeSliderTrajTickLabel(ti));
+            continue;
+          }
+          var anchorIdx = anchorSlots.indexOf(ti);
+          if (anchorIdx >= 0) {
+            var anchorLabel = volumeSliderTickLabelFromVolId(manualSelectedVolIds[anchorIdx]);
+            interpLabels.push(anchorLabel || volumeSliderTrajTickLabel(ti));
+          } else {
+            interpLabels.push(volumeSliderTrajTickLabel(ti));
+          }
+        }
+        return interpLabels;
+      }
+      var ids;
+      if (manualInterpolatedCatalogActive()
+          && volumePayload()
+          && Array.isArray(volumeDisplayIds())
+          && volumeDisplayIds().length) {
+        ids = volumeDisplayIds().slice();
+      } else if (volumeDisplayIds().length === total) {
+        ids = volumeDisplayIds().slice();
+      } else if (typeof manualVolumeDisplayIdsForCurrentPath === "function") {
+        var pathIds = manualVolumeDisplayIdsForCurrentPath();
+        var displaced = typeof manualPathEndpointsDisplacedFromDefaults === "function"
+          && manualPathEndpointsDisplacedFromDefaults();
+        ids = pathIds.length === total ? pathIds : (
+          displaced ? pathIds : (
+            volumeDisplayIds().length && !manualAnalyzeVolumeIdsMismatch()
+              ? volumeDisplayIds().slice()
+              : manualSelectedVolIds.slice()
+          )
+        );
+      } else if (volumeDisplayIds().length && !manualAnalyzeVolumeIdsMismatch()) {
+        ids = volumeDisplayIds().slice();
+      } else {
+        ids = manualSelectedVolIds.slice();
+      }
+      if (ids.length) {
+        return ids.map(function(id, idx) {
+          if (trajectoryTickIsDetachedFromParticle(idx)) {
+            return volumeSliderTrajTickLabel(idx);
+          }
+          var tickLabel = volumeSliderTickLabelFromVolId(id);
+          if (tickLabel) return tickLabel;
+          return volumeSliderTrajTickLabel(idx);
+        });
+      }
+      if (total === 10 && !manualCatalogLoaded) {
+        var placeholders = [];
+        for (var pi = 0; pi < total; pi++) {
+          placeholders.push("PC1\nvol" + String(pi + 1));
+        }
+        return placeholders;
+      }
+    }
+    // Direct / nearest: prefer particle-row labels while still snapped; freely
+    // dragged points fall back to traj-vol labels.
+    if (!isManualTraversalMode() && !hasAnchorIndices()
+        && trajPlotRows && trajPlotRows.length === total
+        && trajectoryMode === "nearest") {
+      var nearestLabels = [];
+      for (var ni = 0; ni < total; ni++) {
+        if (trajectoryTickIsDetachedFromParticle(ni)) {
+          nearestLabels.push(volumeSliderTrajTickLabel(ni));
+          continue;
+        }
+        var rowId = typeof manualVolumeSlotIdForPlotRow === "function"
+          ? manualVolumeSlotIdForPlotRow(trajPlotRows[ni])
+          : null;
+        var rowLabel = rowId ? volumeSliderTickLabelFromVolId(rowId) : "";
+        nearestLabels.push(rowLabel || volumeSliderTrajTickLabel(ni));
+      }
+      return nearestLabels;
+    }
+    if (directEndpointPathConfigured() && directEndpointVolumeIds.length >= 2) {
+      return directEndpointTickLabels(total);
+    }
+    if (anchorKmeansVolumeIds.length >= 2 && !isManualTraversalMode()) {
+      return anchorKmeansVolumeIds.map(function(id, idx) {
+        if (trajectoryTickIsDetachedFromParticle(idx)) {
+          return volumeSliderTrajTickLabel(idx);
+        }
+        var tickLabel = volumeSliderTickLabelFromVolId(id);
+        if (tickLabel) return tickLabel;
+        return volumeSliderTrajTickLabel(idx);
+      });
+    }
+    var labels = [];
+    for (var i = 0; i < total; i++) labels.push(volumeSliderTrajTickLabel(i));
+    return labels;
+  }
+
+  var trajVolDisplay = null;
+  if (window.CryoTrajectoryVolumeDisplay) {
+    trajVolDisplay = new CryoTrajectoryVolumeDisplay({
+      asideHostEl: document.getElementById("traj-vol-panel-root"),
+      asideShellEl: document.getElementById("traj-vol-aside-shell"),
+      stableBackendChrome: true,
+      displayRowEl: document.getElementById("vslice-display-row"),
+      padColumnEl: document.getElementById("vslice-pad-column"),
+      underToolsEl: document.getElementById("vslice-under-tools"),
+      sliceSliderColumnEl: document.getElementById("vslice-slice-slider-column"),
+      isoResetRowEl: document.getElementById("vslice-iso-reset-row"),
+      viewportEl: document.getElementById("vslice-viewport"),
+      canvasEl: document.getElementById("vslice-canvas"),
+      vtkContainerEl: document.getElementById("vslice-vtk-container"),
+      controlsDockEl: document.getElementById("vslice-controls-dock"),
+      progressEl: document.getElementById("vslice-progress"),
+      renderingOverlayEl: document.getElementById("vslice-rendering-overlay"),
+      statusEl: null,
+      viewMode3dEl: null,
+      isoControlsEl: document.getElementById("vslice-iso-controls"),
+      isoSliderEl: document.getElementById("vslice-iso-level"),
+      sliceControlsRowEl: document.getElementById("vslice-slice-controls-row"),
+      rotationLockToolbarEl: document.getElementById("vslice-rotation-lock-toolbar"),
+      rotationLockEl: document.getElementById("vslice-rotation-lock"),
+      sliceContrastEl: document.getElementById("vslice-slice-contrast"),
+      volumeNavEl: document.getElementById("traj-vol-volume-nav"),
+      volumeSliderEl: document.getElementById("traj-vol-volume-slider"),
+      volumeSliderTicksEl: document.getElementById("traj-vol-volume-slider-ticks"),
+      getVolumeNavLabels: volumeNavTickLabels,
+      slotReadyAt: function(index) {
+        var backend = typeof currentVolumeRenderBackend === "function"
+          ? currentVolumeRenderBackend()
+          : "chimerax";
+        var readySession = typeof activeTrajectorySession === "function"
+          ? activeTrajectorySession()
+          : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+        var readyVolumes = readySession && readySession.volumes ? readySession.volumes() : null;
+        if (readyVolumes && typeof readyVolumes.tickReadyAt === "function"
+            && readyVolumes.slotCount && readyVolumes.slotCount() > index) {
+          return readyVolumes.tickReadyAt(index, backend);
+        }
+        if (backend === "chimerax") {
+          return typeof trajectorySlotChimeraxReady === "function"
+            && trajectorySlotChimeraxReady(index);
+        }
+        return typeof trajectorySlotVtkDecoded === "function"
+          && trajectorySlotVtkDecoded(index);
+      },
+      allowUnreadyVolumeNav: function() {
+        // Skip inactive (greyed-out) ticks in every mode — including after
+        // choose-waypoints → trace-direct. Activate missing points via
+        // Generate / Render, not by focusing them.
+        return false;
+      },
+      expandedHostEl: trajVolExpandedHost,
+      btnPanUp: document.getElementById("btn-vslice-pan-up"),
+      btnPanDown: document.getElementById("btn-vslice-pan-down"),
+      btnPanLeft: document.getElementById("btn-vslice-pan-left"),
+      btnPanRight: document.getElementById("btn-vslice-pan-right"),
+      btnZoomIn: document.getElementById("btn-vslice-zoom-in"),
+      btnZoomOut: document.getElementById("btn-vslice-zoom-out"),
+      btnResetView: document.getElementById("btn-vslice-reset-view"),
+      vtkSliceControlsEl: document.getElementById("vslice-controls"),
+      chimeraxViewControlsEl: document.getElementById("vslice-chimerax-view-controls"),
+      captureChimeraxViewSnapshot: function() {
+        return typeof captureChimeraxViewSnapshot === "function"
+          ? captureChimeraxViewSnapshot()
+          : null;
+      },
+      btnDockBelow: btnTrajVolDockBelow,
+      backendRadios: Array.prototype.slice.call(
+        document.querySelectorAll("input[name=\"traj-vol-backend\"]")
+      ),
+      onBackendChange: onTrajVolumeBackendChange,
+      onDockBelowClick: toggleTrajVolBottomDisplay,
+      onFocusChange: function() {
+        if (!(isManualTraversalMode() && manualInterpolatedCatalogActive())) {
+          engageVolumeDisplayFocus();
+        } else {
+          rememberDisplayedVolumeFocusIndex(currentVolumeFocusIndex());
+        }
+        ensureManualVolumeAtFocusLoaded();
+        syncManualVolumeScatterHighlight();
+        syncTrajGlyphOverlay();
+      },
+      onChimeraxIsoChange: function(level) {
+        chimeraxIsoLevel = level;
+        requestTrajChimeraxViewRerender("Updating ChimeraX isosurface…");
+      },
+      onResetViewClick: resetTrajectoryVolumeView,
+      canResetView: trajectoryResetViewEnabled
+    });
+    trajVolDisplay.onExpandedBelowChange = function(expanded) {
+      if (_trajVolPopoutSyncLock) return;
+      bottomVolExpanded = expanded;
+      syncTrajVolBottomRegion();
+      syncTrajVolDockButton();
+      if (expanded) showTrajVolPopoutModalDom();
+      else hideTrajVolPopoutModalDom();
+    };
+    trajVolDisplay.setVtkBundleUrl(TRAJ_VTK_BUNDLE_URL);
+    selectTrajVolumeBackend(defaultVolumeBackend());
+    syncTrajectoryVolumeChrome();
+    syncTrajVolBottomRegion();
+    syncTrajVolDockButton();
+    syncTrajVolBackendChrome();
+    if (trajVolPopoutModal && window.CryoDashModal) {
+      CryoDashModal.wire(trajVolPopoutModal, {
+        closeAttr: "data-traj-vol-popout-close",
+        restoreFocusEl: btnTrajVolDockBelow,
+        onClose: function() {
+          if (_trajVolPopoutSyncLock) return;
+          _trajVolPopoutSyncLock = true;
+          bottomVolExpanded = false;
+          if (trajVolDisplay && trajVolDisplay.expandedBelow) {
+            trajVolDisplay.setExpandedBelow(false);
+          }
+          _trajVolPopoutSyncLock = false;
+          syncTrajVolBottomRegion();
+          syncTrajVolDockButton();
+        }
+      });
+    }
+  } else if (btnTrajVolDockBelow) {
+    btnTrajVolDockBelow.addEventListener("click", toggleTrajVolBottomDisplay);
+    btnTrajVolDockBelow.hidden = true;
+  }
+
+  trajChimeraxViewRotateBtns.forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      var axis = String(btn.getAttribute("data-traj-chimerax-view-axis") || "").toLowerCase();
+      if (axis === "x" || axis === "y" || axis === "z") applyTrajChimeraxViewRotation(axis);
+    });
+  });
+  if (trajChimeraxViewMatrixInputEl) {
+    trajChimeraxViewMatrixInputEl.addEventListener("focus", function() {
+      trajChimeraxViewMatrixFieldFocused = true;
+    });
+    trajChimeraxViewMatrixInputEl.addEventListener("blur", function() {
+      trajChimeraxViewMatrixFieldFocused = false;
+      syncTrajChimeraxViewMatrixField();
+    });
+    trajChimeraxViewMatrixInputEl.addEventListener("input", function() {
+      trajChimeraxViewMatrixInputDirty = true;
+    });
+  }
+  if (trajChimeraxViewMatrixApplyBtn) {
+    trajChimeraxViewMatrixApplyBtn.addEventListener("click", applyTrajChimeraxViewMatrixFromField);
+  }
+  syncTrajChimeraxViewMatrixField();
+  syncTrajChimeraxViewControls();
+
+  document.addEventListener("keydown", function(ev) {
+    if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+    if (!trajectoryVolumeNavActive()) return;
+    var tag = ev.target && ev.target.tagName ? String(ev.target.tagName).toLowerCase() : "";
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    if (ev.target && ev.target.isContentEditable) return;
+    ev.preventDefault();
+    if (!trajVolDisplay || typeof trajVolDisplay.getFocusIndex !== "function") return;
+    var cur = trajVolDisplay.getFocusIndex();
+    if (ev.key === "ArrowLeft") trajVolDisplay.setFocusIndex(cur - 1);
+    else trajVolDisplay.setFocusIndex(cur + 1);
+  });
+
+  function scatterTrajectoryDragEnabled() {
+    return !isManualTraversalMode();
+  }
+
+  function pc1VolumeEntries(catalog) {
+    return (catalog || []).filter(function(e) {
+      return e.kind === "pc" && Number(e.pc) === 1;
+    }).sort(function(a, b) {
+      return Number(a.sample_index) - Number(b.sample_index);
+    });
+  }
+
+  function pc1EndpointVolumeIdPair() {
+    var pc1 = pc1VolumeEntries(manualCatalog);
+    if (pc1.length < 2) return [];
+    return [String(pc1[0].id), String(pc1[pc1.length - 1].id)];
+  }
+
+  function scatterXYForVolumeId(volId) {
+    var marker = manualMarkersByVolId[volId];
+    if (!marker) return null;
+    if (marker.xy && marker.xy.length === 2) {
+      var mx = Number(marker.xy[0]);
+      var my = Number(marker.xy[1]);
+      if (Number.isFinite(mx) && Number.isFinite(my)) return [mx, my];
+    }
+    if (marker.plot_row == null) return null;
+    return scatterXYForPlotRow(marker.plot_row);
+  }
+
+  function setupDirectModePc1Endpoints() {
+    if (!manualCatalogLoaded) return false;
+    var ids = pc1EndpointVolumeIdPair();
+    if (ids.length < 2) return false;
+    var startPt = scatterXYForVolumeId(ids[0]);
+    var endPt = scatterXYForVolumeId(ids[1]);
+    if (!startPt || !endPt) return false;
+    startXY = startPt.slice();
+    endXY = endPt.slice();
+    directEndpointVolumeIds = ids.slice();
+    return resetDirectTraversalFromCurrentEndpoints();
+  }
+
+  function finishDirectModeSetupAfterCatalog() {
+    if (!directModeSetupPending || isManualTraversalMode()) return;
+    directModeSetupPending = false;
+    var handoff = pendingDirectModeHandoff;
+    pendingDirectModeHandoff = null;
+    var snapshot = pendingDirectEndpointSnapshot;
+    pendingDirectEndpointSnapshot = null;
+    if (handoff && handoff.endpoints) {
+      applyPreservedScatterDirectPath(
+        handoff.endpoints,
+        handoff.pathPointCount,
+        handoff.endpointVolumeIds
+      );
+    } else {
+      resetScatterDirectNPoints();
+      if (!setupDirectModePc1Endpoints() && (!startXY || !endXY)) {
+        initDefaultTrajectory(scatterLoadGeneration);
+        return;
+      }
+    }
+    if (snapshot && snapshot.ids) {
+      directEndpointVolumeIds = snapshot.ids.slice();
+      var setupPath = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+      if (setupPath && typeof setupPath.setEndpointVolumeIds === "function") {
+        setupPath.setEndpointVolumeIds(directEndpointVolumeIds);
+      }
+    }
+    var restoredEndpointVolumes = snapshot
+      && typeof applyDirectEndpointCatalogDisplay === "function"
+      && applyDirectEndpointCatalogDisplay(snapshot);
+    if (!restoredEndpointVolumes) {
+      if (typeof applyDirectTraceCatalogChromeWithoutAutoRender === "function") {
+        applyDirectTraceCatalogChromeWithoutAutoRender();
+      } else if (directEndpointPathConfigured()) {
+        syncDirectTraceDeferredVolumeChrome();
+      }
+    }
+    syncTraversalModeButtonStates();
+    updateGenerateVolumesButtonLabel();
+    redrawTrajectoryOverlay();
+    syncTrajectoryVolumeChrome();
+    var deferredHandoffRestored = !!(snapshot && (snapshot.first || snapshot.last));
+    fetchTrajectoryCoords({
+      preserveGeneratedVolumes: deferredHandoffRestored,
+      preserveDirectTracePathXY: deferredHandoffRestored
+    });
+  }
+
+  function applyDefaultManualPc1Selection(force) {
+    if (!isManualTraversalMode()) return;
+    if (manualDefaultSelectionApplied && !force) return;
+    if (force) {
+      manualBootstrapDone = false;
+      manualBootstrapPending = false;
+    }
+    manualDefaultSelectionApplied = true;
+    // Requirement: default trajectory is PC1 volumes 1..10 (in sample_index order).
+    var pc1 = pc1VolumeEntries(manualCatalog).slice(0, 10);
+    if (!pc1.length) return;
+    manualSelectedVolIds = pc1.map(function(e) { return String(e.id); });
+    if (typeof resetManualInterpolationArmed === "function") {
+      resetManualInterpolationArmed();
+    }
+    persistManualVolumeSelection();
+    buildManualPickerRows();
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : null;
+    if (session
+        && typeof session.rebuildFromSelection === "function"
+        && typeof manualMarkersReady === "function"
+        && manualMarkersReady()
+        && trajScatterRenderingEverCompleted) {
+      // Default PC1 must use catalog sample order + per-volume marker XY, not a
+      // leftover visit-order permutation / shared-particle collapse.
+      session.rebuildFromSelection({ force: true, preferActiveOrder: false });
+    }
+    if (typeof redrawTrajectoryOverlay === "function") redrawTrajectoryOverlay();
+    if (typeof scheduleTrajGlyphOverlaySync === "function") {
+      scheduleTrajGlyphOverlaySync();
+    }
+    syncAnchorPathOrderUI();
+    syncManualVolumeSliderPreview();
+    syncTrajReverseButton();
+    if (deferManualWaypointVolumeRerender()) {
+      updateGenerateVolumesButtonLabel();
+    }
+    if (pc1.length >= 2) scheduleManualBootstrap();
+  }
+
+  function scheduleManualBootstrap() {
+    if (!isManualTraversalMode() || manualSelectedVolIds.length < 2) return;
+    if (manualBootstrapDone) return;
+    if (!manualCatalogLoaded || !manualMarkersReady()) return;
+    if (!trajScatterRenderingEverCompleted) {
+      manualBootstrapPending = true;
+      return;
+    }
+    manualBootstrapPending = false;
+    window.setTimeout(function() {
+      finishManualBootstrap();
+    }, 0);
+  }
+
+  function manualMarkersReady() {
+    for (var i = 0; i < manualSelectedVolIds.length; i++) {
+      if (manualMarkersByVolId[manualSelectedVolIds[i]]) return true;
+    }
+    return Object.keys(manualMarkersByVolId).length > 0;
+  }
+
+  var scatterControlsCard = document.getElementById("scatter-controls-card");
+  var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
+  var scatterPlotStack = document.getElementById("scatter-plot-stack");
+  var trajVolPanelRootEl = document.getElementById("traj-vol-panel-root");
+  var trajControlsHost = document.getElementById("traj-controls-host");
+  var trajControlsBusyOverlay = document.getElementById("traj-controls-busy-overlay");
+  var trajControlsBusyLabel = trajControlsBusyOverlay
+    ? trajControlsBusyOverlay.querySelector(".cryo-traj-controls-busy-overlay__label")
+    : null;
+  var plotlyStackEl = gd && gd.parentElement;
+
+  var TRAJ_PALETTE_KEYS = {
+    Viridis: 1,
+    Magma: 1,
+    Cividis: 1,
+    Turbo: 1,
+    Blues: 1,
+    Greens: 1,
+    Greys: 1,
+    Oranges: 1,
+    Purples: 1,
+    Reds: 1,
+    YlGnBu: 1,
+    YlOrRd: 1,
+    RdBu: 1,
+    Portland: 1,
+    Jet: 1,
+    Hot: 1,
+    Blackbody: 1,
+    Electric: 1,
+    Rainbow: 1,
+    Earth: 1,
+  };
+  function selectedTrajPalette() {
+    var r = document.querySelector("input[name=\"traj_palette\"]:checked");
+    var v = r && r.value ? String(r.value) : "Viridis";
+    return TRAJ_PALETTE_KEYS[v] ? v : "Viridis";
+  }
+
+  function fillSelect(sel, values, includeNone) {
+    CryoCovariateSelects.fillSelect(sel, values, includeNone, covariateDisplayMap);
+  }
+
+  var sx = document.getElementById("sx");
+  var sy = document.getElementById("sy");
+  var sc = document.getElementById("sc");
+  fillSelect(sx, trajAxisCols, false);
+  fillSelect(sy, trajAxisCols, false);
+  fillSelect(sc, colorCols, true);
+  sx.value = trajAxisCols.indexOf(dx) >= 0 ? dx : trajAxisCols[0];
+  sy.value = trajAxisCols.indexOf(dy) >= 0 ? dy : trajAxisCols[Math.min(1, trajAxisCols.length - 1)];
+
+  /* Matches scatter_json / particle explorer discrete colour covariates. */
+  function trajColorByIsDiscrete() {
+    return discreteColorCols.indexOf(sc.value) >= 0;
+  }
+
+  function trajDiscreteColorOverridesActive() {
+    for (var k in trajDiscreteColorOverrides) {
+      if (Object.prototype.hasOwnProperty.call(trajDiscreteColorOverrides, k)) return true;
+    }
+    return false;
+  }
+
+  var trajMenuScrollEl = document.querySelector(".cryo-traj-menu-scroll");
+  var trajMenuScrollPreserveTop = null;
+
+  function captureTrajMenuScroll() {
+    if (trajMenuScrollEl) trajMenuScrollPreserveTop = trajMenuScrollEl.scrollTop;
+  }
+
+  function restoreTrajMenuScroll() {
+    if (trajMenuScrollEl == null || trajMenuScrollPreserveTop == null) return;
+    trajMenuScrollEl.scrollTop = trajMenuScrollPreserveTop;
+    trajMenuScrollPreserveTop = null;
+  }
+
+  function syncTrajColorControlsVisibility() {
+    var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
+    var hasColor = !!(sc.value && sc.value !== "none");
+    var discrete = hasColor && trajColorByIsDiscrete();
+    if (trajColorControlsFieldset) trajColorControlsFieldset.hidden = !hasColor;
+    if (trajColorContinuousWrap) trajColorContinuousWrap.hidden = !hasColor || discrete;
+    if (trajColorDiscreteWrap) trajColorDiscreteWrap.hidden = !hasColor || !discrete;
+    if (trajPaletteSelect) {
+      trajPaletteSelect.classList.toggle("traj-palette-select--hidden-during-plot-render", rendering);
+    }
+    if (trajColorLegendPanel && (!hasColor || !discrete)) {
+      trajColorLegendPanel.hidden = true;
+      trajColorLegendPanel.setAttribute("aria-hidden", "true");
+    }
+    syncTrajScatterColorLegend();
+  }
+
+  function syncTrajColorControls() {
+    syncTrajColorControlsVisibility();
+    var hasColor = !!(sc.value && sc.value !== "none");
+    var discrete = hasColor && trajColorByIsDiscrete();
+    if (hasColor && discrete && trajColorLegend) {
+      captureTrajMenuScroll();
+      var refreshPromise = trajColorLegend.refresh({ suppressNotify: true });
+      if (refreshPromise && typeof refreshPromise.then === "function") {
+        refreshPromise.then(function() {
+          requestAnimationFrame(restoreTrajMenuScroll);
+        }).catch(function() {
+          requestAnimationFrame(restoreTrajMenuScroll);
+        });
+      }
+    }
+  }
+
+  function syncTrajPaletteFieldset() {
+    syncTrajColorControlsVisibility();
+  }
+
+  function cancelPendingTrajScatterAfterPlot() {
+    if (pendingTrajScatterAfterPlot && gd) {
+      gd.removeListener("plotly_afterplot", pendingTrajScatterAfterPlot);
+      pendingTrajScatterAfterPlot = null;
+    }
+  }
+
+  function clearTrajScatterPlotWatchdog() {
+    if (trajScatterPlotWatchdog) {
+      clearTimeout(trajScatterPlotWatchdog);
+      trajScatterPlotWatchdog = null;
+    }
+  }
+
+  var _syncTrajectoryUiBusyDepth = 0;
+
+  function trajectoryPathRecalcBusy() {
+    // Do not treat pendingAnchorPathOrder alone as a full controls lock —
+    // visit-order radios disable themselves, and Reverse must stay available.
+    return manualCoordsInFlight || trajectoryCoordsInFlight > 0;
+  }
+
+  function trajectoryAddPointsBusy() {
+    // Non-blocking scatter re-renders (axis/colour restyle) must not lock the
+    // add-points controls — only a full blocking plot overlay does.
+    var scatterBlocking = !!(
+      overlay
+      && overlay.classList
+      && overlay.classList.contains("cryo-plot-rendering-overlay--show")
+      && !overlay.classList.contains("cryo-plot-rendering-overlay--nonblocking")
+    );
+    return trajectoryPathRecalcBusy()
+      || trajectoryVolumeJobInFlight()
+      || scatterBlocking;
+  }
+
+  function syncManualInterpAddPointsEnabled() {
+    var busy = trajectoryAddPointsBusy();
+    var title = busy ? "Unavailable while rendering." : "";
+    if (btnTrajManualVolume) {
+      btnTrajManualVolume.disabled = busy;
+      btnTrajManualVolume.title = title;
+    }
+    if (btnTrajManualGraph) {
+      btnTrajManualGraph.disabled = busy;
+      btnTrajManualGraph.title = title;
+    }
+    if (manualSnapNPointsEl) {
+      manualSnapNPointsEl.disabled = busy;
+      manualSnapNPointsEl.title = title;
+    }
+    if (manualGraphNPointsEl) {
+      manualGraphNPointsEl.disabled = busy;
+      manualGraphNPointsEl.title = title;
+    }
+    if (maxNeighborsEl) {
+      maxNeighborsEl.disabled = busy;
+      maxNeighborsEl.title = title;
+    }
+    if (avgNeighborsEl) {
+      avgNeighborsEl.disabled = busy;
+      avgNeighborsEl.title = title;
+    }
+    if (trajManualInterpStack) {
+      trajManualInterpStack.classList.toggle("cryo-traj-manual-interp-stack--busy", busy);
+      trajManualInterpStack.setAttribute("aria-busy", busy ? "true" : "false");
+    }
+  }
+
+  function beginTrajectoryCoordsFetch() {
+    trajectoryCoordsInFlight++;
+    syncTrajectoryControlsBusy();
+  }
+
+  function endTrajectoryCoordsFetch() {
+    trajectoryCoordsInFlight = Math.max(0, trajectoryCoordsInFlight - 1);
+    syncTrajectoryControlsBusy();
+  }
+
+  function syncTrajectoryControlsBusy() {
+    var pathBusy = trajectoryPathRecalcBusy();
+    if (trajControlsHost) {
+      // Greyscale the whole host only while the path itself is recalculating.
+      trajControlsHost.classList.toggle("cryo-traj-controls-host--busy", pathBusy);
+    }
+    if (trajControlsBusyOverlay) {
+      trajControlsBusyOverlay.hidden = !pathBusy;
+      trajControlsBusyOverlay.setAttribute("aria-hidden", pathBusy ? "false" : "true");
+    }
+    if (trajControlsBusyLabel) {
+      trajControlsBusyLabel.textContent = TRAJECTORY_PATH_BUSY_MESSAGE;
+    }
+    // Volume / scatter rendering blocks only the add-points fieldset.
+    syncManualInterpAddPointsEnabled();
+    if (typeof syncTrajReverseButton === "function") syncTrajReverseButton();
+  }
+
+  function syncTrajectoryUiBusy() {
+    if (_syncTrajectoryUiBusyDepth > 0) return;
+    _syncTrajectoryUiBusyDepth++;
+    try {
+      var scatterBusy = !!(overlay && overlay.classList && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
+      var panelInflight = scatterBusy;
+      if (scatterPlotStack) scatterPlotStack.classList.toggle("cryo-traj-ui-inflight", panelInflight);
+      if (trajVolPanelRootEl) trajVolPanelRootEl.classList.toggle("cryo-traj-ui-inflight", panelInflight);
+      syncTrajectoryControlsBusy();
+      if (trajVolDisplay && typeof trajVolDisplay.setVolumeGenerationBusy === "function") {
+        trajVolDisplay.setVolumeGenerationBusy(trajectoryVolumeFetchInFlight);
+      }
+    } finally {
+      _syncTrajectoryUiBusyDepth--;
+    }
+  }
+
+  // Keep the unified busy state in sync with both overlays even when they toggle
+  // outside the explicit codepaths that call `syncTrajectoryUiBusy()`.
+  if (typeof MutationObserver !== "undefined") {
+    try {
+      if (overlay) {
+        var _moScatter = new MutationObserver(function() { syncTrajectoryUiBusy(); });
+        _moScatter.observe(overlay, { attributes: true, attributeFilter: ["class", "aria-hidden"] });
+      }
+      if (vsliceRenderingOverlayEl) {
+        var _moVslice = new MutationObserver(function() { syncTrajectoryUiBusy(); });
+        _moVslice.observe(vsliceRenderingOverlayEl, { attributes: true, attributeFilter: ["class", "hidden", "aria-hidden"] });
+      }
+    } catch (e) {
+      // If MutationObserver fails for any reason, fallback to the explicit sync calls.
+    }
+  }
+
+  function setRendering(on) {
+    if (overlay) {
+      if (on) {
+        if (trajScatterRenderingEverCompleted) {
+          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+        } else {
+          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        }
+      } else {
+        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+      }
+      overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
+      overlay.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    syncTrajPaletteFieldset();
+    syncTrajectoryUiBusy();
+  }
+
+  function setTrajStatus(msg, showProgress) {
+    // Keep a dedicated DOM node for trajectory status so that both:
+    //  1) the UI can reflect state changes, and
+    //  2) the dashboard smoke tests can reliably detect readiness.
+    //
+    // The main dashboard UI uses `scatter-plot-status` plus the volume viewer
+    // overlays for progress, but automation expects `#traj-status` to exist
+    // and contain specific substrings (e.g. "Anchor path", "Latent z ready").
+    var el = document.getElementById("traj-status");
+    if (!el) {
+      el = document.createElement("p");
+      el.id = "traj-status";
+      el.className = "cryo-dash-legend-note";
+      el.setAttribute("aria-live", "polite");
+      // Do not perturb layout: keep it off-screen while still satisfying
+      // textContent-based assertions.
+      el.style.display = "none";
+      // Prefer placing it near other plot status elements.
+      if (plotStatus && plotStatus.parentElement) {
+        plotStatus.parentElement.appendChild(el);
+      } else {
+        document.body.appendChild(el);
+      }
+    }
+    el.textContent = msg != null ? String(msg) : "";
+  }
+
+  var decodeProgressPollTimer = 0;
+  var decodeProgressPollGen = 0;
+  var volumePartialPollTimer = 0;
+  var volumePartialPollGen = 0;
+  var trajVolGalleryEntries = null;
+  var trajVolPartialShown = {};
+
+  function decodingStatusMessage(nVolumes, nGpus, pct) {
+    nVolumes = Math.max(0, parseInt(nVolumes, 10) || 0);
+    nGpus = Math.max(1, parseInt(nGpus, 10) || 1);
+    pct = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    var gpuWord = nGpus === 1 ? "GPU" : "GPUs";
+    var volWord = typeof volumeCountNoun === "function"
+      ? volumeCountNoun(nVolumes)
+      : (nVolumes === 1 ? "volume" : "volumes");
+    return "Decoding " + nVolumes + " " + volWord + " with " + nGpus + " " + gpuWord + ", "
+      + pct + "% complete";
+  }
+
+  function setDecodingStatus(nVolumes, nGpus, pct) {
+    var msg = decodingStatusMessage(nVolumes, nGpus, pct);
+    setVolumeViewerJobStatus(msg, true);
+  }
+
+  function stopDecodeProgressPoll() {
+    if (decodeProgressPollTimer) {
+      clearInterval(decodeProgressPollTimer);
+      decodeProgressPollTimer = 0;
+    }
+    decodeProgressPollGen++;
+  }
+
+  function stopVolumePartialPoll() {
+    if (volumePartialPollTimer) {
+      clearInterval(volumePartialPollTimer);
+      volumePartialPollTimer = 0;
+    }
+    volumePartialPollGen++;
+    trajVolGalleryEntries = null;
+    trajVolPartialShown = {};
+  }
+
+  function pipelineStatusMessage(nVolumes, decodeDone, renderDone, nGpus, nCpus) {
+    nVolumes = Math.max(0, parseInt(nVolumes, 10) || 0);
+    decodeDone = Math.max(0, parseInt(decodeDone, 10) || 0);
+    renderDone = Math.max(0, parseInt(renderDone, 10) || 0);
+    nGpus = Math.max(1, parseInt(nGpus, 10) || 1);
+    nCpus = Math.max(1, parseInt(nCpus, 10) || 1);
+    var gpuWord = nGpus === 1 ? "GPU" : "GPUs";
+    var cpuWord = nCpus === 1 ? "CPU" : "CPUs";
+    return "Decoding " + decodeDone + "/" + nVolumes + " on " + nGpus + " " + gpuWord
+      + " · Rendering " + renderDone + "/" + nVolumes + " on " + nCpus + " " + cpuWord;
+  }
+
+  function setPipelineStatus(nVolumes, decodeDone, renderDone, nGpus, nCpus) {
+    var msg = pipelineStatusMessage(nVolumes, decodeDone, renderDone, nGpus, nCpus);
+    setVolumeViewerJobStatus(msg, true);
+  }
+
+  function applyPartialVolumeImages(j) {
+    // Partial per-volume slider updates are disabled; batches apply on completion.
+    return 0;
+  }
+
+  function startVolumePartialPoll(jobId, nVolumes) {
+    stopVolumePartialPoll();
+  }
+
+  function chimeraxRenderingStatusMessage(nVolumes, nCpus, pct, rerender) {
+    nVolumes = Math.max(0, parseInt(nVolumes, 10) || 0);
+    nCpus = Math.max(1, parseInt(nCpus, 10) || 1);
+    pct = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    var cpuWord = nCpus === 1 ? "CPU" : "CPUs";
+    var verb = rerender ? "Re-rendering" : "Rendering";
+    var volWord = typeof volumeCountNoun === "function"
+      ? volumeCountNoun(nVolumes)
+      : (nVolumes === 1 ? "volume" : "volumes");
+    return verb + " " + nVolumes + " " + volWord + " with " + nCpus + " " + cpuWord + ", "
+      + pct + "% complete";
+  }
+
+  function applyVolumeJobProgressSnapshot(j, defaults) {
+    defaults = defaults || {};
+    var phase = j && j.phase ? String(j.phase) : (defaults.initialPhase || "decode");
+    // The client-tracked batch total (this job's frozen scope) always wins
+    // over whatever the server reports — it never shrinks mid-job the way a
+    // live debt/catalog recompute would, so it can't disagree with the phase
+    // this message was just formatted for.
+    var jobTotal = volumeJobScopedTotal(defaults, phase);
+    var serverTotal = j && j.total != null
+      ? Math.max(0, parseInt(j.total, 10) || 0)
+      : 0;
+    var total = jobTotal > 0 ? jobTotal : serverTotal;
+    var pct = j && j.percent != null ? j.percent : 0;
+    if (phase === "pipeline") {
+      var pGpus = j && j.n_gpus != null ? j.n_gpus
+        : (j && j.workers != null ? j.workers : defaults.nGpus);
+      var pCpus = j && j.n_cpus != null ? j.n_cpus
+        : (defaults.nCpus || trajChimeraxCpus);
+      var decodeDone = j && j.decode_done != null ? j.decode_done : 0;
+      var renderDone = j && j.render_done != null ? j.render_done : pct;
+      if (total > 0) {
+        decodeDone = Math.min(total, decodeDone);
+        renderDone = Math.min(total, renderDone);
+      }
+      setPipelineStatus(total, decodeDone, renderDone, pGpus, pCpus);
+      return;
+    }
+    if (phase === "chimerax") {
+      var cpus = j && j.n_cpus != null ? j.n_cpus
+        : (j && j.workers != null ? j.workers : defaults.nCpus);
+      var rerender = typeof chimeraxProgressSaysRerender === "function"
+        ? chimeraxProgressSaysRerender(defaults, defaults.indices)
+        : !!(j && j.rerender) || !!defaults.rerender;
+      var cxMsg = chimeraxRenderingStatusMessage(total, cpus, pct, rerender);
+      setVolumeViewerJobStatus(cxMsg, true);
+      return;
+    }
+    var gpus = j && j.n_gpus != null ? j.n_gpus
+      : (j && j.workers != null ? j.workers : defaults.nGpus);
+    setDecodingStatus(total, gpus, pct);
+  }
+
+  function startVolumeJobProgressPoll(jobId, defaults) {
+    stopDecodeProgressPoll();
+    if (!jobId) return;
+    defaults = defaults || {};
+    var phase = (defaults.initialPhase === "chimerax" || !!defaults.rerender) ? "chimerax" : "decode";
+    // Keep an already-begun batch (e.g. onRenderStart already froze it via
+    // beginActiveVolumeJob); otherwise adopt indices or nVolumes once — never
+    // max() competing estimates.
+    if (activeVolumeJobTotal(phase) < 1) {
+      if (Array.isArray(defaults.indices) && defaults.indices.length) {
+        beginActiveVolumeJob(phase, defaults.indices);
+      } else if (defaults.nVolumes != null) {
+        beginActiveVolumeJob(phase, defaults.nVolumes);
+      }
+    }
+    var myPoll = ++decodeProgressPollGen;
+    applyVolumeJobProgressSnapshot({
+      phase: phase,
+      total: activeVolumeJobTotal(phase) || defaults.nVolumes,
+      percent: 0,
+      n_gpus: defaults.nGpus,
+      n_cpus: defaults.nCpus,
+      rerender: defaults.rerender
+    }, defaults);
+    decodeProgressPollTimer = setInterval(function() {
+      if (myPoll !== decodeProgressPollGen) return;
+      fetch(TRAJ_DECODE_PROGRESS_URL + "?job_id=" + encodeURIComponent(jobId))
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (myPoll !== decodeProgressPollGen) return;
+          if (!res.ok || !res.j || !res.j.ok) {
+            if (trajectoryVolumeJobInFlight() && jobId === activeVolumeJobId) {
+              var assembleTotal = volumeJobScopedTotal(defaults, phase);
+              var assembling = (phase === "chimerax")
+                ? chimeraxRenderingStatusMessage(
+                    assembleTotal,
+                    defaults.nCpus || trajChimeraxCpus,
+                    100,
+                    typeof chimeraxProgressSaysRerender === "function"
+                      ? chimeraxProgressSaysRerender(defaults, defaults.indices)
+                      : !!defaults.rerender
+                  )
+                : decodingStatusMessage(
+                    assembleTotal,
+                    defaults.nGpus || trajDecodeGpuCount,
+                    100
+                  );
+              assembling = assembling.replace(/complete\.?$/, "complete — assembling response…");
+              setVolumeViewerJobStatus(assembling, true);
+            }
+            return;
+          }
+          applyVolumeJobProgressSnapshot(res.j, defaults);
+        })
+        .catch(function() {});
+    }, 400);
+  }
+
+  function startDecodeProgressPoll(jobId, nVolumes, nGpus) {
+    startVolumeJobProgressPoll(jobId, {
+      nVolumes: nVolumes,
+      nGpus: nGpus,
+      initialPhase: "decode"
+    });
+  }
+
+  function newDecodeJobId() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    return "dj-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+  }
+
+  function activeNPointsElement() {
+    if (isManualTraversalMode()) {
+      return isGraphTraversalActive() ? manualGraphNPointsEl : manualSnapNPointsEl;
+    }
+    return nPointsEl;
+  }
+
+  function manualPointsMinN() {
+    return 1;
+  }
+
+  function scatterPointsMinN() {
+    return (hasAnchorIndices() && currentAnchorTraversalMode() === "direct") ? 0 : 2;
+  }
+
+  function syncNPointsSelectorRange(el, minN, defaultN) {
+    if (!el) return;
+    var current = parseInt(el.value, 10);
+    if (!Number.isFinite(current)) current = defaultN;
+    var next = Math.max(minN, Math.min(20, current));
+    if (String(el.options[0] && el.options[0].value) === String(minN)) {
+      el.value = String(next);
+      return;
+    }
+    el.innerHTML = "";
+    for (var i = minN; i <= 20; i++) {
+      var o = document.createElement("option");
+      o.value = String(i);
+      o.textContent = String(i);
+      el.appendChild(o);
+    }
+    el.value = String(next);
+  }
+
+  function currentNPoints() {
+    var el = activeNPointsElement();
+    var n = parseInt(el && el.value, 10);
+    if (!Number.isFinite(n)) {
+      n = isManualTraversalMode() ? DEFAULT_MANUAL_TRAJ_N_POINTS : DEFAULT_DIRECT_TRAJ_N_POINTS;
+    }
+    var minN = isManualTraversalMode() ? manualPointsMinN() : scatterPointsMinN();
+    n = Math.max(minN, Math.min(20, n));
+    return n;
+  }
+
+  function syncPointsSelectorRange() {
+    if (isManualTraversalMode()) {
+      syncNPointsSelectorRange(
+        manualSnapNPointsEl, manualPointsMinN(), DEFAULT_MANUAL_TRAJ_N_POINTS
+      );
+      syncNPointsSelectorRange(
+        manualGraphNPointsEl, manualPointsMinN(), DEFAULT_MANUAL_TRAJ_N_POINTS
+      );
+      return;
+    }
+    syncNPointsSelectorRange(nPointsEl, scatterPointsMinN(), DEFAULT_DIRECT_TRAJ_N_POINTS);
+  }
+
+  function currentMaxNeighbors() {
+    var n = parseInt(maxNeighborsEl && maxNeighborsEl.value, 10);
+    if (!Number.isFinite(n)) n = 10;
+    return Math.max(2, Math.min(20, n));
+  }
+
+  function currentAvgNeighbors() {
+    var n = parseInt(avgNeighborsEl && avgNeighborsEl.value, 10);
+    if (!Number.isFinite(n)) n = 5;
+    return Math.max(2, Math.min(20, n));
+  }
+
+  function requestedAnchorNPoints(mode) {
+    if (mode === "direct") {
+      if (isManualTraversalMode() && (manualVolumeSnapActive || manualParticleSnapPathActive)) {
+        return readManualSnapNPoints();
+      }
+      return 0;
+    }
+    return currentNPoints();
+  }
+
+  function hasAnchorIndices() {
+    var path = currentPath;
+    if (path && typeof path.hasAnchors === "function") return path.hasAnchors();
+    return !!(anchorIndicesActive && anchorIndicesActive.length >= 2);
+  }
+
+  function isManualTraversalMode() {
+    return trajectoryMode === "manual";
+  }
+
+  function isGraphTraversalActive() {
+    return isManualTraversalMode() && graphTraversalActive;
+  }
+
+  function isSnapToNearestActive() {
+    return !isManualTraversalMode() && !hasAnchorIndices() && trajectoryMode === "nearest";
+  }
+
+  function currentVolumeRenderBackend() {
+    var r = document.querySelector("input[name=\"traj-vol-backend\"]:checked");
+    var v = r && r.value ? String(r.value) : "vtk";
+    return (v === "chimerax" || v === "slice") ? v : "vtk";
+  }
+
+  function analyzeVolumeCatalogFullyCoversPath() {
+    return typeof catalogDecodedTrajectoryFullyCoversPath === "function"
+      && catalogDecodedTrajectoryFullyCoversPath();
+  }

@@ -212,6 +212,12 @@
     opts = opts || {};
     var active = activeVolumeJobTotal("chimerax");
     if (active > 0) return active;
+    // Combined Decode+Render: keep the button's render debt even before
+    // onRenderStart freezes activeVolumeJob (and after heap fills some slots).
+    if (typeof pendingCombinedRenderBatchTotal === "number"
+        && pendingCombinedRenderBatchTotal > 0) {
+      return pendingCombinedRenderBatchTotal;
+    }
     if (Array.isArray(opts.indices) && opts.indices.length) {
       return opts.indices.length;
     }
@@ -2715,12 +2721,32 @@
     if (!(trajectoryVolumesToRenderCount() > 0
         || (typeof trajectoryVolumesOutstandingRenderCount === "function"
           && trajectoryVolumesOutstandingRenderCount() > 0)
-        || forceCacheSlots.length > 0)) {
+        || forceCacheSlots.length > 0
+        || (typeof pendingCombinedRenderBatchTotal === "number"
+          && pendingCombinedRenderBatchTotal > 0))) {
       return false;
     }
     if (forceCacheSlots.length
         && (!Array.isArray(opts.indices) || !opts.indices.length)) {
-      opts = Object.assign({}, opts, { indices: forceCacheSlots.slice() });
+      // forceCacheSlots only covers just-decoded MRC-cache interiors. When the
+      // Decode/Render button (or frozen combined-action debt) still owes more
+      // ChimeraX frames — e.g. two pre-rendered endpoints + two new interiors —
+      // leave indices unset so Session.inactiveVolumeTickIndices() drives the
+      // full batch. Pinning exclusively to forceCacheSlots made the viewer say
+      // "Rendering 2 volumes" after "Decode 2 and render 4".
+      var outstandingRender = typeof trajectoryVolumesToRenderCount === "function"
+        ? trajectoryVolumesToRenderCount()
+        : 0;
+      var frozenRender = (typeof pendingCombinedRenderBatchTotal === "number")
+        ? pendingCombinedRenderBatchTotal
+        : 0;
+      var fullBatchN = Math.max(
+        Number.isFinite(outstandingRender) ? outstandingRender : 0,
+        Number.isFinite(frozenRender) ? frozenRender : 0
+      );
+      if (!(fullBatchN > forceCacheSlots.length)) {
+        opts = Object.assign({}, opts, { indices: forceCacheSlots.slice() });
+      }
     }
     if (currentVolumeRenderBackend() !== "chimerax") {
       selectTrajVolumeBackend("chimerax", { userInitiated: true });
@@ -2741,12 +2767,14 @@
     // render — unless forceCacheSlots still owe a fresh MRC-cache ChimeraX.
     if (typeof trajectoryVolumesToRenderCount === "function"
         && trajectoryVolumesToRenderCount() < 1
-        && !forceCacheSlots.length) {
+        && !forceCacheSlots.length
+        && !(typeof pendingCombinedRenderBatchTotal === "number"
+          && pendingCombinedRenderBatchTotal > 0)) {
       if (typeof applyVolumePayloadDisplay === "function") {
         var heapPayload = activeVolumePayload() || lastVolumePayload || volumePayload();
         if (heapPayload) applyVolumePayloadDisplay(heapPayload, "chimerax");
       }
-      pendingCombinedRenderAfterDecode = false;
+      clearPendingCombinedRenderAfterDecode();
       updateGenerateVolumesButtonLabel();
       if (typeof updateGenerateVolumesButtonLabel === "function") {
         updateGenerateVolumesButtonLabel();
@@ -2838,7 +2866,7 @@
     session.renderVolumes(renderOpts).then(function() {
       updateGenerateVolumesButtonLabel();
     }).catch(function() {
-      pendingCombinedRenderAfterDecode = false;
+      clearPendingCombinedRenderAfterDecode();
       updateGenerateVolumesButtonLabel();
       if (typeof setTrajStatus === "function") {
         setTrajStatus("ChimeraX rendering failed to start.", false);

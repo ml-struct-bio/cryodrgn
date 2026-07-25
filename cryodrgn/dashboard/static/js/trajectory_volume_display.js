@@ -31,6 +31,9 @@
     this.viewportEl = options.viewportEl;
     this.displayRowEl = options.displayRowEl;
     this.padColumnEl = options.padColumnEl;
+    this.underToolsEl = options.underToolsEl || null;
+    this.sliceSliderColumnEl = options.sliceSliderColumnEl || null;
+    this.isoResetRowEl = options.isoResetRowEl || null;
     this.canvasEl = options.canvasEl;
     this.vtkContainerEl = options.vtkContainerEl;
     this.controlsDockEl = options.controlsDockEl;
@@ -84,6 +87,12 @@
     this.incompleteVolumeOverlay = false;
     this.expectedVolumeCount = null;
     this.chimeraxIsoLevel = null;
+    /**
+     * 2D-slice density floor in map units. Null keeps the full sliceMin–sliceMax
+     * window (correct default greyscale). Do not reuse ChimeraX/VTK contour
+     * suggestions here — those crush 2D contrast on load.
+     */
+    this.sliceIsoLevel = null;
     this.isoPercentileSamples = null;
     this.isoSliderRange = null;
     this.onChimeraxIsoChange = options.onChimeraxIsoChange || null;
@@ -149,7 +158,11 @@
     }
     if (options.sliceContrastEl && this.sliceViewer) {
       options.sliceContrastEl.addEventListener("input", function () {
-        self.sliceViewer.setContrast(Number(options.sliceContrastEl.value));
+        if (typeof self.sliceViewer.setContrastLevel === "function") {
+          self.sliceViewer.setContrastLevel(Number(options.sliceContrastEl.value));
+        } else if (typeof self.sliceViewer.setContrast === "function") {
+          self.sliceViewer.setContrast(Number(options.sliceContrastEl.value));
+        }
       });
     }
     if (this.volumeSliderEl) {
@@ -648,6 +661,11 @@
   };
 
   TrajectoryVolumeDisplay.prototype._volumeDisplayPlaceholderActive = function () {
+    if (this.backend === "slice"
+        && this._sliceFixedGridN() > 0
+        && !this._hasDisplayableVolumes()) {
+      return true;
+    }
     if (this._hasDisplayableVolumes()
         && !this._explicitJobStatusBusy
         && !this.volumeGenerationBusy
@@ -676,6 +694,15 @@
       this.renderingOverlayEl.hidden = !busy;
       this.renderingOverlayEl.setAttribute("aria-hidden", busy ? "false" : "true");
       this.renderingOverlayEl.classList.toggle("cryo-plot-rendering-overlay--show", !!busy);
+      // 2D slice: keep the montage visible under a lower-right corner badge.
+      // Other backends: corner badge once something is already on screen.
+      var nonblocking = !!busy && (
+        this.backend === "slice" || this._hasDisplayableVolumes()
+      );
+      this.renderingOverlayEl.classList.toggle(
+        "cryo-plot-rendering-overlay--nonblocking",
+        nonblocking
+      );
       var labelEl = this.renderingOverlayEl.querySelector(".cryo-plot-rendering-overlay__label");
       if (labelEl) labelEl.textContent = label || "Rendering…";
     } else if (this.progressEl) {
@@ -686,6 +713,27 @@
   TrajectoryVolumeDisplay.prototype._expectedVolumeCount = function () {
     var n = Number(this.expectedVolumeCount);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  };
+
+  /**
+   * n×n side length for the 2D slice montage, pinned to the final expected
+   * volume count (or the number of already-decoded layers, whichever is larger)
+   * so cell size does not jump as volumes stream in.
+   */
+  TrajectoryVolumeDisplay.prototype._sliceFixedGridN = function () {
+    var expected = this._expectedVolumeCount();
+    var ready = 0;
+    for (var i = 0; i < this.volumes.length; i++) {
+      if (this.volumes[i] && this.volumes[i].volume_b64) ready++;
+    }
+    var count = Math.max(expected, ready);
+    if (count < 1) return 0;
+    return Math.max(1, Math.ceil(Math.sqrt(count)));
+  };
+
+  TrajectoryVolumeDisplay.prototype._syncSliceFixedGrid = function () {
+    if (!this.sliceViewer || typeof this.sliceViewer.setFixedGridN !== "function") return;
+    this.sliceViewer.setFixedGridN(this.backend === "slice" ? this._sliceFixedGridN() : 0);
   };
 
   /**
@@ -1017,6 +1065,8 @@
     if (this._isoSampleSourceB64 === vol.volume_b64
         && this.isoPercentileSamples
         && this.isoPercentileSamples.length) {
+      this._syncIsoSliderFromState();
+      this._applySliceIsoLevel();
       return;
     }
     try {
@@ -1029,6 +1079,7 @@
       }
       this._isoSampleSourceB64 = vol.volume_b64;
       this._syncIsoSliderFromState();
+      this._applySliceIsoLevel();
     } catch (err) {
       // Keep prior iso state if volume decode fails.
     }
@@ -1588,10 +1639,65 @@
         : "Load volumes before resetting the view.");
   };
 
+  /**
+   * In 2D slice mode, host pan + iso/contrast beside each other under the
+   * viewport. VTK / ChimeraX keep iso+reset in the controls dock.
+   */
+  TrajectoryVolumeDisplay.prototype._syncSliceControlHosts = function () {
+    var under = this.underToolsEl;
+    var sliderCol = this.sliceSliderColumnEl;
+    var isoResetRow = this.isoResetRowEl;
+    var controls = this.vtkSliceControlsEl;
+    if (!under || !sliderCol || !isoResetRow) return;
+    var isSlice = this.backend === "slice";
+
+    if (isSlice) {
+      if (this.padColumnEl && this.padColumnEl.parentElement !== under) {
+        under.insertBefore(this.padColumnEl, sliderCol);
+      }
+      if (this.rotationLockToolbarEl) {
+        sliderCol.appendChild(this.rotationLockToolbarEl);
+      }
+      if (this.isoControlsEl) sliderCol.appendChild(this.isoControlsEl);
+      if (this.sliceControlsRowEl) sliderCol.appendChild(this.sliceControlsRowEl);
+      if (this.btnResetView) sliderCol.appendChild(this.btnResetView);
+      sliderCol.hidden = false;
+      under.classList.add("cryo-vslice-under-tools--slice");
+    } else {
+      if (this.rotationLockToolbarEl && controls) {
+        controls.insertBefore(this.rotationLockToolbarEl, controls.firstChild);
+      }
+      if (this.isoControlsEl) {
+        if (this.btnResetView && isoResetRow.contains(this.btnResetView)) {
+          isoResetRow.insertBefore(this.isoControlsEl, this.btnResetView);
+        } else {
+          isoResetRow.insertBefore(this.isoControlsEl, isoResetRow.firstChild);
+        }
+      }
+      if (this.btnResetView) isoResetRow.appendChild(this.btnResetView);
+      if (this.sliceControlsRowEl && controls) {
+        controls.appendChild(this.sliceControlsRowEl);
+      }
+      sliderCol.hidden = true;
+      under.classList.remove("cryo-vslice-under-tools--slice");
+    }
+  };
+
+  TrajectoryVolumeDisplay.prototype._applySliceIsoLevel = function () {
+    if (this.backend !== "slice" || !this.sliceViewer) return;
+    if (typeof this.sliceViewer.setIsoLevel !== "function") return;
+    // null → full dynamic range (legacy/default 2D appearance).
+    this.sliceViewer.setIsoLevel(this.sliceIsoLevel);
+  };
+
   TrajectoryVolumeDisplay.prototype._syncChrome = function () {
     var isChimeraX = this.backend === "chimerax";
     var isVtk = this.backend === "vtk";
     var isSlice = this.backend === "slice";
+    if (this.asideShellEl) {
+      this.asideShellEl.setAttribute("data-vol-backend", this.backend);
+    }
+    this._syncSliceControlHosts();
     var hasVol = this.volumes.some(function (v) { return v && v.volume_b64; });
     var hasCxImages = this._countRenderedChimeraxImages() > 0;
     var placeholder = this._volumeDisplayPlaceholderActive();
@@ -1608,13 +1714,25 @@
     } else if (this.viewportEl) {
       this.viewportEl.hidden = !(hasVol || placeholder);
     }
-    var showControlsDock = (showInteractive || showChimeraxPanel)
+    // Slice hosts iso/contrast beside the pan pad under the viewer, so the
+    // dock is only needed for VTK / ChimeraX control blocks.
+    var showControlsDock = !isSlice
+      && (showInteractive || showChimeraxPanel)
       && (hasVol || hasCxImages);
     if (this.controlsDockEl) {
       this.controlsDockEl.hidden = !showControlsDock;
     }
+    if (this.underToolsEl) {
+      // Pan / iso / contrast stay hidden while volumes are still loading.
+      var showUnder = !isChimeraX && hasVol;
+      this.underToolsEl.hidden = !showUnder;
+      this.underToolsEl.classList.toggle("cryo-vslice-under-tools--slice", isSlice && showUnder);
+    }
     if (this.vtkSliceControlsEl) {
-      if (this.stableBackendChrome && showControlsDock) {
+      if (isSlice) {
+        this.vtkSliceControlsEl.hidden = true;
+        this.vtkSliceControlsEl.classList.remove("cryo-traj-vol-backend-panel--inactive");
+      } else if (this.stableBackendChrome && showControlsDock) {
         this._setLayoutStablePanelVisible(this.vtkSliceControlsEl, true);
       } else {
         this.vtkSliceControlsEl.hidden = isChimeraX;
@@ -1640,13 +1758,23 @@
       }
     }
     if (this.isoControlsEl) {
-      this.isoControlsEl.hidden = !(isVtk && hasVol) && !(isChimeraX && hasCxImages);
+      this.isoControlsEl.hidden = !(
+        (isVtk && hasVol) || (isChimeraX && hasCxImages) || (isSlice && hasVol)
+      );
     }
     if (this.sliceControlsRowEl) {
       this.sliceControlsRowEl.hidden = !isSlice || !hasVol;
     }
+    if (this.sliceSliderColumnEl) {
+      this.sliceSliderColumnEl.hidden = !isSlice || !hasVol;
+    }
     if (this.canvasEl) this.canvasEl.hidden = isVtk || isChimeraX;
     if (this.vtkContainerEl) this.vtkContainerEl.hidden = !isVtk;
+    if (isSlice) {
+      this._syncSliceFixedGrid();
+      this._applySliceIsoLevel();
+      this._syncIsoSliderFromState();
+    }
     if (this.chimeraxPreviewEl) {
       var showCxPreview = isChimeraX && hasCxImages
         && this._chimeraxImageReadyAt(this._nearestRenderedChimeraxIndex(this.chimeraxFocusIndex));
@@ -1659,6 +1787,14 @@
     this.syncResetViewButton();
     this._syncVolumeNavChrome();
     if (isChimeraX || isVtk) this._syncChimeraxRenderingOverlay();
+    if (this.renderingOverlayEl
+        && this.renderingOverlayEl.classList.contains("cryo-plot-rendering-overlay--show")) {
+      // Slice always uses the lower-right badge; other backends only once content exists.
+      this.renderingOverlayEl.classList.toggle(
+        "cryo-plot-rendering-overlay--nonblocking",
+        isSlice || this._hasDisplayableVolumes()
+      );
+    }
     if (isVtk && this.raycastView) this._scheduleVtkResize();
   };
 
@@ -1668,7 +1804,16 @@
         this.chimeraxPreviewEl.hidden = true;
         this.chimeraxPreviewEl.src = "";
       }
-      this.setStatus("", false);
+      // Keep an in-flight job/generation message; only clear when truly idle.
+      if (!this._explicitJobStatusBusy && !this.volumeGenerationBusy
+          && !(this.backend === "chimerax" && this.chimeraxRendering)) {
+        this.setStatus("", false);
+      }
+      // Slice: still paint the final-sized empty montage while volumes load.
+      if (this.backend === "slice") {
+        this._renderInteractive();
+        return;
+      }
       this._syncChrome();
       return;
     }
@@ -1694,30 +1839,27 @@
   };
 
   TrajectoryVolumeDisplay.prototype._renderInteractive = function () {
-    var self = this;
-    if (!this._hasDisplayableVolumes()) {
-      if (this.viewportEl) this.viewportEl.hidden = true;
-      if (this.controlsDockEl) this.controlsDockEl.hidden = true;
-      this._destroyRaycast();
-      if (this.sliceViewer) this.sliceViewer.setVolumes([], false);
-      this.setStatus("", false);
-      this._syncChrome();
-      return;
-    }
-    if (!this.volumes.length) {
-      if (this.viewportEl) this.viewportEl.hidden = true;
-      if (this.controlsDockEl) this.controlsDockEl.hidden = true;
-      this._destroyRaycast();
-      if (this.sliceViewer) this.sliceViewer.setVolumes([], false);
-      this._syncChrome();
-      return;
-    }
     if (this.backend === "vtk") {
-      if (this.sliceViewer) this.sliceViewer.setVolumes([], false);
+      if (this.sliceViewer) {
+        this._syncSliceFixedGrid();
+        this.sliceViewer.setVolumes([], false);
+      }
+      if (!this._hasDisplayableVolumes()) {
+        if (this.viewportEl) this.viewportEl.hidden = true;
+        if (this.controlsDockEl) this.controlsDockEl.hidden = true;
+        this._destroyRaycast();
+        if (!this._explicitJobStatusBusy && !this.volumeGenerationBusy) {
+          this.setStatus("", false);
+        }
+        this._syncChrome();
+        return;
+      }
       this._renderVtk();
       return;
     }
+    // 2D slice montage
     this._destroyRaycast();
+    this._syncSliceFixedGrid();
     var layers = [];
     for (var i = 0; i < this.volumes.length; i++) {
       var v = this.volumes[i];
@@ -1729,6 +1871,17 @@
         label: String(i + 1),
         manual: false
       });
+    }
+    var showEmptyGrid = !layers.length && this._sliceFixedGridN() > 0;
+    if (!layers.length && !showEmptyGrid) {
+      if (this.viewportEl) this.viewportEl.hidden = true;
+      if (this.controlsDockEl) this.controlsDockEl.hidden = true;
+      if (this.sliceViewer) this.sliceViewer.setVolumes([], false);
+      if (!this._explicitJobStatusBusy && !this.volumeGenerationBusy) {
+        this.setStatus("", false);
+      }
+      this._syncChrome();
+      return;
     }
     if (this.viewportEl) this.viewportEl.hidden = false;
     this._syncChrome();
@@ -1888,6 +2041,11 @@
     if (this.backend === "vtk" && this.raycastView && typeof this.raycastView.getIsoLevel === "function") {
       level = this.raycastView.getIsoLevel();
     }
+    if (this.backend === "slice") {
+      // Default (null) shows the bottom of the iso window so 2D greyscale is
+      // not clipped by a ChimeraX/VTK contour suggestion.
+      level = this.sliceIsoLevel != null ? this.sliceIsoLevel : range.min;
+    }
     if (level == null || !isFinite(Number(level))) return;
     var slider = global.CryoVolume3dUtils.isoDataValueToSlider(
       Number(level), range.min, range.max
@@ -1923,6 +2081,11 @@
           self.onChimeraxIsoChange(level);
         }, 400);
       }
+      return;
+    }
+    if (this.backend === "slice") {
+      this.sliceIsoLevel = level;
+      this._applySliceIsoLevel();
       return;
     }
     if (!this.raycastView) return;
@@ -2001,25 +2164,21 @@
 
   TrajectoryVolumeDisplay.prototype.setExpandedBelow = function (expanded) {
     if (!this.expandedHostEl) return;
-    if (this.backend === "chimerax" && expanded) return;
-    this.expandedBelow = !!expanded;
+    // Pop-out expansion for 2D slice / VTK 3D is disabled; ChimeraX uses the
+    // gallery column in the modal instead of relocating this display row.
+    if (expanded || !this.expandedBelow) return;
+    this.expandedBelow = false;
     this._rememberDisplayRowHome();
     this._rememberControlsHome();
-    if (this.expandedBelow) {
-      if (this.displayRowEl) this.expandedHostEl.appendChild(this.displayRowEl);
-      if (this.controlsDockEl) this.expandedHostEl.appendChild(this.controlsDockEl);
-      this.expandedHostEl.hidden = false;
-    } else {
-      if (this.displayRowEl && this._displayRowHomeParent) {
-        this._displayRowHomeParent.insertBefore(this.displayRowEl, this._displayRowHomeNext);
-      }
-      if (this.controlsDockEl && this._controlsHomeParent) {
-        this._controlsHomeParent.insertBefore(this.controlsDockEl, this._controlsHomeNext);
-      }
-      this.expandedHostEl.hidden = true;
+    if (this.displayRowEl && this._displayRowHomeParent) {
+      this._displayRowHomeParent.insertBefore(this.displayRowEl, this._displayRowHomeNext);
     }
+    if (this.controlsDockEl && this._controlsHomeParent) {
+      this._controlsHomeParent.insertBefore(this.controlsDockEl, this._controlsHomeNext);
+    }
+    this.expandedHostEl.hidden = true;
     if (this.raycastView) {
-      var resizeTarget = this.expandedBelow ? this.expandedHostEl : this._vtkResizeTarget();
+      var resizeTarget = this._vtkResizeTarget();
       if (resizeTarget && this.raycastView.observeResize) {
         this.raycastView.observeResize(resizeTarget);
       }
@@ -2027,7 +2186,7 @@
     }
     if (this.sliceViewer && this.sliceViewer.resize) this.sliceViewer.resize();
     if (typeof this.onExpandedBelowChange === "function") {
-      this.onExpandedBelowChange(this.expandedBelow);
+      this.onExpandedBelowChange(false);
     }
   };
 

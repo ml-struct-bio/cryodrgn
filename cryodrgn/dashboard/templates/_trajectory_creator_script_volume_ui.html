@@ -68,6 +68,12 @@
     } else if (pipelineRenderIndices && pipelineRenderIndices.length > progressTotal) {
       progressTotal = beginActiveVolumeJob("chimerax", pipelineRenderIndices);
     }
+    // Combined Decode+Render: never let catalog/cache progress shrink below the
+    // button debt frozen at click (e.g. render 4 with only 2 cache interiors).
+    if (typeof pendingCombinedRenderBatchTotal === "number"
+        && pendingCombinedRenderBatchTotal > progressTotal) {
+      progressTotal = beginActiveVolumeJob("chimerax", pendingCombinedRenderBatchTotal);
+    }
     function releaseCatalogChimeraxProgressJob() {
       if (pipelineRenderIndices && pipelineRenderIndices.length) return;
       if (includeCacheRerender) return;

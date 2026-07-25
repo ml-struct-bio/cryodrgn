@@ -288,33 +288,38 @@
               </div>
             </div>
           </div>
-          <div class="cryo-vslice-pad-column" id="vslice-pad-column" hidden>
-            <div class="cryo-vslice-pad" role="group" aria-label="Volume pan and zoom">
-              <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-up" aria-label="Pan up">▲</button>
-              <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-left" aria-label="Pan left">◀</button>
-              <div class="cryo-vslice-pad-center">
-                <button type="button" class="btn btn-secondary cryo-vslice-pad-btn cryo-vslice-pad-btn--zoom"
-                  id="btn-vslice-zoom-out" aria-label="Zoom out">−</button>
-                <button type="button" class="btn btn-secondary cryo-vslice-pad-btn cryo-vslice-pad-btn--zoom"
-                  id="btn-vslice-zoom-in" aria-label="Zoom in">+</button>
+          <div class="cryo-vslice-under-tools" id="vslice-under-tools">
+            <div class="cryo-vslice-pad-column" id="vslice-pad-column" hidden>
+              <div class="cryo-vslice-pad" role="group" aria-label="Volume pan and zoom">
+                <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-up" aria-label="Pan up">▲</button>
+                <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-left" aria-label="Pan left">◀</button>
+                <div class="cryo-vslice-pad-center">
+                  <button type="button" class="btn btn-secondary cryo-vslice-pad-btn cryo-vslice-pad-btn--zoom"
+                    id="btn-vslice-zoom-out" aria-label="Zoom out">−</button>
+                  <button type="button" class="btn btn-secondary cryo-vslice-pad-btn cryo-vslice-pad-btn--zoom"
+                    id="btn-vslice-zoom-in" aria-label="Zoom in">+</button>
+                </div>
+                <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-right" aria-label="Pan right">▶</button>
+                <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-down" aria-label="Pan down">▼</button>
               </div>
-              <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-right" aria-label="Pan right">▶</button>
-              <button type="button" class="btn btn-secondary cryo-vslice-pad-btn" id="btn-vslice-pan-down" aria-label="Pan down">▼</button>
             </div>
+            <div class="cryo-vslice-slice-slider-column" id="vslice-slice-slider-column" hidden></div>
           </div>
         </div>
         <div class="cryo-vslice-controls-dock" id="vslice-controls-dock" hidden>
           <div class="cryo-vslice-controls" id="vslice-controls">
             <div id="vslice-rotation-lock-toolbar" class="cryo-vslice-rotation-lock-toolbar" hidden>
-              <label id="vslice-rotation-lock-wrap" class="cryo-image-grid-invert-switch" for="vslice-rotation-lock">
+              <label id="vslice-rotation-lock-wrap" class="cryo-image-grid-invert-switch cryo-vslice-rotation-lock-wrap"
+                for="vslice-rotation-lock">
                 <input type="checkbox" id="vslice-rotation-lock" role="switch"
-                  aria-label="Link slice rotation together" />
+                  aria-label="Link slice rotations together" />
                 <span class="cryo-image-grid-invert-switch__track" aria-hidden="true">
                   <span class="cryo-image-grid-invert-switch__thumb"></span>
                 </span>
+                <span class="cryo-vslice-rotation-lock-text">Link rotations</span>
               </label>
             </div>
-            <div class="cryo-vslice-iso-reset-row">
+            <div class="cryo-vslice-iso-reset-row" id="vslice-iso-reset-row">
               <div id="vslice-iso-controls" class="cryo-vslice-iso-controls">
                 <label class="cryo-vslice-iso-label" for="vslice-iso-level">Isosurface level</label>
                 <input type="range" id="vslice-iso-level" class="cryo-vslice-iso-slider"
@@ -401,7 +406,8 @@
           <label for="traj-vol-backend-slice">2D slice</label>
         </div>
         <button type="button" class="btn btn-secondary cryo-traj-vol-popout-btn" id="btn-traj-vol-dock-below"
-          title="Open volume viewer in a popup window" hidden>Pop out viewer</button>
+          title="Open ChimeraX volume gallery in a popup window" aria-pressed="false"
+          hidden>Pop out viewer</button>
         <p id="traj-vol-backend-hint" class="cryo-traj-vol-backend-hint" aria-live="polite">
           VTK 3D and ChimeraX appear once trajectory volumes are decoded. Manual mode can also use pre-generated analyze volumes.
         </p>

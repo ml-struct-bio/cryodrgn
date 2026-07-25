@@ -122,6 +122,24 @@
   var btnGenerateVolumesEl = document.getElementById("btn-generate-volumes");
   var btnSaveVolumesEl = document.getElementById("btn-save-volumes");
   var pendingCombinedRenderAfterDecode = false;
+  /**
+   * Frozen ChimeraX batch size for the in-flight Decode+Render click. Matches the
+   * Decode/Render button's render debt at arm time so the volume-viewer loading
+   * message cannot shrink to just-decoded cache slots (e.g. "Rendering 2" when
+   * the button said render 4). Cleared with ``pendingCombinedRenderAfterDecode``.
+   */
+  var pendingCombinedRenderBatchTotal = 0;
+
+  function armPendingCombinedRenderAfterDecode(renderN) {
+    pendingCombinedRenderAfterDecode = true;
+    pendingCombinedRenderBatchTotal = Math.max(0, Math.floor(Number(renderN)) || 0);
+  }
+
+  function clearPendingCombinedRenderAfterDecode() {
+    pendingCombinedRenderAfterDecode = false;
+    pendingCombinedRenderBatchTotal = 0;
+  }
+
   /** False until scatter first paint + analyze catalog are ready for numbered Decode/Render labels. */
   var trajDecodeRenderChromeReady = false;
   var btnResetEl = document.getElementById("btn-reset");
@@ -2849,14 +2867,14 @@
               var startedRender = typeof requestManualWaypointVolumeRerender === "function"
                 && requestManualWaypointVolumeRerender({ force: true });
               if (!startedRender) {
-                pendingCombinedRenderAfterDecode = false;
+                clearPendingCombinedRenderAfterDecode();
               }
               updateGenerateVolumesButtonLabel();
             }, 0);
           }
         },
         onDecodeError: function(res) {
-          pendingCombinedRenderAfterDecode = false;
+          clearPendingCombinedRenderAfterDecode();
           if (typeof setTrajStatus === "function") {
             setTrajStatus((res && res.error) || "Volume decode failed.", false);
           }
@@ -2865,8 +2883,15 @@
         },
         onRenderStart: function(detail) {
           detail = detail || {};
-          // One number: the indices this pipeline batch will render.
+          // One number: the indices this pipeline batch will render, never
+          // smaller than the Decode/Render button debt frozen at click.
           var renderN = beginActiveVolumeJob("chimerax", detail.indices || []);
+          if (pendingCombinedRenderBatchTotal > renderN) {
+            renderN = beginActiveVolumeJob(
+              "chimerax",
+              pendingCombinedRenderBatchTotal
+            );
+          }
           if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true);
           if (currentVolumeRenderBackend() !== "chimerax") {
             selectTrajVolumeBackend("chimerax");
@@ -2882,7 +2907,7 @@
           updateGenerateVolumesButtonLabel();
         },
         onRenderComplete: function(res) {
-          pendingCombinedRenderAfterDecode = false;
+          clearPendingCombinedRenderAfterDecode();
           endActiveVolumeJob();
           if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
           var pathN = typeof liveTrajectoryDisplaySlotCount === "function"
@@ -2967,7 +2992,7 @@
           updateGenerateVolumesButtonLabel();
         },
         onRenderError: function(res) {
-          pendingCombinedRenderAfterDecode = false;
+          clearPendingCombinedRenderAfterDecode();
           endActiveVolumeJob();
           if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
           clearVolumeViewerJobStatus();

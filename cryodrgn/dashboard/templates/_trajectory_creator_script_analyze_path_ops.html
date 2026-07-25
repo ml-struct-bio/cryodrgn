@@ -46,7 +46,12 @@
     invalidateManualVolumeDisplayForSelectionChange();
     syncManualVolumeScatterHighlight();
     resetManualInterpolationArmed();
-    pendingCombinedRenderAfterDecode = false;
+    if (typeof clearPendingCombinedRenderAfterDecode === "function") {
+      clearPendingCombinedRenderAfterDecode();
+    } else {
+      pendingCombinedRenderAfterDecode = false;
+      pendingCombinedRenderBatchTotal = 0;
+    }
     syncManualAnchorsPreview();
     if (typeof syncGenerateVolumesButtonVisibility === "function") {
       syncGenerateVolumesButtonVisibility();
@@ -1995,9 +2000,17 @@
     redrawTrajectoryOverlay();
     scheduleTrajGlyphOverlaySync();
     if (directTrace) {
-      fetchTrajectoryCoords();
+      // Particle-set selection: keep local catalog/marker XY (choose-waypoints
+      // parity). fetchTrajectoryCoords densifies between anchors and places
+      // non-selection particles on the path.
       if (!opts.skipVolumeSync && !trajectoryVolumeDisplayReorderPending) {
-        syncManualVolumeViewerForWaypointSelection();
+        if (typeof manualPathEndpointsDisplacedFromDefaults === "function"
+            && manualPathEndpointsDisplacedFromDefaults()
+            && typeof syncManualVolumeSliderPreview === "function") {
+          syncManualVolumeSliderPreview({ fromSession: true });
+        } else {
+          syncManualVolumeViewerForWaypointSelection();
+        }
       }
       refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
       return;

@@ -436,6 +436,18 @@ class TestVolumeSliceViewerRoutes:
         assert "cryo-traj-vol-backend-panel--inactive" in body
         vol_display_js = read_dashboard_static_js("trajectory_volume_display.js")
         assert "cryo-traj-vol-backend-panel--reserved" in vol_display_js
+        assert "_sliceFixedGridN" in vol_display_js
+        assert "_syncSliceFixedGrid" in vol_display_js
+        assert "cryo-plot-rendering-overlay--nonblocking" in vol_display_js
+        slice_canvas_js = read_dashboard_static_js("volume_slice_canvas.js")
+        assert "setFixedGridN" in slice_canvas_js
+        assert "this.fixedGridN <= 0" in slice_canvas_js
+        traj_css = (
+            Path(__file__).resolve().parents[1]
+            / "cryodrgn/dashboard/static/css/trajectory_creator.css"
+        ).read_text(encoding="utf-8")
+        assert "lower-right corner badge" in traj_css
+        assert "bottom: calc(0.45rem * 1.35)" in traj_css
         assert 'id="vslice-chimerax-view-controls"' in body
         assert "vslice-iso-controls" in body
         assert "traj-chimerax-view-rotate-row" in body
@@ -885,7 +897,7 @@ class TestTrajectoryVolumeBrowserSmoke:
             abs(by_axis.get("y", 0) - 180) < 1.0
         ), f"unexpected y turn after rotate: {turns}"
 
-    def test_manual_mode_vtk_expand_then_chimerax_shows_aside_preview(
+    def test_manual_mode_vtk_then_chimerax_shows_aside_preview(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
         from tests.conftest import (
@@ -930,19 +942,14 @@ class TestTrajectoryVolumeBrowserSmoke:
             playwright_page,
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-        dock_btn = playwright_page.query_selector("#btn-traj-vol-dock-below")
-        if dock_btn and not dock_btn.is_hidden():
-            playwright_page.click("#btn-traj-vol-dock-below")
-            playwright_page.wait_for_function(
-                """() => {
-                  var modal = document.getElementById('traj-vol-popout-modal');
-                  var host = document.getElementById('traj-vol-expanded-host');
-                  var row = document.getElementById('vslice-display-row');
-                  return !!(modal && !modal.hidden && host && !host.hidden
-                    && row && host.contains(row));
-                }""",
-                timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-            )
+        # Pop-out is ChimeraX-only; 2D slice / VTK keep the aside viewer.
+        dock_hidden = playwright_page.evaluate(
+            """() => {
+              var btn = document.getElementById('btn-traj-vol-dock-below');
+              return !btn || btn.hidden || btn.getAttribute('hidden') !== null;
+            }"""
+        )
+        assert dock_hidden, "pop-out button should be hidden in VTK 3D mode"
         dashboard_smoke_select_volume_backend(
             playwright_page,
             "chimerax",
@@ -970,6 +977,13 @@ class TestTrajectoryVolumeBrowserSmoke:
             }""",
             timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
+        dock_visible = playwright_page.evaluate(
+            """() => {
+              var btn = document.getElementById('btn-traj-vol-dock-below');
+              return !!(btn && !btn.hidden);
+            }"""
+        )
+        assert dock_visible, "pop-out button should appear in ChimeraX mode"
 
     def test_manual_mode_chimerax_vtk_roundtrip_restores_vtk_preview(
         self, playwright_page, dashboard_volumes_eligible_live_url

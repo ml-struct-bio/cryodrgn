@@ -101,6 +101,11 @@
     this.lastY = 0;
     /** Display contrast slider level (0–100, 50 = neutral). */
     this.contrastLevel = 50;
+    /**
+     * Optional density floor in map units (shared isosurface slider). Values
+     * below this level map to black before contrast is applied.
+     */
+    this.isoLevel = null;
     this.recomputePending = false;
     /** When > 0, keep an n×n grid even if fewer volumes are shown. */
     this.fixedGridN = 0;
@@ -170,7 +175,10 @@
   };
 
   VolumeSliceCanvas.prototype.setFixedGridN = function (n) {
-    this.fixedGridN = n > 0 ? Math.max(1, Math.floor(Number(n))) : 0;
+    var next = n > 0 ? Math.max(1, Math.floor(Number(n))) : 0;
+    if (this.fixedGridN === next) return;
+    this.fixedGridN = next;
+    this.draw();
   };
 
   VolumeSliceCanvas.prototype.gridSlotCapacity = function () {
@@ -509,6 +517,25 @@
     this.draw();
   };
 
+  /** Alias used by trajectory volume display control wiring. */
+  VolumeSliceCanvas.prototype.setContrast = function (level) {
+    this.setContrastLevel(level);
+  };
+
+  VolumeSliceCanvas.prototype.setIsoLevel = function (level) {
+    if (level == null || level === "") {
+      this.isoLevel = null;
+    } else {
+      var n = Number(level);
+      this.isoLevel = isFinite(n) ? n : null;
+    }
+    this.draw();
+  };
+
+  VolumeSliceCanvas.prototype.getIsoLevel = function () {
+    return this.isoLevel;
+  };
+
   VolumeSliceCanvas.prototype.resetView = function () {
     this._resetSliceView();
     this.recomputeSlice();
@@ -561,12 +588,17 @@
   VolumeSliceCanvas.prototype._drawLayerImage = function (layer) {
     var d = layer.d;
     var img = this.ctx.createImageData(d, d);
-    var span = layer.sliceMax - layer.sliceMin;
+    var floor = layer.sliceMin;
+    if (this.isoLevel != null && isFinite(this.isoLevel)) {
+      floor = Math.max(floor, this.isoLevel);
+    }
+    var span = layer.sliceMax - floor;
     var data = img.data;
     var factor = this._contrastFactor();
     var mid = 0.5;
     for (var k = 0; k < d * d; k++) {
-      var norm = span > 0 ? (layer.sliceData[k] - layer.sliceMin) / span : 0;
+      var norm = span > 0 ? (layer.sliceData[k] - floor) / span : 0;
+      norm = clamp(norm, 0, 1);
       norm = clamp(mid + (norm - mid) * factor, 0, 1);
       var g = Math.round(norm * 255);
       var p = k * 4;
@@ -583,7 +615,8 @@
   };
 
   VolumeSliceCanvas.prototype.draw = function () {
-    if (!this.layers.length) return;
+    // Allow an empty fixed n×n montage (loading placeholders) when fixedGridN is set.
+    if (!this.layers.length && this.fixedGridN <= 0) return;
     var canvas = this.canvas;
     var ctx = this.ctx;
     var cw = canvas.clientWidth || 256;

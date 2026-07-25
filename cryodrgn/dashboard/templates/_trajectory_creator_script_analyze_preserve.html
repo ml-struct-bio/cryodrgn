@@ -843,9 +843,20 @@
     return "Decode and render volumes";
   }
 
+  function shouldShowRemoveIndicesButton() {
+    if (isManualTraversalMode()) return false;
+    if (!hasAnchorIndices()) return false;
+    // Catalog particle sets use the picker for membership (choose-waypoints
+    // parity) — do not offer a separate "Remove indices" control.
+    if (typeof particleSetDrivenDirectPath === "function"
+        && particleSetDrivenDirectPath()) {
+      return false;
+    }
+    return true;
+  }
+
   function syncManualModeChrome() {
     var manual = isManualTraversalMode();
-    var hasAnchors = hasAnchorIndices();
     var trajAnchorWrap = document.getElementById("traj-anchor-wrap");
     syncGenerateVolumesButtonVisibility();
     if (trajAnchorWrap) trajAnchorWrap.hidden = false;
@@ -856,7 +867,9 @@
         clearManualVolumeScatterHighlight();
       }
       if (btnAnchorRemove) {
-        btnAnchorRemove.classList.toggle("cryo-traj-remove--visible", hasAnchors);
+        var showRemove = shouldShowRemoveIndicesButton();
+        btnAnchorRemove.classList.toggle("cryo-traj-remove--visible", showRemove);
+        btnAnchorRemove.setAttribute("aria-hidden", showRemove ? "false" : "true");
       }
       updateGenerateVolumesButtonLabel();
     } else {

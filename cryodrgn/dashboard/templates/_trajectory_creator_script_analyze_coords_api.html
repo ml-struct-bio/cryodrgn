@@ -65,8 +65,15 @@
       }
       return;
     }
-    // Direct-trace mode with anchors: coords fetch with n_points=0 remains a
-    // pure anchor permutation after the server-side n_points==0 short-circuit.
+    // Particle-set path in direct-trace: Exact permutation then local rebuild
+    // restores catalog marker XY (coords fetch would snap to plot particles).
+    if (typeof particleSetDrivenDirectPath === "function"
+        && particleSetDrivenDirectPath()) {
+      fetchExactAnchorPermutation();
+      return;
+    }
+    // Direct-trace mode with file/typed anchors: coords fetch with n_points=0
+    // remains a pure anchor permutation after the server-side short-circuit.
     fetchTrajectoryCoords({ anchorPathOrderChange: true });
   }
 
@@ -90,6 +97,16 @@
         finishAnchorPathOrderRequest("heuristic");
         setTrajStatus("", false);
       }
+      return;
+    }
+    // Particle-set path: local non-crossing tour + rebuildFromSelection keeps
+    // catalog marker XY (choose-waypoints parity). Server coords fetch replaces
+    // those coordinates with nearest-particle plot positions.
+    if (typeof particleSetDrivenDirectPath === "function"
+        && particleSetDrivenDirectPath()) {
+      applyManualAnchorPathOrderPreview("heuristic");
+      finishAnchorPathOrderRequest("heuristic");
+      setTrajStatus("", false);
       return;
     }
     fetchTrajectoryCoords({ anchorPathOrderChange: true });
@@ -119,6 +136,13 @@
       }
       return;
     }
+    // Particle-set path in direct-trace: Original order locally (marker XY).
+    if (typeof particleSetDrivenDirectPath === "function"
+        && particleSetDrivenDirectPath()) {
+      applyManualAnchorPathOrderPreview("preserve");
+      finishAnchorPathOrderRequest("preserve");
+      return;
+    }
     fetchTrajectoryCoords({ anchorPathOrderChange: true });
   }
 
@@ -137,14 +161,20 @@
 
   function syncTraversalSettingsText() {
     var hasAnchors = hasAnchorIndices();
+    var particleSetDirect = typeof particleSetDrivenDirectPath === "function"
+      && particleSetDrivenDirectPath();
     syncTraversalModeLabels();
     syncTraversalAltButtons();
     syncPointsSelectorRange();
     if (trajPointsRowEl) {
-      trajPointsRowEl.style.display = isManualTraversalMode() ? "none" : "flex";
+      // Choose-waypoints hides Points; particle-set paths in direct-trace match.
+      trajPointsRowEl.style.display = (isManualTraversalMode() || particleSetDirect)
+        ? "none"
+        : "flex";
     }
     if (!trajPointsLabelEl) return;
-    if (!hasAnchors || isGraphTraversalActive() || isManualTraversalMode()) {
+    if (!hasAnchors || isGraphTraversalActive() || isManualTraversalMode()
+        || particleSetDirect) {
       trajPointsLabelEl.textContent = "Points";
       return;
     }
@@ -267,13 +297,14 @@
       updateGenerateVolumesButtonLabel();
       if (!(trajectoryVolumesToRenderCount() > 0
           || (typeof trajectoryVolumesOutstandingRenderCount === "function"
-            && trajectoryVolumesOutstandingRenderCount() > 0))) {
-        pendingCombinedRenderAfterDecode = false;
+            && trajectoryVolumesOutstandingRenderCount() > 0)
+          || pendingCombinedRenderBatchTotal > 0)) {
+        clearPendingCombinedRenderAfterDecode();
         updateGenerateVolumesButtonLabel();
         return;
       }
       if (!requestManualWaypointVolumeRerender({ force: true })) {
-        pendingCombinedRenderAfterDecode = false;
+        clearPendingCombinedRenderAfterDecode();
         updateGenerateVolumesButtonLabel();
         if (typeof setTrajStatus === "function") {
           setTrajStatus("Could not start ChimeraX rendering for the selected volumes.", false);
@@ -282,13 +313,14 @@
     }
 
     if (canDecode) {
-      pendingCombinedRenderAfterDecode = wantRender;
+      if (wantRender) armPendingCombinedRenderAfterDecode(renderN);
+      else clearPendingCombinedRenderAfterDecode();
       updateGenerateVolumesButtonLabel();
       var decodePromise = generateTrajectory();
       if (decodePromise && typeof decodePromise.then === "function") {
         decodePromise.then(function(res) {
           if (res && res.ok === false) {
-            pendingCombinedRenderAfterDecode = false;
+            clearPendingCombinedRenderAfterDecode();
             updateGenerateVolumesButtonLabel();
             return;
           }
@@ -300,7 +332,7 @@
             startCombinedRender();
           }, 0);
         }).catch(function() {
-          pendingCombinedRenderAfterDecode = false;
+          clearPendingCombinedRenderAfterDecode();
           updateGenerateVolumesButtonLabel();
         });
       } else {
@@ -311,10 +343,10 @@
       return;
     }
     if (wantRender) {
-      pendingCombinedRenderAfterDecode = true;
+      armPendingCombinedRenderAfterDecode(renderN);
       updateGenerateVolumesButtonLabel();
       if (!requestManualWaypointVolumeRerender({ force: true })) {
-        pendingCombinedRenderAfterDecode = false;
+        clearPendingCombinedRenderAfterDecode();
         updateGenerateVolumesButtonLabel();
         if (typeof setTrajStatus === "function") {
           setTrajStatus("Could not start ChimeraX rendering for the selected volumes.", false);
@@ -770,7 +802,9 @@
       }
       return;
     }
-    var on = anchorIndicesActive && anchorIndicesActive.length >= 2;
+    var on = typeof shouldShowRemoveIndicesButton === "function"
+      ? shouldShowRemoveIndicesButton()
+      : !!(anchorIndicesActive && anchorIndicesActive.length >= 2);
     if (on) {
       closeFileBrowser();
     }
@@ -1318,7 +1352,12 @@
     if (typeof scheduleTrajGlyphOverlaySync === "function") {
       scheduleTrajGlyphOverlaySync();
     }
-    if (isManualTraversalMode() && typeof buildManualPickerRows === "function") {
+    // Session append registers Other with skipPickerRebuild; refresh here for
+    // both choose-waypoints and particle-set-driven direct-trace.
+    if (typeof buildManualPickerRows === "function"
+        && (isManualTraversalMode()
+          || (typeof directTraceTraversalMode === "function" && directTraceTraversalMode())
+          || (manualCustomPlotRows && manualCustomPlotRows.length > 0))) {
       requestAnimationFrame(function() {
         buildManualPickerRows();
       });

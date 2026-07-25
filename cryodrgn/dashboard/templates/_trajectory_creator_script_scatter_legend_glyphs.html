@@ -1,0 +1,1945 @@
+{# Trajectory scatter: colour legend, volume-focus highlight, glyph overlay traces #}
+  function wireTrajScatterLegendInteraction() {
+    if (trajScatterLegendInteractionWired || !trajScatterColorLegendEl) return;
+    trajScatterLegendInteractionWired = true;
+
+    var drag = null;
+
+    function onDocMove(ev) {
+      if (!drag && trajScatterLegendPendingDrag) {
+        var dx0 = ev.clientX - trajScatterLegendPendingDrag.startX;
+        var dy0 = ev.clientY - trajScatterLegendPendingDrag.startY;
+        if ((dx0 * dx0 + dy0 * dy0) < 9) return;
+        drag = trajScatterLegendPendingDrag;
+        trajScatterLegendPendingDrag = null;
+        trajScatterColorLegendEl.classList.add("cryo-traj-scatter-color-legend--dragging");
+      }
+      if (!drag) return;
+      var dx = ev.clientX - drag.startX;
+      var dy = ev.clientY - drag.startY;
+      var clamped = clampTrajScatterLegendBox(drag.origLeft + dx, drag.origTop + dy);
+      trajScatterColorLegendEl.style.left = Math.round(clamped.x) + "px";
+      trajScatterColorLegendEl.style.top = Math.round(clamped.y) + "px";
+      trajScatterColorLegendEl.style.right = "auto";
+      trajScatterColorLegendEl.style.bottom = "auto";
+    }
+
+    function onDocUp() {
+      if (drag) {
+        trajScatterColorLegendEl.classList.remove("cryo-traj-scatter-color-legend--dragging");
+        saveTrajScatterLegendPositionFromDom();
+        drag = null;
+      }
+      trajScatterLegendPendingDrag = null;
+    }
+
+    document.addEventListener("mousemove", onDocMove);
+    document.addEventListener("mouseup", onDocUp);
+
+    trajScatterColorLegendEl.addEventListener("click", function(ev) {
+      var sizeBtn = ev.target.closest("[data-traj-scatter-legend-size-delta]");
+      if (!sizeBtn || !trajScatterColorLegendEl.contains(sizeBtn)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      adjustTrajScatterLegendScale(parseFloat(sizeBtn.getAttribute("data-traj-scatter-legend-size-delta")));
+    });
+
+    trajScatterColorLegendEl.addEventListener("dblclick", function(ev) {
+      var t = ev.target;
+      if (!t || !t.classList) return;
+      if (t.classList.contains("cryo-traj-scatter-color-legend__title")
+          || t.classList.contains("cryo-traj-scatter-color-legend__label")
+          || t.classList.contains("cryo-traj-scatter-color-legend__scale-val")) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        trajScatterLegendPendingDrag = null;
+        drag = null;
+        trajScatterColorLegendEl.classList.remove("cryo-traj-scatter-color-legend--dragging");
+        startTrajScatterLegendTextEdit(t);
+      }
+    });
+
+    trajScatterColorLegendEl.addEventListener("mousedown", function(ev) {
+      if (ev.button !== 0) return;
+      if (ev.target && ev.target.closest
+          && (ev.target.closest(".cryo-traj-scatter-color-legend__size-control")
+            || ev.target.closest(".cryo-traj-scatter-color-legend__editing"))) {
+        return;
+      }
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (!scatterPlotStack) return;
+      var stackRect = scatterPlotStack.getBoundingClientRect();
+      var legRect = trajScatterColorLegendEl.getBoundingClientRect();
+      trajScatterLegendPendingDrag = {
+        startX: ev.clientX,
+        startY: ev.clientY,
+        origLeft: legRect.left - stackRect.left,
+        origTop: legRect.top - stackRect.top
+      };
+    });
+  }
+
+  function trajEffectiveColorLegendMeta() {
+    var leg = gd && gd.layout && gd.layout.meta && gd.layout.meta.cdrgn_color_legend;
+    if (!leg) return null;
+    if (leg.type !== "discrete" || !leg.items || !trajDiscreteColorOverridesActive()) {
+      return leg;
+    }
+    var items = [];
+    for (var i = 0; i < leg.items.length; i++) {
+      var it = leg.items[i];
+      if (!it) continue;
+      var lbl = String(it.label);
+      var ov = trajDiscreteColorOverrides[lbl];
+      items.push({
+        label: lbl,
+        color: ov ? String(ov) : String(it.color || "#888888"),
+        count: it.count
+      });
+    }
+    return { type: "discrete", title: leg.title, items: items };
+  }
+
+  function syncTrajScatterColorLegend() {
+    if (!trajScatterColorLegendEl) return;
+    resetTrajScatterLegendUiIfColumnChanged(sc.value);
+    var hasColor = !!(sc.value && sc.value !== "none");
+    var leg = hasColor ? trajEffectiveColorLegendMeta() : null;
+    if (!leg) {
+      trajScatterColorLegendEl.hidden = true;
+      trajScatterColorLegendEl.setAttribute("aria-hidden", "true");
+      trajScatterColorLegendEl.innerHTML = "";
+      trajScatterColorLegendEl.className = "cryo-traj-scatter-color-legend";
+      return;
+    }
+    var title = trajScatterLegendTitleText(leg);
+    var html = "";
+    if (leg.type === "continuous") {
+      var pal = selectedTrajPalette();
+      var grad = trajPaletteLinearGradientCss(pal);
+      trajScatterColorLegendEl.className =
+        "cryo-traj-scatter-color-legend cryo-traj-scatter-color-legend--continuous";
+      html += '<div class="cryo-traj-scatter-color-legend__inner">';
+      html += trajScatterLegendHeaderHtml(title);
+      html += '<div class="cryo-traj-scatter-color-legend__continuous-row">';
+      html += '<div class="cryo-traj-scatter-color-legend__scale">';
+      html += '<span class="cryo-traj-scatter-color-legend__scale-val" data-legend-bound="max">'
+        + trajEscapeHtml(trajScatterLegendContinuousBoundText("max", leg)) + "</span>";
+      html += '<span class="cryo-traj-scatter-color-legend__scale-val" data-legend-bound="min">'
+        + trajEscapeHtml(trajScatterLegendContinuousBoundText("min", leg)) + "</span>";
+      html += "</div>";
+      html += '<div class="cryo-traj-scatter-color-legend__bar" style="background:'
+        + grad + '"></div>';
+      html += "</div></div>";
+      html += trajScatterLegendSizeControlHtml();
+    } else if (leg.type === "discrete" && leg.items && leg.items.length) {
+      trajScatterColorLegendEl.className =
+        "cryo-traj-scatter-color-legend cryo-traj-scatter-color-legend--discrete";
+      html += '<div class="cryo-traj-scatter-color-legend__inner">';
+      html += trajScatterLegendHeaderHtml(title);
+      html += '<div class="cryo-traj-scatter-color-legend__items">';
+      for (var di = 0; di < leg.items.length; di++) {
+        var dit = leg.items[di];
+        if (!dit || dit.label == null) continue;
+        var catKey = String(dit.label);
+        var dcol = dit.color ? String(dit.color) : "#888888";
+        var dispLbl = trajScatterLegendDiscreteLabelText(catKey, catKey);
+        html += '<div class="cryo-traj-scatter-color-legend__item">';
+        html += '<span class="cryo-traj-scatter-color-legend__swatch" style="background-color:'
+          + trajEscapeHtml(dcol) + '"></span>';
+        html += '<span class="cryo-traj-scatter-color-legend__label" data-cat-key="'
+          + trajEscapeHtml(catKey) + '">' + trajEscapeHtml(dispLbl) + "</span>";
+        html += "</div>";
+      }
+      html += "</div></div>";
+      html += trajScatterLegendSizeControlHtml();
+    } else {
+      trajScatterColorLegendEl.hidden = true;
+      trajScatterColorLegendEl.setAttribute("aria-hidden", "true");
+      trajScatterColorLegendEl.innerHTML = "";
+      return;
+    }
+    trajScatterColorLegendEl.hidden = false;
+    trajScatterColorLegendEl.setAttribute("aria-hidden", "false");
+    trajScatterColorLegendEl.innerHTML = html;
+    wireTrajScatterLegendInteraction();
+    applyTrajScatterLegendScale();
+    requestAnimationFrame(function() {
+      applyTrajScatterLegendPosition();
+    });
+  }
+
+  function drawTrajScatterLegendRoundedBox(ctx, x0, y0, boxW, boxH, scale) {
+    var s = scale || 1;
+    ctx.fillStyle = "rgba(250, 248, 244, 0.92)";
+    ctx.strokeStyle = "rgba(36, 59, 83, 0.12)";
+    ctx.lineWidth = Math.max(1, s);
+    var r = 4 * s;
+    ctx.beginPath();
+    ctx.moveTo(x0 + r, y0);
+    ctx.lineTo(x0 + boxW - r, y0);
+    ctx.quadraticCurveTo(x0 + boxW, y0, x0 + boxW, y0 + r);
+    ctx.lineTo(x0 + boxW, y0 + boxH - r);
+    ctx.quadraticCurveTo(x0 + boxW, y0 + boxH, x0 + boxW - r, y0 + boxH);
+    ctx.lineTo(x0 + r, y0 + boxH);
+    ctx.quadraticCurveTo(x0, y0 + boxH, x0, y0 + boxH - r);
+    ctx.lineTo(x0, y0 + r);
+    ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  function drawTrajScatterColorLegendOnGifCanvas(ctx, exportW, exportH) {
+    if (!trajScatterColorLegendEl || trajScatterColorLegendEl.hidden || !scatterPlotStack) return;
+    var innerEl = trajScatterColorLegendEl.querySelector(".cryo-traj-scatter-color-legend__inner");
+    if (!innerEl) return;
+    var s = trajGifStackPixelScale(exportW);
+    var legendLeft = parseFloat(trajScatterColorLegendEl.style.left) || 0;
+    var legendTop = parseFloat(trajScatterColorLegendEl.style.top) || 0;
+    var innerLeft = innerEl.offsetLeft;
+    var innerTop = innerEl.offsetTop;
+    var x0 = (legendLeft + innerLeft) * s;
+    var y0 = (legendTop + innerTop) * s;
+    var boxW = innerEl.offsetWidth * s;
+    var boxH = innerEl.offsetHeight * s;
+    if (boxW <= 0 || boxH <= 0) return;
+
+    drawTrajScatterLegendRoundedBox(ctx, x0, y0, boxW, boxH, s);
+    ctx.save();
+    ctx.fillStyle = "#243b53";
+    ctx.textAlign = "left";
+
+    function relY(node) {
+      return y0 + ((node.offsetTop - innerTop) * s);
+    }
+    function relX(node) {
+      return x0 + ((node.offsetLeft - innerLeft) * s);
+    }
+    function relH(node) {
+      return node.offsetHeight * s;
+    }
+    function relW(node) {
+      return node.offsetWidth * s;
+    }
+    function fontSizePx(node) {
+      var fs = window.getComputedStyle(node).fontSize;
+      var n = parseFloat(fs);
+      return (isFinite(n) ? n : 10) * s;
+    }
+
+    var titleEl = trajScatterColorLegendEl.querySelector(".cryo-traj-scatter-color-legend__title");
+    if (titleEl) {
+      ctx.font = "600 " + fontSizePx(titleEl) + 'px Barlow, sans-serif';
+      ctx.textBaseline = "top";
+      ctx.fillText(titleEl.textContent || "", relX(titleEl), relY(titleEl));
+    }
+
+    var barEl = trajScatterColorLegendEl.querySelector(".cryo-traj-scatter-color-legend__bar");
+    if (barEl) {
+      var barX = relX(barEl);
+      var barY = relY(barEl);
+      var barW = relW(barEl);
+      var barH = relH(barEl);
+      var pal = selectedTrajPalette();
+      var grad = ctx.createLinearGradient(barX, barY + barH, barX, barY);
+      for (var gi = 0; gi <= 10; gi++) {
+        var t = gi / 10;
+        var col = "#888888";
+        if (typeof CryoColorCovariateLegend !== "undefined"
+            && typeof CryoColorCovariateLegend.paletteScaleCSS === "function") {
+          col = CryoColorCovariateLegend.paletteScaleCSS(pal, t);
+        }
+        grad.addColorStop(t, col);
+      }
+      ctx.fillStyle = grad;
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.strokeStyle = "rgba(36, 59, 83, 0.15)";
+      ctx.lineWidth = Math.max(1, s);
+      ctx.strokeRect(barX, barY, barW, barH);
+      ctx.fillStyle = "#243b53";
+      var scaleVals = trajScatterColorLegendEl.querySelectorAll(
+        ".cryo-traj-scatter-color-legend__scale-val"
+      );
+      for (var si = 0; si < scaleVals.length; si++) {
+        var sv = scaleVals[si];
+        ctx.font = fontSizePx(sv) + 'px Barlow, sans-serif';
+        var bound = sv.getAttribute("data-legend-bound");
+        ctx.textAlign = "right";
+        ctx.textBaseline = bound === "min" ? "bottom" : "top";
+        ctx.fillText(sv.textContent || "", relX(sv) + relW(sv), relY(sv) + (bound === "min" ? relH(sv) : 0));
+      }
+    }
+
+    var itemEls = trajScatterColorLegendEl.querySelectorAll(".cryo-traj-scatter-color-legend__item");
+    for (var ii = 0; ii < itemEls.length; ii++) {
+      var itemEl = itemEls[ii];
+      var swatchEl = itemEl.querySelector(".cryo-traj-scatter-color-legend__swatch");
+      var labelEl = itemEl.querySelector(".cryo-traj-scatter-color-legend__label");
+      if (swatchEl) {
+        var sw = relW(swatchEl);
+        var sh = relH(swatchEl);
+        var sx = relX(swatchEl);
+        var sy = relY(swatchEl);
+        var bg = window.getComputedStyle(swatchEl).backgroundColor || "#888888";
+        ctx.fillStyle = bg;
+        ctx.fillRect(sx, sy, sw, sh);
+        ctx.strokeStyle = "rgba(36, 59, 83, 0.15)";
+        ctx.lineWidth = Math.max(1, s);
+        ctx.strokeRect(sx, sy, sw, sh);
+      }
+      if (labelEl) {
+        ctx.fillStyle = "#243b53";
+        ctx.font = fontSizePx(labelEl) + 'px Barlow, sans-serif';
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(
+          labelEl.textContent || "",
+          relX(labelEl),
+          relY(labelEl) + relH(labelEl) * 0.5
+        );
+      }
+    }
+    ctx.restore();
+  }
+
+  function scatterColorMode() {
+    var meta = gd && gd.layout && gd.layout.meta;
+    if (meta && meta.cdrgn_color_mode) return String(meta.cdrgn_color_mode);
+    var mc = gd && gd.data && gd.data[0] && gd.data[0].marker && gd.data[0].marker.color;
+    var mcLen = plotlyArrayLength(mc);
+    if (isPlotlyArray(mc) && mcLen > 0 && typeof plotlyAt(mc, 0) === "string" && /^#/.test(String(plotlyAt(mc, 0)))) {
+      return "discrete";
+    }
+    return "continuous";
+  }
+
+  function discreteScatterColorMap() {
+    var out = Object.create(null);
+    var leg = gd && gd.layout && gd.layout.meta && gd.layout.meta.cdrgn_color_legend;
+    if (!leg || leg.type !== "discrete" || !leg.items) return out;
+    for (var li = 0; li < leg.items.length; li++) {
+      var it = leg.items[li];
+      if (!it || it.label == null || !it.color) continue;
+      out[String(it.label)] = String(it.color);
+    }
+    return out;
+  }
+
+  function continuousHexFromCovariateValue(val) {
+    if (typeof val !== "number" || !isFinite(val)) return null;
+    var trace = gd && gd.data && gd.data[0];
+    var mk = (trace && trace.marker) || {};
+    var cmin = mk.cmin;
+    var cmax = mk.cmax;
+    var leg = gd && gd.layout && gd.layout.meta && gd.layout.meta.cdrgn_color_legend;
+    if (leg && leg.type === "continuous") {
+      if (cmin == null || !isFinite(cmin)) cmin = leg.min;
+      if (cmax == null || !isFinite(cmax)) cmax = leg.max;
+    }
+    cmin = typeof cmin === "number" && isFinite(cmin) ? cmin : 0;
+    cmax = typeof cmax === "number" && isFinite(cmax) ? cmax : 1;
+    var span = cmax - cmin;
+    var t = span > 0 ? (val - cmin) / span : 0.5;
+    t = Math.max(0, Math.min(1, t));
+    var pal = selectedTrajPalette();
+    if (typeof CryoColorCovariateLegend !== "undefined"
+        && CryoColorCovariateLegend.hasPalette
+        && CryoColorCovariateLegend.hasPalette(pal)
+        && typeof CryoColorCovariateLegend.paletteScaleCSS === "function") {
+      return CryoColorCovariateLegend.paletteScaleCSS(pal, t);
+    }
+    return null;
+  }
+
+  var PLOTLY = CryoPlotlyArrays;
+  var customdataLength = PLOTLY.customdataLength;
+  var plotlyArrayLength = PLOTLY.length;
+  var isPlotlyArray = PLOTLY.isArray;
+  var plotlyDataRowAsArray = PLOTLY.rowAsArray;
+
+  // O(1) plot-row → scatter trace index. Linear scans per waypoint are
+  // unusable on large stacks (rebuild / highlight / glyphs).
+  var scatterRowToTraceIndexMap = null;
+  var scatterRowToTraceIndexMapCd = null;
+  var scatterRowToTraceIndexMapLen = -1;
+
+  function invalidateScatterRowToTraceIndexMap() {
+    scatterRowToTraceIndexMap = null;
+    scatterRowToTraceIndexMapCd = null;
+    scatterRowToTraceIndexMapLen = -1;
+  }
+
+  function ensureScatterRowToTraceIndexMap() {
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) {
+      invalidateScatterRowToTraceIndexMap();
+      return null;
+    }
+    var cd = gd.data[0].customdata;
+    var len = customdataLength(cd);
+    if (scatterRowToTraceIndexMap
+        && scatterRowToTraceIndexMapCd === cd
+        && scatterRowToTraceIndexMapLen === len) {
+      return scatterRowToTraceIndexMap;
+    }
+    var map = new Map();
+    for (var i = 0; i < len; i++) {
+      var row = plotlyDataRowAsArray(PLOTLY.rowAt(cd, i));
+      if (row.length < 2) continue;
+      var rn = Number(row[1]);
+      if (!Number.isFinite(rn) || map.has(rn)) continue;
+      map.set(rn, i);
+    }
+    scatterRowToTraceIndexMap = map;
+    scatterRowToTraceIndexMapCd = cd;
+    scatterRowToTraceIndexMapLen = len;
+    return map;
+  }
+
+  function scatterRowToTraceIndex(plotRow) {
+    var want = Number(plotRow);
+    if (!Number.isFinite(want)) return -1;
+    var map = ensureScatterRowToTraceIndexMap();
+    if (!map) return -1;
+    var ti = map.get(want);
+    return ti == null ? -1 : ti;
+  }
+
+  function rowFromPlotlyPointTraj(pt) {
+    if (!pt) return NaN;
+    var ptRow = plotlyDataRowAsArray(pt.customdata);
+    if (ptRow.length > 1) {
+      var r0 = Number(ptRow[1]);
+      if (isFinite(r0)) return r0;
+    }
+    if (pt.pointIndex != null && gd && gd.data && gd.data[0] && gd.data[0].customdata) {
+      var row = plotlyDataRowAsArray(PLOTLY.rowAt(gd.data[0].customdata, pt.pointIndex));
+      if (row.length > 1) {
+        var r1 = Number(row[1]);
+        if (isFinite(r1)) return r1;
+      }
+    }
+    return NaN;
+  }
+
+  function wireManualScatterParticlePick() {
+    if (manualScatterPickWired || !gd) return;
+    manualScatterPickWired = true;
+
+    gd.on("plotly_hover", function(ev) {
+      if (!ev || !ev.points || !ev.points.length) return;
+      var pt = ev.points[0];
+      if (pt.curveNumber !== 0) return;
+      var row = rowFromPlotlyPointTraj(pt);
+      trajScatterHoverPlotRow = isFinite(row) ? row : null;
+    });
+    gd.on("plotly_unhover", function() {
+      trajScatterHoverPlotRow = null;
+    });
+
+    function handleWaypointScatterPick(row) {
+      if (!isFinite(row)) return;
+      if (manualCustomPlotRows.indexOf(row) >= 0) {
+        toggleManualCustomPlotRowSelection(row);
+        return;
+      }
+      var path = activeTrajectoryPath();
+      if (path && path.kind === "waypoint" && typeof path.addParticleRow === "function") {
+        path.addParticleRow(row, { activate: true });
+        return;
+      }
+      registerManualCustomPlotRows([row], true);
+    }
+
+    function handleDirectTraceDoubleClick(ev, dataPt) {
+      var path = activeTrajectoryPath();
+      if (!path || path.kind !== "direct" || typeof path.addCoordinate !== "function") return;
+      // Prefer exact click coordinates; fall back to the hovered particle XY.
+      var xy = dataPt;
+      if (!xy && isFinite(trajScatterHoverPlotRow)) {
+        xy = scatterXYForPlotRow(trajScatterHoverPlotRow);
+      }
+      if (!xy && ev && ev.event) {
+        xy = plotClickToData(ev.event, true);
+      }
+      if (!xy) return;
+      var result = path.addCoordinate(xy, {
+        nPoints: currentNPoints(),
+        nearestSegment: true
+      });
+      if (!result || !result.ok) return;
+      resetAnchorPathOrderToDefault();
+      if (typeof syncDirectTraceVolumeChromeAfterPathMutation === "function") {
+        syncDirectTraceVolumeChromeAfterPathMutation({
+          forceExpand: true,
+          ensureEndpointIds: true
+        });
+      } else {
+        redrawTrajectoryOverlay();
+        scheduleTrajGlyphOverlaySync();
+        updateGenerateVolumesButtonLabel();
+
+      }
+      fetchTrajectoryCoords();
+    }
+
+    gd.on("plotly_click", function(ev) {
+      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
+      if (!ev.points || !ev.points.length) return;
+      var pt = ev.points[0];
+      if (pt.curveNumber !== 0) return;
+      var row = rowFromPlotlyPointTraj(pt);
+      var now = Date.now();
+      var isDouble = (now - trajScatterLastClickAt) <= TRAJ_SCATTER_DOUBLE_CLICK_MS
+        && (isFinite(row) ? row === trajScatterLastClickRow : !isFinite(trajScatterLastClickRow));
+      trajScatterLastClickAt = now;
+      trajScatterLastClickRow = row;
+
+      if (isManualTraversalMode()) {
+        // Choosing-waypoints mode: double-click adds the hovered (or clicked)
+        // particle, or toggles an already-registered custom point.
+        if (!isDouble) return;
+        var addRow = isFinite(trajScatterHoverPlotRow) ? trajScatterHoverPlotRow : row;
+        handleWaypointScatterPick(addRow);
+        return;
+      }
+
+      if (directTraceTraversalMode() && isDouble) {
+        var clickXY = (pt.x != null && pt.y != null)
+          ? [Number(pt.x), Number(pt.y)]
+          : null;
+        if (!clickXY || !Number.isFinite(clickXY[0]) || !Number.isFinite(clickXY[1])) {
+          clickXY = ev.event ? plotClickToData(ev.event, true) : null;
+        }
+        handleDirectTraceDoubleClick(ev, clickXY);
+      }
+    });
+  }
+
+  var TRAJ_MANUAL_SCATTER_DIM_OP = 0.12;
+  var TRAJ_MANUAL_SCATTER_FOCUS_SIZE = 9;
+  var TRAJ_SCATTER_MARKER_SIZE = 1.8;
+  var TRAJ_SCATTER_MARKER_OPACITY = 0.5;
+  var trajScatterBaseMarkerSize = TRAJ_SCATTER_MARKER_SIZE;
+
+  function captureTrajScatterBaseMarkerSize(trace) {
+    if (!trace || !trace.marker) return;
+    var s = trace.marker.size;
+    if (isPlotlyArray(s)) {
+      var v = plotlyAt(s, 0);
+      if (Number.isFinite(Number(v))) trajScatterBaseMarkerSize = Number(v);
+      return;
+    }
+    if (Number.isFinite(Number(s))) trajScatterBaseMarkerSize = Number(s);
+  }
+
+  function traceBaseMarkerSize(trace) {
+    if (trajScatterBaseMarkerSize != null && Number.isFinite(trajScatterBaseMarkerSize)) {
+      return trajScatterBaseMarkerSize;
+    }
+    captureTrajScatterBaseMarkerSize(trace);
+    return trajScatterBaseMarkerSize || TRAJ_SCATTER_MARKER_SIZE;
+  }
+
+  var manualScatterHighlightKey = "";
+  var manualScatterHighlightActive = false;
+  var volumeDisplayFocusEngaged = false;
+  /** Last volume/slider focus used for scatter highlight; survives render resets. */
+  var lastDisplayedVolumeFocusIndex = 0;
+  var volumeScatterHighlightRestyleGen = 0;
+
+  function resetVolumeDisplayFocusEngaged() {
+    volumeDisplayFocusEngaged = false;
+  }
+
+  function resetDisplayedVolumeFocusIndex() {
+    lastDisplayedVolumeFocusIndex = 0;
+    resetVolumeDisplayFocusEngaged();
+  }
+
+  function engageVolumeDisplayFocus() {
+    volumeDisplayFocusEngaged = true;
+    // Do not restore here: slider / keyboard focus changes call engage via
+    // onFocusChange after setFocusIndex; restoring would snap back to the
+    // previously remembered tick (often 0 on initial load).
+    rememberDisplayedVolumeFocusIndex(currentVolumeFocusIndex());
+  }
+
+  function rememberDisplayedVolumeFocusIndex(idx) {
+    idx = Math.floor(Number(idx));
+    if (!Number.isFinite(idx) || idx < 0) return;
+    lastDisplayedVolumeFocusIndex = idx;
+  }
+
+  function restoreRememberedVolumeFocusIndex() {
+    // After payload / path changes, land on a *ready* tick only — never leave
+    // the slider on an inactive (undecoded) sample.
+    snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
+  }
+
+  function snapVolumeFocusToActiveTick(preferredIdx) {
+    if (!trajVolDisplay) return -1;
+    var preferred = preferredIdx != null ? preferredIdx : lastDisplayedVolumeFocusIndex;
+    preferred = Math.floor(Number(preferred));
+    if (!Number.isFinite(preferred) || preferred < 0) preferred = 0;
+    var snapped = -1;
+    if (typeof trajVolDisplay.snapFocusToReadyTick === "function") {
+      snapped = trajVolDisplay.snapFocusToReadyTick(preferred);
+    } else if (typeof trajVolDisplay.setFocusIndex === "function") {
+      // setFocusIndex without allowInterior snaps to a ready tick.
+      trajVolDisplay.setFocusIndex(preferred);
+      snapped = currentVolumeFocusIndex();
+    }
+    if (snapped >= 0) rememberDisplayedVolumeFocusIndex(snapped);
+    return snapped;
+  }
+
+  function trajectoryPathPointCountForHighlight() {
+    var pts = trajXYPointsForHighlight();
+    if (pts && pts.length >= 2) return pts.length;
+    if (editableTrajXY && editableTrajXY.length >= 2) return editableTrajXY.length;
+    if (anchorTrajXY && anchorTrajXY.length >= 2) return anchorTrajXY.length;
+    if (startXY && endXY) return 2;
+    return 0;
+  }
+
+  function clampTrajectoryHighlightIndex(idx, n) {
+    n = Math.max(0, Math.floor(Number(n)) || 0);
+    if (n < 1) return -1;
+    idx = Math.floor(Number(idx));
+    if (!Number.isFinite(idx) || idx < 0) return 0;
+    return Math.max(0, Math.min(n - 1, idx));
+  }
+
+  function effectiveVolumeFocusIndex() {
+    var n = trajectoryPathPointCountForHighlight();
+    if (n < 1 && hasVolumeFocusDisplay()) {
+      n = Math.max(n, currentVolumeCount() || 0);
+    }
+    if (n < 1) return -1;
+    var idx;
+    if (volumeDisplayFocusEngaged && hasVolumeFocusDisplay()) {
+      idx = currentVolumeFocusIndex();
+    } else if (volumeDisplayFocusEngaged) {
+      idx = lastDisplayedVolumeFocusIndex;
+    } else {
+      // Initial load / while volumes render: keep a point highlighted.
+      idx = lastDisplayedVolumeFocusIndex;
+    }
+    return clampTrajectoryHighlightIndex(idx, n);
+  }
+
+  function currentVolumeFocusIndex() {
+    if (trajVolDisplay && typeof trajVolDisplay.getFocusIndex === "function") {
+      return trajVolDisplay.getFocusIndex();
+    }
+    return lastDisplayedVolumeFocusIndex;
+  }
+
+  function plotRowForAnalyzeVolumeId(volId) {
+    volId = String(volId);
+    if (isManualTraversalMode()) {
+      var marker = manualMarkersByVolId[volId];
+      if (!marker || marker.plot_row == null || !isFinite(Number(marker.plot_row))) return null;
+      return Number(marker.plot_row);
+    }
+    if (anchorKmeansVolumeIds.length >= 2 && anchorIndicesActive) {
+      for (var i = 0; i < anchorKmeansVolumeIds.length; i++) {
+        if (String(anchorKmeansVolumeIds[i]) === volId && i < anchorIndicesActive.length) {
+          return Number(anchorIndicesActive[i]);
+        }
+      }
+    }
+    return null;
+  }
+
+  function focusedAnalyzeVolumePlotRow() {
+    var ids = activeAnalyzeVolumeIds();
+    if (!ids.length) return null;
+    var idx = effectiveVolumeFocusIndex();
+    if (idx < 0 || idx >= ids.length) return null;
+    return plotRowForAnalyzeVolumeId(ids[idx]);
+  }
+
+  function analyzeVolumeCatalogDisplayReady() {
+    return volumesDisplayReady()
+      || (trajVolDisplay && trajVolDisplay.hasChimeraxImages && trajVolDisplay.hasChimeraxImages())
+      || (trajVolDisplay && trajVolDisplay.hasInteractiveVolumes && trajVolDisplay.hasInteractiveVolumes());
+  }
+
+  function analyzeVolumeHighlightTraceIndicesAllSelected() {
+    var indices = [];
+    var seen = {};
+    var ids = activeAnalyzeVolumeIds();
+    for (var i = 0; i < ids.length; i++) {
+      var plotRow = plotRowForAnalyzeVolumeId(ids[i]);
+      if (plotRow == null) continue;
+      var ti = scatterRowToTraceIndex(plotRow);
+      if (ti < 0 || seen[ti]) continue;
+      seen[ti] = true;
+      indices.push(ti);
+    }
+    if (isManualTraversalMode()) {
+      for (var ci = 0; ci < manualActiveCustomPlotRows.length; ci++) {
+        var customTi = scatterRowToTraceIndex(manualActiveCustomPlotRows[ci]);
+        if (customTi < 0 || seen[customTi]) continue;
+        seen[customTi] = true;
+        indices.push(customTi);
+      }
+    }
+    return indices;
+  }
+
+  function focusedManualPlotRow() {
+    return focusedAnalyzeVolumePlotRow();
+  }
+
+  function focusedManualVolumeId() {
+    if (!isManualTraversalMode()) return null;
+    var ids = volumeDisplayIds().length
+      ? volumeDisplayIds()
+      : manualSelectedVolIds;
+    if (!ids.length) return null;
+    var idx = effectiveVolumeFocusIndex();
+    if (idx < 0 || idx >= ids.length) return null;
+    return String(ids[idx]);
+  }
+
+  function volumeDisplayBackendActive() {
+    if (trajVolDisplay && trajVolDisplay.backend) return trajVolDisplay.backend;
+    return currentVolumeRenderBackend();
+  }
+
+  function hasVolumeFocusDisplay() {
+    if (!trajVolDisplay) return false;
+    var backend = volumeDisplayBackendActive();
+    if (backend === "chimerax") {
+      return !!(trajVolDisplay.chimeraxImages && trajVolDisplay.chimeraxImages.length);
+    }
+    if (backend === "vtk") {
+      return !!(trajVolDisplay.volumes && trajVolDisplay.volumes.length);
+    }
+    return false;
+  }
+
+  function manualVolumeHighlightTraceIndicesAllSelected() {
+    return analyzeVolumeHighlightTraceIndicesAllSelected();
+  }
+
+  function trajectoryVolumeHighlightTraceIndices() {
+    var focus = effectiveVolumeFocusIndex();
+    if (focus < 0) return [];
+    var ti = trajectoryHighlightTraceIndexAt(focus);
+    return ti >= 0 ? [ti] : [];
+  }
+
+  function trajXYPointsForHighlight() {
+    var payload = activeVolumePayload() || lastVolumePayload || {};
+    if (payload.traj_xy && payload.traj_xy.length) return payload.traj_xy;
+    if (anchorTrajXY && anchorTrajXY.length) return anchorTrajXY;
+    if (editableTrajXY && editableTrajXY.length) return editableTrajXY;
+    return null;
+  }
+
+  function trajectoryHighlightTraceIndexAt(pointIdx) {
+    if (pointIdx < 0) return -1;
+    var payload = activeVolumePayload() || lastVolumePayload || {};
+    var rows = (payload.traj_rows && payload.traj_rows.length)
+      ? payload.traj_rows
+      : (trajPlotRows && trajPlotRows.length ? trajPlotRows : null);
+    if (rows && pointIdx < rows.length) {
+      var fromRow = scatterRowToTraceIndex(rows[pointIdx]);
+      if (fromRow >= 0) return fromRow;
+    }
+    return nearestTraceIndexForTrajXYPoint(pointIdx);
+  }
+
+  function nearestTraceIndexForTrajXYPoint(pointIdx) {
+    var pts = trajXYPointsForHighlight();
+    if (!pts || pointIdx < 0 || pointIdx >= pts.length || !gd || !gd.data || !gd.data[0]) {
+      return -1;
+    }
+    var px = Number(pts[pointIdx][0]);
+    var py = Number(pts[pointIdx][1]);
+    if (!isFinite(px) || !isFinite(py)) return -1;
+    var trace = gd.data[0];
+    var xs = trace.x;
+    var ys = trace.y;
+    var n = plotlyArrayLength(xs);
+    if (!n) return -1;
+    var best = -1;
+    var bestD = Infinity;
+    for (var i = 0; i < n; i++) {
+      var x = Number(plotlyAt(xs, i));
+      var y = Number(plotlyAt(ys, i));
+      if (!isFinite(x) || !isFinite(y)) continue;
+      var d = (x - px) * (x - px) + (y - py) * (y - py);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  function trajectoryVolumeNavActive() {
+    if (!trajVolDisplay) return false;
+    var nav = document.getElementById("traj-vol-volume-nav");
+    if (!nav || nav.hidden || nav.getAttribute("aria-disabled") === "true") return false;
+    if (isManualTraversalMode()) return true;
+    if (analyzeVolumeCatalogSelectionActive() && hasVolumeFocusDisplay()) return true;
+    return decodedTrajectoryVolumesVisible();
+  }
+
+  function volumeFocusHighlightTraceIndices() {
+    var focus = effectiveVolumeFocusIndex();
+    if (focus < 0) return null;
+    if (analyzeVolumeCatalogSelectionActive()) {
+      if (analyzeVolumeCatalogDisplayReady() && volumeDisplayFocusEngaged) {
+        // Interpolated manual path: interior slider ticks have null volume ids but
+        // still map to trajectory samples via traj_rows / traj_xy.
+        if (isManualTraversalMode() && manualInterpolationArmed()) {
+          return trajectoryVolumeHighlightTraceIndices();
+        }
+        if (isManualTraversalMode() && manualInterpolatedCatalogActive()
+            && trajPlotRows && trajPlotRows.length > manualSelectedVolIds.length) {
+          return trajectoryVolumeHighlightTraceIndices();
+        }
+        var plotRow = focusedAnalyzeVolumePlotRow();
+        if (plotRow != null) {
+          var focusedTi = scatterRowToTraceIndex(plotRow);
+          if (focusedTi >= 0) return [focusedTi];
+        }
+      }
+      // Catalog selected but volumes still rendering / focus not engaged yet:
+      // fall through to trajectory-path highlight so a point stays selected.
+    }
+    if (trajectoryPathPointCountForHighlight() >= 2) {
+      return trajectoryVolumeHighlightTraceIndices();
+    }
+    if ((hasGeneratedTrajectoryVolumes() || decodedTrajectoryVolumesVisible())
+        && hasVolumeFocusDisplay()) {
+      return trajectoryVolumeHighlightTraceIndices();
+    }
+    return null;
+  }
+
+  function manualVolumeHighlightTraceIndices() {
+    var focused = volumeFocusHighlightTraceIndices();
+    if (focused !== null) return focused;
+    if (isManualTraversalMode() && volumeDisplayFocusEngaged) {
+      return manualVolumeHighlightTraceIndicesAllSelected();
+    }
+    if (trajectoryPathPointCountForHighlight() >= 2) {
+      return trajectoryVolumeHighlightTraceIndices();
+    }
+    return [];
+  }
+
+  function trajectoryVolumeFocusIndexForGlyphs() {
+    var idx = effectiveVolumeFocusIndex();
+    if (idx < 0) return -1;
+    if (isManualTraversalMode() || anchorKmeansVolumeIds.length >= 2) {
+      if (anchorTrajXY && anchorTrajXY.length >= 2) {
+        if (anchorKmeansVolumeIds.length >= 2 && anchorIndicesActive && anchorIndicesActive.length >= 2
+            && idx < anchorIndicesActive.length
+            && anchorTrajXY.length > anchorIndicesActive.length) {
+          return Math.max(0, Math.min(anchorIndicesActive.length - 1, idx));
+        }
+        return Math.max(0, Math.min(anchorTrajXY.length - 1, idx));
+      }
+      return idx;
+    }
+    return Math.max(0, idx);
+  }
+
+  function shouldSyncManualVolumeScatterHighlight() {
+    if (isManualTraversalMode() && manualInterpolatedCatalogActive()) {
+      // Still highlight the active trajectory sample on the path overlay /
+      // nearest scatter point while interpolated volumes render.
+      return trajectoryPathPointCountForHighlight() >= 2;
+    }
+    if (trajectoryPathPointCountForHighlight() >= 2) return true;
+    if (!trajectoryVolumeNavActive()) return false;
+    var backend = volumeDisplayBackendActive();
+    if (backend !== "vtk" && backend !== "chimerax") return false;
+    if (analyzeVolumeCatalogSelectionActive()) return analyzeVolumeCatalogDisplayReady();
+    if (decodedTrajectoryVolumesVisible()) return true;
+    return false;
+  }
+
+  function volumeScatterHighlightSelectionRestyle(indices) {
+    var baseSize = traceBaseMarkerSize(gd.data[0]);
+    // Waypoints and direct-trace: keep the particle-cloud size/opacity fixed.
+    // Visit-order / volume-focus changes must only move trajectory glyphs, not
+    // dim or enlarge scatter points.
+    if (isManualTraversalMode()
+        || (typeof directTraceTraversalMode === "function" && directTraceTraversalMode())) {
+      return {
+        selectedpoints: [indices.slice()],
+        "marker.opacity": [TRAJ_SCATTER_MARKER_OPACITY],
+        "marker.size": [baseSize],
+        "unselected.marker.opacity": [TRAJ_SCATTER_MARKER_OPACITY],
+        "selected.marker.opacity": [TRAJ_SCATTER_MARKER_OPACITY],
+        "selected.marker.size": [baseSize]
+      };
+    }
+    return {
+      selectedpoints: [indices.slice()],
+      "marker.opacity": [TRAJ_SCATTER_MARKER_OPACITY],
+      "marker.size": [baseSize],
+      "unselected.marker.opacity": [TRAJ_MANUAL_SCATTER_DIM_OP],
+      "selected.marker.opacity": [1],
+      "selected.marker.size": [TRAJ_MANUAL_SCATTER_FOCUS_SIZE]
+    };
+  }
+
+  function resetVolumeScatterMarkerAesthetics() {
+    volumeScatterHighlightRestyleGen++;
+    manualScatterHighlightKey = "";
+    manualScatterHighlightActive = false;
+    if (!gd || !gd.data || !gd.data[0]) return;
+    var trace = gd.data[0];
+    var baseSize = traceBaseMarkerSize(trace);
+    var restyle = {
+      selectedpoints: [null],
+      "marker.opacity": [TRAJ_SCATTER_MARKER_OPACITY],
+      "marker.size": [baseSize],
+      "unselected.marker.opacity": [TRAJ_SCATTER_MARKER_OPACITY],
+      "selected.marker.opacity": [TRAJ_SCATTER_MARKER_OPACITY],
+      "selected.marker.size": [baseSize]
+    };
+    if (trace.type === "scattergl") {
+      var n = plotlyArrayLength(trace.x);
+      if (n) {
+        var mo = trace.marker && trace.marker.opacity;
+        var ms = trace.marker && trace.marker.size;
+        var perPointOp = mo && isPlotlyArray(mo) && plotlyArrayLength(mo) === n;
+        var perPointSize = ms && isPlotlyArray(ms) && plotlyArrayLength(ms) === n;
+        if (perPointOp) {
+          var ops = new Array(n);
+          for (var oi = 0; oi < n; oi++) ops[oi] = TRAJ_SCATTER_MARKER_OPACITY;
+          restyle["marker.opacity"] = [ops];
+        }
+        if (perPointSize) {
+          var sizes = new Array(n);
+          for (var si = 0; si < n; si++) sizes[si] = baseSize;
+          restyle["marker.size"] = [sizes];
+        }
+      }
+    }
+    try {
+      var p = Plotly.restyle(gd, restyle, [0]);
+      if (p && typeof p.then === "function") {
+        p.then(function() { scheduleTrajScatterglPaintFlush(); });
+      } else {
+        scheduleTrajScatterglPaintFlush();
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function clearManualVolumeScatterHighlight() {
+    resetVolumeScatterMarkerAesthetics();
+  }
+
+  function scheduleTrajScatterglPaintFlush() {
+    if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== "scattergl") return;
+    var dm = gd.layout && gd.layout.dragmode != null ? gd.layout.dragmode : "pan";
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        try {
+          Plotly.relayout(gd, { dragmode: false });
+          Plotly.relayout(gd, { dragmode: dm });
+        } catch (e) {
+          try {
+            Plotly.relayout(gd, { dragmode: "pan" });
+            Plotly.relayout(gd, { dragmode: dm });
+          } catch (e2) { /* ignore */ }
+        }
+      });
+    });
+  }
+
+  function applyVolumeFocusScatterHighlight(restyle) {
+    if (!gd || !gd.data || !gd.data[0]) return;
+    var gen = ++volumeScatterHighlightRestyleGen;
+    try {
+      var p = Plotly.restyle(gd, restyle, [0]);
+      if (p && typeof p.then === "function") {
+        p.then(function() {
+          if (gen !== volumeScatterHighlightRestyleGen) return null;
+          scheduleTrajScatterglPaintFlush();
+        }).catch(function() { /* ignore */ });
+      } else {
+        scheduleTrajScatterglPaintFlush();
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function syncManualVolumeScatterHighlight() {
+    if (!shouldSyncManualVolumeScatterHighlight()) {
+      if (manualScatterHighlightActive) {
+        resetVolumeScatterMarkerAesthetics();
+      }
+      return;
+    }
+    var indices = manualVolumeHighlightTraceIndices();
+    var focus = effectiveVolumeFocusIndex();
+    if (focus >= 0) rememberDisplayedVolumeFocusIndex(focus);
+    var key = String(focus) + ":" + indices.slice().sort(function(a, b) { return a - b; }).join(",");
+    if (key === manualScatterHighlightKey) return;
+    if (!indices.length) {
+      if (manualScatterHighlightActive) {
+        resetVolumeScatterMarkerAesthetics();
+      }
+      return;
+    }
+    manualScatterHighlightKey = key;
+    manualScatterHighlightActive = true;
+    applyVolumeFocusScatterHighlight(volumeScatterHighlightSelectionRestyle(indices));
+  }
+
+  function plotlyAt(arr, idx) {
+    return PLOTLY.valueAt(arr, idx);
+  }
+
+  function scatterMarkerFillHexAtTraceIndex(ti) {
+    if (ti < 0 || !gd || !gd.data || !gd.data[0]) return null;
+    var full = gd._fullData && gd._fullData[0];
+    if (full && full.marker && isPlotlyArray(full.marker.color)) {
+      var fromFullVal = plotlyAt(full.marker.color, ti);
+      if (fromFullVal != null) {
+        var fromFull = plotlyColorToCss(fromFullVal);
+        if (fromFull) return fromFull;
+      }
+    }
+    var trace = gd.data[0];
+    var mc = trace.marker && trace.marker.color;
+    if (isPlotlyArray(mc)) {
+      var directVal = plotlyAt(mc, ti);
+      if (directVal != null) {
+        var direct = plotlyColorToCss(directVal);
+        if (direct) return direct;
+        if (typeof directVal === "string" && /^#/.test(directVal)) return directVal;
+      }
+    }
+    var cd = trace.customdata;
+    var row = plotlyDataRowAsArray(PLOTLY.rowAt(cd, ti));
+    var covKey = row.length >= 3 && row[2] != null ? String(row[2]) : "";
+    if (scatterColorMode() === "discrete") {
+      if (covKey && discreteScatterColorMap()[covKey]) return discreteScatterColorMap()[covKey];
+      var dVal = plotlyAt(mc, ti);
+      if (isPlotlyArray(mc) && dVal != null && typeof dVal === "string") return dVal;
+    } else if (covKey !== "") {
+      var cVal = parseFloat(covKey);
+      if (isFinite(cVal)) {
+        var fromVal = continuousHexFromCovariateValue(cVal);
+        if (fromVal) return fromVal;
+      }
+      var cMc = plotlyAt(mc, ti);
+      if (isPlotlyArray(mc) && cMc != null && typeof cMc === "number" && isFinite(cMc)) {
+        return continuousHexFromCovariateValue(cMc);
+      }
+    }
+    return null;
+  }
+
+  function scatterColorForPlotRow(plotRow, fallbackHex) {
+    var ti = scatterRowToTraceIndex(plotRow);
+    if (ti < 0) return fallbackHex;
+    return scatterMarkerFillHexAtTraceIndex(ti) || fallbackHex;
+  }
+
+  function defaultTrajectoryPointColor(i, n, opts) {
+    opts = opts || {};
+    return "#243b53";
+  }
+
+  function buildTrajectoryMarkerArrays(pointCount, trajIndexMap, opts) {
+    opts = opts || {};
+    var n = (typeof pointCount === "number" && pointCount >= 2) ? pointCount : trajectoryLabelCount();
+    var symbols = [];
+    var colors = [];
+    var sizes = [];
+    var useCovColors = trajCovariateColoringActive();
+    for (var ii = 0; ii < n; ii++) {
+      var ti = (trajIndexMap && trajIndexMap[ii] != null) ? trajIndexMap[ii] : ii;
+      symbols.push(TRAJ_MARKER_WAYPOINT);
+      sizes.push(TRAJ_MARKER_SIZE_WAYPOINT);
+      var fallback = defaultTrajectoryPointColor(ii, n, opts);
+      if (useCovColors) {
+        colors.push(trajCovariateColorAtIndex(ti, fallback));
+      } else {
+        colors.push(fallback);
+      }
+    }
+    return { symbol: symbols, color: colors, size: sizes };
+  }
+
+  function clearTrajGlyphOverlay() {
+    if (trajGlyphOverlayEl) trajGlyphOverlayEl.innerHTML = "";
+  }
+
+  function glyphMarkerClass(symbol) {
+    if (symbol === "square") return "cryo-traj-glyph-marker--square";
+    if (symbol === "diamond") return "cryo-traj-glyph-marker--diamond";
+    return "cryo-traj-glyph-marker--circle";
+  }
+
+  function activeTrajectoryPathXY() {
+    var path = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+    if (path && typeof path.getPathXY === "function") {
+      var pathXY = path.getPathXY();
+      if (pathXY && pathXY.length >= 2) return pathXY;
+    }
+    return null;
+  }
+
+  function trajectoryOverlayPathPoints() {
+    if (isManualTraversalMode() && typeof manualInterpolatedPathExpansionArmed === "function"
+        && manualInterpolatedPathExpansionArmed()) {
+      var manualPts = activeManualTrajectoryXY();
+      if (manualPts && manualPts.length >= 2) return manualPts;
+    }
+    if (isManualTraversalMode()
+        && (manualInterpolatedSnapArmed() || manualTrajectoryHasInteriorSamples())) {
+      var manualPts = activeManualTrajectoryXY();
+      if (manualPts && manualPts.length >= 2) return manualPts;
+    }
+    var pathXY = activeTrajectoryPathXY();
+    if (pathXY && pathXY.length >= 2) {
+      if (anchorIndicesActive || isManualTraversalMode() || !hasAnchorIndices()) return pathXY;
+    }
+    if (anchorTrajXY && anchorTrajXY.length >= 2) {
+      if (anchorIndicesActive || isManualTraversalMode()) return anchorTrajXY;
+    }
+    if (!hasAnchorIndices() && editableTrajXY && editableTrajXY.length >= 2) {
+      return editableTrajXY;
+    }
+    if (!hasAnchorIndices() && startXY && endXY) return [startXY, endXY];
+    return null;
+  }
+
+  function anchorOnlyTrajXY(fullTraj, nAnchors) {
+    if (!fullTraj || fullTraj.length < 2 || nAnchors < 2) return fullTraj;
+    if (fullTraj.length <= nAnchors) return fullTraj;
+    var perSeg = Math.max(1, Math.round((fullTraj.length - 1) / (nAnchors - 1)));
+    var out = [];
+    for (var i = 0; i < nAnchors; i++) {
+      var idx = Math.min(i * perSeg, fullTraj.length - 1);
+      out.push(fullTraj[idx]);
+    }
+    out[out.length - 1] = fullTraj[fullTraj.length - 1];
+    return out;
+  }
+
+  function glyphColorForTrajectoryIndex(pathIdx, fallback) {
+    if (trajMarkerColors && pathIdx >= 0 && pathIdx < trajMarkerColors.length
+        && trajMarkerColors[pathIdx]) {
+      return trajMarkerColors[pathIdx];
+    }
+    var ti = trajectoryHighlightTraceIndexAt(pathIdx);
+    if (ti >= 0) return scatterMarkerFillHexAtTraceIndex(ti) || fallback;
+    return fallback;
+  }
+
+  function trajAxisRangesFromRelayoutEvent(evt) {
+    if (!evt || typeof evt !== "object") return null;
+    var x0 = evt["xaxis.range[0]"];
+    var x1 = evt["xaxis.range[1]"];
+    var y0 = evt["yaxis.range[0]"];
+    var y1 = evt["yaxis.range[1]"];
+    if (x0 == null || x1 == null || y0 == null || y1 == null) return null;
+    x0 = Number(x0);
+    x1 = Number(x1);
+    y0 = Number(y0);
+    y1 = Number(y1);
+    if (!Number.isFinite(x0) || !Number.isFinite(x1)
+        || !Number.isFinite(y0) || !Number.isFinite(y1)) return null;
+    if (x1 === x0 || y1 === y0) return null;
+    return { xr: [x0, x1], yr: [y0, y1] };
+  }
+
+  function scheduleTrajGlyphOverlaySync() {
+    if (trajGlyphOverlayRaf) cancelAnimationFrame(trajGlyphOverlayRaf);
+    trajGlyphOverlayRaf = requestAnimationFrame(function() {
+      trajGlyphOverlayRaf = 0;
+      syncTrajGlyphOverlay();
+    });
+  }
+
+  function appendTrajectoryGlyphPath(container) {
+    // Always draw the dotted path in the HTML overlay so it sits above the
+    // Scattergl particle cloud. Plotly SVG line traces render under WebGL.
+    var pathPts = trajectoryOverlayPathPoints();
+    if (!pathPts || pathPts.length < 2 || !container) return;
+    var svgPts = [];
+    for (var pi = 0; pi < pathPts.length; pi++) {
+      var pt = dataToPlotStackXY(pathPts[pi][0], pathPts[pi][1]);
+      if (pt) svgPts.push(pt[0].toFixed(2) + "," + pt[1].toFixed(2));
+    }
+    // Create the SVG element even when there are too few valid points for
+    // a meaningful polyline segment; the dashboard smoke test asserts
+    // presence of the element in the DOM.
+    if (svgPts.length < 1) return;
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "cryo-traj-glyph-path-layer");
+    svg.setAttribute("aria-hidden", "true");
+    var poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    poly.setAttribute("class", "cryo-traj-glyph-path");
+    poly.setAttribute("points", svgPts.join(" "));
+    svg.appendChild(poly);
+    container.appendChild(svg);
+  }
+
+  function collectTrajGlyphSpecs() {
+    var specs = [];
+    if (typeof ensureManualInterpolatedScatterPath === "function") {
+      ensureManualInterpolatedScatterPath();
+    } else if (isManualTraversalMode() && (manualParticleSnapPathActive || manualDirectSnapActive())) {
+      syncManualScatterTrajectoryFromSnap();
+    }
+    var manualPathXY = isManualTraversalMode() ? activeManualTrajectoryXY() : null;
+    var pathXY = activeTrajectoryPathXY();
+    var basePathXY = (manualPathXY && manualPathXY.length >= 2)
+      ? manualPathXY
+      : ((pathXY && pathXY.length >= 2) ? pathXY : anchorTrajXY);
+    if (basePathXY && basePathXY.length >= 2 && (anchorIndicesActive || isManualTraversalMode())) {
+      var glyphXY = basePathXY;
+      var interpolated = isManualTraversalMode() && (
+        (typeof manualInterpolatedSnapArmed === "function" && manualInterpolatedSnapArmed())
+        || manualTrajectoryHasInteriorSamples()
+        || manualVolumeSnapActive
+        || manualParticleSnapPathActive
+      );
+      if (!interpolated && glyphXY.length > 40 && anchorIndicesActive && anchorIndicesActive.length >= 2) {
+        glyphXY = anchorOnlyTrajXY(basePathXY, anchorIndicesActive.length);
+      } else if (!interpolated && glyphXY.length > 40) {
+        return specs;
+      }
+      var focusIdx = trajectoryVolumeFocusIndexForGlyphs();
+      if (interpolated) {
+        var interpLabels = buildTrajectoryPointLabels(glyphXY.length);
+        var mkInterp = buildTrajectoryMarkerArrays(glyphXY.length, null, { endpointStyle: true });
+        for (var ii = 0; ii < glyphXY.length; ii++) {
+          specs.push({
+            x: glyphXY[ii][0],
+            y: glyphXY[ii][1],
+            labelHtml: interpLabels[ii],
+            color: glyphColorForTrajectoryIndex(ii, mkInterp.color[ii]),
+            symbol: mkInterp.symbol[ii],
+            size: mkInterp.size[ii],
+            labelSize: TRAJ_TEXTFONT_SIZE,
+            focused: focusIdx >= 0 && ii === focusIdx
+          });
+        }
+        return specs;
+      }
+      var trajMap = anchorGlyphTrajIndexMap(
+        glyphXY.length,
+        basePathXY.length,
+        anchorIndicesActive ? anchorIndicesActive.length : glyphXY.length
+      );
+      var anchorMk = buildTrajectoryMarkerArrays(glyphXY.length, trajMap, { focusIdx: focusIdx });
+      var anchorLabels = buildTrajectoryPointLabels(glyphXY.length);
+      for (var ai = 0; ai < glyphXY.length; ai++) {
+        specs.push({
+          x: glyphXY[ai][0],
+          y: glyphXY[ai][1],
+          labelHtml: anchorLabels[ai] || String(ai + 1),
+          color: anchorMk.color[ai],
+          symbol: anchorMk.symbol[ai],
+          size: TRAJ_ANCHOR_MARKER_SIZE,
+          labelSize: TRAJ_ANCHOR_TEXTFONT_SIZE,
+          labelClass: "cryo-traj-glyph-label--inset",
+          focused: ai === focusIdx
+        });
+      }
+      return specs;
+    }
+    if (!hasAnchorIndices() && editableTrajXY && editableTrajXY.length >= 2) {
+      var n = editableTrajXY.length;
+      var labels = buildTrajectoryPointLabels(n);
+      var glyphFocusIdx = trajectoryVolumeFocusIndexForGlyphs();
+      var mkOpts = glyphFocusIdx >= 0 ? { focusIdx: glyphFocusIdx } : { endpointStyle: true };
+      var mk = buildTrajectoryMarkerArrays(n, null, mkOpts);
+      for (var ei = 0; ei < n; ei++) {
+        specs.push({
+          x: editableTrajXY[ei][0],
+          y: editableTrajXY[ei][1],
+          labelHtml: labels[ei],
+          color: mk.color[ei],
+          symbol: mk.symbol[ei],
+          size: mk.size[ei],
+          labelSize: TRAJ_TEXTFONT_SIZE,
+          focused: glyphFocusIdx >= 0 && ei === glyphFocusIdx
+        });
+      }
+      return specs;
+    }
+    if (startXY && endXY) {
+      var nLbl = trajectoryLabelCount();
+      var lastTrajIdx = (trajPlotRows && trajPlotRows.length >= 2)
+        ? trajPlotRows.length - 1
+        : 1;
+      var mkEp = buildTrajectoryMarkerArrays(2, [0, lastTrajIdx], { endpointStyle: true });
+      var epLabels = buildTrajectoryPointLabels(2);
+      if (nLbl > 2) epLabels = ["1", String(nLbl)];
+      specs.push({
+        x: startXY[0],
+        y: startXY[1],
+        labelHtml: epLabels[0],
+        color: mkEp.color[0],
+        symbol: mkEp.symbol[0],
+        size: mkEp.size[0],
+        labelSize: TRAJ_TEXTFONT_SIZE
+      });
+      specs.push({
+        x: endXY[0],
+        y: endXY[1],
+        labelHtml: epLabels[1],
+        color: mkEp.color[1],
+        symbol: mkEp.symbol[1],
+        size: mkEp.size[1],
+        labelSize: TRAJ_TEXTFONT_SIZE
+      });
+    }
+    return specs;
+  }
+
+  function syncTrajGlyphOverlay() {
+    clearTrajGlyphOverlay();
+    if (!trajGlyphOverlayEl || !gd || !gd._fullLayout) return;
+    appendTrajectoryGlyphPath(trajGlyphOverlayEl);
+    var specs = collectTrajGlyphSpecs();
+    var stableGlyphFocus = typeof manualInterpolatedCatalogActive === "function"
+      && manualInterpolatedCatalogActive();
+    for (var i = 0; i < specs.length; i++) {
+      var spec = specs[i];
+      var pt = dataToPlotStackXY(spec.x, spec.y);
+      if (!pt) continue;
+      var sizePx = Number(spec.size) || TRAJ_MARKER_SIZE_WAYPOINT;
+      if (spec.focused && !stableGlyphFocus) {
+        sizePx = Math.max(sizePx + 4, Math.round(sizePx * 1.2));
+      }
+      var baseColor = spec.color || "#243b53";
+      var displayColor = spec.focused
+        ? trajGlyphFocusHighlightColor(baseColor)
+        : baseColor;
+      var markerEl = document.createElement("div");
+      markerEl.className = "cryo-traj-glyph-marker " + glyphMarkerClass(spec.symbol);
+      if (spec.focused && !stableGlyphFocus) markerEl.classList.add("cryo-traj-glyph-marker--focus");
+      markerEl.style.left = pt[0] + "px";
+      markerEl.style.top = pt[1] + "px";
+      markerEl.style.width = sizePx + "px";
+      markerEl.style.height = sizePx + "px";
+      markerEl.style.backgroundColor = displayColor;
+      var numEl = document.createElement("span");
+      numEl.className = "cryo-traj-glyph-marker__num";
+      var rawLabel = String(spec.labelHtml || "").replace(/<[^>]*>/g, "").trim();
+      numEl.textContent = rawLabel || String(i + 1);
+      var fontPx = Math.max(9, Math.min(14, Math.round(sizePx * 0.55)));
+      if (rawLabel.length >= 2) fontPx = Math.max(8, fontPx - 1);
+      numEl.style.fontSize = fontPx + "px";
+      markerEl.appendChild(numEl);
+      trajGlyphOverlayEl.appendChild(markerEl);
+    }
+  }
+
+  function wireTrajectoryGlyphOverlayHook() {
+    if (trajOutlineHookWired || !gd) return;
+    trajOutlineHookWired = true;
+    gd.on("plotly_afterplot", scheduleTrajGlyphOverlaySync);
+    gd.on("plotly_relayout", function() {
+      trajGlyphPanAxisRanges = null;
+      scheduleTrajGlyphOverlaySync();
+    });
+    gd.on("plotly_relayouting", function(evt) {
+      var ranges = trajAxisRangesFromRelayoutEvent(evt);
+      if (ranges) {
+        trajGlyphPanAxisRanges = ranges;
+        scheduleTrajGlyphOverlaySync();
+      }
+    });
+  }
+
+  function finishTrajectoryOverlayDraw(plotPromise) {
+    wireTrajectoryGlyphOverlayHook();
+    function run() {
+      scheduleTrajGlyphOverlaySync();
+    }
+    if (plotPromise && typeof plotPromise.then === "function") {
+      plotPromise.then(run);
+    } else {
+      run();
+    }
+  }
+
+  function removeOverlayTraces() {
+    clearTrajGlyphOverlay();
+    if (!gd || !gd.data) return;
+    var toRemove = [];
+    for (var i = gd.data.length - 1; i >= 1; i--) toRemove.push(i);
+    if (toRemove.length) {
+      try { Plotly.deleteTraces(gd, toRemove); } catch (e) {}
+    }
+  }
+
+  function drawTrajLineTrace(xs, ys, lineWidth) {
+    return {
+      x: xs,
+      y: ys,
+      mode: "lines",
+      type: "scatter",
+      // Keep a Plotly line trace for geometry/state, but hide it: Scattergl
+      // paints above SVG traces, so the visible dotted path is the HTML overlay.
+      line: { color: "#c4703a", width: lineWidth || 2.2, dash: "dot" },
+      opacity: 0,
+      hoverinfo: "skip",
+      showlegend: false
+    };
+  }
+
+  function drawAnchorPolyline(traj_xy) {
+    if (!gd || !gd.data || !traj_xy || traj_xy.length < 2) return;
+    removeOverlayTraces();
+    var xs = traj_xy.map(function(p) { return p[0]; });
+    var ys = traj_xy.map(function(p) { return p[1]; });
+    finishTrajectoryOverlayDraw(Plotly.addTraces(gd, [drawTrajLineTrace(xs, ys, 2.5)]));
+  }
+
+  function drawLineAndEndpoints(sx, sy, ex, ey) {
+    removeOverlayTraces();
+    finishTrajectoryOverlayDraw(Plotly.addTraces(gd, [
+      drawTrajLineTrace([sx, ex], [sy, ey], 2.5)
+    ]));
+  }
+
+  function drawEditableTrajectory(points) {
+    if (!gd || !gd.data || !points || points.length < 2) return;
+    removeOverlayTraces();
+    var xs = points.map(function(p) { return p[0]; });
+    var ys = points.map(function(p) { return p[1]; });
+    finishTrajectoryOverlayDraw(Plotly.addTraces(gd, [drawTrajLineTrace(xs, ys, 2.2)]));
+  }
+
+  function applyTrajectoryCoordsPayload(j, opts) {
+    if (!j || !j.ok) return;
+    opts = opts || {};
+    if (opts.colorsOnly) {
+      if (j.traj_marker_colors && j.traj_marker_colors.length) {
+        trajMarkerColors = j.traj_marker_colors.map(function(c) {
+          return (c == null || c === "") ? null : String(c);
+        });
+      } else if (!sc.value || sc.value === "none") {
+        trajMarkerColors = null;
+      }
+      if (typeof scheduleTrajGlyphOverlaySync === "function") scheduleTrajGlyphOverlaySync();
+      else if (typeof syncTrajGlyphOverlay === "function") syncTrajGlyphOverlay();
+      return;
+    }
+    // Volume/coords APIs return particle-plot XY for anchors; keep the client
+    // direct-line densify (PC/catalog marker polyline) unless explicitly replaced.
+    var preserveDirectXY = typeof shouldPreserveManualDirectLinePathXY === "function"
+      ? shouldPreserveManualDirectLinePathXY(opts)
+      : false;
+    // nearest↔direct mode switch: keep the live polyline so rendered volumes
+    // are not reseated onto rounded / rebuilt coordinates.
+    if (opts.preserveDirectTracePathXY) preserveDirectXY = true;
+    var preservedDirectXY = preserveDirectXY && typeof snapshotManualDirectLinePathXY === "function"
+      ? snapshotManualDirectLinePathXY()
+      : null;
+    if (opts.preserveDirectTracePathXY && editableTrajXY && editableTrajXY.length >= 2) {
+      preservedDirectXY = editableTrajXY.map(function(p) {
+        return [Number(p[0]), Number(p[1])];
+      });
+    }
+    var preserveWaypointGeometry = !!opts.preserveWaypointGeometry
+      || !!opts.preserveDirectTracePathXY;
+    onAnchorPathOrderResponse(j);
+    if (!preserveWaypointGeometry) removeTrajectorySampleMarkersOnly();
+    var path = activeTrajectoryPath();
+    if (path && typeof path.applyCoordsPayload === "function") {
+      path.applyCoordsPayload(j, { preserveWaypointGeometry: preserveWaypointGeometry });
+    } else {
+      if (j.traj_marker_colors && j.traj_marker_colors.length) {
+        trajMarkerColors = j.traj_marker_colors.map(function(c) {
+          return (c == null || c === "") ? null : String(c);
+        });
+      } else if (!sc.value || sc.value === "none") {
+        trajMarkerColors = null;
+      }
+      if (!preserveWaypointGeometry && j.traj_rows && j.traj_rows.length) {
+        trajPlotRows = j.traj_rows.map(function(r) { return Number(r); });
+      } else if (!preserveWaypointGeometry && trajectoryMode !== "nearest") {
+        trajPlotRows = null;
+      }
+      if (hasAnchorIndices() && j.traj_xy) {
+        if (preserveWaypointGeometry) {
+          // Decode-only responses may carry server-sampled traj_xy. Do not let
+          // them promote waypoint paths into densified sample paths.
+        } else {
+          anchorTrajXY = j.traj_xy.map(function(p) { return [Number(p[0]), Number(p[1])]; });
+        }
+        if (!preserveWaypointGeometry && j.traj_rows && j.traj_rows.length >= 2) {
+          trajPlotRows = j.traj_rows.map(function(r) { return Number(r); });
+          if (j.traj_xy.length === trajPlotRows.length) {
+            manualInterpTrajectoryCount = anchorTrajXY.length;
+          } else {
+            var rebuilt = trajXYFromPlotRows(trajPlotRows);
+            if (rebuilt && rebuilt.length === trajPlotRows.length) {
+              anchorTrajXY = rebuilt;
+              manualInterpTrajectoryCount = anchorTrajXY.length;
+            }
+          }
+        } else if (!preserveWaypointGeometry) {
+          manualInterpTrajectoryCount = anchorTrajXY.length;
+        }
+        if (!preserveWaypointGeometry) {
+          lastLatentTrajectoryPointCount = manualInterpTrajectoryCount;
+          editableTrajXY = null;
+          if (!isManualTraversalMode()) redrawTrajectoryOverlay();
+        }
+      } else if (!preserveWaypointGeometry && j.traj_xy && j.traj_xy.length) {
+        editableTrajXY = j.traj_xy.map(function(p) { return [Number(p[0]), Number(p[1])]; });
+        lastLatentTrajectoryPointCount = editableTrajXY.length;
+        redrawTrajectoryOverlay();
+      }
+    }
+    if (preservedDirectXY && typeof restoreManualDirectLinePathXY === "function"
+        && !opts.preserveDirectTracePathXY) {
+      restoreManualDirectLinePathXY(preservedDirectXY);
+    }
+    if (opts.preserveDirectTracePathXY && preservedDirectXY && preservedDirectXY.length >= 2) {
+      editableTrajXY = preservedDirectXY.map(function(p) {
+        return [Number(p[0]), Number(p[1])];
+      });
+      startXY = editableTrajXY[0].slice();
+      endXY = editableTrajXY[editableTrajXY.length - 1].slice();
+      lastLatentTrajectoryPointCount = editableTrajXY.length;
+      var keepPath = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+      if (keepPath && typeof keepPath.setEditableXY === "function") {
+        keepPath.setEditableXY(editableTrajXY);
+        if (typeof keepPath.setEndpoints === "function") {
+          keepPath.setEndpoints(startXY, endXY);
+        }
+      }
+    }
+    if (!preserveWaypointGeometry && anchorTrajXY && anchorTrajXY.length) {
+      lastLatentTrajectoryPointCount = Math.max(
+        lastLatentTrajectoryPointCount || 0,
+        anchorTrajXY.length
+      );
+    } else if (!preserveWaypointGeometry && editableTrajXY && editableTrajXY.length) {
+      lastLatentTrajectoryPointCount = Math.max(
+        lastLatentTrajectoryPointCount || 0,
+        editableTrajXY.length
+      );
+    }
+    if (!preserveWaypointGeometry && j.z_traj && j.z_traj.length >= 2) {
+      lastLatentTrajectoryPointCount = Math.max(
+        lastLatentTrajectoryPointCount || 0,
+        j.z_traj.length
+      );
+    }
+    if (j.z_path_txt && trajZPre && trajZPanel) {
+      lastZPathTxt = j.z_path_txt;
+      var hasZTraj = j.z_traj && j.z_traj.length;
+      trajZPre.textContent = hasZTraj
+        ? formatZPathDisplayFromZTraj(j.z_traj)
+        : j.z_path_txt;
+      if (trajZNums) trajZNums.textContent = hasZTraj
+        ? formatZPathGutterFromPayload(j)
+        : "";
+      trajZPanel.hidden = false;
+    } else {
+      clearTrajectoryZPanel();
+    }
+    if (!isManualTraversalMode() || preservedDirectXY) {
+      redrawTrajectoryOverlay();
+      scheduleTrajGlyphOverlaySync();
+    }
+    // Nearest mode re-snaps to particles: invalidate only samples that moved.
+    // Already-on-particle points (and their ticks) keep decoded status.
+    // Direct mode keeps freely moved points marked as detached (traj-vol labels).
+    if (trajectoryMode === "nearest"
+        && !preserveWaypointGeometry
+        && ((j.traj_rows && j.traj_rows.length >= 2)
+            || (editableTrajXY && editableTrajXY.length >= 2))) {
+      if (typeof reconcileDecodedVolumesToLivePathXY === "function") {
+        reconcileDecodedVolumesToLivePathXY(
+          editableTrajXY
+            || (j.traj_xy
+              ? j.traj_xy.map(function(p) { return [Number(p[0]), Number(p[1])]; })
+              : null)
+        );
+      } else if (typeof clearTrajectoryTickDetachedFromParticle === "function") {
+        clearTrajectoryTickDetachedFromParticle();
+      }
+    } else if (opts.restampDirectEndpointCatalog
+        && isScatterDirectOrNearestMode() && !hasAnchorIndices()) {
+      if (typeof syncDirectTraceEndpointCatalogFromPath === "function") {
+        syncDirectTraceEndpointCatalogFromPath({
+          handoffOrReset: true,
+          syncSession: opts.syncSessionOnEndpointRestamp !== false
+        });
+      }
+      if (typeof syncManualVolumeSliderTickLabels === "function") {
+        syncManualVolumeSliderTickLabels();
+      }
+    } else if (typeof syncManualVolumeSliderTickLabels === "function") {
+      syncManualVolumeSliderTickLabels();
+    }
+    // Keep a trajectory sample highlighted whenever the path exists, including
+    // while volumes are still rendering (defaults to first / last-displayed).
+    if (trajectoryPathPointCountForHighlight() >= 2
+        || ((hasGeneratedTrajectoryVolumes() || decodedTrajectoryVolumesVisible())
+            && hasVolumeFocusDisplay())) {
+      syncManualVolumeScatterHighlight();
+      syncTrajGlyphOverlay();
+    }
+    if (trajectoryVolumeDisplayReorderPending && !isManualTraversalMode()) {
+      if (j.anchor_indices && j.anchor_indices.length >= 2) {
+        anchorIndicesActive = j.anchor_indices.map(function(r) { return Number(r); });
+      }
+      if (j.kmeans_volume_ids && j.kmeans_volume_ids.length >= 2) {
+        anchorKmeansVolumeIds = j.kmeans_volume_ids.slice();
+      }
+      finishAnchorPathOrderVolumePreserveIfPending();
+    }
+  }
+
+  function scheduleCoordsAfterDrag() {
+    if (anchorIndicesActive && anchorIndicesActive.length >= 2) return;
+    if (coordsDragTimer) {
+      clearTimeout(coordsDragTimer);
+      coordsDragTimer = 0;
+    }
+    coordsDragTimer = setTimeout(function() {
+      coordsDragTimer = 0;
+      fetchTrajectoryCoords({
+        preserveGeneratedVolumes: hasNonStaleDecodedTrajectoryVolumes()
+      });
+    }, 300);
+  }
+
+  function fetchTrajectoryCoords(opts) {
+    opts = opts || {};
+    var colorsOnly = !!opts.colorsOnly;
+    if (!colorsOnly
+        && !shouldPreserveTrajectoryVolumesOnCoordsFetch(opts)
+        && !shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()
+        && !trajectoryVolumeFetchInFlight
+        && !hasNonStaleDecodedTrajectoryVolumes()) {
+      setGeneratedVolumesState("", 0);
+    }
+    if (hasAnchorIndices()) {
+      var myIdA = ++coordsRequestId;
+      beginTrajectoryCoordsFetch();
+      var anchorBody;
+      if (colorsOnly) {
+        // Colour refresh must keep the existing path length / particle slots.
+        var colorPathXY = (typeof activeTrajectoryPathXY === "function"
+          ? activeTrajectoryPathXY()
+          : null)
+          || ((anchorTrajXY && anchorTrajXY.length >= 2) ? anchorTrajXY : null);
+        var colorRows = (trajPlotRows && trajPlotRows.length >= 2)
+          ? trajPlotRows
+          : anchorIndicesActive;
+        anchorBody = Object.assign({
+          anchor_indices: colorRows && colorRows.length >= 2
+            ? colorRows
+            : anchorIndicesActive,
+          mode: "direct",
+          n_points: 0,
+          x: sx.value,
+          y: sy.value
+        }, trajColorPayloadFields(), { anchor_path_order: "preserve" });
+        if (colorPathXY && colorPathXY.length >= 2) {
+          anchorBody.traj_xy = colorPathXY;
+        }
+      } else {
+        anchorBody = Object.assign({
+          anchor_indices: anchorIndicesActive,
+          mode: currentAnchorTraversalMode(),
+          n_points: requestedAnchorNPoints(currentAnchorTraversalMode()),
+          max_neighbors: currentMaxNeighbors(),
+          avg_neighbors: currentAvgNeighbors(),
+          x: sx.value,
+          y: sy.value
+        }, trajColorPayloadFields(), trajAnchorPathOrderFields(), manualTrajectorySnapFields());
+      }
+      fetch("{{ url_for('api_trajectory_coords') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(anchorBody)
+      })
+        .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+        .then(function(res) {
+          if (myIdA !== coordsRequestId) return;
+          if (!res.ok) {
+            trajectoryVolumeDisplayReorderPending = false;
+            anchorPathOrderVolumeSnapshot = null;
+            cancelAnchorPathOrderRequest();
+            setTrajStatus(res.j.error || "Could not compute latent z.", false);
+            return;
+          }
+          applyTrajectoryCoordsPayload(res.j, {
+            colorsOnly: colorsOnly,
+            anchorPathOrderChange: !!opts.anchorPathOrderChange,
+            preserveDirectLineXY: opts.preserveDirectLineXY,
+            replacePathXY: !!opts.replacePathXY
+          });
+          if (!colorsOnly) {
+            redrawTrajectoryOverlay();
+            onTrajectoryPathCoordsReady();
+          }
+        })
+        .catch(function(err) {
+          if (myIdA !== coordsRequestId) return;
+          console.error(err);
+          trajectoryVolumeDisplayReorderPending = false;
+          anchorPathOrderVolumeSnapshot = null;
+          cancelAnchorPathOrderRequest();
+          setTrajStatus("Latent z request failed.", false);
+        })
+        .finally(function() {
+          endTrajectoryCoordsFetch();
+        });
+      return;
+    }
+    if (!startXY || !endXY) return;
+    var myId = ++coordsRequestId;
+    beginTrajectoryCoordsFetch();
+    // Arm from the polyline we are about to send so reconcile compares against
+    // the true pre-snap samples (mode switch / drag), not a stale snapshot.
+    if (!colorsOnly && trajectoryMode === "nearest"
+        && typeof armNearestSnapVolumeReconcile === "function") {
+      armNearestSnapVolumeReconcile(editableTrajXY);
+    }
+    var payload = Object.assign({
+      mode: colorsOnly ? "direct" : trajectoryMode,
+      start: startXY,
+      end: endXY,
+      x: sx.value,
+      y: sy.value,
+      n_points: Math.max(
+        2,
+        currentNPoints(),
+        (editableTrajXY && editableTrajXY.length) || 0
+      )
+    }, trajColorPayloadFields());
+    if (editableTrajXY && editableTrajXY.length >= 2) {
+      payload.traj_xy = editableTrajXY;
+    }
+    fetch("{{ url_for('api_trajectory_coords') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (myId !== coordsRequestId) return;
+        if (!res.ok) {
+          trajectoryVolumeDisplayReorderPending = false;
+          anchorPathOrderVolumeSnapshot = null;
+          cancelAnchorPathOrderRequest();
+          setTrajStatus(res.j.error || "Could not compute latent z.", false);
+          return;
+        }
+        applyTrajectoryCoordsPayload(res.j, {
+          colorsOnly: colorsOnly,
+          preserveDirectLineXY: opts.preserveDirectLineXY,
+          preserveDirectTracePathXY: !!opts.preserveDirectTracePathXY,
+          replacePathXY: !!opts.replacePathXY
+        });
+        if (!colorsOnly) onTrajectoryPathCoordsReady();
+      })
+      .catch(function(err) {
+        if (myId !== coordsRequestId) return;
+        console.error(err);
+        trajectoryVolumeDisplayReorderPending = false;
+        anchorPathOrderVolumeSnapshot = null;
+        cancelAnchorPathOrderRequest();
+        setTrajStatus("Latent z request failed.", false);
+      })
+      .finally(function() {
+        endTrajectoryCoordsFetch();
+      });
+  }
+
+  /* ── Volume column ── */
+  function reversePermutation(n) {
+    n = Math.floor(Number(n));
+    if (!Number.isFinite(n) || n < 2) return [];
+    var perm = new Array(n);
+    for (var i = 0; i < n; i++) perm[i] = n - 1 - i;
+    return perm;
+  }
+
+  function applyArrayPermutation(arr, perm) {
+    if (!arr || !perm || !perm.length) return arr ? arr.slice() : [];
+    var n = perm.length;
+    var out = new Array(n);
+    for (var i = 0; i < n; i++) {
+      var src = perm[i];
+      out[i] = (src >= 0 && src < arr.length) ? arr[src] : null;
+    }
+    return out;
+  }
+
+  function ensureSparseSlotArray(arr, n) {
+    n = Math.max(0, Math.floor(Number(n)));
+    var out = Array.isArray(arr) ? arr.slice() : [];
+    while (out.length < n) out.push(null);
+    if (out.length > n) out.length = n;
+    return out;
+  }
+
+  function volumeColumnEntriesFromDom() {
+    if (!trajVolColumn) return [];
+    var entries = [];
+    var cells = trajVolColumn.children;
+    for (var i = 0; i < cells.length; i++) {
+      entries.push({
+        mainImg: cells[i].querySelector(".cryo-traj-vol-main"),
+        meta: cells[i].querySelector(".cryo-traj-vol-meta"),
+        inset: cells[i].querySelector(".cryo-traj-vol-inset"),
+        insetImg: cells[i].querySelector(".cryo-traj-vol-inset img")
+      });
+    }
+    return entries;
+  }
+
+  function reorderVolumeColumnInPlace(perm) {
+    if (!trajVolColumn || !perm || perm.length < 2) return false;
+    var cells = trajVolColumn.children;
+    if (cells.length !== perm.length) return false;
+    var cellArr = [];
+    for (var c = 0; c < cells.length; c++) cellArr.push(cells[c]);
+    var fragment = document.createDocumentFragment();
+    for (var i = 0; i < perm.length; i++) {
+      fragment.appendChild(cellArr[perm[i]]);
+    }
+    trajVolColumn.appendChild(fragment);
+    for (var j = 0; j < trajVolColumn.children.length; j++) {
+      var cell = trajVolColumn.children[j];
+      var lbl = cell.querySelector(".cryo-traj-vol-label");
+      if (lbl) lbl.textContent = String(j + 1);
+      var mainImg = cell.querySelector(".cryo-traj-vol-main");
+      if (mainImg) mainImg.alt = "Volume " + (j + 1);
+    }
+    return true;
+  }
+
+  function refreshVolumeColumnFromPayload(payload, slotCount) {
+    if (!trajVolColumn || !payload) return;
+    slotCount = Math.max(0, Math.floor(Number(slotCount)));
+    if (!slotCount) return;
+    var imgs = ensureSparseSlotArray(payload.images || [], slotCount);
+    var cells = trajVolColumn.children;
+    if (cells.length === slotCount) {
+      var entries = volumeColumnEntriesFromDom();
+      for (var i = 0; i < entries.length && i < imgs.length; i++) {
+        entries[i].mainImg.src = imgs[i] ? chimeraxImageSrc(imgs[i]) : "";
+      }
+      if (typeof applyVolumeCellAnnotations === "function") {
+        applyVolumeCellAnnotations(entries, payload);
+      }
+      return;
+    }
+    if (typeof renderChimeraxVolumeGallery === "function") {
+      renderChimeraxVolumeGallery(payload);
+    }
+  }
+
+  function applyVolumeDisplayReorder(perm, payload, prevFocus) {
+    if (!perm || perm.length < 2) return;
+    payload = payload || lastVolumePayload || volumePayload();
+    if (!payload) return;
+    var n = perm.length;
+    var nextFocus = mapFocusIndexForPermutation(perm, prevFocus);
+    if (trajVolDisplay && typeof trajVolDisplay.reorderVolumeSlots === "function") {
+      var navN = typeof trajVolDisplay._volumeNavCount === "function"
+        ? trajVolDisplay._volumeNavCount()
+        : 0;
+      if (!navN && trajVolDisplay.volumes && trajVolDisplay.volumes.length) {
+        navN = trajVolDisplay.volumes.length;
+      }
+      if (!navN && trajVolDisplay.chimeraxImages && trajVolDisplay.chimeraxImages.length) {
+        navN = trajVolDisplay.chimeraxImages.length;
+      }
+      if (navN === n) {
+        trajVolDisplay.reorderVolumeSlots(perm, { focusIndex: nextFocus });
+        if (bottomVolExpanded) {
+          refreshVolumeColumnFromPayload(payload, n);
+        }
+        syncManualVolumeScatterHighlight();
+        syncTrajGlyphOverlay();
+        return;
+      }
+    }
+    var vols = ensureSparseSlotArray(payload.volumes || [], n);
+    var imgs = ensureSparseSlotArray(payload.images || [], n);
+    if (trajVolDisplay) {
+      trajVolDisplay.loadPayload({
+        volumes: vols,
+        images: imgs,
+        expectedVolumeCount: n
+      }, { deferRender: true });
+      if (nextFocus != null) {
+        trajVolDisplay.setFocusIndex(nextFocus);
+      } else if (trajVolDisplay.backend === "chimerax") {
+        trajVolDisplay._renderChimerax();
+      } else if (trajVolDisplay.backend === "vtk") {
+        trajVolDisplay._renderVtk();
+      } else {
+        trajVolDisplay._renderCurrent();
+      }
+    }
+    if (bottomVolExpanded) {
+      refreshVolumeColumnFromPayload(payload, n);
+    }
+    syncManualVolumeScatterHighlight();
+    syncTrajGlyphOverlay();
+  }
+
+  function buildVolumeColumn(n) {
+    revokeChimeraxGalleryObjectUrls();
+    trajVolColumn.innerHTML = "";
+    var entries = [];
+    for (var i = 0; i < n; i++) {
+      var cell = document.createElement("div");
+      cell.className = "cryo-traj-vol-cell";
+      var mainImg = document.createElement("img");
+      mainImg.className = "cryo-traj-vol-main";
+      mainImg.src = "";
+      mainImg.alt = "Volume " + (i + 1);
+      var lbl = document.createElement("span");
+      lbl.className = "cryo-traj-vol-label";
+      lbl.textContent = String(i + 1);
+      var meta = document.createElement("div");
+      meta.className = "cryo-traj-vol-meta";
+      meta.setAttribute("aria-hidden", "true");
+      var inset = document.createElement("div");
+      inset.className = "cryo-traj-vol-inset";
+      var insetImg = document.createElement("img");
+      insetImg.alt = "";
+      inset.appendChild(insetImg);
+      cell.appendChild(mainImg);
+      cell.appendChild(lbl);
+      cell.appendChild(meta);
+      cell.appendChild(inset);
+      trajVolColumn.appendChild(cell);
+      entries.push({
+        mainImg: mainImg,
+        meta: meta,
+        inset: inset,
+        insetImg: insetImg
+      });
+    }
+    return entries;
+  }
+
+  /* ── Generate trajectory volumes ── */

@@ -487,10 +487,391 @@
   }
 
   function clearTrajectoryZPanel() {
+    zPanelRequestId++;
     lastZPathTxt = null;
     if (trajZNums) trajZNums.textContent = "";
     if (trajZPre) trajZPre.textContent = "";
     if (trajZPanel) trajZPanel.hidden = true;
+  }
+
+  function zTrajToPathTxt(zTraj) {
+    if (!zTraj || !zTraj.length) return "";
+    return zTraj.map(function(row) {
+      var vals = Array.isArray(row) ? row : [row];
+      return vals.map(function(v) {
+        var x = Number(v);
+        return Number.isFinite(x) ? String(x) : String(v);
+      }).join(" ");
+    }).join("\n") + "\n";
+  }
+
+  function catalogVolumeKindForId(volId) {
+    if (volId == null || volId === "") return null;
+    var key = String(volId);
+    var marker = manualMarkersByVolId && manualMarkersByVolId[key];
+    if (marker && marker.kind) return String(marker.kind);
+    var entry = manualCatalogById && manualCatalogById[key];
+    if (entry && entry.kind) return String(entry.kind);
+    if (/^pc[0-9]+:/i.test(key)) return "pc";
+    if (/^kmeans:/i.test(key)) return "kmeans";
+    return null;
+  }
+
+  function lerpLatentZRows(zA, zB, t) {
+    var a = zA || [];
+    var b = zB || [];
+    var n = Math.max(a.length, b.length);
+    var out = new Array(n);
+    for (var i = 0; i < n; i++) {
+      var va = Number(a[i]);
+      var vb = Number(b[i]);
+      if (!Number.isFinite(va) && !Number.isFinite(vb)) out[i] = 0;
+      else if (!Number.isFinite(va)) out[i] = vb;
+      else if (!Number.isFinite(vb)) out[i] = va;
+      else out[i] = va + t * (vb - va);
+    }
+    return out;
+  }
+
+  /**
+   * Direct-line densify of PC catalog anchors: expand marker.z along the same
+   * spacing as buildLinearInterpolatedPathXY. Labels stay on anchor slots only.
+   */
+  function buildDensifiedPcCatalogZPayload() {
+    if (!manualSelectedVolIds || manualSelectedVolIds.length < 2) return null;
+    var anchorIds = manualSelectedVolIds.map(String);
+    var anchorZ = [];
+    var anchorLabels = [];
+    for (var ai = 0; ai < anchorIds.length; ai++) {
+      if (catalogVolumeKindForId(anchorIds[ai]) !== "pc") return null;
+      var marker = manualMarkersByVolId && manualMarkersByVolId[anchorIds[ai]];
+      if (!marker || !marker.z || !marker.z.length) return null;
+      anchorZ.push(marker.z.map(Number));
+      anchorLabels.push(marker.label ? String(marker.label) : anchorIds[ai]);
+    }
+    var nInterp = typeof readManualSnapNPoints === "function"
+      ? readManualSnapNPoints()
+      : 0;
+    if (!Number.isFinite(nInterp) || nInterp < 1) return null;
+    var densifyLive = !!(
+      (typeof manualInterpolationArmed === "function" && manualInterpolationArmed())
+      || (typeof manualVolumeSnapActive !== "undefined" && manualVolumeSnapActive)
+      || (typeof manualParticleSnapPathActive !== "undefined" && manualParticleSnapPathActive)
+      || (typeof graphTraversalActive !== "undefined" && graphTraversalActive)
+      || (manualActiveCustomPlotRows && manualActiveCustomPlotRows.length)
+    );
+    var expected = typeof expectedManualSnapPointCount === "function"
+      ? expectedManualSnapPointCount(anchorIds.length, nInterp)
+      : 0;
+    var pathXY = null;
+    if (anchorTrajXY && anchorTrajXY.length >= 2) pathXY = anchorTrajXY;
+    else if (typeof activeTrajectoryPathXY === "function") pathXY = activeTrajectoryPathXY();
+    var pathLen = pathXY && pathXY.length ? pathXY.length
+      : (typeof lastLatentTrajectoryPointCount === "number"
+        ? lastLatentTrajectoryPointCount
+        : 0);
+    // After Other deselection the path collapses to catalog anchors — never keep
+    // a densified latent-z listing once interiors / interp are gone.
+    if (!densifyLive || !expected || pathLen < expected || pathLen <= anchorIds.length) {
+      return null;
+    }
+    if (pathLen !== expected) {
+      // Prefer the live densified polyline length when it matches expansion.
+      if (!(pathXY && pathXY.length > anchorIds.length)) return null;
+      expected = pathXY.length;
+      // Infer step from anchors/path: path = (nA-1)*step + 1
+      var stepGuess = (expected - 1) / (anchorIds.length - 1);
+      if (!Number.isFinite(stepGuess) || stepGuess < 1 || Math.abs(stepGuess - Math.round(stepGuess)) > 1e-6) {
+        return null;
+      }
+      nInterp = Math.round(stepGuess) - 1;
+    }
+    var step = nInterp + 1;
+    var zTraj = [];
+    var trajXy = [];
+    var labels = [];
+    var particleIndices = [];
+    for (var i = 0; i < expected; i++) {
+      var a0 = Math.floor(i / step);
+      if (a0 >= anchorIds.length - 1) a0 = anchorIds.length - 2;
+      var local = i - a0 * step;
+      var t = step <= 0 ? 0 : local / step;
+      if (local === 0) {
+        zTraj.push(anchorZ[a0].slice());
+        labels.push(anchorLabels[a0]);
+      } else if (a0 === anchorIds.length - 2 && local === step) {
+        zTraj.push(anchorZ[a0 + 1].slice());
+        labels.push(anchorLabels[a0 + 1]);
+      } else {
+        zTraj.push(lerpLatentZRows(anchorZ[a0], anchorZ[a0 + 1], t));
+        labels.push(null);
+      }
+      particleIndices.push(null);
+      if (pathXY && pathXY[i] && pathXY[i].length >= 2) {
+        trajXy.push([Number(pathXY[i][0]), Number(pathXY[i][1])]);
+      } else {
+        trajXy.push(null);
+      }
+    }
+    // Final sample is always the last anchor (matches buildLinearInterpolatedPathXY).
+    zTraj[expected - 1] = anchorZ[anchorIds.length - 1].slice();
+    labels[expected - 1] = anchorLabels[anchorIds.length - 1];
+    return {
+      ok: true,
+      z_traj: zTraj,
+      z_path_txt: zTrajToPathTxt(zTraj),
+      traj_xy: trajXy,
+      traj_point_labels: labels,
+      traj_particle_indices: particleIndices,
+      xcol: sx && sx.value ? sx.value : undefined,
+      ycol: sy && sy.value ? sy.value : undefined
+    };
+  }
+
+  /**
+   * PC analyze volumes are latent-space samples (z_values.txt), not dataset
+   * particles. Nearest plot_row is only a scatter fallback — never treat it as
+   * a particle identity in the latent-z panel.
+   */
+  function scrubNonParticleIdentityInZPayload(j, volIds) {
+    if (!j) return j;
+    volIds = volIds || (
+      typeof manualVolumeDisplayIdsForCurrentPath === "function"
+        ? manualVolumeDisplayIdsForCurrentPath()
+        : null
+    );
+    if (!volIds || !volIds.length) return j;
+    var zLenIn = j.z_traj ? j.z_traj.length : 0;
+    // Compact PC catalog ids must not be packed onto a longer densified path.
+    if (zLenIn > volIds.length) {
+      var densified = buildDensifiedPcCatalogZPayload();
+      if (densified) return densified;
+      return j;
+    }
+    var zTraj = (j.z_traj && j.z_traj.length)
+      ? j.z_traj.map(function(row) {
+        return Array.isArray(row) ? row.slice() : row;
+      })
+      : [];
+    var pidx = Array.isArray(j.traj_particle_indices)
+      ? j.traj_particle_indices.slice()
+      : [];
+    var labels = Array.isArray(j.traj_point_labels)
+      ? j.traj_point_labels.slice()
+      : [];
+    var changed = false;
+    var n = Math.max(volIds.length, zTraj.length, pidx.length);
+    for (var i = 0; i < n; i++) {
+      var id = i < volIds.length ? volIds[i] : null;
+      if (id == null || id === "") continue;
+      var kind = catalogVolumeKindForId(id);
+      if (kind !== "pc") continue;
+      changed = true;
+      while (pidx.length <= i) pidx.push(null);
+      pidx[i] = null;
+      var marker = manualMarkersByVolId && manualMarkersByVolId[String(id)];
+      while (labels.length <= i) labels.push(null);
+      if (marker && marker.label) labels[i] = String(marker.label);
+      else if (!labels[i]) labels[i] = String(id);
+      if (marker && marker.z && marker.z.length) {
+        while (zTraj.length <= i) zTraj.push(null);
+        zTraj[i] = marker.z.map(Number);
+      }
+    }
+    if (!changed) return j;
+    var out = Object.assign({}, j, {
+      z_traj: zTraj,
+      traj_particle_indices: pidx,
+      traj_point_labels: labels
+    });
+    if (zTraj.length && zTraj.every(function(row) {
+      return row && row.length;
+    })) {
+      out.z_path_txt = zTrajToPathTxt(zTraj);
+    }
+    return out;
+  }
+
+  /**
+   * Build latent-z payload from analyze-catalog markers when every path slot has
+   * true latent z (PC volumes). Returns null when any slot needs particle z.
+   */
+  function buildCatalogTrajectoryZPayload() {
+    var densified = buildDensifiedPcCatalogZPayload();
+    if (densified) return densified;
+    if (typeof manualVolumeDisplayIdsForCurrentPath !== "function"
+        && !(manualSelectedVolIds && manualSelectedVolIds.length >= 2)) {
+      return null;
+    }
+    var ids = typeof manualVolumeDisplayIdsForCurrentPath === "function"
+      ? manualVolumeDisplayIdsForCurrentPath()
+      : manualSelectedVolIds.map(String);
+    if (!ids || ids.length < 2) return null;
+    var pathXY = null;
+    if (typeof activeTrajectoryPathXY === "function") pathXY = activeTrajectoryPathXY();
+    if ((!pathXY || pathXY.length !== ids.length) && anchorTrajXY
+        && anchorTrajXY.length === ids.length) {
+      pathXY = anchorTrajXY;
+    }
+    var pathLen = pathXY && pathXY.length ? pathXY.length
+      : (anchorTrajXY && anchorTrajXY.length ? anchorTrajXY.length
+        : (typeof lastLatentTrajectoryPointCount === "number" ? lastLatentTrajectoryPointCount : 0));
+    var zTraj = [];
+    var trajXy = [];
+    var labels = [];
+    var particleIndices = [];
+    var anyPc = false;
+    var rejectReason = null;
+    if (pathLen && pathLen > ids.length) {
+      rejectReason = "densified-path-without-builder";
+    }
+    for (var i = 0; !rejectReason && i < ids.length; i++) {
+      var id = ids[i];
+      if (id == null || id === "") { rejectReason = "empty-id@" + i; break; }
+      var key = String(id);
+      var marker = manualMarkersByVolId && manualMarkersByVolId[key];
+      var kind = catalogVolumeKindForId(key);
+      if (kind === "pc") {
+        anyPc = true;
+        if (!marker || !marker.z || !marker.z.length) { rejectReason = "pc-missing-z@" + key; break; }
+        zTraj.push(marker.z.map(Number));
+        particleIndices.push(null);
+        labels.push(marker.label ? String(marker.label) : key);
+      } else {
+        // Kmeans / Other / densified interiors need particle or interpolated z.
+        rejectReason = "non-pc@" + key;
+        break;
+      }
+      var xy = null;
+      if (pathXY && pathXY[i] && pathXY[i].length >= 2) {
+        xy = [Number(pathXY[i][0]), Number(pathXY[i][1])];
+      } else if (typeof scatterXYForVolumeId === "function") {
+        xy = scatterXYForVolumeId(key);
+      } else if (marker && marker.xy && marker.xy.length >= 2) {
+        xy = [Number(marker.xy[0]), Number(marker.xy[1])];
+      }
+      trajXy.push(xy && Number.isFinite(xy[0]) && Number.isFinite(xy[1]) ? xy : null);
+    }
+    if (rejectReason) return null;
+    if (!anyPc) return null;
+    return {
+      ok: true,
+      z_traj: zTraj,
+      z_path_txt: zTrajToPathTxt(zTraj),
+      traj_xy: trajXy,
+      traj_point_labels: labels,
+      traj_particle_indices: particleIndices,
+      xcol: sx && sx.value ? sx.value : undefined,
+      ycol: sy && sy.value ? sy.value : undefined
+    };
+  }
+
+  function applyTrajectoryZPanelFromPayload(j) {
+    var densifiedPc = buildDensifiedPcCatalogZPayload();
+    if (densifiedPc) j = densifiedPc;
+    else j = scrubNonParticleIdentityInZPayload(j);
+    if (j && j.z_path_txt && trajZPre && trajZPanel) {
+      lastZPathTxt = j.z_path_txt;
+      var hasZTraj = j.z_traj && j.z_traj.length;
+      trajZPre.textContent = hasZTraj
+        ? formatZPathDisplayFromZTraj(j.z_traj)
+        : j.z_path_txt;
+      if (trajZNums) trajZNums.textContent = hasZTraj
+        ? formatZPathGutterFromPayload(j)
+        : "";
+      trajZPanel.hidden = false;
+      return true;
+    }
+    clearTrajectoryZPanel();
+    return false;
+  }
+
+  /**
+   * Show latent-z chrome as soon as a path exists (choose-waypoints preview does
+   * not go through fetchTrajectoryCoords). Content fills in via async refresh.
+   */
+  function revealTrajectoryZPanelChrome() {
+    if (trajZPanel) trajZPanel.hidden = false;
+  }
+
+  /**
+   * Refresh latent z for the live path without rewriting geometry.
+   * PC catalog paths use marker.z (not nearest-particle plot rows).
+   */
+  function refreshTrajectoryZPanel() {
+    if (!trajZPanel || !trajZPre) return;
+    var catalogPayload = buildCatalogTrajectoryZPayload();
+    if (catalogPayload) {
+      zPanelRequestId++;
+      revealTrajectoryZPanelChrome();
+      applyTrajectoryZPanelFromPayload(catalogPayload);
+      return;
+    }
+    var rows = (trajPlotRows && trajPlotRows.length >= 2)
+      ? trajPlotRows
+      : ((anchorIndicesActive && anchorIndicesActive.length >= 2)
+        ? anchorIndicesActive
+        : null);
+    var pathXY = null;
+    if (typeof activeTrajectoryPathXY === "function") {
+      pathXY = activeTrajectoryPathXY();
+    }
+    if ((!pathXY || pathXY.length < 2) && anchorTrajXY && anchorTrajXY.length >= 2) {
+      pathXY = anchorTrajXY;
+    }
+    if ((!pathXY || pathXY.length < 2) && editableTrajXY && editableTrajXY.length >= 2) {
+      pathXY = editableTrajXY;
+    }
+    var myId = ++zPanelRequestId;
+    var body = null;
+    if (rows && rows.length >= 2) {
+      revealTrajectoryZPanelChrome();
+      body = Object.assign({
+        anchor_indices: rows,
+        mode: "direct",
+        n_points: 0,
+        x: sx.value,
+        y: sy.value,
+        anchor_path_order: "preserve"
+      }, trajColorPayloadFields());
+      if (pathXY && pathXY.length >= 2) {
+        body.traj_xy = pathXY;
+      }
+    } else if (startXY && endXY) {
+      revealTrajectoryZPanelChrome();
+      body = Object.assign({
+        mode: trajectoryMode === "nearest" ? "nearest" : "direct",
+        start: startXY,
+        end: endXY,
+        x: sx.value,
+        y: sy.value,
+        n_points: Math.max(
+          2,
+          currentNPoints(),
+          (pathXY && pathXY.length) || 0
+        )
+      }, trajColorPayloadFields());
+      if (pathXY && pathXY.length >= 2) {
+        body.traj_xy = pathXY;
+      }
+    } else {
+      clearTrajectoryZPanel();
+      return;
+    }
+    fetch("{{ url_for('api_trajectory_coords') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (myId !== zPanelRequestId) return;
+        if (!res.ok || !res.j) return;
+        applyTrajectoryZPanelFromPayload(res.j);
+      })
+      .catch(function() {
+        if (myId !== zPanelRequestId) return;
+      });
   }
 
   function clearVolumeMontage() {
@@ -607,25 +988,44 @@
     var pidx = (j.traj_particle_indices && j.traj_particle_indices.length)
       ? j.traj_particle_indices
       : [];
+    var labels = (j.traj_point_labels && j.traj_point_labels.length)
+      ? j.traj_point_labels
+      : [];
     var n = 0;
     if (j.z_traj && j.z_traj.length) n = j.z_traj.length;
     else if (traj_xy.length) n = traj_xy.length;
     if (!n) return "";
     var nDigits = String(n).length;
+    var anyParticle = false;
+    var anyLabel = false;
+    for (var pi = 0; pi < n; pi++) {
+      if (pidx[pi] != null && pidx[pi] !== "") anyParticle = true;
+      if (labels[pi] != null && String(labels[pi]) !== "") anyLabel = true;
+    }
+    // PC / latent samples are not dataset particles — prefer volume labels.
+    var idHeader = "id";
+    if (anyLabel && !anyParticle) idHeader = "volume";
+    else if (anyParticle && !anyLabel) idHeader = "particle";
+    else if (anyParticle && anyLabel) idHeader = "id";
     var lines = [];
     var xLabel = j.xcol || "x";
     var yLabel = j.ycol || "y";
-    lines.push("pt  particle  (" + xLabel + ", " + yLabel + ")");
+    lines.push("pt  " + idHeader + "  (" + xLabel + ", " + yLabel + ")");
     for (var i = 0; i < n; i++) {
       var idxTxt = String(i + 1);
       while (idxTxt.length < nDigits) idxTxt = " " + idxTxt;
-      var p = (pidx[i] != null) ? String(pidx[i]) : "—";
+      var idTxt = "—";
+      if (labels[i] != null && String(labels[i]) !== "") {
+        idTxt = String(labels[i]);
+      } else if (pidx[i] != null && pidx[i] !== "") {
+        idTxt = "#" + String(pidx[i]);
+      }
       var xy = traj_xy[i];
       var xyTxt = "(?, ?)";
       if (xy && xy.length >= 2) {
         xyTxt = "(" + fmtCoord(xy[0]) + ", " + fmtCoord(xy[1]) + ")";
       }
-      lines.push(idxTxt + "  #" + p + "  " + xyTxt);
+      lines.push(idxTxt + "  " + idTxt + "  " + xyTxt);
     }
     return lines.join("\n");
   }

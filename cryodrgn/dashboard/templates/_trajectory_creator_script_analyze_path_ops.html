@@ -2088,6 +2088,7 @@
       }
       syncManualVolumeViewerForWaypointSelection();
       removeOverlayTraces();
+      if (typeof clearTrajectoryZPanel === "function") clearTrajectoryZPanel();
       return;
     }
     if (directTrace) {
@@ -2114,6 +2115,9 @@
         }
       }
       refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
+      if (typeof refreshTrajectoryZPanel === "function") {
+        refreshTrajectoryZPanel();
+      }
       return;
     }
     refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
@@ -2125,6 +2129,10 @@
       } else {
         syncManualVolumeViewerForWaypointSelection();
       }
+    }
+    // Choose-waypoints preview builds geometry locally — still expose latent z.
+    if (typeof refreshTrajectoryZPanel === "function") {
+      refreshTrajectoryZPanel();
     }
   }
 

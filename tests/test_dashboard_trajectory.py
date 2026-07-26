@@ -1391,6 +1391,9 @@ class TestTrajectoryPageWithMockEligibility:
         body = r.get_data(as_text=True)
         assert 'id="scatter"' in body
         assert "CUDA GPU" not in body
+        assert 'id="traj-z-panel"' in body
+        assert body.index('id="traj-z-panel"') < body.index('id="traj-volume-actions"')
+        assert "refreshTrajectoryZPanel" in body
 
     def test_trajectory_coords_direct_mode(self, flask_client_volumes_eligible) -> None:
         r = flask_client_volumes_eligible.post(

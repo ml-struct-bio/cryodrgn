@@ -2549,6 +2549,13 @@
     }
     updateGenerateVolumesButtonLabel();
     syncTrajReverseButton();
+    // syncManualAnchorsPreview already refreshes latent z; belt-and-suspenders
+    // if the preview path was already armed and returned early.
+    if (typeof refreshTrajectoryZPanel === "function"
+        && typeof hasAnchorIndices === "function"
+        && hasAnchorIndices()) {
+      refreshTrajectoryZPanel();
+    }
   }
 
   function prefetchRemainingManualVolumes(ids, slots, gen) {

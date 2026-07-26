@@ -2244,6 +2244,11 @@
             });
           }
         }
+        // Local Other splice does not go through syncManualAnchorsPreview —
+        // refresh latent-z so densified PC listings collapse with the path.
+        if (typeof refreshTrajectoryZPanel === "function") {
+          refreshTrajectoryZPanel();
+        }
         syncGenerateVolumesButtonVisibility();
         updateGenerateVolumesButtonLabel();
         return;
@@ -2265,12 +2270,18 @@
         if (typeof syncPathOwnedVolumeSlots === "function") {
           syncPathOwnedVolumeSlots();
         }
+        if (typeof refreshTrajectoryZPanel === "function") {
+          refreshTrajectoryZPanel();
+        }
         syncGenerateVolumesButtonVisibility();
         updateGenerateVolumesButtonLabel();
         return;
       }
       if (typeof syncPathOwnedVolumeSlots === "function") {
         syncPathOwnedVolumeSlots();
+      }
+      if (typeof refreshTrajectoryZPanel === "function") {
+        refreshTrajectoryZPanel();
       }
       syncGenerateVolumesButtonVisibility();
       updateGenerateVolumesButtonLabel();

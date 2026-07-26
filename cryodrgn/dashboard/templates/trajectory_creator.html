@@ -239,11 +239,6 @@
       </div>
       <button type="button" class="btn btn-secondary" id="btn-anchor-remove">Remove indices</button>
     </div>
-    <div class="cryo-traj-volume-actions" id="traj-volume-actions">
-      <button type="button" class="btn" id="btn-generate-volumes"
-        title="Decode outstanding volumes and render ChimeraX images.">Decode and render volumes</button>
-      <button type="button" class="btn btn-secondary" id="btn-save-volumes">Save volumes</button>
-    </div>
     <div id="traj-z-panel" class="cryo-traj-z-panel" hidden>
       <details class="cryo-traj-z-details">
         <summary>Latent <code>z</code> for each trajectory point</summary>
@@ -257,6 +252,11 @@
           <pre id="traj-z-pre" class="cryo-traj-z-pre" aria-label="Trajectory z values"></pre>
         </div>
       </details>
+    </div>
+    <div class="cryo-traj-volume-actions" id="traj-volume-actions">
+      <button type="button" class="btn" id="btn-generate-volumes"
+        title="Decode outstanding volumes and render ChimeraX images.">Decode and render volumes</button>
+      <button type="button" class="btn btn-secondary" id="btn-save-volumes">Save volumes</button>
     </div>
     <div class="cryo-traj-vol-panel-host" id="traj-vol-panel-root">
       <div class="cryo-vslice-panel-shell cryo-traj-vol-panel-shell" id="traj-vol-aside-shell">

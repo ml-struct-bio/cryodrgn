@@ -1544,15 +1544,7 @@
       );
     }
     if (j.z_path_txt && trajZPre && trajZPanel) {
-      lastZPathTxt = j.z_path_txt;
-      var hasZTraj = j.z_traj && j.z_traj.length;
-      trajZPre.textContent = hasZTraj
-        ? formatZPathDisplayFromZTraj(j.z_traj)
-        : j.z_path_txt;
-      if (trajZNums) trajZNums.textContent = hasZTraj
-        ? formatZPathGutterFromPayload(j)
-        : "";
-      trajZPanel.hidden = false;
+      applyTrajectoryZPanelFromPayload(j);
     } else {
       clearTrajectoryZPanel();
     }

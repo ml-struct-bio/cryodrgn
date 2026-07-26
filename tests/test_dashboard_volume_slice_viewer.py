@@ -196,6 +196,8 @@ class TestVolumeSliceViewerRoutes:
         assert pc
         assert all(isinstance(m.get("z"), list) for m in pc)
         assert all(len(m["z"]) == dashboard_experiment.z.shape[1] for m in pc)
+        # Kmeans centres are real particles; PC samples are latent traj points.
+        assert all("z" not in m for m in km)
 
     def test_pc_marker_xy_uses_z_values_not_nearest_particle(
         self, dashboard_experiment
@@ -413,6 +415,23 @@ class TestVolumeSliceViewerRoutes:
         assert "compactManualAnchorVolumesFromSnapshot" in body
         assert "manualInterpolatedVolumeReversePending" in body
         assert "Decode and render volumes" in body
+        assert 'id="traj-z-panel"' in body
+        assert "Latent <code>z</code> for each trajectory point" in body
+        assert "function refreshTrajectoryZPanel" in body
+        assert "function applyTrajectoryZPanelFromPayload" in body
+        assert "function buildCatalogTrajectoryZPayload" in body
+        assert "scrubNonParticleIdentityInZPayload" in body
+        assert "revealTrajectoryZPanelChrome" in body
+        # PC volumes are latent samples — never label them as dataset particles.
+        assert "PC analyze volumes are latent-space samples" in body
+        assert 'idHeader = "volume"' in body
+        assert 'lines.push("pt  particle  ("' not in body
+        # Particle-sets menu → latent-z dropdown → Decode/Render/Save row.
+        assert body.index('id="traj-anchor-wrap"') < body.index('id="traj-z-panel"')
+        assert body.index('id="traj-z-panel"') < body.index('id="traj-volume-actions"')
+        assert body.index('id="traj-volume-actions"') < body.index(
+            'id="traj-vol-panel-root"'
+        )
         assert "btn-traj-manual-graph" in body
         assert "manual-snap-n-points" in body
         assert "manual-graph-n-points" in body
@@ -452,6 +471,8 @@ class TestVolumeSliceViewerRoutes:
         ).read_text(encoding="utf-8")
         assert "lower-right corner badge" in traj_css
         assert "bottom: calc(0.45rem * 1.35)" in traj_css
+        assert "#traj-z-panel:not([hidden]) + #traj-volume-actions" in traj_css
+        assert "#traj-volume-actions + .cryo-traj-vol-panel-host" in traj_css
         assert 'id="vslice-chimerax-view-controls"' in body
         assert "vslice-iso-controls" in body
         assert "traj-chimerax-view-rotate-row" in body

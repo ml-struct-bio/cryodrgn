@@ -394,6 +394,10 @@ class TestVolumeSliceViewerRoutes:
         assert "Tracing trajectory path directly" in body
         assert "traj-scatter-interp-nearest" in body
         assert "traj-scatter-interp-direct" in body
+        assert "directTraversalAllowedForAxes" in body
+        assert "snap-to-nearest is mandatory" in body
+        assert "trajModeDirectRadio.disabled = false" in body
+        assert "trajModeDirectRadio.disabled = !allowDirect" not in body
         assert "btn-traj-manual-volume" in body
         assert "btn-generate-volumes" in body
         assert "buildDecodeRenderVolumesButtonLabel" in body
@@ -984,6 +988,92 @@ class TestTrajectoryVolumeBrowserSmoke:
             }"""
         )
         assert dock_visible, "pop-out button should appear in ChimeraX mode"
+
+    def test_manual_mode_vtk_to_chimerax_syncs_view_turns(
+        self, playwright_page, dashboard_volumes_eligible_live_url
+    ) -> None:
+        """Switching VTK→ChimeraX with a rendered volume sends orient-relative turns."""
+        import json
+        import time
+
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_activate_vtk_backend,
+            dashboard_smoke_rerender_manual_volumes,
+            dashboard_smoke_select_volume_backend,
+            fulfill_volume_viewer_render_route,
+        )
+
+        tiny_png = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
+            "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+        captured: list[dict] = []
+
+        def _route_handler(route):
+            if (
+                route.request.method == "POST"
+                and "analyze_volumes_chimerax_batch" in route.request.url
+            ):
+                body = json.loads(route.request.post_data or "{}")
+                captured.append(body)
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=(
+                        '{"ok": true, "images": ["' + tiny_png + '"], '
+                        '"view_matrix": "camera 1,0,0,0,0,1,0,0,0,0,1,0"}'
+                    ),
+                )
+            elif not fulfill_volume_viewer_render_route(route):
+                route.continue_()
+
+        playwright_page.route("**/api/volume_viewer/**", _route_handler)
+        ready = _dashboard_smoke_volume_viewer_ready(
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        assert ready is not None
+        dashboard_smoke_rerender_manual_volumes(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        dashboard_smoke_activate_vtk_backend(
+            playwright_page,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        playwright_page.wait_for_function(
+            """() => {
+              var vtkHost = document.getElementById('vslice-vtk-container');
+              return !!(vtkHost && !vtkHost.hidden);
+            }""",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        before_n = len(captured)
+        dashboard_smoke_select_volume_backend(
+            playwright_page,
+            "chimerax",
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        deadline = time.time() + 60.0
+        while time.time() < deadline and len(captured) <= before_n:
+            playwright_page.wait_for_timeout(250)
+        assert (
+            len(captured) > before_n
+        ), "expected ChimeraX re-render after VTK→ChimeraX view sync"
+        body = captured[-1]
+        synced_vm = body.get("view_matrix") or ""
+        synced_turns = body.get("view_turns") or []
+        # Default VTK framing may send empty turns (ChimeraX default orient).
+        # Either empty both (default) or turns without a zero-T matrix.
+        assert (
+            not synced_vm
+        ), f"VTK→ChimeraX switch must not send zero-T view_matrix: {body!r}"
+        assert isinstance(
+            synced_turns, list
+        ), f"VTK→ChimeraX switch should send view_turns list: {body!r}"
 
     def test_manual_mode_chimerax_vtk_roundtrip_restores_vtk_preview(
         self, playwright_page, dashboard_volumes_eligible_live_url

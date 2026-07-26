@@ -1760,10 +1760,20 @@
     // catalog loads (2D slice / VTK) that stream volumes after the first paint.
     var interactiveLoadBusy = typeof trajectoryInteractiveVolumeLoadInFlight === "function"
       && trajectoryInteractiveVolumeLoadInFlight();
+    // VTK focus change: a prior slot may still be displayable while the new
+    // focused catalog volume is fetching — do not swallow that status.
+    var vtkFocusPending = false;
+    if (busy && trajVolDisplay && trajVolDisplay.backend === "vtk"
+        && typeof trajVolDisplay._volumeReadyAt === "function"
+        && typeof trajVolDisplay.getFocusIndex === "function") {
+      var focusIdx = trajVolDisplay.getFocusIndex();
+      vtkFocusPending = !trajVolDisplay._volumeReadyAt(focusIdx);
+    }
     if (busy && !trajectoryDecodeJobInFlight() && trajectoryHasDisplayableVolumes()
         && !trajectoryChimeraxPipelineInFlight()
         && !(trajVolDisplay && trajVolDisplay.chimeraxRendering)
-        && !interactiveLoadBusy) {
+        && !interactiveLoadBusy
+        && !vtkFocusPending) {
       busy = false;
       msg = "";
     }

@@ -1522,8 +1522,18 @@
     if (!rows || rows.length < 2 || typeof trajXYFromPlotRows !== "function") return false;
     var xy = trajXYFromPlotRows(rows);
     if (!xy || xy.length !== rows.length) return false;
-    anchorTrajXY = xy;
-    editableTrajXY = null;
+    // Direct-trace must not populate anchorTrajXY: getPathXY prefers anchors
+    // over editable, while glyph markers read editableTrajXY — a nearest fetch
+    // then updates only editable and leaves point 1 visually disconnected.
+    if (!hasAnchorIndices() && !isManualTraversalMode()) {
+      anchorTrajXY = null;
+      editableTrajXY = xy.map(function (p) { return [Number(p[0]), Number(p[1])]; });
+      startXY = editableTrajXY[0].slice();
+      endXY = editableTrajXY[editableTrajXY.length - 1].slice();
+    } else {
+      anchorTrajXY = xy;
+      editableTrajXY = null;
+    }
     if (!trajPlotRows || trajPlotRows.length < 2) {
       // Catalog / waypoint preview: keep anchors aligned with reprojected XY.
       if (anchorIndicesActive && anchorIndicesActive.length === xy.length) {

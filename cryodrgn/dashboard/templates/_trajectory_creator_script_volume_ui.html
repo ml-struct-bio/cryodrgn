@@ -82,6 +82,16 @@
     var progressOpts = (trajectoryJob || includeCacheRerender || pathExpected > ids.length)
       ? { trajectory: true }
       : {};
+    // Always freeze the *live* ChimeraX view (e.g. VTK→ChimeraX turns sync).
+    // beginActiveRenderViewBatch() with no args reuses a stale default snapshot
+    // left by a prior catalog/cache job and ignores the synced camera.
+    var liveViewSnap = typeof captureChimeraxViewSnapshot === "function"
+      ? captureChimeraxViewSnapshot()
+      : null;
+    var viewAngleChanged = !!(liveViewSnap && (
+      (liveViewSnap.view_turns && liveViewSnap.view_turns.length)
+      || (liveViewSnap.view_matrix && String(liveViewSnap.view_matrix).trim())
+    ));
     if (trajVolDisplay) {
       var rerenderExisting = typeof chimeraxProgressSaysRerender === "function"
         ? chimeraxProgressSaysRerender(
@@ -92,12 +102,16 @@
             snapshot.images
           )
         : false;
-      trajVolDisplay.setChimeraxRendering(true, rerenderExisting ? { rerender: true } : {});
+      // View-angle sync must blank prior PNGs; otherwise the old pose stays
+      // visible under the overlay until the new batch returns.
+      trajVolDisplay.setChimeraxRendering(
+        true,
+        (rerenderExisting || viewAngleChanged) ? { rerender: true } : {}
+      );
     }
-    // Freeze view/iso once for this catalog (+ optional cache bridge) job.
     var viewSnap = typeof beginActiveRenderViewBatch === "function"
-      ? beginActiveRenderViewBatch()
-      : null;
+      ? beginActiveRenderViewBatch(liveViewSnap)
+      : liveViewSnap;
     syncAnalyzeVolumeChimeraxLoadProgress(0, progressTotal, progressOpts);
     syncTrajChimeraxViewControls();
     var renderTurns = (viewSnap && viewSnap.view_turns) ? viewSnap.view_turns.slice() : [];
@@ -846,7 +860,9 @@
       var cxPayload = activeVolumePayload() || {};
       if (trajVolDisplay) trajVolDisplay.setBackend("chimerax");
       var hasCxImages = chimeraxImagesFromPayload(cxPayload).length > 0;
-      var needsRerender = !hasCxImages || chimeraXViewNeedsRerender();
+      var viewSyncPending = typeof chimeraXViewNeedsRerender === "function"
+        && chimeraXViewNeedsRerender();
+      var needsRerender = !hasCxImages || viewSyncPending;
       if (needsRerender) {
         if (typeof directTraceBlocksCatalogAutoRender === "function"
             && directTraceBlocksCatalogAutoRender()) {
@@ -861,11 +877,21 @@
           updateGenerateVolumesButtonLabel();
           return;
         }
-        if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true);
+        // Blank prior ChimeraX PNGs immediately when matching a new VTK angle
+        // so the previous pose is not shown while the batch re-renders.
+        if (trajVolDisplay) {
+          trajVolDisplay.setChimeraxRendering(
+            true,
+            viewSyncPending ? { rerender: true } : {}
+          );
+        }
         syncTrajChimeraxViewControls();
         if (analyzeVolumeCatalogSelectionActive() && !hasGeneratedTrajectoryVolumes()) {
+          // Do not defer when only the viewing angle changed — otherwise VTK→ChimeraX
+          // sync leaves the prior default PNGs on screen.
           if (deferManualWaypointVolumeRerender()
-              && !pendingCombinedRenderAfterDecode) {
+              && !pendingCombinedRenderAfterDecode
+              && !viewSyncPending) {
             if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
             updateGenerateVolumesButtonLabel();
             if (typeof syncGenerateVolumesButtonVisibility === "function") {
@@ -873,10 +899,28 @@
             }
             return;
           }
-          if (syncManualChimeraxDisplay()) return;
+          // Drop a leftover default-view freeze so syncManual captures the VTK matrix.
+          if (viewSyncPending && typeof endActiveRenderViewBatch === "function") {
+            endActiveRenderViewBatch();
+          }
+          if (syncManualChimeraxDisplay()) {
+            return;
+          }
         }
         if (shouldTriggerVolumeGenerationOnBackendSwitch()) {
           generateTrajectory();
+          return;
+        }
+        // View-angle sync (or missing images) still needs a ChimeraX re-render.
+        if (typeof requestTrajChimeraxViewRerender === "function") {
+          // Drop any leftover default-view freeze before capturing the synced camera.
+          if (viewSyncPending && typeof endActiveRenderViewBatch === "function") {
+            endActiveRenderViewBatch();
+          }
+          requestTrajChimeraxViewRerender(
+            viewSyncPending ? "Matching VTK viewing angle\u2026" : "Rendering ChimeraX views\u2026"
+          );
+          syncGenerateVolumesButtonVisibility();
           return;
         }
         if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
@@ -1174,6 +1218,11 @@
           ? captureChimeraxViewSnapshot()
           : null;
       },
+      onSyncVtkViewToChimerax: function(snap) {
+        if (typeof applyVtkViewSyncToChimerax === "function") {
+          applyVtkViewSyncToChimerax(snap);
+        }
+      },
       btnDockBelow: btnTrajVolDockBelow,
       backendRadios: Array.prototype.slice.call(
         document.querySelectorAll("input[name=\"traj-vol-backend\"]")
@@ -1355,9 +1404,11 @@
     redrawTrajectoryOverlay();
     syncTrajectoryVolumeChrome();
     var deferredHandoffRestored = !!(snapshot && (snapshot.first || snapshot.last));
+    var keepDirectPath = deferredHandoffRestored && trajectoryMode === "direct";
     fetchTrajectoryCoords({
       preserveGeneratedVolumes: deferredHandoffRestored,
-      preserveDirectTracePathXY: deferredHandoffRestored
+      // Nearest (incl. forced for non-PC*/z* axes) must apply snapped traj_xy.
+      preserveDirectTracePathXY: keepDirectPath
     });
   }
 

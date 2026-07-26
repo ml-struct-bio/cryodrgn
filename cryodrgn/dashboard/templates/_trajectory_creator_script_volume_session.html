@@ -232,6 +232,8 @@
   var manualMarkersByPlotRow = {};
   var manualCustomPlotRows = [];
   var manualActiveCustomPlotRows = [];
+  /** plot_row → [x,y] for waypoints outside the scatter subsample (Add-random). */
+  var plotRowXYOverride = {};
   // Stable Other-cell menu order. Updated only when on-path custom visit order
   // changes — not when Other cells are merely deselected.
   var manualCustomPlotRowsDisplayOrder = [];

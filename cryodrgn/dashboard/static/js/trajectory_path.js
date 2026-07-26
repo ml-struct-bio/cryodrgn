@@ -512,14 +512,22 @@
       return { ok: true, cleared: true, rows: rows };
     }
     this.setAnchorRows(rows);
+    var nextXY = null;
     if (xy.length === rows.length) {
-      this.setAnchorPathXY(xy);
-    } else if (typeof this.hooks.trajXYFromPlotRows === "function") {
-      var rebuilt = this.hooks.trajXYFromPlotRows(rows);
-      this.setAnchorPathXY(rebuilt && rebuilt.length === rows.length ? rebuilt : null);
-    } else {
-      this.setAnchorPathXY(null);
+      nextXY = xy;
     }
+    // Prefer catalog marker.xy (true PC / kmeans latent coords) when available —
+    // trajXYFromPlotRows alone snaps to nearest particles and also fails for
+    // plot rows absent from the scatter subsample (common after Add-random).
+    if ((!nextXY || nextXY.length !== rows.length)
+        && typeof this.hooks.pathXYForOrderedRows === "function") {
+      nextXY = this.hooks.pathXYForOrderedRows(rows);
+    }
+    if ((!nextXY || nextXY.length !== rows.length)
+        && typeof this.hooks.trajXYFromPlotRows === "function") {
+      nextXY = this.hooks.trajXYFromPlotRows(rows);
+    }
+    this.setAnchorPathXY(nextXY && nextXY.length === rows.length ? nextXY : null);
     this.setEditableXY(null);
     this.setSamplePlotRows(null);
     this.setInterpolatedCount(0);

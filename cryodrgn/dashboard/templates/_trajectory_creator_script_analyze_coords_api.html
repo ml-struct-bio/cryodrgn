@@ -759,11 +759,11 @@
   }
 
   function syncTraversalModeButtonStates() {
-    syncTraversalSettingsText();
     syncManualModeChrome();
     if (isManualTraversalMode()) {
       if (trajModeManualRadio) trajModeManualRadio.checked = true;
       if (trajModeDirectRadio) trajModeDirectRadio.checked = false;
+      syncTraversalSettingsText();
       return;
     }
     if (hasAnchorIndices()) {
@@ -773,23 +773,29 @@
         trajModeDirectRadio.checked = true;
       }
       if (trajModeManualRadio) trajModeManualRadio.checked = false;
+      syncTraversalSettingsText();
       return;
     }
+    // Direct-trace mode itself stays available for any plot axes. Only the
+    // "direct interpolation in space" sub-mode requires PC*/z* axes; otherwise
+    // force snap-to-nearest immediately and lock the interp radios.
     var allowDirect = directTraversalAllowedForAxes(sx.value, sy.value);
-    if (trajModeDirectRadio) {
-      trajModeDirectRadio.disabled = !allowDirect;
-    }
+    var forcedNearest = false;
     if (!allowDirect && trajectoryMode === "direct") {
       trajectoryMode = "nearest";
       lastScatterTraversalMode = "nearest";
-      if (startXY && endXY) {
-        fetchTrajectoryCoords();
-      }
+      forcedNearest = true;
     }
     if (trajModeDirectRadio) {
+      trajModeDirectRadio.disabled = false;
       trajModeDirectRadio.checked = true;
     }
     if (trajModeManualRadio) trajModeManualRadio.checked = false;
+    // Sync interp chrome after any forced nearest switch so radios match state.
+    syncTraversalSettingsText();
+    if (forcedNearest && startXY && endXY) {
+      fetchTrajectoryCoords();
+    }
   }
 
   function syncAnchorIndicesUI() {
@@ -1182,8 +1188,12 @@
     }
     if (mode !== "direct") return;
     if (isManualTraversalMode()) {
-      // Direct-trace always opens on direct interpolation; snap-to-nearest is opt-in.
-      leaveManualForScatterMode("direct");
+      // Direct-trace opens on direct interpolation when both axes are PC*/z*;
+      // otherwise snap-to-nearest is mandatory (interpolation disabled).
+      var enterMode = directTraversalAllowedForAxes(sx.value, sy.value)
+        ? "direct"
+        : "nearest";
+      leaveManualForScatterMode(enterMode);
       return;
     }
     if (trajModeDirectRadio) trajModeDirectRadio.checked = true;
@@ -1406,10 +1416,27 @@
         }
         var appended = session.appendPlotRows(addedRows, { silent: true });
         if (!appended || !appended.ok) return false;
+        // Safety net: if rebuild still left geometry empty, repair from overrides
+        // then fall back to a server coords refresh.
+        if ((!anchorTrajXY || anchorTrajXY.length < 2)
+            && anchorIndicesActive && anchorIndicesActive.length >= 2) {
+          var repaired = typeof manualPathXYForOrderedAnchorRows === "function"
+            ? manualPathXYForOrderedAnchorRows(anchorIndicesActive)
+            : (typeof trajXYFromPlotRows === "function"
+              ? trajXYFromPlotRows(anchorIndicesActive)
+              : null);
+          if (repaired && repaired.length === anchorIndicesActive.length) {
+            anchorTrajXY = repaired;
+          }
+        }
         finishRandomPlotRowAppendUi({
           priorSnapshot: preAppendVolumeSnapshot,
           session: session
         });
+        if ((!anchorTrajXY || anchorTrajXY.length < 2)
+            && typeof fetchTrajectoryCoords === "function") {
+          fetchTrajectoryCoords({ preserveGeneratedVolumes: true });
+        }
         return true;
       }
       if (directTraceTraversalMode()
@@ -1472,13 +1499,16 @@
     closeFileBrowser();
     var existing = existingTrajectoryPlotRowsForAppend();
     setTrajStatus("Sampling random indices\u2026", false);
+    var body = {
+      count: 10,
+      exclude_indices: existing
+    };
+    if (sx && sx.value) body.x = sx.value;
+    if (sy && sy.value) body.y = sy.value;
     fetch("{{ url_for('api_trajectory_random_indices') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        count: 10,
-        exclude_indices: existing
-      })
+      body: JSON.stringify(body)
     })
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
@@ -1492,6 +1522,17 @@
         if (!added.length) {
           setTrajStatus("No unused particle indices available to add.", false);
           return;
+        }
+        // Cache server XY for indices that may be absent from the scatter subsample
+        // so rebuildFromSelection / path overlays can resolve coordinates.
+        if (res.j.xy && res.j.xy.length === (res.j.indices || res.j.anchor_indices || []).length) {
+          var rawIdx = (res.j.indices || res.j.anchor_indices || []).map(Number);
+          if (typeof rememberPlotRowXYList === "function") {
+            rememberPlotRowXYList(rawIdx, res.j.xy);
+          }
+        } else if (res.j.xy && res.j.xy.length === added.length
+            && typeof rememberPlotRowXYList === "function") {
+          rememberPlotRowXYList(added, res.j.xy);
         }
         if (!appendRandomPlotRowsToTrajectory(added)) return;
         var noun = added.length === 1 ? "index" : "indices";

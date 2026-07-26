@@ -556,6 +556,9 @@ def api_trajectory_random_indices():
     Optional JSON body fields:
     - ``count``: number of new indices to sample (default 10)
     - ``exclude_indices``: indices already on the trajectory (skipped when sampling)
+    - ``x`` / ``y``: scatter axis column names; when both are valid ``plot_df``
+      columns, the response includes ``xy`` (parallel to ``indices``) so the
+      client can place waypoints that are absent from the scatter subsample
     """
     e: DashboardExperiment = g.dashboard_exp
     err = _trajectory_eligibility_error(e)
@@ -579,7 +582,28 @@ def api_trajectory_random_indices():
             except (TypeError, ValueError):
                 return jsonify(error="exclude_indices must be a list of integers."), 400
         indices = random_dataset_indices(e, count, exclude=exclude)
-        return jsonify(ok=True, indices=indices, anchor_indices=indices)
+        payload: dict = {"ok": True, "indices": indices, "anchor_indices": indices}
+        xcol = data.get("x")
+        ycol = data.get("y")
+        if (
+            indices
+            and isinstance(xcol, str)
+            and isinstance(ycol, str)
+            and xcol in e.plot_df.columns
+            and ycol in e.plot_df.columns
+        ):
+            coords = e.plot_df[[xcol, ycol]].to_numpy(dtype=float, copy=False)
+            xy_out: list[list[float]] = []
+            for idx in indices:
+                ri = int(idx)
+                if 0 <= ri < len(coords):
+                    xy_out.append([float(coords[ri, 0]), float(coords[ri, 1])])
+                else:
+                    xy_out = []
+                    break
+            if len(xy_out) == len(indices):
+                payload["xy"] = xy_out
+        return jsonify(payload)
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:

@@ -652,6 +652,13 @@
                       } else {
                         syncTrajGlyphOverlay();
                       }
+                      // Non-PC*/z* axis changes force nearest; refresh latent path
+                      // now that reprojected endpoints exist again.
+                      if (!isManualTraversalMode() && trajectoryMode === "nearest"
+                          && startXY && endXY
+                          && typeof fetchTrajectoryCoords === "function") {
+                        fetchTrajectoryCoords({ preserveGeneratedVolumes: true });
+                      }
                     }
                     requestAnimationFrame(function() {
                       try { Plotly.Plots.resize(gd); } catch (e) {}
@@ -901,6 +908,12 @@
   function triggerRedraw() {
     // Axis changes must keep particle identity / path length fixed and only
     // reproject existing path rows into the new scatter coordinates.
+    // Force-rebind onto particles present in the mounted scatter subsample —
+    // server nearest rows can lie outside that subsample and then fail to
+    // reproject after the axis change.
+    if (typeof ensureTrajectoryPlotRowsFromCurrentPath === "function") {
+      ensureTrajectoryPlotRowsFromCurrentPath({ force: true });
+    }
     preparePlotReload({ preservePathIdentity: true });
     if (hasAnchorIndices() || (isManualTraversalMode() && manualSelectedVolIds.length >= 3)) {
       resetAnchorPathOrderToDefault();

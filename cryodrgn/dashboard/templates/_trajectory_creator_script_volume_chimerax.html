@@ -1287,6 +1287,8 @@
   var lastChimeraxRenderViewTurns = [];
   var trajChimeraxViewRotations = { x: 0, y: 0, z: 0 };
   var trajChimeraxAppliedViewMatrix = "";
+  /** Full view_turns for render (may include custom ``ax,ay,az`` axis-angle). */
+  var trajChimeraxAppliedViewTurns = null;
   var lastChimeraxViewMatrix = "";
   var trajChimeraxViewMatrixUnavailable = false;
   var trajChimeraxViewMatrixInputDirty = false;
@@ -1340,11 +1342,13 @@
   }
 
   function estimatedTrajChimeraxViewMatrixText() {
+    // Match ``chimeraxViewTurnsForRender`` / VTK: turn y, then x, then z
+    // (R = Rz·Rx·Ry for column vectors).
     var m = mat3Identity();
-    ["x", "y", "z"].forEach(function(axis) {
+    ["y", "x", "z"].forEach(function(axis) {
       var deg = normalizeViewDegrees(trajChimeraxViewRotations[axis] || 0);
       if (Math.abs(deg) > 1e-9) {
-        m = mat3Mul(m, mat3ForAxisTurn(axis, deg));
+        m = mat3Mul(mat3ForAxisTurn(axis, deg), m);
       }
     });
     var nums = [
@@ -1414,9 +1418,64 @@
     trajChimeraxAppliedViewMatrix = "";
   }
 
+  function clearTrajChimeraxAppliedViewTurns() {
+    trajChimeraxAppliedViewTurns = null;
+  }
+
+  /**
+   * Adopt a live VTK camera when switching VTK → ChimeraX with a volume on screen.
+   * Prefer exact axis-angle (or y/x) turns; absolute rotation-only matrices are a
+   * last resort and often mismatch after volume center.
+   */
+  function applyVtkViewSyncToChimerax(snap) {
+    snap = snap || {};
+    var vm = snap.view_matrix ? String(snap.view_matrix).trim() : "";
+    var turns = Array.isArray(snap.view_turns) ? snap.view_turns : [];
+    var mode = "default";
+    if (turns.length) {
+      clearTrajChimeraxAppliedViewMatrix();
+      trajChimeraxViewRotations = { x: 0, y: 0, z: 0 };
+      trajChimeraxAppliedViewTurns = turns.map(function (t) {
+        return {
+          axis: String((t && t.axis) || ""),
+          degrees: Number(t && t.degrees),
+        };
+      }).filter(function (t) {
+        return t.axis && isFinite(t.degrees) && Math.abs(t.degrees) > 1e-9;
+      });
+      for (var ti = 0; ti < trajChimeraxAppliedViewTurns.length; ti++) {
+        var t = trajChimeraxAppliedViewTurns[ti];
+        var axis = String(t.axis || "").toLowerCase();
+        if (axis === "x" || axis === "y" || axis === "z") {
+          trajChimeraxViewRotations[axis] = normalizeViewDegrees(t.degrees);
+        }
+      }
+      trajChimeraxViewMatrixInputDirty = false;
+      syncTrajChimeraxViewMatrixField();
+      mode = "turns";
+    } else if (vm && isValidChimeraxViewMatrixText(vm)) {
+      clearTrajChimeraxAppliedViewTurns();
+      trajChimeraxViewRotations = { x: 0, y: 0, z: 0 };
+      trajChimeraxAppliedViewMatrix = vm.toLowerCase().indexOf("camera") === 0
+        ? vm
+        : ("camera " + vm);
+      trajChimeraxViewMatrixInputDirty = false;
+      syncTrajChimeraxViewMatrixField();
+      mode = "matrix";
+    } else {
+      trajChimeraxViewRotations = { x: 0, y: 0, z: 0 };
+      clearTrajChimeraxAppliedViewMatrix();
+      clearTrajChimeraxAppliedViewTurns();
+      trajChimeraxViewMatrixInputDirty = false;
+      syncTrajChimeraxViewMatrixField();
+    }
+    return true;
+  }
+
   function resetTrajChimeraxViewState() {
     trajChimeraxViewRotations = { x: 0, y: 0, z: 0 };
     clearTrajChimeraxAppliedViewMatrix();
+    clearTrajChimeraxAppliedViewTurns();
     lastChimeraxViewMatrix = "";
     trajChimeraxViewMatrixUnavailable = false;
     trajChimeraxViewMatrixInputDirty = false;
@@ -1673,6 +1732,7 @@
       return;
     }
     trajChimeraxAppliedViewMatrix = check.text;
+    clearTrajChimeraxAppliedViewTurns();
     trajChimeraxViewMatrixInputDirty = false;
     syncTrajChimeraxViewMatrixField();
     if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true, { rerender: true });
@@ -1690,6 +1750,7 @@
       return;
     }
     clearTrajChimeraxAppliedViewMatrix();
+    clearTrajChimeraxAppliedViewTurns();
     trajChimeraxViewMatrixInputDirty = false;
     trajChimeraxViewRotations[axis] = normalizeViewDegrees(
       Number(trajChimeraxViewRotations[axis] || 0) + deg
@@ -1714,9 +1775,13 @@
 
   function chimeraxViewTurnsForRender() {
     if (trajChimeraxAppliedViewMatrix) return [];
+    if (trajChimeraxAppliedViewTurns && trajChimeraxAppliedViewTurns.length) {
+      return trajChimeraxAppliedViewTurns.slice();
+    }
     var r = trajChimeraxViewRotationPayload();
     var out = [];
-    ["x", "y", "z"].forEach(function(axis) {
+    // Manual Rotate X/Y/Z: emit y then x then z (ChimeraX scene turns).
+    ["y", "x", "z"].forEach(function(axis) {
       var deg = r[axis];
       if (Math.abs(deg) > 1e-9) out.push({ axis: axis, degrees: deg });
     });
@@ -1725,6 +1790,9 @@
 
   function noteChimeraxRenderViewTurns(turns) {
     lastChimeraxRenderViewTurns = (turns && turns.length) ? turns.slice() : [];
+    if (trajVolDisplay && typeof trajVolDisplay.setChimeraxRenderedViewTurns === "function") {
+      trajVolDisplay.setChimeraxRenderedViewTurns(lastChimeraxRenderViewTurns);
+    }
   }
 
   function isValidChimeraxViewMatrixText(vm) {
@@ -1766,6 +1834,9 @@
       lastChimeraxViewMatrix = String(vm).trim();
       lastChimeraxRenderViewMatrix = lastChimeraxViewMatrix;
       trajChimeraxViewMatrixUnavailable = false;
+    }
+    if (trajVolDisplay && typeof trajVolDisplay.setChimeraxRenderedViewMatrix === "function") {
+      trajVolDisplay.setChimeraxRenderedViewMatrix(lastChimeraxRenderViewMatrix);
     }
     trajChimeraxViewMatrixInputDirty = false;
     syncTrajChimeraxViewMatrixField();
@@ -1883,6 +1954,49 @@
     return out;
   }
 
+  /**
+   * VTK raycast shows one volume at a time. Resolve the slider focus index
+   * clamped to the current catalog id list.
+   */
+  function resolveInteractiveFocusIndex(ids) {
+    var focusIdx = typeof currentVolumeFocusIndex === "function"
+      ? currentVolumeFocusIndex()
+      : 0;
+    focusIdx = Math.floor(Number(focusIdx));
+    if (!Number.isFinite(focusIdx) || focusIdx < 0) focusIdx = 0;
+    if (ids && ids.length) {
+      focusIdx = Math.max(0, Math.min(ids.length - 1, focusIdx));
+    }
+    return focusIdx;
+  }
+
+  function focusSlotHasVolumeB64(ids, slots) {
+    var fi = resolveInteractiveFocusIndex(ids);
+    return !!(slots && fi < slots.length && slots[fi] && slots[fi].volume_b64);
+  }
+
+  /**
+   * Catalog ids to fetch for interactive backends. Slice needs every missing
+   * montage layer; VTK only hydrates the focused slider slot.
+   */
+  function interactiveCatalogFetchIds(backend, ids, slots) {
+    if (String(backend || "").toLowerCase() !== "vtk") {
+      return catalogIdsNeedingVolumeB64(ids, slots);
+    }
+    var fi = resolveInteractiveFocusIndex(ids);
+    if (slots && fi < slots.length && slots[fi] && slots[fi].volume_b64) {
+      return [];
+    }
+    var id = ids && fi < ids.length ? ids[fi] : null;
+    if ((id == null || id === "") && slots && fi < slots.length && slots[fi]) {
+      id = slots[fi].catalog_id || slots[fi].vol_id || slots[fi].id || null;
+    }
+    if (id == null || id === "") return [];
+    var key = String(id);
+    if (key === "null" || key === "undefined") return [];
+    return [id];
+  }
+
   var interactiveVolumeLoadSeq = 0;
   var interactiveVolumeLoadInFlight = false;
 
@@ -1953,9 +2067,16 @@
     var noun = (typeof volumeCountNoun === "function")
       ? volumeCountNoun(total)
       : (total === 1 ? "volume" : "volumes");
-    var msg = total > 0
-      ? ("Loading " + done + "/" + total + " " + noun + "\u2026")
-      : "Loading volumes\u2026";
+    // VTK hydrates a single focused slot — keep the message singular/simple.
+    var msg;
+    if (total === 1 && typeof currentVolumeRenderBackend === "function"
+        && currentVolumeRenderBackend() === "vtk") {
+      msg = "Loading volume\u2026";
+    } else {
+      msg = total > 0
+        ? ("Loading " + done + "/" + total + " " + noun + "\u2026")
+        : "Loading volumes\u2026";
+    }
     setVolumeViewerJobStatus(msg, true);
   }
 
@@ -2066,8 +2187,13 @@
     selectTrajVolumeBackend(backend);
 
     var payload = activeVolumePayload() || {};
-    if (payloadHasVolumeB64(payload)) {
-      applyInteractiveCatalogVolumeDisplay(backend, activeAnalyzeVolumeIds(), volumeSlots());
+    var ensureIds = activeAnalyzeVolumeIds();
+    var ensureSlots = volumeSlots() || [];
+    // VTK only needs the focused slider blob; any other slot's volume_b64 must
+    // not short-circuit past a focus fetch.
+    if (payloadHasVolumeB64(payload)
+        && (backend !== "vtk" || focusSlotHasVolumeB64(ensureIds, ensureSlots))) {
+      applyInteractiveCatalogVolumeDisplay(backend, ensureIds, ensureSlots);
       setAnalyzeVolumeLoadStatus(false);
       return true;
     }
@@ -2075,8 +2201,11 @@
     if (typeof rehydrateTrajectoryVolumeDisplayFromSession === "function") {
       rehydrateTrajectoryVolumeDisplayFromSession({ forceSync: false });
       payload = activeVolumePayload() || {};
-      if (payloadHasVolumeB64(payload)) {
-        applyInteractiveCatalogVolumeDisplay(backend, activeAnalyzeVolumeIds(), volumeSlots());
+      ensureIds = activeAnalyzeVolumeIds();
+      ensureSlots = volumeSlots() || [];
+      if (payloadHasVolumeB64(payload)
+          && (backend !== "vtk" || focusSlotHasVolumeB64(ensureIds, ensureSlots))) {
+        applyInteractiveCatalogVolumeDisplay(backend, ensureIds, ensureSlots);
         setAnalyzeVolumeLoadStatus(false);
         return true;
       }
@@ -2108,13 +2237,23 @@
       return false;
     }
     var slots = volumeSlots() || [];
-    var fetchIds = catalogIdsNeedingVolumeB64(ids, slots);
+    var focusIdx = resolveInteractiveFocusIndex(ids);
+    var fetchIds = interactiveCatalogFetchIds(backend, ids, slots);
     if (!fetchIds.length) {
+      if (backend === "vtk" && focusSlotHasVolumeB64(ids, slots)) {
+        applyInteractiveCatalogVolumeDisplay(backend, ids, slots);
+      } else if (backend !== "vtk" && loadedManualVolumeCount(slots) > 0) {
+        applyInteractiveCatalogVolumeDisplay(backend, ids, slots);
+      }
       setAnalyzeVolumeLoadStatus(false);
-      return false;
+      return backend === "vtk"
+        ? focusSlotHasVolumeB64(ids, slots)
+        : loadedManualVolumeCount(slots) > 0;
     }
 
-    if (slots.length === ids.length && !manualAnalyzeVolumeIdsMismatch()) {
+    if (backend !== "vtk"
+        && slots.length === ids.length
+        && !manualAnalyzeVolumeIdsMismatch()) {
       var haveAllCatalog = true;
       for (var ci = 0; ci < ids.length; ci++) {
         if (ids[ci] == null || ids[ci] === "") continue;
@@ -2132,7 +2271,10 @@
     }
 
     var loadSeq = beginInteractiveVolumeLoad();
-    fetchIds = prioritizeCatalogFetchIds(ids, fetchIds);
+    // Slice: prefer endpoints first. VTK: keep the single focused id only.
+    if (backend !== "vtk") {
+      fetchIds = prioritizeCatalogFetchIds(ids, fetchIds);
+    }
     fetchInteractiveCatalogVolumeChunks(fetchIds, ids, backend, loadSeq);
     return true;
   }
@@ -2463,49 +2605,91 @@
     if (!analyzeVolumeCatalogSelectionActive() || !volumeSlots()) return;
     var idx = currentVolumeFocusIndex();
     if (idx < 0 || idx >= volumeSlots().length) return;
+    var ids = activeAnalyzeVolumeIds();
+    var backend = currentVolumeRenderBackend();
     if (trajectoryVolumeReadyAt(idx)) {
       if (trajVolDisplay && !trajVolDisplay.chimeraxRendering) {
         clearVolumeViewerJobStatus();
       }
       return;
     }
-    var ids = activeAnalyzeVolumeIds();
     if (!ids.length || idx >= ids.length) return;
     var volId = ids[idx];
-    if (!volId || currentVolumeRenderBackend() === "chimerax") {
+    if (!volId || backend === "chimerax") {
       if (trajVolDisplay && !trajVolDisplay.chimeraxRendering) {
         clearVolumeViewerJobStatus();
       }
       return;
     }
-    if (volumeSlots()[idx] && volumeSlots()[idx].volume_b64) return;
-    var gen = manualVolumeLoadGeneration;
+    if (volumeSlots()[idx] && volumeSlots()[idx].volume_b64) {
+      // Already hydrated at focus (e.g. after 2D slice) — paint without refetch.
+      if (backend === "vtk" || backend === "slice") {
+        if (trajVolDisplay) {
+          trajVolDisplay.vtkFocusIndex = idx;
+          trajVolDisplay.raycastVolIndex = null;
+        }
+        applyInteractiveCatalogVolumeDisplay(backend, ids, volumeSlots());
+      }
+      return;
+    }
+    // Mark interactive load in-flight so setVolumeViewerJobStatus does not
+    // suppress "Loading volume…" merely because another slot is still painted.
+    var focusIdx = idx;
+    var loadSeq = beginInteractiveVolumeLoad();
     setVolumeViewerJobStatus("Loading volume\u2026", true);
     fetchAnalyzeVolumesBatch([String(volId)])
       .then(function(res) {
-        if (gen !== manualVolumeLoadGeneration) return;
-        clearVolumeViewerJobStatus();
-        if (!res.ok || !res.j || !res.j.ok) return;
+        if (loadSeq !== interactiveVolumeLoadSeq) return;
+        if (!res.ok || !res.j || !res.j.ok) {
+          endInteractiveVolumeLoad(loadSeq);
+          return;
+        }
         var merged = mergeBatchIntoVolumeSlots(
           ids.slice(),
           volumeSlots(),
           res.j.volumes || {}
         );
-        applyManualVolumeSlots(merged, ids.slice(), { skipHighlight: true });
-        if (trajVolDisplay) {
-          var expectedCount = Number(volumePayload() && volumeExpectedCount())
-            || ids.length;
-          trajVolDisplay.loadPayload({
-            volumes: merged.slice(),
-            images: keptImagesFromManualPayload(),
-            expectedVolumeCount: expectedCount
-          });
-          applyManualAnalyzeVolumeDisplay(currentVolumeRenderBackend());
+        applyManualVolumeSlots(merged, ids.slice(), {
+          deferDisplay: true,
+          skipHighlight: true
+        });
+        if (!trajVolDisplay) {
+          endInteractiveVolumeLoad(loadSeq);
+          return;
         }
+        var expectedCount = Number(volumePayload() && volumeExpectedCount())
+          || ids.length;
+        // Pin focus to the fetched slot and paint once. Avoid
+        // applyVolumePayloadDisplay/snapFocus which raced the async VTK paint
+        // and cleared the overlay before setVolumeFromB64 finished.
+        trajVolDisplay.vtkFocusIndex = focusIdx;
+        trajVolDisplay.raycastVolIndex = null;
+        if (typeof rememberDisplayedVolumeFocusIndex === "function") {
+          rememberDisplayedVolumeFocusIndex(focusIdx);
+        }
+        trajVolDisplay.loadPayload({
+          volumes: merged.slice(),
+          images: keptImagesFromManualPayload(),
+          expectedVolumeCount: expectedCount
+        }, { deferRender: true });
+        var paintPromise = (backend === "vtk" && typeof trajVolDisplay._renderVtk === "function")
+          ? trajVolDisplay._renderVtk()
+          : Promise.resolve(true);
+        if (backend === "slice") {
+          trajVolDisplay.setBackend("slice");
+          paintPromise = Promise.resolve(true);
+        }
+        return Promise.resolve(paintPromise).then(function(painted) {
+          if (loadSeq !== interactiveVolumeLoadSeq) return;
+          endInteractiveVolumeLoad(loadSeq);
+        }, function() {
+          if (loadSeq !== interactiveVolumeLoadSeq) return;
+          endInteractiveVolumeLoad(loadSeq);
+        });
       })
       .catch(function() {
-        if (gen !== manualVolumeLoadGeneration) return;
-        clearVolumeViewerJobStatus();
+        if (loadSeq !== interactiveVolumeLoadSeq) return;
+        endInteractiveVolumeLoad(loadSeq);
       });
   }
 
@@ -2537,6 +2721,9 @@
         if (trajVolDisplay.setChimeraxRenderedViewMatrix) {
           trajVolDisplay.setChimeraxRenderedViewMatrix("");
         }
+        if (trajVolDisplay.setChimeraxRenderedViewTurns) {
+          trajVolDisplay.setChimeraxRenderedViewTurns([]);
+        }
         trajVolDisplay.vtkCameraUserAdjusted = false;
         trajVolDisplay._vtkViewTurnsBeforeChimerax = [];
         resetTrajChimeraxViewState();
@@ -2553,8 +2740,11 @@
     var catalogPayload = typeof volumePayload === "function" ? volumePayload() : volumePayload();
     backend = backend || preferredAnalyzeVolumeBackend() || "slice";
     if (isInteractiveVolumeBackend(backend) && opts.userInitiated) {
-      if (payloadHasVolumeB64(catalogPayload)) {
-        applyInteractiveCatalogVolumeDisplay(backend, activeAnalyzeVolumeIds(), volumeSlots());
+      var focusIds = activeAnalyzeVolumeIds();
+      var focusSlots = volumeSlots() || [];
+      if (payloadHasVolumeB64(catalogPayload)
+          && (backend !== "vtk" || focusSlotHasVolumeB64(focusIds, focusSlots))) {
+        applyInteractiveCatalogVolumeDisplay(backend, focusIds, focusSlots);
         return;
       }
       if (typeof loadInteractiveCatalogVolumesForBackend === "function") {

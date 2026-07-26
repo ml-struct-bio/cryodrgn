@@ -68,6 +68,7 @@
     this.vtkCameraUserAdjusted = false;
     this.vtkSessionViewMatrix = "";
     this.chimeraxRenderedViewMatrix = "";
+    this.chimeraxRenderedViewTurns = [];
     this._vtkViewMatrixBeforeChimerax = "";
     this._vtkViewTurnsBeforeChimerax = [];
     this._vtkChimeraxSyncTurns = [];
@@ -81,6 +82,7 @@
     this.expandedBelow = false;
     this.chimeraxRendering = false;
     this.chimeraxRerenderInFlight = false;
+    this._pendingChimeraxViewSyncClear = false;
     this.volumeGenerationBusy = false;
     this._explicitJobStatusBusy = false;
     this._chimeraxRerenderReadyMask = null;
@@ -117,6 +119,12 @@
     this._chimeraxViewBatch = null;
     /** Optional page hook: () => { view_matrix, view_turns, viewKey, isoKey, iso_level } */
     this.captureChimeraxViewSnapshot = options.captureChimeraxViewSnapshot || null;
+    /**
+     * Optional page hook when leaving VTK with a rendered volume: push the live
+     * camera into ChimeraX applied-view state so the next PNG batch matches.
+     * Receives ``{ view_matrix, view_turns }``.
+     */
+    this.onSyncVtkViewToChimerax = options.onSyncVtkViewToChimerax || null;
 
     if (this.canvasEl && global.CryoVolumeSliceCanvas) {
       this.sliceViewer = new global.CryoVolumeSliceCanvas({ canvas: this.canvasEl });
@@ -695,8 +703,12 @@
       this.renderingOverlayEl.setAttribute("aria-hidden", busy ? "false" : "true");
       this.renderingOverlayEl.classList.toggle("cryo-plot-rendering-overlay--show", !!busy);
       // 2D slice: keep the montage visible under a lower-right corner badge.
-      // Other backends: corner badge once something is already on screen.
-      var nonblocking = !!busy && (
+      // Other backends: corner badge once something is already on screen —
+      // except VTK focus-pending (new slider tick still fetching).
+      var vtkFocusPending = this.backend === "vtk"
+        && typeof this._volumeReadyAt === "function"
+        && !this._volumeReadyAt(this.vtkFocusIndex);
+      var nonblocking = !!busy && !vtkFocusPending && (
         this.backend === "slice" || this._hasDisplayableVolumes()
       );
       this.renderingOverlayEl.classList.toggle(
@@ -832,26 +844,9 @@
     backend = String(backend || "slice").toLowerCase();
     if (backend !== "vtk" && backend !== "slice" && backend !== "chimerax") backend = "slice";
     if (this.backend === "chimerax" && backend === "vtk") {
-      this.raycastVolIndex = null;
-      this._pendingApplyViewTurnsToVtk = null;
-      this._pendingApplyViewMatrixToVtk = false;
-      if (this._vtkViewMatrixBeforeChimerax) {
-        this.setSharedViewMatrix(this._vtkViewMatrixBeforeChimerax);
-        this._pendingApplyViewMatrixToVtk = true;
-      } else if (this._vtkViewTurnsBeforeChimerax && this._vtkViewTurnsBeforeChimerax.length) {
-        this._pendingApplyViewTurnsToVtk = this._vtkViewTurnsBeforeChimerax.slice();
-      }
-    } else if (this.backend === "vtk" && backend === "chimerax" && this.volumes.length > 0) {
-      if (this.raycastView) {
-        this.getChimeraxViewMatrix();
-        this._vtkViewMatrixBeforeChimerax = this.getSharedViewMatrix();
-        if (typeof this.raycastView.getChimeraxViewTurns === "function") {
-          var vtkTurns = this.raycastView.getChimeraxViewTurns();
-          if (vtkTurns && vtkTurns.length) {
-            this._vtkViewTurnsBeforeChimerax = vtkTurns.slice();
-          }
-        }
-      }
+      this._prepareVtkViewFromChimerax();
+    } else if (this.backend === "vtk" && backend === "chimerax") {
+      this._prepareChimeraxViewFromVtk();
     }
     if (backend === "chimerax" && this.expandedBelow) {
       this.setExpandedBelow(false);
@@ -860,6 +855,7 @@
     if (backend !== "chimerax") {
       this.chimeraxRendering = false;
       this.chimeraxRerenderInFlight = false;
+      this._pendingChimeraxViewSyncClear = false;
     }
     if (this.raycastView && typeof this.raycastView.setInteractionEnabled === "function") {
       this.raycastView.setInteractionEnabled(backend === "vtk");
@@ -867,13 +863,178 @@
     if (backend === "chimerax") {
       this._repatriateDisplayFromExpandedHost();
     }
+    if (backend === "chimerax" && this._pendingChimeraxViewSyncClear) {
+      this._pendingChimeraxViewSyncClear = false;
+      this.setChimeraxRendering(true, { rerender: true });
+      return;
+    }
     this._syncChrome();
     this._renderCurrent();
+  };
+
+  /**
+   * Leaving ChimeraX for VTK: adopt the viewing angle of the rendered ChimeraX
+   * frame when one is on screen.
+   *
+   * Canonical sync format is ChimeraX ``turn`` commands (resetCamera + orbit).
+   * Never apply ChimeraX's absolute ``view matrix`` (includes camera translation
+   * that blanks VTK). When a ChimeraX frame is showing, do not restore a stale
+   * pre-ChimeraX VTK matrix either — that fought the ChimeraX view on repeated
+   * switches and could re-apply a degenerate camera.
+   */
+  TrajectoryVolumeDisplay.prototype._prepareVtkViewFromChimerax = function () {
+    this.raycastVolIndex = null;
+    this._pendingApplyViewTurnsToVtk = null;
+    this._pendingApplyViewMatrixToVtk = false;
+    var hasCxFrame = this._countRenderedChimeraxImages() > 0;
+    var cxTurns = [];
+    if (hasCxFrame) {
+      if (this.chimeraxRenderedViewTurns && this.chimeraxRenderedViewTurns.length) {
+        cxTurns = this.chimeraxRenderedViewTurns.slice();
+      } else {
+        try {
+          var snap = this.chimeraxViewSnapshot();
+          if (snap && snap.view_turns && snap.view_turns.length) {
+            cxTurns = snap.view_turns.slice();
+          } else if (snap && snap.view_matrix && isValidChimeraxViewMatrixText(snap.view_matrix)) {
+            cxTurns = chimeraxMatrixToViewTurns(snap.view_matrix);
+          }
+        } catch (errCxSnap) { /* keep empty */ }
+      }
+      if (!cxTurns.length && this.chimeraxRenderedViewMatrix
+          && isValidChimeraxViewMatrixText(this.chimeraxRenderedViewMatrix)) {
+        cxTurns = chimeraxMatrixToViewTurns(this.chimeraxRenderedViewMatrix);
+      }
+      if (cxTurns.length) {
+        this._pendingApplyViewTurnsToVtk = cxTurns.slice();
+        this.vtkCameraUserAdjusted = true;
+      }
+      // Identity / default ChimeraX view → VTK resetCamera (no pending matrix).
+      return;
+    }
+    // No ChimeraX frame: restore last VTK camera if we have a sane stash.
+    if (this._vtkViewMatrixBeforeChimerax
+        && !isDegenerateChimeraxViewMatrix(this._vtkViewMatrixBeforeChimerax)) {
+      this.setSharedViewMatrix(this._vtkViewMatrixBeforeChimerax);
+      this._pendingApplyViewMatrixToVtk = true;
+    } else if (this._vtkViewTurnsBeforeChimerax && this._vtkViewTurnsBeforeChimerax.length) {
+      this._pendingApplyViewTurnsToVtk = this._vtkViewTurnsBeforeChimerax.slice();
+    }
+  };
+
+  /**
+   * Map a ChimeraX ``view matrix camera`` rotation (translation ignored) to
+   * approximate ``turn y`` / ``turn x`` degrees relative to identity/orient.
+   */
+  function chimeraxMatrixToViewTurns(vm) {
+    if (!vm) return [];
+    var raw = String(vm).trim();
+    if (raw.toLowerCase().indexOf("camera") === 0) raw = raw.slice(6).trim();
+    var parts = raw.match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/g);
+    if (!parts || parts.length < 12) return [];
+    var nums = parts.slice(0, 12).map(Number);
+    if (!nums.every(function (v) { return isFinite(v); })) return [];
+    // Row-major 3x3 rotation from ChimeraX camera matrix layout.
+    var r0 = nums[0], r1 = nums[1], r2 = nums[2];
+    var r4 = nums[5], r8 = nums[10];
+    var eps = 1e-3;
+    if (Math.abs(r0 - 1) < eps && Math.abs(r4 - 1) < eps && Math.abs(r8 - 1) < eps
+        && Math.abs(nums[1]) < eps && Math.abs(nums[2]) < eps && Math.abs(nums[4]) < eps
+        && Math.abs(nums[6]) < eps && Math.abs(nums[8]) < eps && Math.abs(nums[9]) < eps) {
+      return [];
+    }
+    // VTK-style Euler from the ChimeraX camera matrix, then negate to scene-turn
+    // degrees (ChimeraX ``turn`` / applyChimeraxViewTurns convention).
+    var y = Math.atan2(r2, r0) * (180 / Math.PI);
+    var x = -Math.asin(Math.max(-1, Math.min(1, r1))) * (180 / Math.PI);
+    function normDeg(d) {
+      if (!isFinite(d)) return 0;
+      d = d % 360;
+      if (d > 180) d -= 360;
+      if (d <= -180) d += 360;
+      return d;
+    }
+    y = normDeg(-y);
+    x = normDeg(-x);
+    var out = [];
+    if (Math.abs(y) > 1e-4) out.push({ axis: "y", degrees: y });
+    if (Math.abs(x) > 1e-4) out.push({ axis: "x", degrees: x });
+    return out;
+  }
+
+  function isDegenerateChimeraxViewMatrix(vm) {
+    if (!isValidChimeraxViewMatrixText(vm)) return true;
+    var raw = String(vm).trim();
+    if (raw.toLowerCase().indexOf("camera") === 0) raw = raw.slice(6).trim();
+    var parts = raw.match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/g);
+    if (!parts || parts.length < 12) return true;
+    var mag = 0;
+    for (var i = 0; i < 12; i++) mag += Math.abs(Number(parts[i]));
+    return !(mag > 1e-3);
+  }
+
+  /**
+   * Leaving VTK for ChimeraX: push the live VTK orientation as ChimeraX turns
+   * (preferred) so round-trips share one representation.
+   */
+  TrajectoryVolumeDisplay.prototype._prepareChimeraxViewFromVtk = function () {
+    this._vtkChimeraxSyncMatrix = "";
+    this._vtkChimeraxSyncTurns = [];
+    var hasVtkVolume = !!(this.raycastView && this.raycastView.volume
+      && this._countReadyVolumes() > 0);
+    if (!hasVtkVolume) return;
+    this.getChimeraxViewMatrix();
+    var vm = this.getSharedViewMatrix();
+    if (vm && !isDegenerateChimeraxViewMatrix(vm)) {
+      this._vtkViewMatrixBeforeChimerax = vm;
+    } else {
+      this._vtkViewMatrixBeforeChimerax = "";
+    }
+    var vtkTurns = [];
+    if (typeof this.raycastView.getChimeraxViewTurns === "function") {
+      vtkTurns = this.raycastView.getChimeraxViewTurns() || [];
+      if (vtkTurns.length) {
+        this._vtkViewTurnsBeforeChimerax = vtkTurns.slice();
+      } else {
+        this._vtkViewTurnsBeforeChimerax = [];
+      }
+    }
+    this._vtkChimeraxSyncTurns = vtkTurns.slice();
+    this._vtkChimeraxSyncMatrix = this._vtkViewMatrixBeforeChimerax;
+    var syncPayload = { view_matrix: "", view_turns: [] };
+    // Prefer orient-relative ``turn y`` / ``turn x`` for VTK→ChimeraX. ChimeraX
+    // runs ``volume center`` then ``view orient`` + turns; a VTK view-matrix with
+    // zeroed translation places the camera at the origin and yields a different
+    // wrong angle on every orbit. Turns share the same resetCamera/orbit path
+    // used for ChimeraX→VTK.
+    if (vtkTurns.length) {
+      syncPayload.view_turns = vtkTurns.slice();
+    }
+    this._pendingChimeraxViewSyncClear = !!(
+      syncPayload.view_turns.length || syncPayload.view_matrix
+    );
+    if (typeof this.onSyncVtkViewToChimerax !== "function") return;
+    try {
+      this.onSyncVtkViewToChimerax(syncPayload);
+    } catch (errSync) { /* page hook is best-effort */ }
   };
 
   TrajectoryVolumeDisplay.prototype.setChimeraxRenderedViewMatrix = function (vm) {
     var text = vm && isValidChimeraxViewMatrixText(vm) ? String(vm).trim() : "";
     this.chimeraxRenderedViewMatrix = text;
+  };
+
+  TrajectoryVolumeDisplay.prototype.setChimeraxRenderedViewTurns = function (turns) {
+    this.chimeraxRenderedViewTurns = Array.isArray(turns)
+      ? turns.map(function (t) {
+          return {
+            axis: String((t && t.axis) || "").toLowerCase(),
+            degrees: Number(t && t.degrees)
+          };
+        }).filter(function (t) {
+          return t.axis && Number.isFinite(t.degrees) && Math.abs(t.degrees) > 1e-9;
+        })
+      : [];
   };
 
   function isValidChimeraxViewMatrixText(vm) {
@@ -903,7 +1064,7 @@
     if (this.raycastView) {
       if (typeof this.raycastView.getChimeraxViewMatrixCamera === "function") {
         var live = this.raycastView.getChimeraxViewMatrixCamera();
-        if (live) {
+        if (live && !isDegenerateChimeraxViewMatrix(live)) {
           this.setSharedViewMatrix(live);
           return live;
         }
@@ -911,18 +1072,26 @@
       var renderer = this.raycastView.renderer;
       var cam = renderer && renderer.getActiveCamera && renderer.getActiveCamera();
       if (cam && cam.getViewMatrix) {
-        var mat = new Float64Array(16);
-        cam.getViewMatrix(mat);
-        var out = [];
-        for (var row = 0; row < 3; row++) {
-          for (var col = 0; col < 4; col++) {
-            out.push(mat[col * 4 + row]);
+        // vtk.js Camera.getViewMatrix() returns a mat4 (no out-arg).
+        var mat = cam.getViewMatrix();
+        if (mat && mat.length >= 16) {
+          var out = [];
+          for (var row = 0; row < 3; row++) {
+            for (var col = 0; col < 4; col++) {
+              out.push(mat[col * 4 + row]);
+            }
           }
-        }
-        if (out.every(function (v) { return isFinite(v); })) {
-          this.setSharedViewMatrix(out.map(function (v) {
-            return Number(v).toPrecision(8);
-          }).join(","));
+          out[3] = 0;
+          out[7] = 0;
+          out[11] = 0;
+          if (out.every(function (v) { return isFinite(v); })) {
+            var text = out.map(function (v) {
+              return Number(v).toPrecision(8);
+            }).join(",");
+            if (!isDegenerateChimeraxViewMatrix(text)) {
+              this.setSharedViewMatrix(text);
+            }
+          }
         }
       }
     }
@@ -1790,9 +1959,13 @@
     if (this.renderingOverlayEl
         && this.renderingOverlayEl.classList.contains("cryo-plot-rendering-overlay--show")) {
       // Slice always uses the lower-right badge; other backends only once content exists.
+      // VTK focus-pending keeps a full blocking overlay while the new tick loads.
+      var vtkFocusPendingChrome = isVtk
+        && typeof this._volumeReadyAt === "function"
+        && !this._volumeReadyAt(this.vtkFocusIndex);
       this.renderingOverlayEl.classList.toggle(
         "cryo-plot-rendering-overlay--nonblocking",
-        isSlice || this._hasDisplayableVolumes()
+        !vtkFocusPendingChrome && (isSlice || this._hasDisplayableVolumes())
       );
     }
     if (isVtk && this.raycastView) this._scheduleVtkResize();
@@ -1895,7 +2068,12 @@
     if (!this.raycastView || typeof this.raycastView.resize !== "function") return;
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        if (self.raycastView) self.raycastView.resize();
+        if (!self.raycastView) return;
+        self.raycastView.resize();
+        if (self.raycastView.renderWindow
+            && typeof self.raycastView.renderWindow.render === "function") {
+          self.raycastView.renderWindow.render();
+        }
       });
     });
   };
@@ -1945,45 +2123,68 @@
 
   TrajectoryVolumeDisplay.prototype._renderVtk = function () {
     var self = this;
-    if (!this._hasDisplayableVolumes()) {
-      this.setStatus("", false);
-      if (this.viewportEl) this.viewportEl.hidden = true;
-      this._syncChrome();
-      return;
-    }
     var navTotal = this._volumeNavCount();
-    if (navTotal < 1) return;
-    var idx = this._volumeDisplayIndexForFocus(this.vtkFocusIndex);
+    if (navTotal < 1) return Promise.resolve(false);
+    var focus = Math.max(0, Math.min(navTotal - 1, Math.floor(Number(this.vtkFocusIndex)) || 0));
+    this.vtkFocusIndex = focus;
     while (this.volumes.length < navTotal) this.volumes.push(null);
+    // One volume at a time: never paint a neighbour while the focused slot
+    // is still fetching — keep the loading overlay instead.
+    if (!this._volumeReadyAt(focus)) {
+      if (!this._explicitJobStatusBusy && !this.volumeGenerationBusy) {
+        this.setJobStatus("Loading volume\u2026", true);
+      }
+      if (this.viewportEl) this.viewportEl.hidden = false;
+      this._syncChrome();
+      return Promise.resolve(false);
+    }
+    var idx = focus;
     var vol = this.volumes[idx];
     if (!vol || !vol.volume_b64) {
-      this.setStatus("", false);
+      if (!this._explicitJobStatusBusy && !this.volumeGenerationBusy) {
+        this.setJobStatus("", false);
+      }
       this._syncChrome();
-      return;
+      return Promise.resolve(false);
     }
-    this.setStatus("Loading 3D viewer…", true);
+    // Keep an explicit job busy flag through setVolumeFromB64's clear→add gap
+    // so the overlay covers the blank frame between volumes.
+    this.setJobStatus("Loading volume\u2026", true);
     if (this.viewportEl) this.viewportEl.hidden = false;
     this._syncChrome();
-    this._ensureRaycastView().then(function (view) {
+    return this._ensureRaycastView().then(function (view) {
       if (!view) throw new Error("3D viewer unavailable.");
+      if (self.backend !== "vtk" || self.vtkFocusIndex !== idx) {
+        return false;
+      }
       if (self.raycastVolIndex === idx && self.raycastView === view) {
         self._syncIsoSlider(view);
         if (self._pendingApplyViewTurnsToVtk) self._applyPendingViewTurnsToVtk(view);
         else if (self._pendingApplyViewMatrixToVtk) self._applySharedViewMatrixToVtk(view);
-        if (self.vtkContainerEl) {
-          self.vtkContainerEl.hidden = false;
-        }
+        if (self.vtkContainerEl) self.vtkContainerEl.hidden = false;
         if (self.viewportEl) self.viewportEl.hidden = false;
+        self.setJobStatus("", false);
         self._syncChrome();
-        self.setStatus("", false);
         self._scheduleVtkResize();
-        return;
+        return true;
       }
-      var preserveView = !!(self.raycastView && self.raycastView.volume
+      var prevRaycastIdx = self.raycastVolIndex;
+      var switchingVolume = prevRaycastIdx !== idx;
+      var hadVolume = !!(self.raycastView && self.raycastView.volume);
+      var savedTurns = null;
+      if (switchingVolume && hadVolume
+          && typeof self.raycastView.getChimeraxViewTurns === "function") {
+        savedTurns = self.raycastView.getChimeraxViewTurns();
+      }
+      var preserveView = !!(hadVolume
+        && !switchingVolume
         && (self.vtkSessionViewMatrix || self.getSharedViewMatrix()));
       var pendingTurns = !!(self._pendingApplyViewTurnsToVtk && self._pendingApplyViewTurnsToVtk.length);
       var pendingMatrix = !!self._pendingApplyViewMatrixToVtk;
       self._suppressVtkCameraCapture = true;
+      // Always reset the default camera when the focused slot changes —
+      // preserving the prior camera across setVolumeFromB64 left a blank
+      // viewport after the first volume (clipping / framing race).
       view.setVolumeFromB64(vol.volume_b64, vol.D, { skipDefaultCamera: preserveView });
       if (typeof view.setInteractionEnabled === "function") view.setInteractionEnabled(true);
       if (self.vtkContainerEl) self.vtkContainerEl.hidden = false;
@@ -2001,6 +2202,11 @@
       } else if (pendingTurns) {
         self._applyPendingViewTurnsToVtk(view);
         self._captureVtkSessionViewMatrix(view);
+      } else if (switchingVolume && savedTurns && savedTurns.length
+          && typeof view.applyChimeraxViewTurns === "function") {
+        // Re-apply prior orbit after a fresh default frame for the new slot.
+        view.applyChimeraxViewTurns(savedTurns);
+        self._captureVtkSessionViewMatrix(view);
       } else if (preserveView) {
         self._applyVtkNavigationViewMatrix(view);
       } else {
@@ -2010,11 +2216,18 @@
       if (self.vtkContainerEl) self.vtkContainerEl.hidden = false;
       self.getChimeraxViewMatrix();
       self._syncIsoSlider(view);
-      self.setStatus("", false);
+      self.setJobStatus("", false);
+      self._syncChrome();
       self._syncVolumeNavChrome();
+      if (typeof view.resize === "function") view.resize();
+      if (view.renderWindow && typeof view.renderWindow.render === "function") {
+        view.renderWindow.render();
+      }
       self._scheduleVtkResize();
+      return true;
     }).catch(function (err) {
-      self.setStatus(err.message || "Failed to load 3D viewer.", false);
+      self.setJobStatus(err.message || "Failed to load 3D viewer.", false);
+      return false;
     });
   };
 

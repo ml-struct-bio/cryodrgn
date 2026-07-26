@@ -87,8 +87,10 @@ export class VolumeRaycastView {
     this.percentileSamples = null;
     this.isoLevel = 0;
     this.onCameraChanged = null;
-    this._baseAzimuth = 25;
-    this._baseElevation = 12;
+    // Match ChimeraX ``view #1 orient`` (no decorative tilt). A non-zero base
+    // made the VTK default disagree with ChimeraX default on first switch.
+    this._baseAzimuth = 0;
+    this._baseElevation = 0;
     /** Camera rotation captured right after ``resetCamera()`` (ChimeraX ``view orient``). */
     this._referenceRot3 = null;
     /** Live camera rotation relative to the reference; null means "at default view". */
@@ -242,8 +244,9 @@ export class VolumeRaycastView {
 
   _rot3FromCamera(cam) {
     if (!cam || !cam.getViewMatrix) return null;
-    var mat = new Float64Array(16);
-    cam.getViewMatrix(mat);
+    // vtk.js Camera.getViewMatrix() takes no args and returns a new mat4.
+    var mat = cam.getViewMatrix();
+    if (!mat || mat.length < 16) return null;
     var rot = new Array(9);
     for (var row = 0; row < 3; row++) {
       for (var col = 0; col < 3; col++) {
@@ -326,22 +329,55 @@ export class VolumeRaycastView {
     this.renderWindow.render();
   }
 
-  /** Map orient-relative rotation to ChimeraX ``turn y`` then ``turn x`` degrees. */
-  _chimeraxYxTurnsFromDelta(deltaRot3) {
-    var y = Math.atan2(deltaRot3[2], deltaRot3[0]) * (180 / Math.PI);
-    var x = -Math.asin(clamp(deltaRot3[1], -1, 1)) * (180 / Math.PI);
-    return { y: this._normDeg(y), x: this._normDeg(x) };
-  }
+  /** ChimeraX ``view #1 orient`` + exact ``turn`` matching the live VTK camera.
 
-  /** ChimeraX ``view #1 orient`` + ``turn y`` / ``turn x`` matching the live VTK camera. */
+  Prefer a single exact axis-angle ``turn ax,ay,az deg`` (ChimeraX accepts a
+  custom axis). Euler y/x is lossy for interactive trackball orbits and was
+  producing wrong poses on VTK→ChimeraX switches.
+
+  ChimeraX ``turn`` rotates the scene; the VTK delta is a camera/view change,
+  so the scene turn is the inverse rotation (transpose of the 3x3 delta).
+  */
   getChimeraxViewTurns() {
     this.syncChimeraxTurnsFromCamera();
     if (!this._chimeraxDelta3) return [];
-    var turns = this._chimeraxYxTurnsFromDelta(this._chimeraxDelta3);
-    var out = [];
-    if (Math.abs(turns.y) > 1e-4) out.push({ axis: "y", degrees: turns.y });
-    if (Math.abs(turns.x) > 1e-4) out.push({ axis: "x", degrees: turns.x });
-    return out;
+    var inv = this._mat3Transpose(this._chimeraxDelta3);
+    var aa = this._axisAngleFromMat3(inv);
+    if (!aa) return [];
+    var ax = aa.axis.map(function (v) { return Number(v).toFixed(6); }).join(",");
+    return [{ axis: ax, degrees: aa.degrees }];
+  }
+
+  _rotateCameraAboutWorldAxis(axis, degrees) {
+    if (!this.renderer || !axis || axis.length < 3) return;
+    var cam = this.renderer.getActiveCamera();
+    if (!cam) return;
+    var deg = Number(degrees);
+    if (!isFinite(deg) || Math.abs(deg) < 1e-9) return;
+    var ax = Number(axis[0]), ay = Number(axis[1]), az = Number(axis[2]);
+    var n = Math.sqrt(ax * ax + ay * ay + az * az);
+    if (!(n > 1e-9)) return;
+    ax /= n; ay /= n; az /= n;
+    var rad = deg * Math.PI / 180;
+    var c = Math.cos(rad), s = Math.sin(rad), C = 1 - c;
+    function rotVec(vx, vy, vz) {
+      var dot = ax * vx + ay * vy + az * vz;
+      return [
+        vx * c + (ay * vz - az * vy) * s + ax * dot * C,
+        vy * c + (az * vx - ax * vz) * s + ay * dot * C,
+        vz * c + (ax * vy - ay * vx) * s + az * dot * C,
+      ];
+    }
+    var fp = cam.getFocalPoint();
+    var pos = cam.getPosition();
+    var up = cam.getViewUp();
+    var rel = rotVec(pos[0] - fp[0], pos[1] - fp[1], pos[2] - fp[2]);
+    var nup = rotVec(up[0], up[1], up[2]);
+    cam.setPosition(fp[0] + rel[0], fp[1] + rel[1], fp[2] + rel[2]);
+    cam.setViewUp(nup[0], nup[1], nup[2]);
+    this.renderer.resetCameraClippingRange();
+    this.renderWindow.render();
+    this.syncChimeraxTurnsFromCamera();
   }
 
   applyChimeraxViewTurns(turns) {
@@ -358,13 +394,22 @@ export class VolumeRaycastView {
       var deg = Number(t.degrees);
       if (!isFinite(deg)) continue;
       if (axis === "y") {
-        this.orbitBy(deg, 0);
+        // Scene turn y ↔ camera azimuth of opposite sign.
+        this.orbitBy(-deg, 0);
       } else if (axis === "x") {
-        this.orbitBy(0, deg);
-      } else if (axis === "z" && typeof this.renderer.getActiveCamera().roll === "function") {
-        this.renderer.getActiveCamera().roll(deg);
-        this.renderer.resetCameraClippingRange();
-        this.renderWindow.render();
+        this.orbitBy(0, -deg);
+      } else if (axis === "z") {
+        if (typeof this.renderer.getActiveCamera().roll === "function") {
+          this.renderer.getActiveCamera().roll(-deg);
+          this.renderer.resetCameraClippingRange();
+          this.renderWindow.render();
+        }
+      } else {
+        var parts = axis.split(/[,\s]+/).filter(Boolean);
+        if (parts.length === 3) {
+          // Scene turn (axis, deg) ↔ camera orbit (axis, -deg).
+          this._rotateCameraAboutWorldAxis(parts, -deg);
+        }
       }
     }
     this.syncChimeraxTurnsFromCamera();
@@ -442,8 +487,9 @@ export class VolumeRaycastView {
     if (!this.renderer) return null;
     var cam = this.renderer.getActiveCamera();
     if (!cam || !cam.getViewMatrix) return null;
-    var mat = new Float64Array(16);
-    cam.getViewMatrix(mat);
+    // vtk.js Camera.getViewMatrix() returns a mat4; it does not fill an out-arg.
+    var mat = cam.getViewMatrix();
+    if (!mat || mat.length < 16) return null;
     var out = [];
     for (var row = 0; row < 3; row++) {
       for (var col = 0; col < 4; col++) {
@@ -454,14 +500,26 @@ export class VolumeRaycastView {
     out[7] = 0;
     out[11] = 0;
     if (!out.every(function(v) { return isFinite(v); })) return null;
+    var mag = 0;
+    for (var mi = 0; mi < out.length; mi++) mag += Math.abs(out[mi]);
+    if (!(mag > 1e-3)) return null;
     return out.map(function(v) { return Number(v).toPrecision(8); }).join(",");
   }
 
-  /** Apply ChimeraX ``view matrix camera`` (12 numbers) to the VTK camera. */
+  /** Apply ChimeraX ``view matrix camera`` (12 numbers) to the VTK camera.
+
+  Translation is always zeroed: ChimeraX reports camera position after
+  ``volume center``, and applying that translation frames the map off-screen
+  in VTK (blank viewport). Orientation-only matches ``getChimeraxViewMatrixCamera``.
+  */
   setChimeraxViewMatrixCamera(cameraArg) {
     if (!this.renderer) return false;
     var nums = this._parseChimeraxViewMatrixCamera(cameraArg);
     if (!nums) return false;
+    // Drop ChimeraX camera translation (indices 3, 7, 11).
+    nums[3] = 0;
+    nums[7] = 0;
+    nums[11] = 0;
     var cam = this.renderer.getActiveCamera();
     if (!cam || !cam.setViewMatrix) return false;
     var mat = new Float64Array(16);

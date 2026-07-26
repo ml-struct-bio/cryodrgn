@@ -271,6 +271,27 @@ class TestDashboardTrajectoryCoords:
         assert len(indices) >= 1
         assert 0 not in indices and 1 not in indices
 
+    def test_random_indices_include_xy(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        r = flask_client.post(
+            "/api/trajectory_random_indices",
+            json={
+                "count": 5,
+                "exclude_indices": [0, 1],
+                "x": "z0",
+                "y": "z1",
+            },
+        )
+        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
+            return
+        body = r.get_json()
+        assert body.get("ok") is True
+        indices = body.get("indices") or []
+        xy = body.get("xy") or []
+        assert len(xy) == len(indices)
+        assert all(len(pt) == 2 for pt in xy)
+
     def test_default_endpoints(
         self, flask_client, dashboard_experiment: DashboardExperiment
     ) -> None:

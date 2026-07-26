@@ -376,8 +376,18 @@ def _uncross_path_order(order: list[int], points: np.ndarray) -> list[int]:
     if len(order) < 4:
         return order
     changed = True
+    guard = 0
+    max_guard = max(64, len(order) * len(order))
+    seen: set[str] = set()
     while changed:
         changed = False
+        guard += 1
+        if guard > max_guard:
+            break
+        sig = ",".join(str(i) for i in order)
+        if sig in seen:
+            break
+        seen.add(sig)
         n = len(order)
         for i in range(n - 1):
             for j in range(i + 2, n - 1):

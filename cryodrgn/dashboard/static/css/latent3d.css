@@ -1,0 +1,366 @@
+  /* Full-plot loading veil while the WebGL scatter redraws. No backdrop-filter — it composites over
+     the Plotly WebGL canvas and resets the scatter3d camera when the overlay appears. */
+  .cryo-dash-page--latent3d #latent3d-plot-stack {
+    position: relative;
+    min-height: 280px;
+    isolation: isolate;
+  }
+  .cryo-dash-page--latent3d #latent3d.cryo-plotly-graph-host {
+    isolation: isolate;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-main .cryo-dash-viewport--plotly {
+    position: relative;
+  }
+  /* Full-area veil on first draw only — sibling of the plot stack, not stacked over the WebGL canvas. */
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show:not(
+    .cryo-plot-rendering-overlay--nonblocking
+  ) {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    background: rgba(250, 248, 244, 0.9);
+    pointer-events: none;
+    transform: none;
+    backface-visibility: visible;
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 2rem 2.5rem;
+    max-width: min(92%, 28rem);
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__label {
+    font-size: clamp(1.45rem, 3.2vw, 2.35rem);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #1a202c;
+    text-shadow: 0 0 1px rgba(255, 255, 255, 0.95), 0 2px 18px rgba(255, 255, 255, 0.75);
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__track {
+    width: min(100%, 22rem);
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(36, 59, 83, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(36, 59, 83, 0.18);
+    overflow: hidden;
+  }
+  .cryo-dash-page--latent3d #latent3d-rendering-overlay.cryo-plot-rendering-overlay--show
+    .cryo-plot-rendering-overlay__indeterminate {
+    height: 100%;
+  }
+
+  /* Plot | legend share a column boundary (no gap); keep space after controls only. */
+  .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple {
+    column-gap: 0;
+    row-gap: 1rem;
+  }
+  .cryo-dash-page--latent3d .cryo-dash-row.cryo-dash-row--plot-triple > .cryo-dash-side {
+    margin-right: 1rem;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    align-self: stretch;
+    justify-content: flex-start;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    position: static;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .cryo-cc-legend__heading {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+    line-height: 1.28;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    margin: 0;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .cryo-cc-legend__heading-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    white-space: nowrap;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+    font-size: calc(0.82rem * 1.35 * 0.9 * 0.72);
+  }
+  /* Keep “filtering” plain copy — same weight/colour as the rest of the 3D legend title. */
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .cryo-cc-legend__filter-em {
+    color: inherit;
+    font-weight: inherit;
+    text-decoration: none;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-legend-panel {
+    box-sizing: border-box;
+    /* Default continuous strip; overridden inline when discrete grid was measured (unused when stack is full-width). */
+    --pair-legend-middle-w: min(5.25rem, 14vw);
+  }
+  .cryo-dash-page--latent3d #latent3d-color-legend-panel:not([hidden]) {
+    width: 90%;
+    max-width: 90%;
+    align-self: center;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-legend-panel[hidden] {
+    /* ``[hidden]`` loses to ``.cryo-cc-legend { display: flex }`` on this page without an explicit rule. */
+    display: none !important;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-continuous-wrap:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .pair-legend-continuous-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .pair-legend-middle-track--continuous {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.175rem 0.2rem;
+    padding-right: 0.08rem;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .pair-legend-middle-track--continuous #latent3d-color-hist {
+    grid-column: 1 / -1;
+    width: 92%;
+    max-width: 92%;
+    min-width: 0;
+    justify-self: end;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend__footer--continuous {
+    display: flex;
+    flex-direction: column;
+    gap: 0.175rem;
+    flex-shrink: 0;
+    margin-top: 0.175rem;
+    width: 100%;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend__footer--continuous #latent3d-palette-select {
+    margin-top: 0;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-hist.cryo-cc-hist--pair-vertical {
+    flex: 0 0 auto;
+    width: 92%;
+    max-width: 92%;
+    min-width: 0;
+    min-height: 72px;
+    box-sizing: border-box;
+    align-self: stretch;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend {
+    box-sizing: border-box;
+    padding: 0.2rem 0.23rem 0.18rem;
+    border: 1px solid rgba(36, 59, 83, 0.13);
+    border-radius: 4px;
+    background: rgba(250, 248, 244, 0.85);
+    width: max-content;
+    max-width: 100%;
+    flex: 0 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-top: 0;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend--vertical {
+    gap: 0.175rem;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend-hist-ctrl {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    font-size: 0.65rem;
+    color: var(--muted, #5c6b7a);
+    flex-shrink: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-legend-hist-ctrl label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    cursor: pointer;
+    color: var(--nav-bg, #243b53);
+    font-weight: 500;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside #latent3d-palette-select {
+    width: 100%;
+    max-width: 100%;
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(36, 59, 83, 0.1);
+    font-size: 0.68rem;
+    color: var(--nav-bg, #243b53);
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside
+    #latent3d-palette-select.latent3d-palette-select--hidden-during-plot-render {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    line-height: 1.05;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.6);
+    color: var(--nav-bg, #243b53);
+    padding: 0.18rem 0.34rem;
+    font: inherit;
+    font-weight: 600;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__title:hover {
+    background: rgba(36, 59, 83, 0.06);
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside .pairplot-palette-select__chevron {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    transition: transform 0.12s ease;
+  }
+  .cryo-dash-page--latent3d .latent3d-color-legend-aside
+    .pairplot-palette-select__title[aria-expanded="true"] .pairplot-palette-select__chevron {
+    transform: rotate(90deg);
+  }
+  #latent3d-color-continuous-wrap[hidden] {
+    display: none !important;
+  }
+  #latent3d-color-discrete-wrap {
+    display: none;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switches--pair-2col {
+    /* --cryo-discrete-legend-w set from JS as 90% of 3D plot stack width */
+    width: var(--cryo-discrete-legend-w, 100%);
+    max-width: 100%;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-cell {
+    padding: 0;
+    border-radius: 2px;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-cell--plastic:not(.cryo-cc-discrete-cell--invert) {
+    border-radius: 7px;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch {
+    font-size: 0.62rem;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-label {
+    font-weight: 600;
+    font-size: 0.6rem;
+    line-height: 1.15;
+    color: var(--nav-bg, #243b53);
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch-count {
+    font-size: 0.52rem;
+    line-height: 1.12;
+    color: var(--muted, #5c6b7a);
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-switch input[type="checkbox"] {
+    margin: 0 0.35rem 0 0;
+    flex-shrink: 0;
+  }
+  /* Invert beside “toggle selection” heading — legacy button stays in markup for scripting */
+  .cryo-dash-page--latent3d .cryo-cc-discrete-actions {
+    display: none !important;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-toggle-heading-row {
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.42rem;
+    flex-wrap: wrap;
+    margin: 0 0 0.32rem;
+    min-width: 0;
+    line-height: 1.15;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--nav-bg, #243b53);
+    flex-shrink: 0;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-toggle-heading-row:not([hidden]) {
+    display: flex;
+  }
+  .cryo-dash-page--latent3d .cryo-cc-discrete-toggle-heading-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .cryo-dash-page--latent3d #latent3d-color-discrete-invert-slot
+    .cryo-cc-discrete-cell--invert .cryo-cc-discrete-invert-fitbox
+    .cryo-cc-discrete-switch-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: normal;
+    word-break: normal;
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
+    align-self: center;
+    max-height: 100%;
+    box-sizing: border-box;
+    font-weight: 700;
+  }

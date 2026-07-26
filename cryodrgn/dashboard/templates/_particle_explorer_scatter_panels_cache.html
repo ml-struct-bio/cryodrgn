@@ -1,0 +1,2355 @@
+{# Particle explorer scatter: config, panels/toolbar, montage grid, image-cache preload #}
+// Particle explorer inline script fragment (sidebar + scatter viewport).
+  var cols = {{ numeric_cols | tojson }};
+  var colorCols = {{ color_cols | tojson }};
+  var covariateDisplayMap = {{ covariate_display_map | tojson }};
+  var dx = {{ default_x | tojson }};
+  var dy = {{ default_y | tojson }};
+  var initialRows = {{ initial_rows | tojson }};
+  var totalParticles = {{ total_particles | tojson }};
+  var workdirForSaveHint = {{ workdir | tojson }};
+  var showVolumeExplorer = {{ show_volume_explorer | default(false) | tojson }};
+  var preloadCpus = {{ preload_cpus | tojson }};
+  /** Match ``api_scatter`` when ``explorer_scatter=1`` (``--filter-max`` or 200k default). */
+  var explorerScatterMaxPoints = {{ explorer_scatter_max_points | tojson }};
+  var explorerScatterCapFromEnv = {{ explorer_scatter_cap_from_env | tojson }};
+  /** ``min(len(plot_df), scatter cap)`` from the server — stable cache-size ceiling (matches HTML ``max``). */
+  var explorerScatterPlottedN = {{ scatter_plotted_n | tojson }};
+  /** While montage preload overlay is up: show this requested ``cache_size`` in the number field. */
+  var preloadRequestedCacheTarget = null;
+  /** Original selection-add count; frozen label on the button until that preload finishes. */
+  var selectionCacheAdditionFreezeCount = null;
+  var intFormatter = new Intl.NumberFormat("en-US", {maximumFractionDigits: 0});
+  var PLOTLY = CryoPlotlyArrays;
+  var customdataLength = PLOTLY.customdataLength;
+  var plotlyArrayLength = PLOTLY.length;
+  var isPlotlyArray = PLOTLY.isArray;
+  var plotlyDataRowAsArray = PLOTLY.rowAsArray;
+
+  function fmtInt(value) {
+    var num = Number(value);
+    if (!Number.isFinite(num)) return "0";
+    return intFormatter.format(Math.round(num));
+  }
+
+  /** Thousands-formatted count for scatter region badges (e.g. ``4,678 pts``). */
+  function fmtRegionPtsLabel(n) {
+    return fmtInt(n) + " pts";
+  }
+
+  var preselectRowsForNextFetch = (initialRows && initialRows.length && initialRows.length <= 5000)
+    ? initialRows.slice() : [];
+  var saveSelectionRows = [];
+  var selectionTooltipText = "";
+  var activeSelectionMode = "";
+  var imagesViewEnabled = false;
+  var particleSelFs = document.getElementById("particle-sel-fieldset");
+  var clearExplorerSelectionBtn = document.getElementById("clear-explorer-selection");
+  var selCountRowEl = document.getElementById("sel-count-row");
+  var selCountEl = document.getElementById("sel-count");
+  var selCountFootnoteEl = document.getElementById("sel-count-footnote");
+  var selPieEl = document.getElementById("sel-pie");
+  var selPiePctEl = document.getElementById("sel-pie-pct");
+  var imageCacheProgressEl = document.getElementById("image-cache-progress");
+  var imageCacheProgressBarEl = document.getElementById("image-cache-progress-bar");
+  var imageCacheProgressLabelEl = document.getElementById("image-cache-progress-label");
+  var montageGridRegionEl = document.querySelector(".cryo-dash-montage-grid-region");
+  var montagePreloadOverlayEl = document.getElementById("montage-preload-overlay");
+  var montagePreloadOverlayLabel = document.getElementById("montage-preload-overlay-label");
+  var btnExpandCache = document.getElementById("btn-expand-cache");
+  var btnViewImages = document.getElementById("btn-view-images");
+  var btnVolumeGenerate = document.getElementById("btn-volume-generate");
+  var btnVolumeAnimate = document.getElementById("btn-volume-animate");
+  var volumeStatusEl = document.getElementById("volume-status");
+  var volumeStatusProgressEl = document.getElementById("volume-status-progress");
+  var gridSizeSelect = document.getElementById("grid-size");
+  var cachePanelToggle = document.getElementById("cache-panel-toggle");
+  var cachePanelBody = document.getElementById("cryo-explorer-cache-panel-body");
+  var colorSelectionPanelToggle = document.getElementById("color-selection-panel-toggle");
+  var colorSelectionPanelBody = document.getElementById("color-selection-panel-body");
+  var colorSelectionInactiveNote = document.getElementById("color-selection-inactive-note");
+  var volumesPanelToggle = document.getElementById("volumes-panel-toggle");
+  var volumesPanelBody = document.getElementById("volumes-panel-body");
+  var volumesInactiveNote = document.getElementById("volumes-inactive-note");
+  var colorSelectionPanelShell = document.getElementById("color-selection-panel-shell");
+  var volumesPanelShell = document.getElementById("volumes-panel-shell");
+  var imageGridPanelShell = document.getElementById("image-grid-panel-shell");
+  var imageGridMenuToggle = document.getElementById("image-grid-menu-toggle");
+  var imageGridToolbarControls = document.getElementById("image-grid-toolbar-controls");
+  var imageGridInvertCheck = document.getElementById("image-grid-invert-check");
+  var btnMontageResampleCache = document.getElementById("btn-montage-resample-cache");
+  var montageResampleFitTimer = null;
+  var imageGridMenuBody = document.getElementById("image-grid-menu-body");
+  var imageGridInactiveNote = document.getElementById("image-grid-inactive-note");
+  var scatterControlsCard = document.getElementById("scatter-controls-card");
+  var scatterControlsSide = scatterControlsCard ? scatterControlsCard.closest(".cryo-dash-side") : null;
+  var scatterPlotStack = document.getElementById("scatter-plot-stack");
+  var boxSelectTooltipEl = document.getElementById("box-select-tooltip");
+  var montageActionsEl = document.getElementById("montage-actions");
+  var montageAsideEl = document.querySelector(".cryo-dash-page--particle-explorer .cryo-dash-montage");
+  var montageMenuScrollEl = montageAsideEl
+    ? montageAsideEl.querySelector(".cryo-explorer-menu-scroll")
+    : null;
+  var montageMenuScrollPreserveTop = null;
+  var montageMenuScrollRestorePending = false;
+
+  var montageDisplayMode = "images";
+  var volumeStaticDataUrls = null;
+  var volumeStaticKey = null;
+  var volumeGifDataUrls = null;
+  var volumeGifsKey = null;
+  var EXPLORER_CHIMERAX_CPUS = 16;
+  /** Must match ``EXPLORER_GIF_DURATION_S`` in ``chimerax_animation.py`` (seconds). */
+  var EXPLORER_GIF_LOOP_MS = 4000;
+  var volumeGifLeaderStartMs = null;
+  var volumeGifSyncTimerIds = [];
+  var lastMontageRows = [];
+  var volumeCacheId = null;
+  var volumeAnimateGeneration = 0;
+  var colorSelectionPanelWasActivated = false;
+
+  function explorerPanelIsOpen(toggleEl) {
+    return !!(toggleEl && toggleEl.getAttribute("aria-expanded") === "true");
+  }
+
+  function syncExplorerPanelInactiveNote(inactiveNoteEl, activated) {
+    if (!inactiveNoteEl) return;
+    inactiveNoteEl.hidden = !!activated;
+  }
+
+  function syncExplorerPanelShellInactive(shellEl, activated) {
+    if (!shellEl) return;
+    shellEl.classList.toggle("cryo-explorer-panel-shell--inactive", !activated);
+  }
+
+  function syncExplorerPanelToggleInactive(toggleEl, shellEl, activated) {
+    if (!toggleEl) return;
+    if (shellEl) syncExplorerPanelShellInactive(shellEl, activated);
+    toggleEl.setAttribute("aria-disabled", activated ? "false" : "true");
+  }
+
+  function colorSelectionPanelActivated() {
+    return !!(sc && sc.value && sc.value !== "none");
+  }
+
+  function imageGridPanelActivated() {
+    return !!(preloaded || imagesViewEnabled);
+  }
+
+  function volumesPanelActivated() {
+    return imageGridPanelActivated() && !!(lastMontageRows && lastMontageRows.length);
+  }
+
+  function syncExplorerMontagePanelReadiness() {
+    var colorAct = colorSelectionPanelActivated();
+    syncExplorerPanelToggleInactive(
+      colorSelectionPanelToggle,
+      colorSelectionPanelShell,
+      colorAct
+    );
+    syncExplorerPanelInactiveNote(colorSelectionInactiveNote, colorAct);
+    if (!colorAct && explorerPanelIsOpen(colorSelectionPanelToggle)) {
+      setExplorerPanelOpen(colorSelectionPanelToggle, colorSelectionPanelBody, false);
+    } else if (
+      colorAct
+      && !colorSelectionPanelWasActivated
+      && colorSelectionPanelToggle
+      && colorSelectionPanelBody
+    ) {
+      setExplorerPanelOpen(colorSelectionPanelToggle, colorSelectionPanelBody, true);
+      if (typeof syncParticleExplorerRowExpandForColorHist === "function") {
+        syncParticleExplorerRowExpandForColorHist();
+      }
+    }
+    colorSelectionPanelWasActivated = colorAct;
+
+    var gridAct = imageGridPanelActivated();
+    syncExplorerPanelToggleInactive(imageGridMenuToggle, imageGridPanelShell, gridAct);
+    syncExplorerPanelInactiveNote(imageGridInactiveNote, gridAct);
+    if (!gridAct && imageGridMenuIsOpen()) {
+      setImageGridMenuOpen(false);
+    }
+
+    if (volumesPanelToggle && volumesPanelBody) {
+      var volAct = volumesPanelActivated();
+      syncExplorerPanelToggleInactive(volumesPanelToggle, volumesPanelShell, volAct);
+      syncExplorerPanelInactiveNote(volumesInactiveNote, volAct);
+      if (!volAct && explorerPanelIsOpen(volumesPanelToggle)) {
+        setExplorerPanelOpen(volumesPanelToggle, volumesPanelBody, false);
+      }
+    }
+  }
+
+  function setExplorerPanelOpen(toggleEl, bodyEl, open) {
+    if (!toggleEl || !bodyEl) return;
+    var isOpen = !!open;
+    toggleEl.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    bodyEl.hidden = !isOpen;
+  }
+
+  function ensureLoadImagesPanelOpen() {
+    if (cachePanelToggle && cachePanelBody && !explorerPanelIsOpen(cachePanelToggle)) {
+      setExplorerPanelOpen(cachePanelToggle, cachePanelBody, true);
+    }
+  }
+
+  function wireExplorerPanelToggle(toggleEl, bodyEl, isReadyFn, defaultOpen, onChange) {
+    if (!toggleEl || !bodyEl) return;
+    setExplorerPanelOpen(toggleEl, bodyEl, !!defaultOpen);
+    toggleEl.addEventListener("click", function() {
+      if (isReadyFn && !isReadyFn()) return;
+      var next = !explorerPanelIsOpen(toggleEl);
+      setExplorerPanelOpen(toggleEl, bodyEl, next);
+      if (onChange) onChange(next);
+    });
+  }
+
+  function imageGridMenuIsOpen() {
+    return !!(imageGridMenuToggle && imageGridMenuToggle.getAttribute("aria-expanded") === "true");
+  }
+
+  function syncMontagePanelGridSplit() {
+    if (!montageAsideEl) return;
+    montageAsideEl.classList.toggle(
+      "cryo-dash-montage--image-grid-expanded",
+      imageGridMenuIsOpen()
+    );
+  }
+
+  function setImageGridMenuOpen(open) {
+    var isOpen = !!open;
+    if (isOpen) ensureLoadImagesPanelOpen();
+    if (imageGridMenuToggle) imageGridMenuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    if (imageGridToolbarControls) imageGridToolbarControls.hidden = !isOpen;
+    if (imageGridMenuBody) imageGridMenuBody.hidden = !isOpen;
+    syncMontagePanelGridSplit();
+    if (!isOpen) {
+      updateMontage([]);
+    } else if (imagesViewEnabled && preloaded && preloaded.traceMap) {
+      showRandomPreloaded();
+    }
+    syncHighlightTraceAnnotations();
+    if (isOpen) {
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          syncMontageResampleFromCacheButton();
+          scheduleFitMontageResampleCacheButton();
+          scheduleSyncMontageGridRegionLayout();
+        });
+      });
+    } else {
+      scheduleSyncMontageGridRegionLayout();
+    }
+  }
+
+  function syncImageGridInactiveNote() {
+    syncExplorerMontagePanelReadiness();
+  }
+
+  function montageResampleFromCachePool() {
+    if (!preloaded || !preloaded.traceMap || !preloaded.traceMap.length) return null;
+    return preloaded.traceMap;
+  }
+
+  var RESAMPLE_CACHE_BTN_LINE_HEIGHT = 1;
+  var RESAMPLE_CACHE_BTN_MAX_LINES = 2;
+  var RESAMPLE_CACHE_BTN_TOOLBAR_WIDTH_FRAC = 0.23 * 1.16;
+  var resampleCacheMeasureCanvas = null;
+
+  function resampleCacheToolbarButtonWidthPx() {
+    if (!imageGridToolbarControls) return 0;
+    var tw = imageGridToolbarControls.clientWidth;
+    if (tw < 8) return 0;
+    return Math.max(1, Math.floor(tw * RESAMPLE_CACHE_BTN_TOOLBAR_WIDTH_FRAC));
+  }
+
+  function resampleCacheLabelLineEls(labelEl) {
+    if (!labelEl) return [];
+    var lines = labelEl.querySelectorAll(".cryo-image-grid-resample-btn__line");
+    if (lines.length) return Array.prototype.slice.call(lines);
+    return [labelEl];
+  }
+
+  function resampleCacheBtnFontSpec(btnEl) {
+    var btnStyle = window.getComputedStyle(btnEl);
+    var fontSize = parseFloat(btnStyle.fontSize) || 12;
+    var fontWeight = btnStyle.fontWeight || "600";
+    var fontFamily = btnStyle.fontFamily || "sans-serif";
+    return { fontSize: fontSize, fontWeight: fontWeight, fontFamily: fontFamily };
+  }
+
+  function measureResampleCacheTextWidth(text, fontPx, fontWeight, fontFamily) {
+    if (!text) return 0;
+    if (!resampleCacheMeasureCanvas) {
+      resampleCacheMeasureCanvas = document.createElement("canvas");
+    }
+    var ctx = resampleCacheMeasureCanvas.getContext("2d");
+    if (!ctx) return text.length * fontPx * 0.55;
+    ctx.font = fontWeight + " " + fontPx + "px " + fontFamily;
+    return ctx.measureText(text).width;
+  }
+
+  function applyResampleCacheLabelFontPx(labelEl, lineEls, fontPx) {
+    var px = Math.max(4, Math.round(fontPx)) + "px";
+    var lh = String(RESAMPLE_CACHE_BTN_LINE_HEIGHT);
+    labelEl.style.fontSize = px;
+    labelEl.style.lineHeight = lh;
+    labelEl.style.maxHeight = "";
+    for (var i = 0; i < lineEls.length; i++) {
+      lineEls[i].style.fontSize = px;
+      lineEls[i].style.lineHeight = lh;
+    }
+  }
+
+  function resampleCacheLabelFits(btnEl, labelEl, lineEls, fontPx, maxW, maxH, fontWeight, fontFamily) {
+    applyResampleCacheLabelFontPx(labelEl, lineEls, fontPx);
+    var textW = 0;
+    for (var i = 0; i < lineEls.length; i++) {
+      var lineText = (lineEls[i].textContent || "").trim();
+      textW = Math.max(textW, measureResampleCacheTextWidth(lineText, fontPx, fontWeight, fontFamily));
+    }
+    var lineCount = Math.max(1, lineEls.length);
+    var textH = fontPx * RESAMPLE_CACHE_BTN_LINE_HEIGHT * lineCount;
+    if (textW > maxW + 0.1) return false;
+    if (textH > maxH + 0.1) return false;
+    return true;
+  }
+
+  function fitMontageResampleCacheButtonFont() {
+    if (!btnMontageResampleCache || !imageGridToolbarControls || imageGridToolbarControls.hidden) return;
+    var label = btnMontageResampleCache.querySelector(".cryo-image-grid-resample-btn__label");
+    if (!label) return;
+    var lineEls = resampleCacheLabelLineEls(label);
+    var btnW = resampleCacheToolbarButtonWidthPx();
+    if (btnW >= 8) {
+      btnMontageResampleCache.style.flex = "0 0 auto";
+      btnMontageResampleCache.style.width = btnW + "px";
+      btnMontageResampleCache.style.maxWidth = btnW + "px";
+    } else {
+      btnMontageResampleCache.style.flex = "";
+      btnMontageResampleCache.style.maxWidth = "";
+      btnMontageResampleCache.style.width = "";
+    }
+    label.style.fontSize = "";
+    label.style.maxHeight = "";
+    label.style.lineHeight = "";
+    btnMontageResampleCache.style.height = "";
+    for (var li = 0; li < lineEls.length; li++) {
+      lineEls[li].style.fontSize = "";
+      lineEls[li].style.lineHeight = "";
+    }
+    void btnMontageResampleCache.offsetWidth;
+    var btnStyle = window.getComputedStyle(btnMontageResampleCache);
+    var bw = btnMontageResampleCache.clientWidth;
+    if (bw < 10) return;
+    var padX = (parseFloat(btnStyle.paddingLeft) || 0) + (parseFloat(btnStyle.paddingRight) || 0);
+    var padY = (parseFloat(btnStyle.paddingTop) || 0) + (parseFloat(btnStyle.paddingBottom) || 0);
+    var maxHCap = parseFloat(btnStyle.maxHeight);
+    if (!(maxHCap > 0)) {
+      maxHCap = 26.4 * 1.16;
+    }
+    var maxW = Math.max(1, bw - padX);
+    var maxH = Math.max(1, maxHCap - padY);
+    var fontSpec = resampleCacheBtnFontSpec(btnMontageResampleCache);
+    var hi = Math.min(
+      72,
+      Math.max(4, Math.floor(maxH / (RESAMPLE_CACHE_BTN_LINE_HEIGHT * RESAMPLE_CACHE_BTN_MAX_LINES)))
+    );
+    var lo = 4;
+    var best = lo;
+    while (lo <= hi) {
+      var mid = Math.floor((lo + hi) / 2);
+      if (resampleCacheLabelFits(
+        btnMontageResampleCache,
+        label,
+        lineEls,
+        mid,
+        maxW,
+        maxH,
+        fontSpec.fontWeight,
+        fontSpec.fontFamily
+      )) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    while (best > 4 && !resampleCacheLabelFits(
+      btnMontageResampleCache,
+      label,
+      lineEls,
+      best,
+      maxW,
+      maxH,
+      fontSpec.fontWeight,
+      fontSpec.fontFamily
+    )) {
+      best -= 1;
+    }
+    applyResampleCacheLabelFontPx(label, lineEls, best);
+    var lineCount = Math.max(1, lineEls.length);
+    var contentH = best * RESAMPLE_CACHE_BTN_LINE_HEIGHT * lineCount;
+    var fitH = Math.ceil(contentH + padY);
+    if (fitH > Math.ceil(maxHCap)) {
+      fitH = Math.ceil(maxHCap);
+    }
+    if (fitH < 1) {
+      fitH = 1;
+    }
+    btnMontageResampleCache.style.height = fitH + "px";
+    void btnMontageResampleCache.offsetWidth;
+  }
+
+  function applyMontageResampleCacheButtonLabel(n) {
+    if (!btnMontageResampleCache) return;
+    var nStr = fmtInt(Math.max(1, Math.floor(Number(n) || 1)));
+    var label = btnMontageResampleCache.querySelector(".cryo-image-grid-resample-btn__label");
+    if (label) {
+      var lineEls = resampleCacheLabelLineEls(label);
+      if (lineEls.length >= 2) {
+        lineEls[0].textContent = "Randomly reselect";
+        lineEls[1].textContent = nStr + " grid images";
+        lineEls[1].hidden = false;
+      } else if (lineEls[0]) {
+        lineEls[0].textContent = "Randomly reselect " + nStr + " grid images";
+      }
+    }
+    btnMontageResampleCache.setAttribute(
+      "aria-label",
+      "Randomly reselect " + nStr + " grid images"
+    );
+  }
+
+  function syncMontageResampleFromCacheButton() {
+    if (!btnMontageResampleCache) return;
+    applyMontageResampleCacheButtonLabel(gridSize * gridSize);
+    var pool = montageResampleFromCachePool();
+    var poolOk = !!(pool && pool.length);
+    btnMontageResampleCache.disabled = !!(gridSizeSelect && gridSizeSelect.disabled) || !poolOk;
+    scheduleFitMontageResampleCacheButton();
+  }
+
+  function scheduleFitMontageResampleCacheButton() {
+    if (montageResampleFitTimer) clearTimeout(montageResampleFitTimer);
+    montageResampleFitTimer = setTimeout(function() {
+      montageResampleFitTimer = null;
+      requestAnimationFrame(function() {
+        requestAnimationFrame(fitMontageResampleCacheButtonFont);
+      });
+    }, 50);
+  }
+
+  function montageRowsOrderKey() {
+    return lastMontageRows.length ? lastMontageRows.join(",") : "";
+  }
+
+  function montagePreloadOverlayIsShown() {
+    return !!(montagePreloadOverlayEl &&
+      montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
+  }
+
+  function setMontagePreloadOverlay(on, label) {
+    if (!montagePreloadOverlayEl) return;
+    if (label && montagePreloadOverlayLabel) {
+      montagePreloadOverlayLabel.textContent = label;
+    }
+    montagePreloadOverlayEl.classList.toggle("cryo-plot-rendering-overlay--show", !!on);
+    montagePreloadOverlayEl.setAttribute("aria-hidden", on ? "false" : "true");
+    if (!on) preloadRequestedCacheTarget = null;
+  }
+
+  function setVolumeStatus(msg, showProgress) {
+    if (volumeStatusEl) volumeStatusEl.textContent = msg || "";
+    if (volumeStatusProgressEl) volumeStatusProgressEl.hidden = !showProgress;
+  }
+
+  function invalidateVolumeArtifacts() {
+    if (!showVolumeExplorer) return;
+    volumeStaticDataUrls = null;
+    volumeStaticKey = null;
+    volumeGifDataUrls = null;
+    volumeGifsKey = null;
+    volumeGifLeaderStartMs = null;
+    clearVolumeGifSyncTimers();
+    volumeCacheId = null;
+    volumeAnimateGeneration++;
+    montageDisplayMode = "images";
+    setVolumeStatus("", false);
+    syncVolumeExploreButtons();
+  }
+
+  function syncVolumeExploreButtons() {
+    if (!showVolumeExplorer) return;
+    var hasGrid = lastMontageRows && lastMontageRows.length > 0;
+    var key = montageRowsOrderKey();
+    var hasStatic = volumeStaticDataUrls && volumeStaticKey === key && volumeStaticDataUrls.length;
+    var hasCache = !!(volumeCacheId && volumeStaticKey === key);
+    if (btnVolumeGenerate) {
+      btnVolumeGenerate.disabled = !plotHasScatterData();
+    }
+    if (btnVolumeAnimate) {
+      btnVolumeAnimate.disabled = !hasGrid || !hasStatic || !hasCache;
+      btnVolumeAnimate.title = btnVolumeAnimate.disabled
+        ? "Generate volumes for the current image grid before animating."
+        : "";
+    }
+  }
+
+  function showImagesInMontageFromCache() {
+    if (!preloaded || !lastMontageRows.length) return;
+    for (var i = 0; i < montageCells.length; i++) {
+      if (i < lastMontageRows.length) {
+        var r = lastMontageRows[i];
+        var src = preloaded.rowToSrc.get(r);
+        if (src) montageCells[i].img.src = src;
+      }
+    }
+    montageDisplayMode = "images";
+    syncVolumeExploreButtons();
+  }
+
+  function clearVolumeGifSyncTimers() {
+    for (var ti = 0; ti < volumeGifSyncTimerIds.length; ti++) {
+      clearTimeout(volumeGifSyncTimerIds[ti]);
+    }
+    volumeGifSyncTimerIds = [];
+  }
+
+  function preloadMontageGifUrl(url) {
+    return new Promise(function(resolve, reject) {
+      if (!url) {
+        resolve();
+        return;
+      }
+      var img = new Image();
+      img.onload = function() { resolve(); };
+      img.onerror = function() { reject(new Error("GIF preload failed")); };
+      img.src = url;
+    });
+  }
+
+  function msUntilNextGifLoopPhase(leaderStartMs) {
+    var elapsed = (Date.now() - leaderStartMs) % EXPLORER_GIF_LOOP_MS;
+    return elapsed === 0 ? 0 : EXPLORER_GIF_LOOP_MS - elapsed;
+  }
+
+  /** Cell 0: show GIF immediately and record loop phase for followers. */
+  function startMontageGifLeader(cellIndex, url, generation) {
+    return preloadMontageGifUrl(url).then(function() {
+      if (generation != null && generation !== volumeAnimateGeneration) return;
+      return new Promise(function(resolve) {
+        requestAnimationFrame(function() {
+          if (generation != null && generation !== volumeAnimateGeneration) {
+            resolve();
+            return;
+          }
+          if (cellIndex < montageCells.length) montageCells[cellIndex].img.src = url;
+          volumeGifLeaderStartMs = Date.now();
+          montageDisplayMode = "volumes";
+          syncVolumeExploreButtons();
+          resolve();
+        });
+      });
+    });
+  }
+
+  /** Later cells: wait until the leader's next frame-0 tick, then assign ``src``. */
+  function showMontageCellGifSynced(cellIndex, url, leaderStartMs, generation) {
+    return preloadMontageGifUrl(url).then(function() {
+      if (generation != null && generation !== volumeAnimateGeneration) return;
+      var delay = msUntilNextGifLoopPhase(leaderStartMs);
+      return new Promise(function(resolve) {
+        var tid = setTimeout(function() {
+          requestAnimationFrame(function() {
+            if (generation != null && generation !== volumeAnimateGeneration) {
+              resolve();
+              return;
+            }
+            if (cellIndex < montageCells.length) montageCells[cellIndex].img.src = url;
+            montageDisplayMode = "volumes";
+            syncVolumeExploreButtons();
+            resolve();
+          });
+        }, delay);
+        volumeGifSyncTimerIds.push(tid);
+      });
+    });
+  }
+
+  function showAllCachedVolumeGifsPhaseSynced(urls, generation) {
+    var n = Math.min(
+      montageCells.length,
+      lastMontageRows.length,
+      urls ? urls.length : 0
+    );
+    if (!n || !urls[0]) return Promise.resolve();
+    return startMontageGifLeader(0, urls[0], generation).then(function() {
+      if (generation != null && generation !== volumeAnimateGeneration) return;
+      var leader = volumeGifLeaderStartMs;
+      if (leader == null) return;
+      var jobs = [];
+      for (var ci = 1; ci < n; ci++) {
+        if (urls[ci]) jobs.push(showMontageCellGifSynced(ci, urls[ci], leader, generation));
+      }
+      return Promise.all(jobs);
+    });
+  }
+
+  function showVolumesInMontage() {
+    if (!lastMontageRows.length) return;
+    var key = montageRowsOrderKey();
+    if (!(volumeStaticDataUrls && volumeStaticKey === key && volumeStaticDataUrls.length)) return;
+    if (volumeGifDataUrls && volumeGifsKey === key) {
+      showAllCachedVolumeGifsPhaseSynced(volumeGifDataUrls).catch(function() {
+        setVolumeStatus("Could not load volume GIFs.", false);
+        syncVolumeExploreButtons();
+      });
+      return;
+    }
+    var n = Math.min(montageCells.length, lastMontageRows.length, volumeStaticDataUrls.length);
+    for (var i = 0; i < montageCells.length; i++) {
+      if (i < n) {
+        var g = volumeGifDataUrls && volumeGifDataUrls[i];
+        var s = volumeStaticDataUrls[i];
+        montageCells[i].img.src = g || s || "";
+      } else {
+        montageCells[i].img.src = "";
+      }
+    }
+    montageDisplayMode = "volumes";
+    syncVolumeExploreButtons();
+  }
+
+  function updateParticleSelFieldset() {
+    var n = saveSelectionRows.length;
+    var nFmt = fmtInt(n);
+    var totalFmt = fmtInt(totalParticles);
+    var plotCap = scatterSubsetRowCount();
+    var plotCapFmt = fmtInt(plotCap);
+    var curtailed = totalParticles > plotCap;
+    if (selCountEl) {
+      selCountEl.textContent = "Selected: " + nFmt + "/" + totalFmt + " particles";
+    }
+    if (selCountFootnoteEl) {
+      if (curtailed) {
+        var foot = explorerScatterCapFromEnv
+          ? "Scatter only shows " + plotCapFmt + " particles due to `--filter-max`."
+          : "Scatter only shows " + plotCapFmt + " particles (default cap).";
+        selCountFootnoteEl.textContent = foot;
+        selCountFootnoteEl.hidden = false;
+      } else {
+        selCountFootnoteEl.textContent = "";
+        selCountFootnoteEl.hidden = true;
+      }
+    }
+    var frac = 0;
+    var pctStr = "0.0%";
+    if (totalParticles > 0) {
+      frac = Math.min(1, Math.max(0, n / totalParticles));
+      pctStr = (100 * frac).toFixed(1) + "%";
+    }
+    if (selPiePctEl) selPiePctEl.textContent = pctStr;
+    if (typeof applySelectionPieVisual === "function") {
+      applySelectionPieVisual(frac, pctStr);
+    } else if (selPieEl) {
+      selPieEl.style.setProperty("--sel-frac", String(frac));
+      selPieEl.title = pctStr + " of dataset particles selected";
+    }
+    if (selCountRowEl) {
+      var scatterHint = "";
+      if (curtailed) {
+        scatterHint = "Lasso and box apply only to plotted points.";
+      }
+      if (selectionTooltipText && scatterHint) {
+        selCountRowEl.title = selectionTooltipText + " — " + scatterHint;
+      } else {
+        selCountRowEl.title = selectionTooltipText || scatterHint;
+      }
+      var aria = "Selected " + nFmt + " of " + totalFmt + " particles, " + pctStr;
+      if (curtailed) {
+        aria += "; scatter " + plotCapFmt + " of " + totalFmt;
+      }
+      selCountRowEl.setAttribute("aria-label", aria);
+    }
+    if (particleSelFs) particleSelFs.disabled = (n === 0);
+    if (clearExplorerSelectionBtn) {
+      var nRegClear = 0;
+      try {
+        if (typeof committedScatterRegions !== "undefined" && committedScatterRegions
+            && committedScatterRegions.length) {
+          nRegClear = committedScatterRegions.length;
+        }
+      } catch (eReg) { /* ignore */ }
+      var hasLegendFilter = colorThresholdLevel != null || colorThresholdRange != null;
+      var canClear = n > 0 || nRegClear > 0 || hasLegendFilter;
+      clearExplorerSelectionBtn.disabled = !canClear;
+      clearExplorerSelectionBtn.title = canClear
+        ? "Clear plot selection, geometric regions, and colour-threshold filters."
+        : "No selection or region filters to clear.";
+    }
+    syncCacheSelectionUncachedButton();
+    syncLeadSelectionModeHighlight();
+  }
+
+  function countUncachedSelectionRows() {
+    if (!saveSelectionRows || !saveSelectionRows.length) return 0;
+    var n = 0;
+    for (var i = 0; i < saveSelectionRows.length; i++) {
+      var r = saveSelectionRows[i];
+      if (!preloaded || !preloaded.rows || !preloaded.rows.has(r)) n++;
+    }
+    return n;
+  }
+
+  function syncCacheSelectionUncachedButton() {
+    if (!btnCacheSelectionUncached) return;
+    if (selectionCacheAdditionFreezeCount != null && !montagePreloadOverlayIsShown()) {
+      selectionCacheAdditionFreezeCount = null;
+      btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+    }
+    var busy = montagePreloadOverlayIsShown();
+    var nUnc = countUncachedSelectionRows();
+    if (selectionCacheAdditionFreezeCount != null && busy) {
+      var nf = fmtInt(selectionCacheAdditionFreezeCount);
+      var addingText = "Adding " + nf + " selection images to the cache";
+      var addingHtml = "Adding " + nf + "<br/>selection images to the cache";
+      btnCacheSelectionUncached.disabled = true;
+      btnCacheSelectionUncached.innerHTML = addingHtml;
+      btnCacheSelectionUncached.setAttribute("aria-label", addingText);
+      btnCacheSelectionUncached.title = "Loading thumbnails for " + nf + " selected particle"
+        + (selectionCacheAdditionFreezeCount === 1 ? "" : "s") + "…";
+      btnCacheSelectionUncached.classList.add("cryo-explorer-cache-selection-btn--busy");
+      return;
+    }
+    btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+    var can = !!(
+      saveSelectionRows
+      && saveSelectionRows.length
+      && nUnc > 0
+      && totalParticles
+      && plotHasScatterData()
+      && !busy
+    );
+    btnCacheSelectionUncached.disabled = !can;
+    var addText = "Add " + fmtInt(nUnc) + " selection images to cache";
+    btnCacheSelectionUncached.innerHTML = "Add " + fmtInt(nUnc) + "<br/>selection images to cache";
+    btnCacheSelectionUncached.setAttribute("aria-label", addText);
+    btnCacheSelectionUncached.title = !saveSelectionRows || !saveSelectionRows.length
+      ? "Select particles on the plot or via color controls first."
+      : nUnc === 0
+        ? "All selected particles are already in the image cache."
+        : "Fetch thumbnails for " + fmtInt(nUnc) + " selected particle"
+          + (nUnc === 1 ? "" : "s") + " not yet cached.";
+  }
+
+  function loadUncachedSelectionIntoCache() {
+    if (!saveSelectionRows || !saveSelectionRows.length) return;
+    var uncached = [];
+    for (var i = 0; i < saveSelectionRows.length; i++) {
+      var r = saveSelectionRows[i];
+      if (!preloaded || !preloaded.rows || !preloaded.rows.has(r)) uncached.push(r);
+    }
+    if (!uncached.length) return;
+    var have = preloaded ? cachedImageCount() : 0;
+    var target = have + uncached.length;
+    var overlayLabel = "Caching " + fmtInt(uncached.length) + " selected image"
+      + (uncached.length === 1 ? "" : "s") + "…";
+    preloadImagesInChunksToTarget({
+      finalTarget: target,
+      overlayLabel: overlayLabel,
+      enableImages: true,
+      restrictToScatterPlot: true,
+      selectedRows: uncached,
+      selectionAdditionTotal: uncached.length
+    }).catch(function(e) {
+      console.error("cache selection failed", e);
+    });
+  }
+
+  /** A–Z omitting I, O, U (easier to read vs 1/0 and avoids ambiguous glyphs). */
+  var SAFE_LETTERS = (function() {
+    var out = [];
+    for (var c = 65; c <= 90; c++) {
+      if (c !== 73 && c !== 79 && c !== 85) out.push(String.fromCharCode(c));
+    }
+    return out;
+  })();
+
+  /**
+   * Generate labels for the current grid.
+   * ≤26 images: first labels are single safe letters; any past 23 use pairs (AA, AB, …).
+   * >26 images: row letter from safe alphabet × column number (e.g. A1…An, B1…Bn).
+   */
+  function makeLabels(gridSz) {
+    var k = gridSz * gridSz;
+    function labelAt(idx) {
+      if (idx < SAFE_LETTERS.length) return SAFE_LETTERS[idx];
+      var j = idx - SAFE_LETTERS.length;
+      return SAFE_LETTERS[Math.floor(j / SAFE_LETTERS.length)]
+        + SAFE_LETTERS[j % SAFE_LETTERS.length];
+    }
+    if (k <= 26) {
+      var out = [];
+      for (var i = 0; i < k; i++) out.push(labelAt(i));
+      return out;
+    }
+    var out2 = [];
+    for (var row = 0; row < gridSz; row++) {
+      var letter = SAFE_LETTERS[row];
+      for (var col = 0; col < gridSz; col++) {
+        out2.push(letter + (col + 1));
+      }
+    }
+    return out2;
+  }
+
+  function selectedScatterPalette() {
+    var r = document.querySelector("input[name=\"scatter_palette\"]:checked");
+    var v = r && r.value ? String(r.value) : "Viridis";
+    return CryoColorCovariateLegend.hasPalette(v) ? v : "Viridis";
+  }
+  function covariateScaleCSS(t) {
+    return CryoColorCovariateLegend.paletteScaleCSS(selectedScatterPalette(), t);
+  }
+  var ACCENT = "#c4703a";
+
+  var gridSize = 3;
+  var neighborK = gridSize * gridSize;
+  var labels = makeLabels(gridSize);
+  /** Top annotation band height as a fraction of square thumbnail width (see particle_explorer.css 19cqw). */
+  var MONTAGE_META_TOP_FRAC = 0.19;
+  /** Grid letter label height as a fraction of the meta band (see .cryo-montage-label height). */
+  var MONTAGE_LABEL_META_HEIGHT_FRAC = 0.7885; /* 95% × 0.83 — 17% shorter than prior target */
+  /** Approx cap-height / font-size for Georgia on grid letters. */
+  var MONTAGE_GEORGIA_CAP_HEIGHT_EM = 0.715;
+  /** Vertical padding on light montage cells (1px top + bottom). */
+  var MONTAGE_CELL_PAD_Y = 2;
+  /** Gap between meta band and thumbnail in the fitted grid. */
+  var MONTAGE_META_IMG_GAP = 1;
+
+  /* ---------- montage grid DOM ---------- */
+  var gridEl = document.getElementById("montage-grid");
+  var montageImageInvert = false;
+
+  function applyMontageImageInvert() {
+    if (!gridEl) return;
+    gridEl.classList.toggle("cryo-montage-grid--invert-particles", montageImageInvert);
+  }
+  var montageCells = [];  /* [{img, idx, covar, cell}] */
+
+  function rebuildGrid() {
+    neighborK = gridSize * gridSize;
+    labels = makeLabels(gridSize);
+    gridEl.innerHTML = "";
+    gridEl.style.gridTemplateColumns = "repeat(" + gridSize + ", 1fr)";
+    gridEl.style.gridTemplateRows = "";
+    montageCells = [];
+    for (var i = 0; i < neighborK; i++) {
+      var cell = document.createElement("div");
+      cell.className = "cryo-montage-cell cryo-montage-cell--light";
+
+      var meta = document.createElement("div");
+      meta.className = "cryo-montage-meta";
+      meta.style.boxSizing = "border-box";
+      meta.style.alignItems = "center";
+      meta.style.gap = "0";
+
+      var lbl = document.createElement("span");
+      lbl.className = "cryo-montage-label";
+      var labStr = labels[i];
+      lbl.textContent = labStr;
+      lbl.style.lineHeight = String(MONTAGE_GEORGIA_CAP_HEIGHT_EM);
+      lbl.style.display = "inline-flex";
+      lbl.style.alignItems = "center";
+      lbl.style.alignSelf = "center";
+      lbl.style.boxSizing = "border-box";
+
+      var rightMeta = document.createElement("div");
+      rightMeta.className = "cryo-montage-meta-right";
+      var covar = document.createElement("span");
+      covar.className = "cryo-montage-covar";
+      var idxSpan = document.createElement("div");
+      idxSpan.className = "cryo-montage-idx";
+      rightMeta.appendChild(covar);
+      rightMeta.appendChild(idxSpan);
+
+      meta.appendChild(lbl);
+      meta.appendChild(rightMeta);
+
+      var wrap = document.createElement("div");
+      wrap.className = "cryo-montage-img-wrap";
+      var img = document.createElement("img");
+      img.src = ""; img.alt = "";
+      wrap.appendChild(img);
+
+      cell.appendChild(meta);
+      cell.appendChild(wrap);
+      gridEl.appendChild(cell);
+      montageCells.push({
+        img: img, idx: idxSpan, covar: covar, cell: cell, lbl: lbl, wrap: wrap, meta: meta
+      });
+    }
+    scheduleSyncMontageGridRegionLayout();
+  }
+  rebuildGrid();
+
+  function applyMontageMetaTypography(cellW) {
+    cellW = Math.max(1, Math.round(Number(cellW) || 0));
+    var metaH = cellW * MONTAGE_META_TOP_FRAC;
+    var letterBandPx = metaH * MONTAGE_LABEL_META_HEIGHT_FRAC;
+    var annPx = metaH * 0.418;
+    for (var mi = 0; mi < montageCells.length; mi++) {
+      var mc = montageCells[mi];
+      if (!mc.lbl) continue;
+      var labStr = mc.lbl.textContent || "";
+      var letterFontPx = letterBandPx / MONTAGE_GEORGIA_CAP_HEIGHT_EM;
+      if (labStr.length > 1) {
+        letterFontPx *= Math.min(0.92, 1.22 / labStr.length);
+      }
+      mc.lbl.style.height = letterBandPx.toFixed(2) + "px";
+      mc.lbl.style.maxHeight = letterBandPx.toFixed(2) + "px";
+      mc.lbl.style.fontSize = letterFontPx.toFixed(2) + "px";
+      mc.lbl.style.lineHeight = String(MONTAGE_GEORGIA_CAP_HEIGHT_EM);
+      mc.lbl.style.transform = "translate(" + (letterFontPx * 0.11).toFixed(2) + "px,0)";
+      if (mc.covar) mc.covar.style.fontSize = annPx.toFixed(2) + "px";
+      if (mc.idx) mc.idx.style.fontSize = annPx.toFixed(2) + "px";
+    }
+  }
+
+  var montageGridLayoutTimer = null;
+  function resetMontageGridRegionLayout() {
+    if (!gridEl) return;
+    gridEl.style.width = "";
+    gridEl.style.maxWidth = "";
+    gridEl.style.marginLeft = "";
+    gridEl.style.marginRight = "";
+    gridEl.style.gridTemplateColumns = "repeat(" + gridSize + ", 1fr)";
+    gridEl.style.gridTemplateRows = "";
+    for (var ri = 0; ri < montageCells.length; ri++) {
+      var mc = montageCells[ri];
+      if (mc.wrap) {
+        mc.wrap.style.width = "";
+        mc.wrap.style.height = "";
+        mc.wrap.style.flex = "";
+      }
+      if (mc.meta) {
+        mc.meta.style.height = "";
+        mc.meta.style.minHeight = "";
+        mc.meta.style.maxHeight = "";
+      }
+    }
+  }
+  function montageRowExtraPx() {
+    return MONTAGE_CELL_PAD_Y + MONTAGE_META_IMG_GAP;
+  }
+  function captureMontageMenuScroll() {
+    if (!montageMenuScrollEl) return;
+    montageMenuScrollPreserveTop = montageMenuScrollEl.scrollTop;
+    montageMenuScrollRestorePending = true;
+  }
+
+  function restoreMontageMenuScroll() {
+    if (!montageMenuScrollRestorePending || montageMenuScrollEl == null
+        || montageMenuScrollPreserveTop == null) {
+      return;
+    }
+    montageMenuScrollEl.scrollTop = montageMenuScrollPreserveTop;
+  }
+
+  function finishMontageMenuScrollRestore() {
+    montageMenuScrollRestorePending = false;
+    montageMenuScrollPreserveTop = null;
+  }
+
+  function scheduleRestoreMontageMenuScroll() {
+    requestAnimationFrame(function() {
+      requestAnimationFrame(restoreMontageMenuScroll);
+    });
+  }
+
+  function montageGridLayoutAvailWidth() {
+    if (!imageGridMenuBody) return 0;
+    var availW = imageGridMenuBody.clientWidth;
+    if (availW < 8 && montageGridRegionEl) {
+      availW = montageGridRegionEl.clientWidth;
+    }
+    if (availW < 8 && montageAsideEl) {
+      var asideStyle = window.getComputedStyle(montageAsideEl);
+      var asidePadX = (parseFloat(asideStyle.paddingLeft) || 0)
+        + (parseFloat(asideStyle.paddingRight) || 0);
+      availW = Math.max(0, montageAsideEl.clientWidth - asidePadX);
+    }
+    return availW;
+  }
+  function syncMontageGridRegionLayout() {
+    if (!montageAsideEl || !gridEl) return;
+    syncMontagePanelGridSplit();
+    if (!imageGridMenuBody) return;
+    if (!imageGridMenuIsOpen() || imageGridMenuBody.hidden) {
+      resetMontageGridRegionLayout();
+      return;
+    }
+    resetMontageGridRegionLayout();
+    var n = gridSize;
+    var availW = montageGridLayoutAvailWidth();
+    if (availW < 8 || !montageCells.length) return;
+    var gridStyle = window.getComputedStyle(gridEl);
+    var gap = parseFloat(gridStyle.columnGap || gridStyle.gap) || 4;
+    var rowExtra = montageRowExtraPx();
+    var cellW = Math.floor((availW - gap * (n - 1)) / n);
+    if (cellW < 1) cellW = 1;
+    var metaH = Math.round(cellW * MONTAGE_META_TOP_FRAC);
+    var rowH = cellW + metaH + rowExtra;
+    var gridW = cellW * n + gap * (n - 1);
+    gridEl.style.width = gridW + "px";
+    gridEl.style.maxWidth = "100%";
+    gridEl.style.gridTemplateColumns = "repeat(" + n + ", " + cellW + "px)";
+    gridEl.style.gridTemplateRows = "repeat(" + n + ", " + rowH + "px)";
+    for (var gi = 0; gi < montageCells.length; gi++) {
+      var mcLay = montageCells[gi];
+      if (mcLay.meta) {
+        mcLay.meta.style.height = metaH + "px";
+        mcLay.meta.style.minHeight = metaH + "px";
+        mcLay.meta.style.maxHeight = metaH + "px";
+      }
+      if (mcLay.wrap) {
+        mcLay.wrap.style.width = cellW + "px";
+        mcLay.wrap.style.height = cellW + "px";
+        mcLay.wrap.style.flex = "0 0 auto";
+      }
+    }
+    applyMontageMetaTypography(cellW);
+    restoreMontageMenuScroll();
+    if (montageMenuScrollRestorePending) finishMontageMenuScrollRestore();
+  }
+  function scheduleSyncMontageGridRegionLayout() {
+    if (montageGridLayoutTimer) clearTimeout(montageGridLayoutTimer);
+    montageGridLayoutTimer = setTimeout(function() {
+      montageGridLayoutTimer = null;
+      window.requestAnimationFrame(function() {
+        window.requestAnimationFrame(syncMontageGridRegionLayout);
+      });
+    }, 50);
+  }
+
+  gridSizeSelect.addEventListener("change", function() {
+    gridSize = parseInt(this.value) || 3;
+    rebuildGrid();
+    refillMontageForNewGridSize();
+    syncMontageResampleFromCacheButton();
+  });
+
+  if (imageGridInvertCheck) {
+    imageGridInvertCheck.addEventListener("change", function() {
+      montageImageInvert = !!imageGridInvertCheck.checked;
+      applyMontageImageInvert();
+    });
+  }
+
+  function fillSelect(sel, values, includeNone) {
+    CryoCovariateSelects.fillSelect(sel, values, includeNone, covariateDisplayMap);
+  }
+
+  var sx = document.getElementById("sx");
+  var sy = document.getElementById("sy");
+  var sc = document.getElementById("sc");
+  fillSelect(sx, cols, false);
+  fillSelect(sy, cols, false);
+  fillSelect(sc, colorCols, true);
+  sx.value = cols.indexOf(dx) >= 0 ? dx : cols[0];
+  sy.value = cols.indexOf(dy) >= 0 ? dy : cols[Math.min(1, cols.length - 1)];
+  var renderedScatterAxes = {x: sx.value, y: sy.value};
+
+  var gd = document.getElementById("scatter");
+  var colorHistPanel = document.getElementById("color-hist-panel");
+  var colorHistDiv = document.getElementById("color-hist");
+  var colorContinuousWrap = document.getElementById("color-continuous-hist-wrap");
+  var colorDiscreteWrap = document.getElementById("color-discrete-wrap");
+  var colorDiscreteSwitches = document.getElementById("color-discrete-switches");
+  var btnDiscreteInvertSelection = document.getElementById("btn-discrete-invert-selection");
+  var btnCacheSelectionUncached = document.getElementById("btn-cache-selection-uncached");
+  var btnClearImageCache = document.getElementById("btn-clear-image-cache");
+  var colorHistModeCheck = document.getElementById("color-hist-mode-check");
+  var colorHistModeCheckCaption = document.getElementById("color-hist-mode-check-caption");
+  var colorHistModeCheckWasRange = false;
+  var colorThresholdStatus = document.getElementById("color-threshold-status");
+  var scatterPaletteToggle = document.getElementById("scatter-palette-toggle");
+  var scatterPaletteOptions = document.getElementById("scatter-palette-options");
+  var colorThresholdLevel = null;
+  var colorThresholdRange = null;
+  var colorThresholdColorCol = null;
+  var explorerColorLegend = null;
+  var explorerDiscreteLabelColors = {};
+  var explorerCcLegendPrevMode = null;
+  var leadModeLassoEl = document.getElementById("lead-mode-lasso");
+  var leadModeThresholdEl = document.getElementById("lead-mode-threshold");
+  var leadModeDiscreteEl = document.getElementById("lead-mode-discrete");
+
+  function syncLeadSelectionModeHighlight() {
+    var mode = activeSelectionMode || "";
+    if (leadModeLassoEl) {
+      leadModeLassoEl.classList.toggle("cryo-explorer-lead-item--active", mode === "lasso");
+    }
+    if (leadModeThresholdEl) {
+      leadModeThresholdEl.classList.toggle("cryo-explorer-lead-item--active", mode === "threshold");
+    }
+    if (leadModeDiscreteEl) {
+      leadModeDiscreteEl.classList.toggle("cryo-explorer-lead-item--active", mode === "discrete");
+    }
+  }
+
+  function setActiveSelectionMode(mode) {
+    activeSelectionMode = mode || "";
+    syncLeadSelectionModeHighlight();
+  }
+
+  function syncScatterControlsAlignment() {
+    if (!scatterControlsCard || !scatterControlsSide || !scatterPlotStack) return;
+    var minGapPx = 8;
+    var stackRect = scatterPlotStack.getBoundingClientRect();
+    var sideRect = scatterControlsSide.getBoundingClientRect();
+    if (!stackRect || stackRect.height <= 0 || !sideRect) {
+      scatterControlsCard.style.marginTop = "0px";
+      return;
+    }
+    var previousMargin = scatterControlsCard.style.marginTop;
+    scatterControlsCard.style.marginTop = "0px";
+    var baseTop = scatterControlsCard.offsetTop;
+    var cardHalf = scatterControlsCard.offsetHeight * 0.5;
+    scatterControlsCard.style.marginTop = previousMargin;
+    var plotCenterLocal = (stackRect.top + stackRect.height * 0.5) - sideRect.top;
+    var desiredTop = plotCenterLocal - cardHalf;
+    var px = Math.max(minGapPx, desiredTop - baseTop);
+    scatterControlsCard.style.marginTop = Math.round(px) + "px";
+  }
+
+  function equalizeMontageActionButtonWidths() {
+    if (!montageActionsEl) return;
+    /* Load-images toolbar: equal width via flex CSS; volume buttons via .cryo-explorer-volume-actions grid. */
+    var clearWidthBtns = montageActionsEl.querySelectorAll(
+      ".cryo-explorer-load-images-toolbar .cryo-explorer-action-row__btn .btn,"
+        + " .cryo-explorer-volume-actions .cryo-explorer-action-row__btn .btn"
+    );
+    for (var li = 0; li < clearWidthBtns.length; li++) {
+      clearWidthBtns[li].style.width = "";
+      clearWidthBtns[li].style.maxWidth = "";
+    }
+  }
+
+  var plotlyStackEl = gd && gd.parentElement;
+  if (montageAsideEl && window.CryoResizeObserverUtils) {
+    window.CryoResizeObserverUtils.observeResize(
+      [
+        montageAsideEl,
+        imageGridPanelShell,
+        imageGridToolbarControls,
+        btnMontageResampleCache,
+        imageGridMenuBody,
+        montageGridRegionEl
+      ],
+      function() {
+        scheduleSyncMontageGridRegionLayout();
+        scheduleFitMontageResampleCacheButton();
+      }
+    );
+  }
+  if (plotlyStackEl && window.CryoResizeObserverUtils) {
+    window.CryoResizeObserverUtils.observeResize(
+      [plotlyStackEl],
+      function() {
+        window.requestAnimationFrame(function() {
+          syncScatterControlsAlignment();
+          scheduleSyncMontageGridRegionLayout();
+          equalizeMontageActionButtonWidths();
+          if (!gd || !gd.data || !gd.data.length) return;
+          try { Plotly.Plots.resize(gd); } catch (e) {}
+          if (colorHistPanel && !colorHistPanel.hidden && colorHistDiv) {
+            try { Plotly.Plots.resize(colorHistDiv); } catch (e2) {}
+          }
+        });
+      }
+    );
+  }
+  var overlay = document.getElementById("scatter-rendering-overlay");
+  var scatterRenderingEverCompleted = false;
+  var paletteFieldset = document.getElementById("scatter-palette-radios");
+  var plotStatus = document.getElementById("scatter-plot-status");
+  var preloadStatus = document.getElementById("preload-status");
+  var scatterPlotWatchdog = null;
+  var SCATTER_PLOT_TIMEOUT_MS = 90000;
+  var scatterLoadGeneration = 0;
+  var pendingScatterAfterPlot = null;
+  var highlightTraceAdded = false;
+  var suppressPlotGridHighlights = false;
+  var suppressSelectionEvents = false;
+
+  var selFileBrowserPanel = document.getElementById("sel-file-browser-panel");
+  var selFbList = document.getElementById("sel-fb-list");
+  var selFbPath = document.getElementById("sel-fb-path");
+  var selFbUp = document.getElementById("sel-fb-up");
+  var selFbCancel = document.getElementById("sel-fb-cancel");
+  var selFbSaveName = document.getElementById("sel-fb-save-name");
+  var selFbSaveBtn = document.getElementById("sel-fb-save-btn");
+  var selFbCurrentDir = null;
+  /** When set, ``saveSelectionViaBrowser`` saves these rows (single region) instead of full selection. */
+  var pendingRegionSaveRows = null;
+
+  function scatterTraceCustomdata() {
+    if (!gd || !gd.data || !gd.data[0]) return null;
+    if (gd._fullData && gd._fullData[0] && gd._fullData[0].customdata) {
+      return gd._fullData[0].customdata;
+    }
+    if (gd.data[0].customdata) return gd.data[0].customdata;
+    return null;
+  }
+
+  function plotHasScatterData() {
+    if (!gd || !gd.data || !gd.data[0]) return false;
+    var trace = gd.data[0];
+    if (plotlyArrayLength(trace.x) > 0) return true;
+    var cd = scatterTraceCustomdata();
+    if (!cd) return false;
+    if (plotlyArrayLength(cd) > 0) return true;
+    var input = cd._inputArray;
+    return !!(input && typeof input.length === "number" && input.length > 0);
+  }
+
+  function shuffleInPlace(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i];
+      arr[i] = arr[j];
+      arr[j] = t;
+    }
+    return arr;
+  }
+
+  function allPlotRowsFromTrace() {
+    var cd = scatterTraceCustomdata();
+    if (!cd) return [];
+    var out = [];
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var rowData = PLOTLY.rowAt(cd, i);
+      if (rowData.length > 1) out.push(rowData[1]);
+    }
+    return out;
+  }
+
+  function scatterPlottedRowBudget() {
+    var n = Math.max(0, Number(totalParticles) || 0);
+    return Math.min(n, explorerScatterMaxPoints);
+  }
+
+  /** Rows in the scatter subsample (matches server ``restrict_to_scatter_plot`` pool). */
+  function scatterSubsetRowCount() {
+    var budget = scatterPlottedRowBudget();
+    if (!gd || !gd.data || !gd.data[0]) return budget;
+    var trace = gd.data[0];
+    var nX = plotlyArrayLength(trace.x);
+    if (nX > 0) return Math.min(nX, budget);
+    var cd = scatterTraceCustomdata();
+    var nCd = customdataLength(cd);
+    if (nCd > 0) return Math.min(nCd, budget);
+    return budget;
+  }
+
+  /**
+   * Maximum cache target (first build or expand), from server ``scatter_plotted_n``.
+   * Do not use live trace length here — Plotly v6 binary arrays can mis-report ``.length``
+   * and would clamp a user-entered 5000 down to one HTTP chunk (~256 on 8 cores).
+   */
+  function scatterCacheSizeCap() {
+    var serverCap = Math.max(0, Math.floor(Number(explorerScatterPlottedN) || 0));
+    if (serverCap > 0) return serverCap;
+    return scatterPlottedRowBudget();
+  }
+
+  /** Largest power of 10 ≤ 5% of plotted count (matches ``explorer_cache_size_power10_step``). */
+  function cacheSizePower10StepFromCap(cap) {
+    cap = Math.max(0, Math.floor(Number(cap) || 0));
+    if (cap === 0) return 1;
+    var x = 0.05 * cap;
+    if (x < 1) return 1;
+    var k = Math.floor(Math.log10(x));
+    var step = Math.pow(10, k);
+    return Math.max(1, Math.floor(step));
+  }
+
+  /** 10^floor(log10(n)) — same power-of-ten scale as *n* (arrow / spinner snap lattice). */
+  function cacheSizeArrowSnapStep(n) {
+    n = Math.max(1, Math.floor(Number(n) || 1));
+    if (n <= 1) return 1;
+    return Math.pow(10, Math.floor(Math.log10(n)));
+  }
+
+  function cacheSizeArrowSnapBump(raw, direction) {
+    raw = Math.max(1, Math.floor(Number(raw) || 1));
+    var step = cacheSizeArrowSnapStep(raw);
+    if (direction > 0) {
+      if (raw % step === 0) {
+        return raw + step;
+      }
+      return Math.ceil((raw + 1) / step) * step;
+    }
+    if (raw % step === 0) {
+      return Math.max(1, raw - step);
+    }
+    var prev = Math.floor((raw - 1) / step) * step;
+    return prev < 1 ? 1 : prev;
+  }
+
+  function parseMontageCacheSizeFieldValue(el) {
+    if (!el) return NaN;
+    return parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10);
+  }
+
+  function montageCacheSizeFieldBounds() {
+    var cap = scatterCacheSizeCap();
+    if (!preloaded) return { min: 1, max: cap };
+    var have = cachedImageCount();
+    if (have >= cap) return { min: cap, max: cap };
+    return { min: Math.min(have + 1, cap), max: cap };
+  }
+
+  function clampMontageCacheSizeFieldValue(val) {
+    var b = montageCacheSizeFieldBounds();
+    if (!isFinite(val)) return b.min;
+    return Math.min(b.max, Math.max(b.min, Math.floor(Number(val))));
+  }
+
+  /** Keep step=1 so manual entry stays free; arrow/spinner snapping is handled in JS. */
+  function syncMontageCacheSizeArrowStep(el) {
+    if (!el || el.disabled) return;
+    el.setAttribute("step", "1");
+  }
+
+  function bumpMontageCacheSizeField(direction) {
+    var el = document.getElementById("montage-cache-size-input");
+    if (!el || el.disabled) return;
+    var raw = parseMontageCacheSizeFieldValue(el);
+    if (!isFinite(raw)) raw = montageCacheSizeFieldBounds().min;
+    el.value = String(clampMontageCacheSizeFieldValue(cacheSizeArrowSnapBump(raw, direction)));
+    syncMontageCacheSizeArrowStep(el);
+  }
+
+  /**
+   * Valid integer range for the cache size field (snap lattice step is always 1).
+   */
+  function montageCacheSizeStepperGrid(cap) {
+    cap = Math.max(0, Math.floor(Number(cap) || 0));
+    if (cap === 0) return { minG: 0, step: 1 };
+    if (!preloaded) {
+      return { minG: 1, step: 1 };
+    }
+    var have = cachedImageCount();
+    if (have >= cap) return { minG: cap, step: 1 };
+    return { minG: Math.min(have + 1, cap), step: 1 };
+  }
+
+  function snapMontageCacheSizeToGridNearest(val, cap, grid) {
+    var minG = grid.minG;
+    var step = grid.step;
+    cap = Math.max(0, Math.floor(Number(cap) || 0));
+    if (cap === 0) return 0;
+    if (!isFinite(val)) val = minG;
+    val = Math.floor(Number(val));
+    val = Math.min(cap, Math.max(minG, val));
+    if (step <= 1) return val;
+    var k = Math.round((val - minG) / step);
+    if (!isFinite(k)) k = 0;
+    var out = minG + k * step;
+    if (out > cap) out = minG + Math.floor((cap - minG) / step) * step;
+    if (out < minG) out = minG;
+    return out;
+  }
+
+  /** Round to the nearest multiple of 1000 (used for expand-cache default suggestions). */
+  function nearestThousand(val) {
+    var n = Number(val);
+    if (!isFinite(n)) return 0;
+    return Math.round(n / 1000) * 1000;
+  }
+
+  /** Default first-build target: power-of-ten step, capped at plotted count (matches server ``preload_image_limit``). */
+  function firstBuildCacheSizeDefault() {
+    var cap = scatterCacheSizeCap();
+    if (cap === 0) return 1;
+    var step = cacheSizePower10StepFromCap(cap);
+    return Math.min(cap, Math.max(1, step));
+  }
+
+  /**
+   * Suggested new cache total when expanding: nearest thousand to 2× the current cache,
+   * at least one image above the current total, capped at plotted count.
+   */
+  function defaultMontageNewCacheSizeSuggestion() {
+    if (!preloaded) return firstBuildCacheSizeDefault();
+    var have = cachedImageCount();
+    var cap = scatterCacheSizeCap();
+    if (have >= cap) return cap;
+    var floor = Math.min(have + 1, cap);
+    var target = nearestThousand(2 * have);
+    if (target < floor) {
+      target = Math.ceil(floor / 1000) * 1000;
+    }
+    return Math.min(cap, Math.max(floor, target));
+  }
+
+  function syncMontageCacheSizeLabelEl() {
+    var sp = document.getElementById("montage-cache-size-label-text");
+    var inp = document.getElementById("montage-cache-size-input");
+    if (sp) sp.textContent = preloaded ? "New size" : "Cache size";
+    if (inp) {
+      inp.title = preloaded
+        ? "Total cached images to grow toward (must be greater than the current cache; capped at plotted points)"
+        : "Number of thumbnails to fetch when you build new cache (capped at plotted scatter points)";
+    }
+  }
+
+  /** Keep min/max/value in range; during preload overlay show requested target (disabled). */
+  function syncMontageNewCacheSizeField() {
+    var el = document.getElementById("montage-cache-size-input");
+    if (!el) return;
+    var cap = scatterCacheSizeCap();
+    var grid = montageCacheSizeStepperGrid(cap);
+    el.setAttribute("min", String(grid.minG));
+    el.setAttribute("max", String(cap));
+    syncMontageCacheSizeLabelEl();
+    if (montagePreloadOverlayIsShown()) {
+      el.disabled = true;
+      if (preloadRequestedCacheTarget != null) {
+        var tgt = snapMontageCacheSizeToGridNearest(preloadRequestedCacheTarget, cap, grid);
+        el.value = String(tgt);
+      }
+      syncMontageCacheSizeArrowStep(el);
+      return;
+    }
+    var have = cachedImageCount();
+    if (preloaded && have >= cap) {
+      el.disabled = true;
+      el.setAttribute("min", String(cap));
+      el.setAttribute("step", "1");
+      el.value = String(cap);
+      return;
+    }
+    el.disabled = false;
+    if (!preloaded) {
+      var d0 = firstBuildCacheSizeDefault();
+      var raw0 = parseMontageCacheSizeFieldValue(el);
+      if (!isFinite(raw0) || raw0 < 0 || raw0 > cap) raw0 = d0;
+      var snapped0 = snapMontageCacheSizeToGridNearest(raw0, cap, grid);
+      if (snapped0 < 1) snapped0 = snapMontageCacheSizeToGridNearest(d0, cap, grid);
+      if (snapped0 < 1) snapped0 = 1;
+      el.value = String(Math.min(cap, snapped0));
+      syncMontageCacheSizeArrowStep(el);
+      return;
+    }
+    var suggestion = defaultMontageNewCacheSizeSuggestion();
+    var raw = parseMontageCacheSizeFieldValue(el);
+    var floor = Math.min(have + 1, cap);
+    if (!isFinite(raw) || raw <= floor || raw > cap) raw = suggestion;
+    var snapped = snapMontageCacheSizeToGridNearest(raw, cap, grid);
+    if (snapped < floor) snapped = snapMontageCacheSizeToGridNearest(suggestion, cap, grid);
+    el.value = String(Math.min(cap, Math.max(floor, snapped)));
+    syncMontageCacheSizeArrowStep(el);
+  }
+
+  /** Target cache size from field (first build: [1, cap]; expand: (have, cap]). */
+  function readMontageCacheSizeInput() {
+    var cap = scatterCacheSizeCap();
+    var el = document.getElementById("montage-cache-size-input");
+    var raw = el ? parseInt(String(el.value).replace(/\s/g, "").replace(/,/g, ""), 10) : NaN;
+    var grid = montageCacheSizeStepperGrid(cap);
+    if (!preloaded) {
+      if (!isFinite(raw)) raw = firstBuildCacheSizeDefault();
+      var v = snapMontageCacheSizeToGridNearest(raw, cap, grid);
+      if (v < 1) v = snapMontageCacheSizeToGridNearest(firstBuildCacheSizeDefault(), cap, grid);
+      return Math.min(cap, Math.max(1, v));
+    }
+    var have = cachedImageCount();
+    var floor = have >= cap ? cap : have + 1;
+    if (!isFinite(raw) || raw <= floor) raw = defaultMontageNewCacheSizeSuggestion();
+    var v2 = snapMontageCacheSizeToGridNearest(raw, cap, grid);
+    return Math.min(cap, Math.max(floor, v2));
+  }
+
+  function rowToTraceIndex(row) {
+    var want = Number(row);
+    if (!isFinite(want)) return -1;
+    var cd = scatterTraceCustomdata();
+    if (!cd) return -1;
+    var len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var rowData = PLOTLY.rowAt(cd, i);
+      if (Number(rowData[1]) === want) return i;
+    }
+    return -1;
+  }
+
+  function montageItemForRow(r) {
+    var rn = Number(r);
+    if (!isFinite(rn)) return null;
+    var ti = rowToTraceIndex(rn);
+    if (ti < 0) return null;
+    var src = "";
+    if (preloaded && preloaded.rowToSrc) {
+      // Check both numeric and string keys since row IDs may be stored as either
+      src = preloaded.rowToSrc.get(rn) || preloaded.rowToSrc.get(String(rn)) || preloaded.rowToSrc.get(r) || "";
+    }
+    return { ti: ti, row: rn, src: src };
+  }
+
+  /** Random grid: prefer lasso/box selection, pad from full plot if needed. */
+  function pickRandomMontageItemsFilled(want) {
+    if (!plotHasScatterData()) return [];
+    var primary = [];
+    if (saveSelectionRows && saveSelectionRows.length) {
+      primary = saveSelectionRows.slice();
+      shuffleInPlace(primary);
+    } else {
+      primary = allPlotRowsFromTrace();
+      shuffleInPlace(primary);
+    }
+    var seen = new Set();
+    var out = [];
+    for (var a = 0; a < primary.length && out.length < want; a++) {
+      var r = primary[a];
+      if (seen.has(r)) continue;
+      var it = montageItemForRow(r);
+      if (!it) continue;
+      seen.add(r);
+      out.push(it);
+    }
+    if (out.length < want) {
+      var fallback = allPlotRowsFromTrace();
+      shuffleInPlace(fallback);
+      for (var b = 0; b < fallback.length && out.length < want; b++) {
+        var r2 = fallback[b];
+        if (seen.has(r2)) continue;
+        var it2 = montageItemForRow(r2);
+        if (!it2) continue;
+        seen.add(r2);
+        out.push(it2);
+      }
+    }
+    return out;
+  }
+
+  /* ---------- preloaded image cache ---------- */
+  var preloaded = null;
+
+  function cachedImageCount() {
+    return preloaded && preloaded.rows ? preloaded.rows.size : 0;
+  }
+
+  /** Cached rows that also appear on the current scatter trace (subsample may omit most dataset rows). */
+  function traceMapCachedCount() {
+    return preloaded && preloaded.traceMap ? preloaded.traceMap.length : 0;
+  }
+
+  function formatCachedSelectionStatusCore(activeInSelection) {
+    var nPlot = traceMapCachedCount();
+    var nTot = cachedImageCount();
+    var nSelFmt = fmtInt(activeInSelection);
+    var nPlotFmt = fmtInt(nPlot);
+    var nTotFmt = fmtInt(nTot);
+    if (!nTot) return "";
+    if (nPlot === nTot) {
+      return nSelFmt + " of " + nTotFmt + " cached images in selection";
+    }
+    return nSelFmt + " of " + nPlotFmt + " on-scatter cached in selection ("
+      + nTotFmt + " thumbnails loaded)";
+  }
+
+  function setPreloadStatusCachedTotalOnly() {
+    if (!preloadStatus || !preloaded) return;
+    var n = cachedImageCount();
+    preloadStatus.textContent = n ? fmtInt(n) + " images cached." : "";
+  }
+
+  function allImagesCached() {
+    return cachedImageCount() >= scatterCacheSizeCap();
+  }
+
+  function syncExpandCacheButton(loading) {
+    if (!btnExpandCache) return;
+    syncMontageCacheSizeLabelEl();
+    if (loading) {
+      btnExpandCache.disabled = true;
+      return;
+    }
+    if (!preloaded) {
+      btnExpandCache.classList.add("cryo-explorer-expand-cache-btn--compact");
+      btnExpandCache.textContent = "Build new cache\nwith " + fmtInt(readMontageCacheSizeInput()) + " images";
+      var capB = scatterCacheSizeCap();
+      var canBuild = !!(totalParticles && plotHasScatterData() && capB > 0);
+      btnExpandCache.disabled = !canBuild;
+      btnExpandCache.title = !totalParticles
+        ? "No particles in this experiment."
+        : !plotHasScatterData()
+          ? "Wait for the scatter plot to finish loading."
+          : "Fetch up to " + fmtInt(capB)
+            + " thumbnails (see cache size).";
+      return;
+    }
+    btnExpandCache.classList.add("cryo-explorer-expand-cache-btn--compact");
+    btnExpandCache.textContent = "Expand cache by\n" + fmtInt(Math.max(0,
+      readMontageCacheSizeInput() - cachedImageCount()
+    )) + " random images";
+    var have = cachedImageCount();
+    var want = readMontageCacheSizeInput();
+    var cap = scatterCacheSizeCap();
+    var canExpand = !!(want > have && have < cap);
+    btnExpandCache.disabled = !canExpand;
+    if (have >= cap) {
+      btnExpandCache.title = "All plotted particle images are already cached.";
+    } else if (want <= have) {
+      btnExpandCache.title = "Set new cache size above " + fmtInt(have) + " to expand.";
+    } else {
+      btnExpandCache.title = "Fetch thumbnails up to the new cache size (now " + fmtInt(have) +
+        " cached).";
+    }
+  }
+
+  function remainingScatterImagesToLoad() {
+    var cap = scatterCacheSizeCap();
+    var have = cachedImageCount();
+    return Math.max(0, cap - have);
+  }
+
+  function syncClearCacheButton(loading) {
+    if (!btnClearImageCache) return;
+    var cacheReadyToClear = !!(preloaded && !montagePreloadOverlayIsShown());
+    btnClearImageCache.disabled = !!(loading || !cacheReadyToClear);
+    btnClearImageCache.title = !preloaded
+      ? "Build new cache before you can clear one."
+      : montagePreloadOverlayIsShown()
+        ? "Wait until loading finishes."
+        : "Discard all downloaded thumbnails from this explorer session.";
+  }
+
+  /** Drop server PRELOAD_CACHE for this epoch so chunked rebuild stays in sync after a clear. */
+  function invalidateServerPreloadCache() {
+    return fetch("{{ url_for('api_preload_images') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invalidate_cache: true }),
+      keepalive: true
+    }).catch(function() {});
+  }
+
+  function clearExplorerImageCache() {
+    if (!preloaded) return;
+    invalidateServerPreloadCache().finally(function flushLocalExplorerPreloadAfterServer() {
+      if (!preloaded) return;
+      selectionCacheAdditionFreezeCount = null;
+      if (btnCacheSelectionUncached) {
+        btnCacheSelectionUncached.classList.remove("cryo-explorer-cache-selection-btn--busy");
+      }
+      preloaded = null;
+      imagesViewEnabled = false;
+      if (imageGridInvertCheck) {
+        imageGridInvertCheck.checked = false;
+      }
+      montageImageInvert = false;
+      applyMontageImageInvert();
+      gridSizeSelect.disabled = true;
+      setImageGridMenuOpen(false);
+      lastMontageRows = [];
+      activePool = null;
+      preloadRequestedCacheTarget = null;
+      setMontagePreloadOverlay(false);
+      setImageCacheProgress(false);
+      if (preloadStatus) preloadStatus.textContent = "";
+      montageDisplayMode = "images";
+      invalidateVolumeArtifacts();
+      updateMontage([]);
+      syncMontageNewCacheSizeField();
+      syncImageCacheButton(false);
+      syncHighlightTraceAnnotations();
+      syncVolumeExploreButtons();
+    });
+  }
+
+  function syncImageCacheButton(loading) {
+    if (!btnViewImages) return;
+    if (!preloaded) {
+      btnViewImages.textContent = "Load all\n" + fmtInt(scatterCacheSizeCap()) + " images";
+    } else if (allImagesCached()) {
+      btnViewImages.textContent = "Load remaining\n" + fmtInt(0) + " images";
+    } else {
+      var rem = remainingScatterImagesToLoad();
+      btnViewImages.textContent = "Load remaining\n" + fmtInt(rem) + " images";
+    }
+    btnViewImages.disabled = !!loading || !preloaded || allImagesCached();
+    btnViewImages.setAttribute("aria-label", btnViewImages.textContent);
+    btnViewImages.title = !preloaded
+      ? "Build new cache first."
+      : allImagesCached()
+        ? "All particle images on the current scatter are loaded."
+        : (btnViewImages.disabled ? "Finish loading cache first." : "");
+    syncMontageNewCacheSizeField();
+    syncExpandCacheButton(loading);
+    syncClearCacheButton(loading);
+    syncCacheSelectionUncachedButton();
+    syncImageGridInactiveNote();
+    syncMontageResampleFromCacheButton();
+  }
+
+  function syncImageCacheLoadPanelVsProgress() {
+    if (!imageCacheProgressEl) return;
+    var fs = document.getElementById("cryo-explorer-image-cache-fieldset");
+    var wrap = document.getElementById("cryo-explorer-cache-load-progress-wrap");
+    var show = !imageCacheProgressEl.hidden;
+    if (fs) fs.classList.toggle("cryo-explorer-montage-group--image-cache-loading", show);
+    if (wrap) {
+      wrap.hidden = !show;
+      wrap.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+    imageCacheProgressEl.setAttribute("aria-hidden", show ? "false" : "true");
+  }
+
+  function setImageCacheProgress(on, current, total) {
+    if (!imageCacheProgressEl) return;
+    if (!on) {
+      imageCacheProgressEl.hidden = true;
+      imageCacheProgressEl.setAttribute("aria-valuenow", "0");
+      if (imageCacheProgressBarEl) imageCacheProgressBarEl.style.width = "0%";
+      if (imageCacheProgressLabelEl) imageCacheProgressLabelEl.textContent = "0%";
+      syncImageCacheLoadPanelVsProgress();
+      return;
+    }
+    total = Math.max(1, Number(total) || 1);
+    current = Math.max(0, Math.min(Number(current) || 0, total));
+    var pct = Math.round((current / total) * 100);
+    imageCacheProgressEl.hidden = false;
+    imageCacheProgressEl.setAttribute("aria-valuenow", String(pct));
+    if (imageCacheProgressBarEl) imageCacheProgressBarEl.style.width = pct + "%";
+    if (imageCacheProgressLabelEl) {
+      imageCacheProgressLabelEl.textContent = pct + "% loaded ("
+        + fmtInt(current) + " / "
+        + fmtInt(total) + ")";
+    }
+    syncImageCacheLoadPanelVsProgress();
+  }
+
+  /** Max new thumbnails per HTTP preload round-trip (JSON + base64 payload size). */
+  var IMAGE_CACHE_HTTP_CHUNK_MAX = 400;
+
+  function imageCacheChunkSize(total) {
+    total = Math.max(0, Number(total) || 0);
+    if (!total) return 0;
+    var cpus = Math.max(1, Number(preloadCpus) || 1);
+    var parallelThreshold = Math.max(128, cpus * 32);
+    var minChunk = cpus > 1 ? parallelThreshold : 250;
+    var targetChunk = Math.ceil(total / 200);
+    return Math.min(IMAGE_CACHE_HTTP_CHUNK_MAX, 5000, Math.max(minChunk, targetChunk));
+  }
+
+  function preloadFetchErrorMessage(err) {
+    var msg = err && err.message ? String(err.message) : "";
+    if (msg === "Failed to fetch" || /networkerror/i.test(msg)) {
+      return "Image cache request failed (network or timeout). Try a smaller new cache size.";
+    }
+    return msg || "Image cache failed.";
+  }
+
+  /** Next absolute ``cache_size`` for one preload request when growing toward ``finalTarget``. */
+  function computeNextCacheChunkTarget(before, finalTarget, scatterTotalForStepping) {
+    if (before >= finalTarget) return before;
+    var step;
+    if (scatterTotalForStepping != null) {
+      var st = scatterTotalForStepping;
+      step = imageCacheChunkSize(st);
+      var userTarget = readMontageCacheSizeInput();
+      var roomTowardUser = userTarget - before;
+      if (roomTowardUser > 0) {
+        step = Math.max(1, Math.min(step, roomTowardUser));
+      } else {
+        step = Math.max(1, Math.min(step, st - before));
+      }
+      return Math.min(finalTarget, Math.min(st, before + step));
+    }
+    step = imageCacheChunkSize(finalTarget);
+    step = Math.max(1, Math.min(step, finalTarget - before));
+    return Math.min(finalTarget, before + step);
+  }
+
+  function refreshPreloadStatusAfterChunkedLoad() {
+    setPreloadStatusCachedTotalOnly();
+  }
+
+  /**
+   * Grow the server+client cache toward ``finalTarget`` with chunked requests so the
+   * progress bar updates during build, expand, selection fetch, and load-all.
+   */
+  function preloadImagesInChunksToTarget(opts) {
+    opts = opts || {};
+    var finalTarget = Math.max(0, Number(opts.finalTarget) || 0);
+    var overlayLabel = opts.overlayLabel || "Loading image cache...";
+    var scatterTotalForStepping = opts.scatterTotalForStepping != null
+      ? opts.scatterTotalForStepping
+      : null;
+    var enableImages = opts.enableImages !== false;
+    var restrictToScatterPlot = !!opts.restrictToScatterPlot;
+    var scatterMaxPoints = opts.scatterMaxPoints;
+    var selectedRows = opts.selectedRows || null;
+    var suppressHighlightsDuring = !!opts.suppressHighlightsDuring;
+    var suppressMontageRefresh = !!opts.suppressMontageRefresh;
+    var fullLoad = !!opts.fullLoad;
+    var selAddN = opts.selectionAdditionTotal != null ? Math.round(Number(opts.selectionAdditionTotal)) : 0;
+    var trackSelectionAdditionFreeze = selAddN > 0;
+
+    if (finalTarget < 1) {
+      return Promise.resolve(null);
+    }
+
+    preloadRequestedCacheTarget = finalTarget;
+
+    var progressStartCount = cachedImageCount();
+    var progressTotal = progressStartCount > 0
+      ? Math.max(1, finalTarget - progressStartCount)
+      : Math.max(1, finalTarget);
+
+    function updateImageCacheChunkProgress() {
+      var added = Math.max(0, cachedImageCount() - progressStartCount);
+      setImageCacheProgress(true, added, progressTotal);
+    }
+
+    if (trackSelectionAdditionFreeze) {
+      selectionCacheAdditionFreezeCount = selAddN;
+    }
+
+    setMontagePreloadOverlay(true, overlayLabel);
+    if (opts.clearStatusAtStart && preloadStatus) preloadStatus.textContent = "";
+    updateImageCacheChunkProgress();
+    if (suppressHighlightsDuring) {
+      suppressPlotGridHighlights = true;
+      syncHighlightTraceAnnotations();
+    }
+    syncImageCacheButton(true);
+
+    function doneWithSelectionAdditionFreeze() {
+      if (trackSelectionAdditionFreeze) {
+        selectionCacheAdditionFreezeCount = null;
+      }
+    }
+
+    function finishSuccess() {
+      doneWithSelectionAdditionFreeze();
+      setMontagePreloadOverlay(false);
+      setImageCacheProgress(false);
+      if (suppressHighlightsDuring) {
+        suppressPlotGridHighlights = false;
+        syncHighlightTraceAnnotations();
+      }
+      refreshPreloadStatusAfterChunkedLoad();
+      if (!suppressMontageRefresh) showRandomPreloaded();
+      syncImageCacheButton(false);
+      syncVolumeExploreButtons();
+    }
+
+    /** Server returned OK but added no new thumbnails (common for selection vs scatter subsample). */
+    function finishPlateauNoNewImages() {
+      doneWithSelectionAdditionFreeze();
+      setMontagePreloadOverlay(false);
+      var n = cachedImageCount();
+      setImageCacheProgress(false);
+      if (suppressHighlightsDuring) {
+        suppressPlotGridHighlights = false;
+        syncHighlightTraceAnnotations();
+      }
+      refreshPreloadStatusAfterChunkedLoad();
+      if (preloadStatus && n < finalTarget) {
+        preloadStatus.textContent = fmtInt(n) + " images cached.";
+        preloadStatus.title = "Could not add more (off-scatter selection, already cached, or server cache cap).";
+      } else if (preloadStatus) {
+        preloadStatus.title = "";
+      }
+      if (!suppressMontageRefresh) showRandomPreloaded();
+      syncImageCacheButton(false);
+      syncVolumeExploreButtons();
+    }
+
+    function nextChunk() {
+      var before = cachedImageCount();
+      if (before >= finalTarget) {
+        finishSuccess();
+        return Promise.resolve(null);
+      }
+      var target = computeNextCacheChunkTarget(before, finalTarget, scatterTotalForStepping);
+      if (target <= before) {
+        finishSuccess();
+        return Promise.resolve(null);
+      }
+      var isDelta = !!preloaded;
+      return fetchPreload(sx.value, sy.value, null, {
+        cacheSize: target,
+        enableImages: enableImages,
+        delta: isDelta,
+        fullLoad: fullLoad,
+        keepOverlayAfterSuccess: true,
+        suppressStatus: true,
+        suppressMontageUpdate: true,
+        restrictToScatterPlot: restrictToScatterPlot,
+        scatterMaxPoints: scatterMaxPoints,
+        selectedRows: selectedRows,
+        overlayLabel: overlayLabel
+      }).then(function() {
+        if (cachedImageCount() <= before) {
+          if (isDelta) {
+            finishPlateauNoNewImages();
+            return Promise.resolve(null);
+          }
+          throw new Error("Image cache did not advance.");
+        }
+        updateImageCacheChunkProgress();
+        return nextChunk();
+      });
+    }
+
+    return nextChunk()
+      .catch(function(e) {
+        console.error("chunked preload failed", e);
+        doneWithSelectionAdditionFreeze();
+        setImageCacheProgress(false);
+        if (suppressHighlightsDuring) {
+          suppressPlotGridHighlights = false;
+          syncHighlightTraceAnnotations();
+        }
+        if (preloadStatus) preloadStatus.textContent = preloadFetchErrorMessage(e);
+        setMontagePreloadOverlay(false);
+        syncImageCacheButton(false);
+        syncVolumeExploreButtons();
+        throw e;
+      });
+  }
+
+  function fetchPreload(xcol, ycol, onDone, opts) {
+    opts = opts || {};
+    var cacheSize = opts.cacheSize || scatterSubsetRowCount();
+    preloadRequestedCacheTarget = cacheSize;
+    var plottedCap = scatterSubsetRowCount();
+    var overlayLabel = opts.overlayLabel
+      ? opts.overlayLabel
+      : (opts.fullLoad
+        ? "Loading all " + fmtInt(plottedCap) + " plotted particle images..."
+        : "Loading image cache...");
+    setMontagePreloadOverlay(true, overlayLabel);
+    syncImageCacheButton(true);
+    var body = { x: xcol, y: ycol, cache_size: cacheSize };
+    if (opts.delta) {
+      body.response_mode = "delta";
+    }
+    if (opts.restrictToScatterPlot) {
+      body.restrict_to_scatter_plot = true;
+      body.scatter_max_points = opts.scatterMaxPoints != null
+        ? opts.scatterMaxPoints
+        : explorerScatterMaxPoints;
+    }
+    if (opts.initialRows && opts.initialRows.length) {
+      body.initial_rows = opts.initialRows.slice();
+    }
+    if (opts.selectedRows && opts.selectedRows.length) {
+      body.selected_rows = opts.selectedRows.map(Number).filter(function(x) {
+        return isFinite(x);
+      });
+    }
+    return fetch("{{ url_for('api_preload_images') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, j: j }; });
+      })
+      .then(function(res) {
+        if (!res.ok) {
+          var msg = (res.j && res.j.error) ? res.j.error : "Image cache request failed.";
+          if (preloadStatus) preloadStatus.textContent = msg;
+          setMontagePreloadOverlay(false);
+          if (onDone) onDone(new Error(msg));
+          throw new Error(msg);
+        }
+        var data = res.j;
+        if (!data.rows || !data.images || (!data.rows.length && !opts.delta)) {
+          if (preloadStatus) preloadStatus.textContent = "No images available.";
+          setMontagePreloadOverlay(false);
+          if (onDone) onDone(new Error("no images"));
+          throw new Error("no images");
+        }
+        var rowToSrc = (opts.delta && preloaded && preloaded.rowToSrc)
+          ? new Map(preloaded.rowToSrc)
+          : new Map();
+        var rowsSet = (opts.delta && preloaded && preloaded.rows)
+          ? new Set(preloaded.rows)
+          : new Set();
+        data.rows.forEach(function(r, i) {
+          rowToSrc.set(r, "data:image/jpeg;base64," + data.images[i]);
+          rowsSet.add(r);
+        });
+        preloaded = {rows: rowsSet, rowToSrc: rowToSrc, traceMap: null};
+        if (opts.enableImages) {
+          imagesViewEnabled = true;
+          gridSizeSelect.disabled = false;
+          setImageGridMenuOpen(true);
+        }
+        buildTraceMap();
+        /* Lasso/box before image display only set saveSelectionRows — rebuild activePool for montage + clicks. */
+        if (saveSelectionRows && saveSelectionRows.length) {
+          var sset = new Set(saveSelectionRows);
+          var ap = preloaded.traceMap.filter(function(item) {
+            return sset.has(item.row);
+          });
+          if (ap.length) {
+            activePool = ap;
+            lassoSelectedRowSet = new Set();
+            for (var li = 0; li < ap.length; li++) {
+              lassoSelectedRowSet.add(ap[li].row);
+            }
+          }
+        }
+        if (preloadStatus && !opts.suppressStatus) {
+          setPreloadStatusCachedTotalOnly();
+          preloadStatus.title = "";
+        }
+        if (!opts.keepOverlayAfterSuccess) {
+          setMontagePreloadOverlay(false);
+        }
+        if (!opts.suppressMontageUpdate) {
+          showRandomPreloaded();
+        }
+        syncImageCacheButton(!!opts.keepOverlayAfterSuccess);
+        if (onDone) onDone(null);
+        return data;
+      })
+      .catch(function(e) {
+        console.error("preload failed", e);
+        if (preloadStatus) preloadStatus.textContent = preloadFetchErrorMessage(e);
+        setMontagePreloadOverlay(false);
+        syncImageCacheButton(false);
+        if (onDone) onDone(e);
+        if (onDone) return null;
+        throw e;
+      });
+  }
+
+  function expandImageCacheToTarget() {
+    if (!preloaded) return;
+    var target = readMontageCacheSizeInput();
+    var before = cachedImageCount();
+    if (target <= before) return;
+    var label = "Expanding cache to " + fmtInt(target) + " images…";
+    preloadImagesInChunksToTarget({
+      finalTarget: target,
+      overlayLabel: label,
+      enableImages: true,
+      restrictToScatterPlot: true
+    }).catch(function(e) {
+      console.error("expand cache failed", e);
+    });
+  }
+
+  function buildInitialImageCache() {
+    if (preloaded || !totalParticles || !plotHasScatterData()) return;
+    if (scatterCacheSizeCap() < 1) return;
+    var sz = readMontageCacheSizeInput();
+    preloadImagesInChunksToTarget({
+      finalTarget: sz,
+      overlayLabel: "Building cache (" + fmtInt(sz) + " images)…",
+      enableImages: true,
+      restrictToScatterPlot: true
+    }).catch(function(e) {
+      console.error("build cache failed", e);
+    });
+  }
+
+  function initializeExplorerView() {
+    loadPlot(true);
+  }
+
+  function loadAllImagesInChunks() {
+    var total = scatterCacheSizeCap();
+    return preloadImagesInChunksToTarget({
+      finalTarget: total,
+      scatterTotalForStepping: total,
+      overlayLabel: "Loading all " + fmtInt(total) + " plotted particle images...",
+      enableImages: true,
+      restrictToScatterPlot: true,
+      suppressHighlightsDuring: true,
+      fullLoad: true,
+      clearStatusAtStart: true
+    })
+      .catch(function(e) {
+        console.error("load all images failed", e);
+      });
+  }
+
+  if (btnExpandCache) {
+    btnExpandCache.addEventListener("click", function() {
+      if (!preloaded) {
+        buildInitialImageCache();
+      } else {
+        expandImageCacheToTarget();
+      }
+    });
+  }
+  if (btnClearImageCache) {
+    btnClearImageCache.addEventListener("click", function() {
+      clearExplorerImageCache();
+    });
+  }
+  if (btnCacheSelectionUncached) {
+    btnCacheSelectionUncached.addEventListener("click", function() {
+      loadUncachedSelectionIntoCache();
+    });
+  }
+
+  var montageCacheSizeInput = document.getElementById("montage-cache-size-input");
+  if (montageCacheSizeInput) {
+    var montageCacheSizeInputPrev = null;
+    var montageCacheOverlayBusy = function() {
+      return !!(montagePreloadOverlayEl &&
+        montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show"));
+    };
+    montageCacheSizeInput.addEventListener("keydown", function(ev) {
+      if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
+      if (montageCacheOverlayBusy() || montageCacheSizeInput.disabled) return;
+      ev.preventDefault();
+      bumpMontageCacheSizeField(ev.key === "ArrowUp" ? 1 : -1);
+      montageCacheSizeInputPrev = parseMontageCacheSizeFieldValue(montageCacheSizeInput);
+      syncExpandCacheButton(montageCacheOverlayBusy());
+    });
+    montageCacheSizeInput.addEventListener("focus", function() {
+      montageCacheSizeInputPrev = parseMontageCacheSizeFieldValue(montageCacheSizeInput);
+      syncMontageCacheSizeArrowStep(montageCacheSizeInput);
+    });
+    montageCacheSizeInput.addEventListener("input", function() {
+      var raw = parseMontageCacheSizeFieldValue(montageCacheSizeInput);
+      if (isFinite(montageCacheSizeInputPrev) && isFinite(raw) && raw !== montageCacheSizeInputPrev) {
+        var delta = raw - montageCacheSizeInputPrev;
+        var stepPrev = cacheSizeArrowSnapStep(montageCacheSizeInputPrev);
+        if (delta === stepPrev || delta === -stepPrev || delta === 1 || delta === -1) {
+          var dir = delta > 0 ? 1 : -1;
+          var snapped = clampMontageCacheSizeFieldValue(
+            cacheSizeArrowSnapBump(montageCacheSizeInputPrev, dir)
+          );
+          if (snapped !== raw) {
+            montageCacheSizeInput.value = String(snapped);
+            raw = snapped;
+          }
+        }
+      }
+      montageCacheSizeInputPrev = raw;
+      syncExpandCacheButton(montageCacheOverlayBusy());
+    });
+    montageCacheSizeInput.addEventListener("change", function() {
+      syncMontageNewCacheSizeField();
+      syncExpandCacheButton(montageCacheOverlayBusy());
+    });
+    montageCacheSizeInput.addEventListener("blur", function() {
+      syncMontageNewCacheSizeField();
+      syncExpandCacheButton(montageCacheOverlayBusy());
+    });
+  }
+
+  btnViewImages.addEventListener("click", function() {
+    if (imagesViewEnabled && preloaded && montageDisplayMode === "volumes" && allImagesCached()) {
+      showImagesInMontageFromCache();
+      return;
+    }
+    if (imagesViewEnabled && preloaded && allImagesCached()) {
+      gridSizeSelect.disabled = false;
+      setImageGridMenuOpen(true);
+      buildTraceMap();
+      if (montageDisplayMode === "images") {
+        restoreMontageAfterScatterReload();
+      }
+      if (preloadStatus && preloaded.rows) {
+        setPreloadStatusCachedTotalOnly();
+        preloadStatus.title = "Images already in cache (no reload).";
+      }
+      syncVolumeExploreButtons();
+      return;
+    }
+    btnViewImages.disabled = true;
+    loadAllImagesInChunks();
+  });
+
+  function postVolumeStatic() {
+    return fetch("{{ url_for('api_explorer_volume_media') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rows: lastMontageRows.slice(),
+        mode: "static",
+        chimerax_cpus: EXPLORER_CHIMERAX_CPUS,
+      }),
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          if (res.j.need_chimerax) {
+            window.alert(res.j.error || "Set CHIMERAX_PATH to your ChimeraX executable and try again.");
+            setVolumeStatus("", false);
+          } else {
+            setVolumeStatus(res.j.error || "Volume request failed.", false);
+          }
+          return null;
+        }
+        return res.j;
+      });
+  }
+
+  function postVolumeAnimateCell(cacheId, cellIndex) {
+    return fetch("{{ url_for('api_explorer_volume_media') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "animate",
+        volume_cache_id: cacheId,
+        cell_index: cellIndex,
+        rows: lastMontageRows.slice(),
+        chimerax_cpus: EXPLORER_CHIMERAX_CPUS,
+      }),
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          if (res.j.need_chimerax) {
+            window.alert(res.j.error || "Set CHIMERAX_PATH to your ChimeraX executable and try again.");
+            setVolumeStatus("", false);
+          } else {
+            setVolumeStatus(res.j.error || "Animate request failed.", false);
+          }
+          return null;
+        }
+        return res.j;
+      });
+  }
+
+  function runVolumeAnimateSequential() {
+    var key = montageRowsOrderKey();
+    if (!volumeCacheId || !lastMontageRows.length || volumeStaticKey !== key) return;
+    var n = lastMontageRows.length;
+    volumeAnimateGeneration++;
+    var myGen = volumeAnimateGeneration;
+    clearVolumeGifSyncTimers();
+    volumeGifLeaderStartMs = null;
+    btnVolumeAnimate.disabled = true;
+    if (btnVolumeGenerate) btnVolumeGenerate.disabled = true;
+    volumeGifDataUrls = new Array(n);
+    volumeGifsKey = null;
+    montageDisplayMode = "volumes";
+    showVolumesInMontage();
+    var i = 0;
+    function step() {
+      if (myGen !== volumeAnimateGeneration) return;
+      if (i >= n) {
+        volumeGifsKey = key;
+        setVolumeStatus("", false);
+        syncVolumeExploreButtons();
+        return;
+      }
+      var cellIndex = i;
+      setVolumeStatus("GIF " + (cellIndex + 1) + " / " + n + "…", false);
+      postVolumeAnimateCell(volumeCacheId, cellIndex)
+        .then(function(j) {
+          if (myGen !== volumeAnimateGeneration) return;
+          if (!j || !j.image) {
+            syncVolumeExploreButtons();
+            return;
+          }
+          var url = "data:image/gif;base64," + j.image;
+          volumeGifDataUrls[cellIndex] = url;
+          var showP;
+          if (cellIndex === 0) {
+            showP = startMontageGifLeader(cellIndex, url, myGen);
+          } else if (volumeGifLeaderStartMs != null) {
+            showP = showMontageCellGifSynced(
+              cellIndex, url, volumeGifLeaderStartMs, myGen
+            );
+          } else {
+            showP = Promise.resolve();
+          }
+          showP.catch(function() {
+            if (myGen === volumeAnimateGeneration) {
+              setVolumeStatus("Could not show volume GIF.", false);
+            }
+          }).then(function() {
+            if (myGen !== volumeAnimateGeneration) return;
+            i++;
+            step();
+          });
+        })
+        .catch(function() {
+          if (myGen === volumeAnimateGeneration) {
+            setVolumeStatus("Request failed.", false);
+          }
+          syncVolumeExploreButtons();
+        });
+    }
+    step();
+  }
+
+  if (showVolumeExplorer && btnVolumeGenerate) {
+    btnVolumeGenerate.addEventListener("click", function() {
+      if (!plotHasScatterData()) return;
+      if (!lastMontageRows.length) {
+        ensureHighlightTrace();
+        var picked = pickRandomMontageItemsFilled(neighborK);
+        if (!picked.length) return;
+        gridSizeSelect.disabled = false;
+        updateMontage(picked);
+      }
+      if (!lastMontageRows.length) return;
+      var key = montageRowsOrderKey();
+      btnVolumeGenerate.disabled = true;
+      if (btnVolumeAnimate) btnVolumeAnimate.disabled = true;
+      setVolumeStatus("Decoding volumes and rendering (ChimeraX)…", true);
+      postVolumeStatic()
+        .then(function(j) {
+          if (!j || !j.images || !j.volume_cache_id) {
+            syncVolumeExploreButtons();
+            return;
+          }
+          volumeStaticDataUrls = j.images.map(function(b) { return "data:image/png;base64," + b; });
+          volumeStaticKey = key;
+          volumeGifDataUrls = null;
+          volumeGifsKey = null;
+          volumeCacheId = j.volume_cache_id;
+          showVolumesInMontage();
+          setVolumeStatus("", false);
+        })
+        .catch(function() {
+          setVolumeStatus("Request failed.", false);
+        })
+        .then(function() { syncVolumeExploreButtons(); });
+    });
+  }
+
+  if (showVolumeExplorer && btnVolumeAnimate) {
+    btnVolumeAnimate.addEventListener("click", function() {
+      runVolumeAnimateSequential();
+    });
+  }
+
+  function scatterTraceColorMode() {
+    var meta = gd.layout && gd.layout.meta;
+    var m = meta && meta.cdrgn_color_mode;
+    if (m === "discrete" || m === "continuous") return m;
+    var mc = gd.data && gd.data[0] && gd.data[0].marker && gd.data[0].marker.color;
+    var mcLen = plotlyArrayLength(mc);
+    if (isPlotlyArray(mc) && mcLen > 0 && typeof PLOTLY.valueAt(mc, 0) === "string" && /^#/.test(String(PLOTLY.valueAt(mc, 0)))) {
+      return "discrete";
+    }
+    return "continuous";
+  }
+
+  function escapeHtmlText(s) {
+    return String(s).replace(/[&<>"']/g, function(ch) {
+      return {"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"}[ch];
+    });
+  }

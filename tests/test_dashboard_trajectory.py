@@ -1332,13 +1332,17 @@ class TestTrajectoryVolumeApis:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         fake_payloads = [
-            {"index": 0, "volume_b64": "AAA=", "D": 32},
-            {"index": 1, "volume_b64": "BBB=", "D": 32},
+            {"index": 1, "volume_b64": "AAA=", "D": 32},
+            {"index": 8, "volume_b64": "BBB=", "D": 32},
         ]
 
         monkeypatch.setattr(
             "cryodrgn.dashboard.routes_analysis.trajectory_volume_b64_list_from_cache",
             lambda token, exp: fake_payloads,
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_analysis.volume_cache_slot_indices",
+            lambda token: (1, 8),
         )
         r = flask_client_volumes_eligible.post(
             "/api/trajectory_volumes",
@@ -1354,6 +1358,7 @@ class TestTrajectoryVolumeApis:
         assert j["volume_cache_id"] == "cache-tok"
         assert j["render_backend"] == "vtk"
         assert j["volumes"] == fake_payloads
+        assert j["slot_indices"] == [1, 8]
 
     """Headless Chromium: default trajectory overlay and random anchor coords."""
 

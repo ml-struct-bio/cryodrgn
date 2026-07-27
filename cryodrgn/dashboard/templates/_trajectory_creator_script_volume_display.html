@@ -1113,6 +1113,9 @@
   }
 
   function fetchDirectEndpointCatalogVolumes() {
+    // #region agent log
+    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'volume_display:fetchDirectEndpointCatalogVolumes',message:'direct-trace endpoint catalog fetch',data:{mode:String(typeof trajectoryMode!=='undefined'?trajectoryMode:''),endpointN:(directEndpointVolumeIds&&directEndpointVolumeIds.length)||0,stack:(new Error()).stack.split('\n').slice(1,5).map(function(s){return s.trim();})},timestamp:Date.now(),hypothesisId:'V4',runId:'vol-debug'})}).catch(function(){});
+    // #endregion
     if (!prepareDirectEndpointCatalogSlots()) return false;
     var backend = preferredManualVolumeBackend();
     if (payloadHasVolumeB64(volumePayload() || {})) {
@@ -1754,6 +1757,11 @@
   }
 
   function setVolumeViewerJobStatus(msg, busy) {
+    // #region agent log
+    if (busy && msg && /Loading volume/i.test(String(msg))) {
+      fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'volume_display:setVolumeViewerJobStatus',message:'Loading volume status set',data:{msg:String(msg),mode:String(typeof trajectoryMode!=='undefined'?trajectoryMode:''),backend:(trajVolDisplay&&trajVolDisplay.backend)||null,cxRendering:!!(trajVolDisplay&&trajVolDisplay.chimeraxRendering),stack:(new Error()).stack.split('\n').slice(1,7).map(function(s){return s.trim();})},timestamp:Date.now(),hypothesisId:'V6',runId:'vol-fix'})}).catch(function(){});
+    }
+    // #endregion
     // Never suppress an in-flight ChimeraX render status just because VTK
     // volumes are already on the slider (post-Decode). That made Render look
     // like a no-op and raced with progress updates. Same for interactive
@@ -2876,14 +2884,56 @@
           clearVolumeViewerJobStatus();
           return;
         }
+        // Partial-decode caches are dense; remap onto path slots via API
+        // slot_indices or the decode job's remembered subset indices.
+        var cacheVols = Array.isArray(res.j.volumes) ? res.j.volumes : [];
+        var slotMap = Array.isArray(res.j.slot_indices) ? res.j.slot_indices : null;
+        if ((!slotMap || slotMap.length !== cacheVols.length)
+            && Array.isArray(lastTrajectoryVolumeCacheSlotIndices)
+            && lastTrajectoryVolumeCacheSlotIndices.length === cacheVols.length) {
+          slotMap = lastTrajectoryVolumeCacheSlotIndices.slice();
+          res.j.slot_indices = slotMap;
+        }
+        if (slotMap && slotMap.length === cacheVols.length) {
+          for (var cvi = 0; cvi < cacheVols.length; cvi++) {
+            if (!cacheVols[cvi]) continue;
+            var mappedSlot = Math.floor(Number(slotMap[cvi]));
+            if (Number.isFinite(mappedSlot) && mappedSlot >= 0) {
+              cacheVols[cvi].index = mappedSlot;
+            }
+          }
+        }
         applyVolumePayloadDisplay(res.j, backend);
+        var pathReadyN = (typeof latentTrajectoryPointCount === "function"
+          ? latentTrajectoryPointCount()
+          : 0) || (res.j.volumes || []).length;
         setGeneratedVolumesState(
           String(res.j.volume_cache_id || lastTrajectoryVolumeCacheId),
-          (res.j.volumes || []).length
+          pathReadyN
         );
-        var count = (res.j.volumes || []).length;
-        setTrajStatus(count + " volumes ready.", false);
+        var displayReady = 0;
+        if (trajVolDisplay && Array.isArray(trajVolDisplay.volumes)) {
+          for (var dri = 0; dri < trajVolDisplay.volumes.length; dri++) {
+            if (trajVolDisplay.volumes[dri] && trajVolDisplay.volumes[dri].volume_b64) {
+              displayReady++;
+            }
+          }
+        }
+        setTrajStatus(
+          (displayReady || (res.j.volumes || []).length) + " volumes ready.",
+          false
+        );
         clearVolumeViewerJobStatus();
+        if (typeof updateGenerateVolumesButtonLabel === "function") {
+          updateGenerateVolumesButtonLabel();
+        }
+        if (backend === "vtk"
+            && trajVolDisplay
+            && Array.isArray(trajVolDisplay.volumes)
+            && typeof CryoVolume3dUtils !== "undefined"
+            && typeof CryoVolume3dUtils.prewarmPlot3dVolumes === "function") {
+          CryoVolume3dUtils.prewarmPlot3dVolumes(trajVolDisplay.volumes);
+        }
       })
       .catch(function() {
         if (myCacheFetch !== volumeCacheFetchGen) return;

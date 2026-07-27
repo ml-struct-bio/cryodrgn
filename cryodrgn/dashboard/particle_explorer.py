@@ -861,6 +861,14 @@ def trajectory_volume_b64_list_from_cache(
 
     meta = _mrc_cache.require_meta(token)
     vol_files = list(meta["vol_files"])
+    # Align dense cache order onto trajectory slider slots (partial decode of
+    # interiors leaves endpoints out of the MRC cache).
+    try:
+        slot_indices = volume_cache_slot_indices(token)
+    except ValueError:
+        slot_indices = ()
+    if slot_indices and len(slot_indices) != len(vol_files):
+        slot_indices = ()
 
     payloads: list[dict[str, object]] = []
     for i, vf in enumerate(vol_files):
@@ -871,7 +879,8 @@ def trajectory_volume_b64_list_from_cache(
         vol, _ = parse_mrc(vf)
         vol = apply_reconstruction_window(np.asarray(vol, dtype=np.float32), exp)
         transfer = vtk_transfer_volume_payload(vol)
-        payloads.append({"index": int(i), **transfer})
+        slot_idx = int(slot_indices[i]) if slot_indices else int(i)
+        payloads.append({"index": slot_idx, **transfer})
     return payloads
 
 

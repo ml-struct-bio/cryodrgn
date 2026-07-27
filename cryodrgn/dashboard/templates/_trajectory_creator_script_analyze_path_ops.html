@@ -1,4 +1,42 @@
 {# Trajectory analyze: path snap/traversal, k-means reorder, anchor selection sync #}
+  // #region agent log
+  function __agentDbgPathCounts(extra) {
+    var data = Object.assign({
+      mode: String(typeof trajectoryMode !== "undefined" ? trajectoryMode : ""),
+      anchors: (typeof anchorIndicesActive !== "undefined" && anchorIndicesActive)
+        ? anchorIndicesActive.length : 0,
+      trajRows: (typeof trajPlotRows !== "undefined" && trajPlotRows) ? trajPlotRows.length : 0,
+      anchorXY: (typeof anchorTrajXY !== "undefined" && anchorTrajXY) ? anchorTrajXY.length : 0,
+      interpN: Number(typeof manualInterpTrajectoryCount !== "undefined"
+        ? manualInterpTrajectoryCount : 0) || 0,
+      volIds: (typeof manualSelectedVolIds !== "undefined" && manualSelectedVolIds)
+        ? manualSelectedVolIds.length : 0,
+      activeCustom: (typeof manualActiveCustomPlotRows !== "undefined"
+        && manualActiveCustomPlotRows) ? manualActiveCustomPlotRows.length : 0,
+      volSnap: !!(typeof manualVolumeSnapActive !== "undefined" && manualVolumeSnapActive),
+      partSnap: !!(typeof manualParticleSnapPathActive !== "undefined"
+        && manualParticleSnapPathActive),
+      graph: !!(typeof graphTraversalActive !== "undefined" && graphTraversalActive),
+      snapPts: (typeof readManualSnapNPoints === "function") ? readManualSnapNPoints() : null
+    }, extra || {});
+    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': '4ef8ba'
+      },
+      body: JSON.stringify({
+        sessionId: '4ef8ba',
+        location: data.location || 'path_ops',
+        message: data.message || 'path_counts',
+        data: data,
+        timestamp: Date.now(),
+        hypothesisId: data.hypothesisId || 'H0',
+        runId: data.runId || 'pre-fix'
+      })
+    }).catch(function() {});
+  }
+  // #endregion
   function toggleManualVolumeGroup(groupKey) {
     if (groupKey === "custom") {
       toggleManualCustomVolumeGroup();
@@ -163,6 +201,22 @@
   function persistManualWaypointSession() {
     var snap = snapshotManualWaypointSession();
     if (snap) lastManualWaypointSession = snap;
+    // #region agent log
+    __agentDbgPathCounts({
+      location: 'path_ops:persistManualWaypointSession',
+      message: 'persist waypoint session',
+      hypothesisId: 'H1-H3',
+      snapAnchors: snap && snap.anchorIndices ? snap.anchorIndices.length : 0,
+      snapTrajRows: snap && snap.trajPlotRows ? snap.trajPlotRows.length : 0,
+      snapInterp: snap ? snap.interpTrajectoryCount : null,
+      snapArmed: snap ? !!snap.interpolationArmed : null,
+      snapVolSnap: snap ? !!snap.volumeSnapActive : null,
+      snapGraph: snap ? !!snap.graphActive : null,
+      snapActiveCustom: snap && snap.activeCustomPlotRows
+        ? snap.activeCustomPlotRows.length : 0,
+      snapSnapN: snap ? snap.snapNPoints : null
+    });
+    // #endregion
     persistManualVolumeSelection();
   }
 
@@ -210,14 +264,31 @@
       ? session.trajPlotRows.slice()
       : null;
     if (typeof manualInterpTrajectoryCount !== "undefined") {
-      manualInterpTrajectoryCount = session.interpTrajectoryCount
-        || (trajPlotRows ? trajPlotRows.length : 0)
-        || (anchorIndicesActive ? anchorIndicesActive.length : 0);
+      // interpTrajectoryCount may be 0 after densify→Other promote; do not
+      // fall through via || and invent a densified count from anchor length.
+      if (session.interpTrajectoryCount != null
+          && Number.isFinite(Number(session.interpTrajectoryCount))) {
+        manualInterpTrajectoryCount = Math.max(0, Number(session.interpTrajectoryCount) || 0);
+      } else {
+        manualInterpTrajectoryCount = (trajPlotRows && trajPlotRows.length >= 2)
+          ? trajPlotRows.length
+          : ((anchorIndicesActive && anchorIndicesActive.length >= 2)
+            ? anchorIndicesActive.length
+            : 0);
+      }
     }
     if (typeof lastLatentTrajectoryPointCount !== "undefined") {
-      lastLatentTrajectoryPointCount = session.latentPointCount
-        || manualInterpTrajectoryCount
-        || 0;
+      if (session.latentPointCount != null
+          && Number.isFinite(Number(session.latentPointCount))
+          && Number(session.latentPointCount) >= 2) {
+        lastLatentTrajectoryPointCount = Number(session.latentPointCount);
+      } else {
+        lastLatentTrajectoryPointCount = Math.max(
+          manualInterpTrajectoryCount,
+          (anchorIndicesActive && anchorIndicesActive.length) || 0,
+          (trajPlotRows && trajPlotRows.length) || 0
+        );
+      }
     }
     // Keep densified path geometry; do not call armInterpolation (it clears path).
     ensureCurrentTrajectoryPath();
@@ -294,16 +365,56 @@
     var backend = session.backend || preferredManualVolumeBackend() || "chimerax";
     var hasCx = lastVolumePayload
       && countNonemptyChimeraxSlots(lastVolumePayload.images || []) > 0;
+    var hasVtkBlobs = !!(lastVolumePayload
+      && typeof loadedManualVolumeCount === "function"
+      && loadedManualVolumeCount(lastVolumePayload.volumes || []) > 0);
+    if (!hasVtkBlobs && volumePayload() && typeof loadedManualVolumeCount === "function") {
+      hasVtkBlobs = loadedManualVolumeCount(volumeSlots() || []) > 0;
+    }
+    // #region agent log
+    __agentDbgPathCounts({
+      location: 'path_ops:restoreManualWaypointSession:volumeBranch',
+      message: 'restore volume display branch',
+      hypothesisId: 'V6',
+      runId: 'vol-fix',
+      backend: String(backend || ''),
+      hasCx: !!hasCx,
+      hasVtkBlobs: !!hasVtkBlobs,
+      payloadVolLen: lastVolumePayload && lastVolumePayload.volumes
+        ? lastVolumePayload.volumes.length : 0,
+      payloadImgLen: lastVolumePayload && lastVolumePayload.images
+        ? lastVolumePayload.images.length : 0
+    });
+    // #endregion
     if (hasCx) {
       selectTrajVolumeBackend("chimerax");
       applyVolumePayloadDisplay(lastVolumePayload, "chimerax");
-    } else if (lastVolumePayload
-        && ((lastVolumePayload.volumes && lastVolumePayload.volumes.length)
-          || (volumePayload() && volumesDisplayReady()))) {
-      selectTrajVolumeBackend(backend === "chimerax" ? "vtk" : backend);
-      applyVolumePayloadDisplay(lastVolumePayload || volumePayload(), backend === "chimerax" ? "vtk" : backend);
+    } else if (hasVtkBlobs) {
+      // Decoded volumes without ChimeraX frames: show VTK / slice. Do not treat
+      // a sparse null volumes[] array (slot placeholders) as displayable media —
+      // that forced VTK and left the viewer stuck on "Loading volume…".
+      var restoreBackend = (backend === "chimerax") ? "vtk" : backend;
+      selectTrajVolumeBackend(restoreBackend);
+      applyVolumePayloadDisplay(lastVolumePayload || volumePayload(), restoreBackend);
     } else {
+      // Deferred choose-waypoints chrome (Decode/Render), matching pre-handoff.
+      if (backend === "vtk" || backend === "slice") {
+        selectTrajVolumeBackend(backend);
+      } else {
+        selectTrajVolumeBackend("chimerax");
+      }
+      if (typeof clearVolumeViewerJobStatus === "function") {
+        clearVolumeViewerJobStatus();
+      }
+      if (trajVolDisplay && typeof trajVolDisplay.setChimeraxRendering === "function") {
+        trajVolDisplay.setChimeraxRendering(false);
+      }
       syncTrajVolBackendChrome();
+      if (typeof ensureManualVolumeViewerOrRenderOption === "function") {
+        ensureManualVolumeViewerOrRenderOption();
+      } else if (typeof syncManualVolumeSliderPreview === "function") {
+        syncManualVolumeSliderPreview({ fromSession: true });
+      }
     }
 
     if (Number.isFinite(Number(session.focusIndex)) && session.focusIndex >= 0) {
@@ -324,6 +435,23 @@
       // Rebuild path in the live axis frame from catalog markers / plot rows.
       var wantInterp = !!(manualVolumeSnapActive || graphTraversalActive
         || (session.interpolationArmed && (session.volumeSnapActive || session.graphActive)));
+      // #region agent log
+      __agentDbgPathCounts({
+        location: 'path_ops:finishRestoredWaypointGeometry:before',
+        message: 'restore geometry branch',
+        hypothesisId: 'H1-H2-H5',
+        wantInterp: wantInterp,
+        sessArmed: !!session.interpolationArmed,
+        sessVolSnap: !!session.volumeSnapActive,
+        sessGraph: !!session.graphActive,
+        sessAnchors: session.anchorIndices ? session.anchorIndices.length : 0,
+        sessTrajRows: session.trajPlotRows ? session.trajPlotRows.length : 0,
+        sessInterp: session.interpTrajectoryCount,
+        sessActiveCustom: session.activeCustomPlotRows
+          ? session.activeCustomPlotRows.length : 0,
+        pendingOrigReorder: !!pendingOriginalCatalogIndexReorder
+      });
+      // #endregion
       if (wantInterp && typeof syncManualSelectionToAnchors === "function") {
         syncManualSelectionToAnchors({
           forceInterp: true,
@@ -333,6 +461,14 @@
       } else if (typeof syncManualAnchorsPreview === "function") {
         syncManualAnchorsPreview({ skipVolumeSync: true });
       }
+      // #region agent log
+      __agentDbgPathCounts({
+        location: 'path_ops:finishRestoredWaypointGeometry:after',
+        message: 'restore geometry complete',
+        hypothesisId: 'H1-H2-H5',
+        wantInterp: wantInterp
+      });
+      // #endregion
       redrawTrajectoryOverlay();
       scheduleTrajGlyphOverlaySync();
       syncDirectModeVolumePendingOverlay();
@@ -442,6 +578,16 @@
     var preservedVolIds = (directEndpointSnapshot && directEndpointSnapshot.ids)
       ? directEndpointSnapshot.ids.slice()
       : currentPathEndpointVolumeIds();
+    // #region agent log
+    __agentDbgPathCounts({
+      location: 'path_ops:leaveManualForScatterMode',
+      message: 'leave choose-waypoints for direct-trace',
+      hypothesisId: 'H3-H4',
+      pathPointCount: pathPointCount,
+      hasEndpoints: !!endpoints,
+      enterMode: mode
+    });
+    // #endregion
     clearInteractiveAnchorState();
     manualSelectedVolIds = [];
     manualTrajectoryVolumeIds = [];
@@ -2046,6 +2192,20 @@
       rebuilt = path.rebuildFromSelection(pathRebuildOpts);
     }
     var rows = (rebuilt && rebuilt.rows) ? rebuilt.rows : [];
+    // #region agent log
+    if (isManualTraversalMode()) {
+      __agentDbgPathCounts({
+        location: 'path_ops:syncManualAnchorsPreview:rebuild',
+        message: 'rebuildFromSelection result',
+        hypothesisId: 'H2',
+        rebuiltOk: !!(rebuilt && rebuilt.ok),
+        rebuiltCleared: !!(rebuilt && rebuilt.cleared),
+        rebuiltRowsN: rows.length,
+        skipVolumeSync: !!opts.skipVolumeSync,
+        pendingOrigReorder: !!pendingOriginalCatalogIndexReorder
+      });
+    }
+    // #endregion
     if (rows.length < 2) {
       if (isManualTraversalMode()
           && typeof manualSnappedDecodePathActive === "function"
@@ -2218,6 +2378,18 @@
         && typeof applyManualInterpolatedScatterPath === "function") {
       var nInterpDirect = readManualSnapNPoints();
       var linearXY = buildLinearInterpolatedPathXY(waypointXY, nInterpDirect);
+      // #region agent log
+      __agentDbgPathCounts({
+        location: 'path_ops:syncManualSelectionToAnchors:directLine',
+        message: 'forceInterp direct-line densify',
+        hypothesisId: 'H1',
+        forceInterp: !!opts.forceInterp,
+        rowN: rows.length,
+        waypointXYN: waypointXY.length,
+        nInterpDirect: nInterpDirect,
+        linearXYN: linearXY ? linearXY.length : 0
+      });
+      // #endregion
       if (linearXY && linearXY.length >= 2) {
         applyManualInterpolatedScatterPath(null, linearXY);
       } else {

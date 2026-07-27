@@ -260,6 +260,8 @@
       if (renderN == null || !Number.isFinite(renderN)) renderN = 0;
       // Label shows outstanding debt. Do not zero decodeN when the action is
       // disabled — that made Reverse appear to change Decode/Render text.
+      // Keep render debt visible so VTK/2D with matching decode+render counts
+      // still read "Decode and render N volumes" (decode still hydrates the viewer).
       btnGenerateVolumesEl.textContent = buildDecodeRenderVolumesButtonLabel(decodeN, renderN);
     }
     updateSaveVolumesButtonLabel();
@@ -290,7 +292,10 @@
         : trajectoryVolumesToRenderCount());
     if (renderN == null || !Number.isFinite(renderN)) renderN = 0;
     var canDecode = generateVolumesActionEnabled() && decodeN > 0;
-    var wantRender = renderN > 0;
+    // Interactive backends only decode; ChimeraX PNG batches stay ChimeraX-mode.
+    var wantRender = renderN > 0
+      && !(typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend());
 
     function startCombinedRender() {
       if (!pendingCombinedRenderAfterDecode) return;
@@ -1285,6 +1290,10 @@
     manualInterpTrajectoryCount = anchorTrajXY ? anchorTrajXY.length : 0;
     lastLatentTrajectoryPointCount = manualInterpTrajectoryCount;
     editableTrajXY = null;
+    // Densify→Other promotion owns the full waypoint path. applyCoordsPayload
+    // must not collapse anchors back to the pre-densify server list, and
+    // restoreManualDirectLinePathXY must not re-mark the path as densified.
+    var densifyPromotedToOther = false;
     if (isManualTraversalMode()) {
       refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
       // Promote densify/snap samples to Other waypoints before any sparse
@@ -1294,7 +1303,7 @@
             && anchorTrajXY.length > manualSnapAnchorRowsInOrder().length)
           || (trajPlotRows && manualSnapAnchorRowsInOrder().length >= 2
             && trajPlotRows.length > manualSnapAnchorRowsInOrder().length)) {
-        promoteDensifiedPathAsOtherWaypoints(
+        densifyPromotedToOther = !!promoteDensifiedPathAsOtherWaypoints(
           trajPlotRows && trajPlotRows.length >= 2 ? trajPlotRows.slice() : null,
           anchorTrajXY && anchorTrajXY.length >= 2
             ? anchorTrajXY.map(function(p) { return p.slice(); })
@@ -1326,12 +1335,24 @@
     updateGenerateVolumesButtonLabel();
     syncAnchorIndicesUI();
     applyTrajectoryCoordsPayload(res, {
-      preserveDirectLineXY: preserveDirectLineXY
+      preserveDirectLineXY: preserveDirectLineXY,
+      preserveWaypointGeometry: densifyPromotedToOther
     });
-    if (preservedDirectXY && preservedDirectXY.length >= 2) {
+    if (!densifyPromotedToOther && preservedDirectXY && preservedDirectXY.length >= 2) {
       // Belt-and-suspenders: applyCoordsPayload may still have rewritten geometry.
       restoreManualDirectLinePathXY(preservedDirectXY);
     }
+    // #region agent log
+    if (typeof __agentDbgPathCounts === "function") {
+      __agentDbgPathCounts({
+        location: 'coords_api:onTrajectoryIndicesLoaded:postPromote',
+        message: 'after densify promote + coords payload',
+        hypothesisId: 'H3-fix',
+        densifyPromotedToOther: densifyPromotedToOther,
+        runId: 'post-fix'
+      });
+    }
+    // #endregion
     if (isManualTraversalMode()) {
       syncManualInterpolatedScatterVisuals({ immediate: true });
       scheduleManualScatterTrajectorySync();

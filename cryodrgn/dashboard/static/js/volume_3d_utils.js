@@ -9,7 +9,34 @@
   /** Matches ChimeraX ``volume #1 sdLevel 2`` for the initial contour. */
   var DEFAULT_CHIMERAX_SD_LEVEL = 2;
 
+  /** LRU cache: b64 string → Float32Array (same string refs as volume slots). */
+  var DECODE_CACHE_MAX = 16;
+  var decodeCache = new Map();
+  /** WeakMap: decoded vol → { srcD, targetD, out } for box-average downsample. */
+  var downsampleCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
+
+  function _decodeCacheGet(b64, d) {
+    var hit = decodeCache.get(b64);
+    if (!hit || hit.d !== d) return null;
+    // Refresh LRU order.
+    decodeCache.delete(b64);
+    decodeCache.set(b64, hit);
+    return hit.values;
+  }
+
+  function _decodeCacheSet(b64, d, values) {
+    if (decodeCache.has(b64)) decodeCache.delete(b64);
+    decodeCache.set(b64, { d: d, values: values });
+    while (decodeCache.size > DECODE_CACHE_MAX) {
+      var oldest = decodeCache.keys().next().value;
+      decodeCache.delete(oldest);
+    }
+  }
+
   function decodeFloat32Volume(b64, d) {
+    d = Number(d);
+    var cached = _decodeCacheGet(b64, d);
+    if (cached) return cached;
     var binary = atob(b64);
     var len = binary.length;
     var bytes = new Uint8Array(len);
@@ -20,7 +47,9 @@
         bytes[i] = binary.charCodeAt(i);
       }
     }
-    return new Float32Array(bytes.buffer);
+    var values = new Float32Array(bytes.buffer);
+    _decodeCacheSet(b64, d, values);
+    return values;
   }
 
   function trilinearSample(vol, srcD, x, y, z) {
@@ -59,6 +88,12 @@
     targetD = targetD | 0;
     if (srcD === targetD) return vol;
     if (targetD < 1) throw new Error("targetD must be positive.");
+    if (downsampleCache) {
+      var cachedDs = downsampleCache.get(vol);
+      if (cachedDs && cachedDs.srcD === srcD && cachedDs.targetD === targetD && cachedDs.out) {
+        return cachedDs.out;
+      }
+    }
     var out = new Float32Array(targetD * targetD * targetD);
     var scale = srcD / targetD;
     for (var iz = 0; iz < targetD; iz++) {
@@ -83,6 +118,9 @@
           out[ix * targetD * targetD + iy * targetD + iz] = count ? sum / count : 0;
         }
       }
+    }
+    if (downsampleCache) {
+      downsampleCache.set(vol, { srcD: srcD, targetD: targetD, out: out });
     }
     return out;
   }
@@ -223,6 +261,43 @@
     return { isomin: isomin, isomax: isomax };
   }
 
+  /** Decode + downsample into caches so later VTK paints skip atob work. */
+  function prewarmPlot3dVolume(b64, d) {
+    if (!b64) return false;
+    var srcD = Number(d);
+    if (!isFinite(srcD) || srcD < 1) return false;
+    try {
+      var vol = decodeFloat32Volume(b64, srcD);
+      downsampleVolumeBoxAverage(vol, srcD, PLOT3D_TARGET_D);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function prewarmPlot3dVolumes(volumes, onDone) {
+    volumes = Array.isArray(volumes) ? volumes : [];
+    var i = 0;
+    var warmed = 0;
+    function step() {
+      var budget = 1;
+      while (budget-- > 0 && i < volumes.length) {
+        var v = volumes[i++];
+        if (v && v.volume_b64 && prewarmPlot3dVolume(v.volume_b64, v.D)) warmed++;
+      }
+      if (i < volumes.length) {
+        if (typeof requestIdleCallback !== "undefined") {
+          requestIdleCallback(step, { timeout: 250 });
+        } else {
+          setTimeout(step, 0);
+        }
+        return;
+      }
+      if (typeof onDone === "function") onDone(warmed);
+    }
+    step();
+  }
+
   global.CryoVolume3dUtils = {
     PLOT3D_TARGET_D: PLOT3D_TARGET_D,
     decodeFloat32Volume: decodeFloat32Volume,
@@ -235,6 +310,8 @@
     isoSliderToDataValue: isoSliderToDataValue,
     isoDataValueToSlider: isoDataValueToSlider,
     isoRangeFromPercentile: isoRangeFromPercentile,
-    percentileValue: percentileValue
+    percentileValue: percentileValue,
+    prewarmPlot3dVolume: prewarmPlot3dVolume,
+    prewarmPlot3dVolumes: prewarmPlot3dVolumes
   };
 })(typeof window !== "undefined" ? window : this);

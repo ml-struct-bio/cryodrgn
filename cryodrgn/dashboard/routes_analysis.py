@@ -714,14 +714,22 @@ def api_trajectory_volumes():
                 vol_payloads = trajectory_volume_b64_list_from_cache(cache_token, e)
             except ValueError as err:
                 return jsonify(error=str(err)), 400
-            return jsonify(
-                {
-                    "ok": True,
-                    "volumes": vol_payloads,
-                    "volume_cache_id": cache_token,
-                    "render_backend": render_backend,
-                }
-            )
+            payload = {
+                "ok": True,
+                "volumes": vol_payloads,
+                "volume_cache_id": cache_token,
+                "render_backend": render_backend,
+            }
+            # Partial-decode caches omit endpoints; return slot_indices so the
+            # client maps the dense volume list onto the full slider (same as
+            # ChimeraX cache rerender).
+            try:
+                slot_indices = volume_cache_slot_indices(cache_token)
+            except ValueError:
+                slot_indices = ()
+            if slot_indices and len(slot_indices) == len(vol_payloads):
+                payload["slot_indices"] = [int(i) for i in slot_indices]
+            return jsonify(payload)
         if data.get("chimerax_rerender_only") and render_backend == "chimerax":
             if not cache_token:
                 return (

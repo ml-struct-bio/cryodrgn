@@ -2851,15 +2851,20 @@
               : "."), false);
           updateTrajectoryScatterPlotStatus();
           syncDirectModeVolumePendingOverlay();
-          if (typeof clearVolumeViewerJobStatus === "function") clearVolumeViewerJobStatus();
           if (typeof updateGenerateVolumesButtonLabel === "function") {
             updateGenerateVolumesButtonLabel();
           }
-          // Hydrate VTK blobs when the user is already on VTK/slice.
+          // VTK / 2D: keep the loading chrome up and hydrate every decoded slot
+          // from the MRC cache (path-aligned), then paint — same role as the
+          // ChimeraX PNG pass after Decode+Render.
           var liveBackend = currentVolumeRenderBackend();
-          if ((liveBackend === "vtk" || liveBackend === "slice")
-              && res && res.cacheId
-              && typeof fetchTrajectoryVolumesFromCache === "function") {
+          var hydrateInteractive = (liveBackend === "vtk" || liveBackend === "slice")
+            && res && res.cacheId
+            && typeof fetchTrajectoryVolumesFromCache === "function";
+          if (!hydrateInteractive && typeof clearVolumeViewerJobStatus === "function") {
+            clearVolumeViewerJobStatus();
+          }
+          if (hydrateInteractive) {
             fetchTrajectoryVolumesFromCache(liveBackend);
           }
           // Combined Decode+Render: start ChimeraX immediately after decode so

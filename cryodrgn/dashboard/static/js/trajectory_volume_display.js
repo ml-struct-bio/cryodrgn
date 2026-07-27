@@ -183,6 +183,7 @@
     }
     if (this.volumeSliderTicksEl) {
       this.volumeSliderTicksEl.addEventListener("click", function (ev) {
+        if (self._volumeNavSuspended()) return;
         var tick = ev.target.closest("[data-vol-index]");
         if (!tick || tick.disabled) return;
         var idx = Number(tick.getAttribute("data-vol-index"));
@@ -808,6 +809,10 @@
 
   TrajectoryVolumeDisplay.prototype._volumeNavSuspended = function () {
     if (this.volumeGenerationBusy) return true;
+    // Do not lock the volume slider during VTK paint: disabling the range
+    // input mid-drag aborts the gesture after a single tick. Overlapping
+    // paints are discarded via _vtkPaintGen + vtkFocusIndex checks in
+    // _renderVtk instead.
     if (this.backend === "chimerax") {
       if (this.chimeraxRerenderInFlight) return false;
       if (this.chimeraxRendering) return true;
@@ -1337,6 +1342,7 @@
 
   TrajectoryVolumeDisplay.prototype._applySliderFocus = function (ev) {
     if (!this.volumeSliderEl) return;
+    if (this._volumeNavSuspended()) return;
     var raw = Number(this.volumeSliderEl.value);
     var dragging = !!(ev && ev.type === "input");
     if (dragging && this._allowsSparseInteriorFocus()) {
@@ -2006,6 +2012,7 @@
   };
 
   TrajectoryVolumeDisplay.prototype._cycleVtkFocus = function (delta) {
+    if (this._volumeNavSuspended()) return;
     if (this.backend === "chimerax" || this.backend === "vtk") {
       this._stepReadyFocus(delta);
     }
@@ -2148,13 +2155,16 @@
       return Promise.resolve(false);
     }
     // Keep an explicit job busy flag through setVolumeFromB64's clear→add gap
-    // so the overlay covers the blank frame between volumes.
+    // so the overlay covers the blank frame between volumes. Slider stays
+    // enabled; stale paints abort when vtkFocusIndex / _vtkPaintGen diverge.
+    this._vtkPaintGen = (this._vtkPaintGen || 0) + 1;
+    var paintGen = this._vtkPaintGen;
     this.setJobStatus("Loading volume\u2026", true);
     if (this.viewportEl) this.viewportEl.hidden = false;
     this._syncChrome();
     return this._ensureRaycastView().then(function (view) {
       if (!view) throw new Error("3D viewer unavailable.");
-      if (self.backend !== "vtk" || self.vtkFocusIndex !== idx) {
+      if (self.backend !== "vtk" || self.vtkFocusIndex !== idx || paintGen !== self._vtkPaintGen) {
         return false;
       }
       if (self.raycastVolIndex === idx && self.raycastView === view) {

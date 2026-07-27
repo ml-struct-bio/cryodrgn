@@ -616,10 +616,11 @@
       btnGenerateVolumesEl.hidden = false;
       var genEnabled = decodeRenderVolumesActionEnabled();
       btnGenerateVolumesEl.disabled = !genEnabled;
+      var interactiveBackend = typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend();
       btnGenerateVolumesEl.title = !genEnabled && !trajectoryVolumeActionBusy()
-        ? ((typeof isInteractiveVolumeBackend === "function"
-            && isInteractiveVolumeBackend())
-          ? "Decode and render volumes are only available in ChimeraX mode."
+        ? (interactiveBackend
+          ? "Outstanding volumes are already decoded for VTK / 2D display."
           : (catalogDecodedTrajectoryFullyCoversPath()
           && trajectoryVolumesOutstandingRenderCount() < 1
           ? "Volumes and ChimeraX images are already available."
@@ -632,7 +633,9 @@
               ? "Volumes for the current selection are already loaded."
               : ""))))
         : (genEnabled
-          ? "Decode outstanding volumes and render ChimeraX images."
+          ? (interactiveBackend
+            ? "Decode outstanding volumes for VTK / 2D display."
+            : "Decode outstanding volumes and render ChimeraX images.")
           : "");
     }
     if (btnSaveVolumesEl) {
@@ -695,6 +698,9 @@
   }
 
   function syncManualVolumeViewerForWaypointSelection() {
+    // #region agent log
+    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'preserve:syncManualVolumeViewerForWaypointSelection',message:'syncManualVolumeViewerForWaypointSelection',data:{mode:String(typeof trajectoryMode!=='undefined'?trajectoryMode:''),defer:!!(typeof deferManualWaypointVolumeRerender==='function'&&deferManualWaypointVolumeRerender()),hasGen:!!(typeof hasGeneratedTrajectoryVolumes==='function'&&hasGeneratedTrajectoryVolumes()),mismatch:!!(typeof manualAnalyzeVolumeIdsMismatch==='function'&&manualAnalyzeVolumeIdsMismatch()),activeCustom:(manualActiveCustomPlotRows||[]).length,anchors:(anchorIndicesActive||[]).length,stack:(new Error()).stack.split('\n').slice(1,6).map(function(s){return s.trim();})},timestamp:Date.now(),hypothesisId:'V1-V5',runId:'vol-debug'})}).catch(function(){});
+    // #endregion
     if (hasGeneratedTrajectoryVolumes()) return;
     if (!deferManualWaypointVolumeRerender()) {
       if (isManualTraversalMode()) syncManualVolumeDisplay();
@@ -773,11 +779,23 @@
 
   function decodeRenderVolumesActionEnabled() {
     reconcileChimeraxRenderingFlag();
+    if (trajectoryVolumeActionBusy()) return false;
+    // VTK / 2D slice: allow decode-only. ChimeraX PNG re-render is not applicable
+    // on interactive backends (that used to hard-disable this button and strand
+    // densified direct-trace interiors after PC1 → VTK).
     if (typeof isInteractiveVolumeBackend === "function"
         && isInteractiveVolumeBackend()) {
-      return false;
+      var interactiveDecodeN = typeof trajectoryVolumesToGenerateCount === "function"
+        ? trajectoryVolumesToGenerateCount()
+        : 0;
+      if (interactiveDecodeN == null || !Number.isFinite(interactiveDecodeN)) {
+        interactiveDecodeN = 0;
+      }
+      var interactiveCanDecode = typeof generateVolumesActionEnabled === "function"
+        && generateVolumesActionEnabled()
+        && interactiveDecodeN > 0;
+      return !!interactiveCanDecode;
     }
-    if (trajectoryVolumeActionBusy()) return false;
     if (typeof manualCompactCatalogDebtModeActive === "function"
         && manualCompactCatalogDebtModeActive()) {
       var compactRenderN = typeof catalogAnchorsMissingChimeraxCount === "function"
@@ -835,6 +853,8 @@
         + "\nand render " + renderN + " " + volumeCountNoun(renderN);
     }
     if (decodeN > 0) {
+      // VTK / 2D decode hydrates the interactive viewer; keep the same user-facing
+      // phrasing as ChimeraX ("Decode and render") even when PNG render debt is 0.
       return "Decode and render\n" + decodeN + " " + volumeCountNoun(decodeN);
     }
     if (renderN > 0) {
@@ -1356,6 +1376,9 @@
       updateGenerateVolumesButtonLabel();
     }
     if (typeof syncTraversalAltButtons === "function") syncTraversalAltButtons();
+    // #region agent log
+    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'preserve:promoteDensifiedPathAsOtherWaypoints',message:'promote densify→Other complete',data:{plotRowsN:plotRows.length,newOtherN:newOther.length,activeCustomN:(manualActiveCustomPlotRows||[]).length,anchorsN:(anchorIndicesActive||[]).length,interpN:manualInterpTrajectoryCount,volSnap:!!manualVolumeSnapActive,graph:!!graphTraversalActive},timestamp:Date.now(),hypothesisId:'H3'})}).catch(function(){});
+    // #endregion
     return true;
   }
 

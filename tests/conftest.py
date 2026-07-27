@@ -2136,11 +2136,25 @@ def dashboard_smoke_command_builder(
     )
     if "cryodrgn" not in out0:
         raise RuntimeError(f"cmd-out missing cryodrgn prefix: {out0[:80]!r}")
-    _dashboard_smoke_set_select_value(page, "cmd-type", "train_vae")
+    out_height = page.evaluate(
+        """() => {
+          var el = document.getElementById('cmd-out');
+          return el ? el.getBoundingClientRect().height : 0;
+        }"""
+    )
+    if out_height < 8:
+        raise RuntimeError(f"cmd-out has no visible height: {out_height!r}")
+    initial_cmd_type = page.evaluate(
+        """() => {
+          var sel = document.getElementById('cmd-type');
+          return sel ? sel.value : '';
+        }"""
+    )
+    _dashboard_smoke_set_select_value(page, "cmd-type", "abinit")
     page.wait_for_function(
         """() => {
           var out = document.getElementById('cmd-out');
-          return out && /train_vae/.test(out.textContent || '');
+          return out && /\\babinit\\b/.test(out.textContent || '');
         }""",
         timeout=timeout_ms,
     )
@@ -2151,8 +2165,10 @@ def dashboard_smoke_command_builder(
         }"""
     )
     return {
-        "initial_has_abinit": "abinit" in out0,
-        "switched_to_train_vae": "train_vae" in out1,
+        "initial_has_train_vae": "train_vae" in out0,
+        "initial_cmd_type": initial_cmd_type,
+        "initial_cmd_out_height": out_height,
+        "switched_to_abinit": "abinit" in out1,
     }
 
 

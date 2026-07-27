@@ -19,6 +19,7 @@ from flask import Flask, current_app, g, jsonify, redirect, request, session, ur
 
 from cryodrgn.dashboard.command_builder_cli_help import load_command_module_docstrings
 from cryodrgn.dashboard.command_builder_data import (
+    COMMAND_BUILDER_COMMAND_KEYS,
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
     COMMAND_BUILDER_SCHEMA,
     default_outdir_for_command,
@@ -628,12 +629,33 @@ def _argv_four_command_lines(argv: list[str]) -> list[str]:
     ]
 
 
+def default_cmd_type_from_train_configs(cfg: dict) -> str:
+    """Pick the command-builder tab that matches a saved training config."""
+    cmd_list = cfg.get("cmd", [])
+    raw_parts = [str(x) for x in cmd_list] if isinstance(cmd_list, list) else []
+    cmd_parts = _cmd_argv_for_nav_display(raw_parts)
+    if len(cmd_parts) > 1:
+        name = cmd_parts[1]
+        if name in COMMAND_BUILDER_COMMAND_KEYS:
+            return name
+
+    ma = cfg.get("model_args", {}) or {}
+    da = cfg.get("dataset_args", {}) or {}
+    if "encode_mode" in ma:
+        return "train_vae"
+    poses = da.get("poses")
+    if isinstance(poses, str) and poses.strip():
+        return "train_nn"
+    return "abinit"
+
+
 def command_builder_template_kwargs(
     exp: DashboardExperiment | None,
 ) -> dict[str, object]:
     """Template variables for ``command_builder.html`` from experiment config."""
     if exp is None:
         return {
+            "default_cmd_type": "abinit",
             "default_particles": "",
             "default_ctf": "",
             "default_workdir": "",
@@ -677,6 +699,7 @@ def command_builder_template_kwargs(
     else:
         default_poses = os.path.join(exp.workdir, f"pose.{exp.epoch}.pkl")
     return {
+        "default_cmd_type": default_cmd_type_from_train_configs(cfg),
         "default_particles": default_particles,
         "default_ctf": default_ctf,
         "default_workdir": exp.workdir,

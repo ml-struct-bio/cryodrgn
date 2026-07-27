@@ -1321,118 +1321,174 @@
     font-size: inherit;
     white-space: normal;
   }
-  body.cmd-builder-github-pages .cmd-builder-cmd-dock {
-    flex-shrink: 0;
-    max-height: 17vh;
-    max-height: 17dvh;
-    min-height: 8.5dvh;
-    margin-top: 0.5rem;
-    padding: 0.8rem 0.75rem 0.55rem;
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-    border: 1px solid rgba(186, 212, 232, 0.75);
-    border-radius: 8px;
-    background: linear-gradient(
-      135deg,
-      rgba(255, 228, 232, 0.92) 0%,
-      rgba(232, 244, 255, 0.95) 38%,
-      rgba(228, 248, 236, 0.95) 72%,
-      rgba(255, 240, 224, 0.92) 100%
-    );
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.55),
-      0 1px 5px rgba(36, 59, 83, 0.07);
-  }
-  body.cmd-builder-github-pages .cmd-builder-cmd-dock .cmd-output.card {
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: 100%;
-  }
-  body.cmd-builder-github-pages .cmd-output-grid {
-    align-items: stretch;
-    gap: 0.35rem calc(0.85rem * 0.8);
-  }
-  body.cmd-builder-github-pages .cmd-output-main {
-    flex: 1 1 auto;
-    min-height: 0;
-    min-width: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-grid--5.cmd-builder-primary-fields-fit {
     align-items: stretch;
   }
-  body.cmd-builder-github-pages .cmd-output-actions {
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: center;
-    align-self: stretch;
+  body.cmd-builder-github-pages .cmd-builder-primary-arg-cell.cmd-batch-size-anchor-cell {
     height: 100%;
-    gap: calc(0.45rem * 1.13 * 0.8);
-    flex-shrink: 0;
+    align-self: stretch;
   }
-  body.cmd-builder-github-pages .cmd-output .btn-copy {
-    flex: 0 0 41%;
-    height: 41%;
-    max-height: 41%;
-    min-height: 0;
-    min-width: calc(4.75rem * 1.3 * 0.8);
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit .cmd-batch-size-anchor-cell {
+    overflow: visible;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-value-wrap {
+    display: grid;
+    grid-template-columns: 4.85rem minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    column-gap: 0.35rem;
     width: 100%;
-    padding: calc(0.15rem * 0.8 * 0.8) calc(0.55rem * 1.3 * 0.8);
-    gap: calc(0.35rem * 0.8);
+    height: 100%;
+    min-height: 100%;
+    align-items: stretch;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    width: 4.85rem;
+    min-width: 4.85rem;
+    max-width: 4.85rem;
+    height: 100%;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: stretch;
+    gap: 0.2rem;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale--labeled {
+    height: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot--single {
+    justify-content: flex-end;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot--single .cmd-batch-size-scale {
+    flex: 0 0 61%;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: stretch;
+    height: 61%;
+    max-height: 61%;
+    gap: 0.2rem;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot--single .cmd-batch-size-step {
+    flex: 1 1 0;
+    width: auto;
+    height: 100%;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-scale-group {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0.35rem;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 1px solid rgba(36, 59, 83, 0.28);
+    border-radius: 4px;
+    padding: 0.2rem 0.35rem;
+    background: rgba(255, 255, 255, 0.55);
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-scale-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 0.2rem;
+    flex: 0 0 auto;
+    height: 100%;
+    min-height: 0;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-scale-label {
+    display: flex;
+    align-items: center;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+    text-align: left;
+    line-height: 1.15;
+    white-space: normal;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale-group,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-step,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-scale-label {
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit
+    .cmd-builder-primary-arg-cell .cmd-batch-size-controls-slot,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit
+    .cmd-builder-primary-arg-cell .cmd-batch-size-controls-slot .cmd-batch-size-step,
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit
+    .cmd-builder-primary-arg-cell .cmd-batch-size-controls-slot .cmd-batch-size-scale-label {
+    font-size: 0.82rem;
+  }
+  body.cmd-builder-github-pages .cmd-builder-primary-fields-fit
+    .cmd-builder-primary-arg-cell .cmd-batch-size-controls-slot .cmd-batch-size-scale-label {
+    font-size: 0.68rem;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-step {
+    margin: 0;
+    padding: 0.12rem 0.55rem;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    flex: 1 1 0;
+    min-height: 0;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.35;
+    border: 1px solid rgba(36, 59, 83, 0.35);
+    border-radius: 4px;
+    background: var(--paper, #fff);
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+    font-family: var(--font-sans);
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-step:hover,
+  body.cmd-builder-github-pages .cmd-batch-size-controls-slot .cmd-batch-size-step:focus-visible {
+    background: rgba(196, 112, 58, 0.12);
+    border-color: rgba(196, 112, 58, 0.55);
+    outline: none;
+  }
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack,
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack .cryo-select-line,
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack .cmd-arg-value-row,
+  body.cmd-builder-github-pages .cmd-batch-size-field-stack input[type="number"] {
+    --gp-primary-field-scale: 1;
+  }
+  body.cmd-builder-github-pages .cmd-group-card-arg-slot:has(.cmd-batch-size-value-wrap) {
+    overflow: visible;
   }
   body.cmd-builder-github-pages .cmd-output pre {
-    flex: 1 1 auto;
-    min-height: 0;
-    width: 100%;
-    box-sizing: border-box;
-    --cmd-line-hang-indent: 2ch;
     --cmd-out-font-base: calc(0.72rem * 1.35 * 1.1 * 1.3 * var(--gp-font-scale-root));
-    font-family: "Cascadia Code", "Cascadia Mono", ui-monospace, monospace;
     font-size: var(--cmd-out-font-base);
-    line-height: 1.12;
-    color: #fff;
-    white-space: pre;
-    word-break: normal;
-    overflow-wrap: normal;
-    overflow-x: auto;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-gutter: stable;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(232, 238, 244, 0.45) rgba(26, 35, 50, 0.5);
-  }
-  body.cmd-builder-github-pages .cmd-output pre::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  body.cmd-builder-github-pages .cmd-output pre::-webkit-scrollbar-thumb {
-    background: rgba(232, 238, 244, 0.4);
-    border-radius: 4px;
-  }
-  body.cmd-builder-github-pages .cmd-output pre .cmd-seg--prefix {
-    color: #fff;
-  }
-  body.cmd-builder-github-pages .cmd-output pre .cmd-line-cont {
-    color: #fff;
-    opacity: 0.92;
-  }
-  body.cmd-builder-github-pages .cmd-output pre .cmd-line-hang {
-    padding-left: var(--cmd-line-hang-indent, 2ch);
-  }
-  body.cmd-builder-github-pages .cmd-output .btn-copy-label {
-    gap: 0;
-    height: auto;
-    max-height: none;
-    line-height: 1;
   }
   body.cmd-builder-github-pages .cmd-output .btn-copy-label-line {
-    flex: 0 0 auto;
-    line-height: 1;
-    min-height: 0;
-    padding: 0;
-    margin: 0;
     font-size: calc(0.62rem * 1.35 * 1.1 * 0.8 * var(--gp-font-scale));
   }
-  body.cmd-builder-github-pages .cmd-output .hint { display: none; }

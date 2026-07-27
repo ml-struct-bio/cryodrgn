@@ -34,7 +34,10 @@ from cryodrgn.dashboard.command_builder_data import (
     batch_size_arg_ids_for_command,
     default_outdir_for_command,
 )
-from cryodrgn.dashboard.context import command_builder_template_kwargs
+from cryodrgn.dashboard.context import (
+    command_builder_template_kwargs,
+    default_cmd_type_from_train_configs,
+)
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.command_builder_page import (
     _abbrev_middle,
@@ -186,6 +189,7 @@ class TestDefaultOutdirForCommand:
 class TestCommandBuilderTemplateKwargs:
     def test_no_experiment_uses_defaults(self) -> None:
         kw = command_builder_template_kwargs(None)
+        assert kw["default_cmd_type"] == "abinit"
         assert kw["default_zdim"] == 8
         assert kw["default_outdir_abinit"] == "001_abinit"
         assert kw["default_outdir_train_vae"] == "001_train_vae"
@@ -199,6 +203,7 @@ class TestCommandBuilderTemplateKwargs:
         self, dashboard_experiment: DashboardExperiment
     ) -> None:
         kw = command_builder_template_kwargs(dashboard_experiment)
+        assert kw["default_cmd_type"] == "train_vae"
         assert kw["default_zdim"] == int(
             dashboard_experiment.train_configs["model_args"]["zdim"]
         )
@@ -208,6 +213,27 @@ class TestCommandBuilderTemplateKwargs:
         assert kw["default_outdir_train_dec"].endswith("001_train_dec")
         assert kw["default_workdir"] == dashboard_experiment.workdir
         assert kw["default_epoch"] == str(dashboard_experiment.epoch)
+
+
+class TestDefaultCmdTypeFromTrainConfigs:
+    def test_reads_cryodrgn_subcommand_from_cmd(self) -> None:
+        cfg = {"cmd": ["cryodrgn", "train_nn", "particles.mrcs"], "model_args": {}}
+        assert default_cmd_type_from_train_configs(cfg) == "train_nn"
+
+    def test_falls_back_to_train_vae_when_encode_mode_set(self) -> None:
+        cfg = {"cmd": ["pytest"], "model_args": {"encode_mode": "resid"}}
+        assert default_cmd_type_from_train_configs(cfg) == "train_vae"
+
+    def test_falls_back_to_train_nn_when_poses_without_encode_mode(self) -> None:
+        cfg = {
+            "cmd": [],
+            "model_args": {},
+            "dataset_args": {"poses": "/data/poses.pkl"},
+        }
+        assert default_cmd_type_from_train_configs(cfg) == "train_nn"
+
+    def test_defaults_to_abinit(self) -> None:
+        assert default_cmd_type_from_train_configs({}) == "abinit"
 
 
 class TestCommandBuilderSchemaIntegrity:
@@ -717,5 +743,7 @@ class TestCommandBuilderBrowserSmoke:
         from tests.conftest import dashboard_smoke_command_builder
 
         out = dashboard_smoke_command_builder(playwright_page, dashboard_live_url)
-        assert out["initial_has_abinit"]
-        assert out["switched_to_train_vae"]
+        assert out["initial_has_train_vae"]
+        assert out["initial_cmd_type"] == "train_vae"
+        assert out["initial_cmd_out_height"] >= 8
+        assert out["switched_to_abinit"]

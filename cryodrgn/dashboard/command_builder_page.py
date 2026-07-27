@@ -101,6 +101,7 @@ def _github_repo_release_url(repo_url: str, version: str) -> str:
 
 def _command_builder_template_kwargs() -> dict[str, object]:
     return {
+        "default_cmd_type": "abinit",
         "default_particles": "",
         "default_ctf": "",
         "default_workdir": "",

@@ -109,7 +109,6 @@
     return out.join(" ");
   }
 
-  {% if command_builder_page_mode %}
   var lastBashCommandText = "";
   var CMD_WRAP_MIN_CHARS = 80;
   var CMD_LINE_MAX_CHARS = 100;
@@ -289,7 +288,6 @@
     }
     lastBashCommandText = bashText;
   }
-  {% endif %}
 
   function buildAbinitHetOldSegments() {
     var segments = [];
@@ -431,12 +429,8 @@
   }
 
   function build() {
-    {% if command_builder_page_mode %}
     if (lastBashCommandText) return lastBashCommandText;
     return segmentsToBashText(buildSegments());
-    {% else %}
-    return segmentsToText(buildSegments());
-    {% endif %}
   }
 
   function parseOutdirValue(raw, fallbackSuffix) {
@@ -592,7 +586,6 @@
     refresh();
   }
 
-  {% if command_builder_page_mode %}
   var cmdColorize = false;
   var CMD_GROUP_HUES = {
     "Required": 28,
@@ -630,37 +623,10 @@
       .replace(/"/g, "&quot;");
   }
 
-  function renderColoredCommand(segments) {
-    var shadeIdx = {};
-    var html = [];
-    for (var i = 0; i < segments.length; i++) {
-      if (i > 0) html.push(" ");
-      var seg = segments[i];
-      if (seg.g === "_prefix") {
-        html.push('<span class="cmd-seg cmd-seg--prefix">');
-        html.push(escCmdHtml(seg.t));
-        html.push("</span>");
-        continue;
-      }
-      var idx = shadeIdx[seg.g] || 0;
-      shadeIdx[seg.g] = idx + 1;
-      var hue = hueForCmdGroup(seg.g);
-      var light = 86 - (idx % 4) * 9;
-      var sat = 56 + (idx % 3) * 11;
-      html.push('<span class="cmd-seg" style="color:hsl(' + hue + "," + sat + "%," + light + '%)">');
-      html.push(escCmdHtml(seg.t));
-      html.push("</span>");
-    }
-    return html.join("");
-  }
-  {% endif %}
-
   function refresh() {
-    {% if command_builder_page_mode %}
     updateCommandDisplay();
+    {% if command_builder_page_mode %}
     scheduleFitPrimaryRegionFields();
-    {% else %}
-    out.textContent = segmentsToText(buildSegments());
     {% endif %}
   }
 
@@ -668,7 +634,6 @@
   form.addEventListener("input", refresh);
   form.addEventListener("change", refresh);
 
-  {% if command_builder_page_mode %}
   var colorizeBtn = document.getElementById("cmd-colorize");
   if (colorizeBtn) {
     colorizeBtn.addEventListener("click", function() {
@@ -677,7 +642,6 @@
       refresh();
     });
   }
-  {% endif %}
 
   document.getElementById("cmd-copy").addEventListener("click", function() {
     var text = build();
@@ -699,6 +663,23 @@
   initOutdirSteppers();
   initBatchSizeScalers();
   syncPanels();
+
+  (function initCommandDisplayResize() {
+    if (!out || !out.parentElement) return;
+    var pending = false;
+    function schedule() {
+      if (pending) return;
+      pending = true;
+      window.requestAnimationFrame(function() {
+        pending = false;
+        updateCommandDisplay();
+      });
+    }
+    if (window.CryoResizeObserverUtils) {
+      window.CryoResizeObserverUtils.observeResize(out.parentElement, schedule);
+    }
+    window.addEventListener("resize", schedule);
+  })();
 
   {% if command_builder_page_mode %}
   var fitPrimaryFieldsPending = false;
@@ -818,23 +799,6 @@
       });
     });
   }
-
-  (function initCommandDisplayResize() {
-    if (!out || !out.parentElement) return;
-    var pending = false;
-    function schedule() {
-      if (pending) return;
-      pending = true;
-      window.requestAnimationFrame(function() {
-        pending = false;
-        updateCommandDisplay();
-      });
-    }
-    if (window.CryoResizeObserverUtils) {
-      window.CryoResizeObserverUtils.observeResize(out.parentElement, schedule);
-    }
-    window.addEventListener("resize", schedule);
-  })();
 
   (function initPrimaryRegionFieldsResize() {
     var page = document.querySelector(".cmd-builder-page--dock");

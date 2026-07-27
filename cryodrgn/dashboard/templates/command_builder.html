@@ -2,7 +2,7 @@
 {% block title %}Command builder · cryoDRGN{% endblock %}
 {% from "_macros.html" import nav_page_title_span, cmd_reconstruction_command_select %}
 {% block nav_page_title %}{{ nav_page_title_span("Command builder") }}{% endblock %}
-{% block nav_reconstruction_command %}{{ cmd_reconstruction_command_select() }}{% endblock %}
+{% block nav_reconstruction_command %}{{ cmd_reconstruction_command_select(default_cmd_type|default('abinit')) }}{% endblock %}
 {% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/command_builder.css') }}"/>
   {% if command_builder_page_mode %}
@@ -10,6 +10,7 @@
   {% endif %}
 {% endblock %}
 {% block content %}
+  {% set default_cmd_type = default_cmd_type|default('abinit') %}
   {% macro title_attr(text) -%}
     {%- if text %} title="{{ text|e }}"
     {% endif -%}
@@ -401,7 +402,7 @@
       </div>
     {% endmacro %}
     {% macro render_analyze_command_panel(cmd_key, prefix) %}
-      <div id="panel-{{ cmd_key }}" class="cmd-panel" data-cmd="{{ cmd_key }}">
+      <div id="panel-{{ cmd_key }}" class="cmd-panel{% if default_cmd_type == cmd_key %} cmd-panel--active{% endif %}" data-cmd="{{ cmd_key }}">
         {% if command_builder_page_mode %}
         <div class="cmd-builder-github-body cmd-builder-github-body--analyze">
           {% call render_github_required_bar(3) %}
@@ -559,10 +560,10 @@
         <form class="cmd-form card" id="cmd-form" action="#" onsubmit="return false;">
           {% if not command_builder_page_mode %}
           <div class="cmd-builder-program">
-            {{ cmd_reconstruction_command_select() }}
+            {{ cmd_reconstruction_command_select(default_cmd_type) }}
           </div>
           {% endif %}
-          <div id="panel-abinit" class="cmd-panel cmd-panel--active" data-cmd="abinit">
+          <div id="panel-abinit" class="cmd-panel{% if default_cmd_type == 'abinit' %} cmd-panel--active{% endif %}" data-cmd="abinit">
             {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(4) %}
@@ -656,7 +657,7 @@
             </div>
             {% endif %}
           </div>
-          <div id="panel-train_vae" class="cmd-panel" data-cmd="train_vae">
+          <div id="panel-train_vae" class="cmd-panel{% if default_cmd_type == 'train_vae' %} cmd-panel--active{% endif %}" data-cmd="train_vae">
             {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(5) %}
@@ -770,7 +771,7 @@
             </div>
             {% endif %}
           </div>
-          <div id="panel-train_nn" class="cmd-panel" data-cmd="train_nn">
+          <div id="panel-train_nn" class="cmd-panel{% if default_cmd_type == 'train_nn' %} cmd-panel--active{% endif %}" data-cmd="train_nn">
             {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(4) %}
@@ -862,7 +863,7 @@
             </div>
             {% endif %}
           </div>
-          <div id="panel-train_dec" class="cmd-panel" data-cmd="train_dec">
+          <div id="panel-train_dec" class="cmd-panel{% if default_cmd_type == 'train_dec' %} cmd-panel--active{% endif %}" data-cmd="train_dec">
             {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(5) %}
@@ -976,7 +977,7 @@
             </div>
             {% endif %}
           </div>
-          <div id="panel-backproject_voxel" class="cmd-panel" data-cmd="backproject_voxel">
+          <div id="panel-backproject_voxel" class="cmd-panel{% if default_cmd_type == 'backproject_voxel' %} cmd-panel--active{% endif %}" data-cmd="backproject_voxel">
             {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body cmd-builder-github-body--backproject">
               {% call render_github_required_bar(4) %}
@@ -1071,7 +1072,7 @@
             </div>
             {% endif %}
           </div>
-          <div id="panel-abinit_het_old" class="cmd-panel" data-cmd="abinit_het_old">
+          <div id="panel-abinit_het_old" class="cmd-panel{% if default_cmd_type == 'abinit_het_old' %} cmd-panel--active{% endif %}" data-cmd="abinit_het_old">
             {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(4) %}
@@ -1165,7 +1166,7 @@
             </div>
             {% endif %}
           </div>
-          <div id="panel-abinit_homo_old" class="cmd-panel" data-cmd="abinit_homo_old">
+          <div id="panel-abinit_homo_old" class="cmd-panel{% if default_cmd_type == 'abinit_homo_old' %} cmd-panel--active{% endif %}" data-cmd="abinit_homo_old">
             {% if command_builder_page_mode %}
             <div class="cmd-builder-github-body">
               {% call render_github_required_bar(3) %}
@@ -1248,15 +1249,11 @@
         <div class="cmd-output card">
           <div class="cmd-output-grid">
             <div class="cmd-output-main">
-              {% if not command_builder_page_mode %}
-              <strong class="cmd-output-heading">Command</strong>
-              {% endif %}
               <pre id="cmd-out">cryodrgn abinit …</pre>
               <p class="hint">This page does not run commands — copy the line into your shell or job script.</p>
               <p id="cmd-copy-status" class="hint cmd-copy-status"></p>
             </div>
             <div class="cmd-output-actions">
-              {% if command_builder_page_mode %}
               <button type="button"
                       class="btn-copy btn-copy--colorize"
                       id="cmd-colorize"
@@ -1285,7 +1282,6 @@
                   <span class="btn-copy-label-line">command</span>
                 </span>
               </button>
-              {% endif %}
               <button type="button" class="btn-copy" id="cmd-copy">
                 <span class="btn-copy-icon btn-copy-icon--clipboard" aria-hidden="true">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"

@@ -1,0 +1,2376 @@
+{# Particle explorer montage: colour paint, lasso/region selection, highlight traces #}
+// Particle explorer inline script fragment (colour legend + montage + volumes).
+  function handleExplorerLegendFilter(filter) {
+    if (!filter) return;
+    if (filter.kind === "discrete") {
+      applyExplorerDiscreteFilter(filter);
+    } else {
+      applyExplorerContinuousFilter(filter);
+    }
+  }
+
+  function onExplorerContinuousHistogramLayout() {
+    syncParticleExplorerRowExpandForColorHist();
+  }
+
+  function syncColorCovariateSidePanel() {
+    if (!colorHistPanel) return;
+    if (!plotHasScatterData() || !sc.value || sc.value === "none") {
+      hideColorHistogram();
+      return;
+    }
+    if (explorerColorLegend && typeof explorerColorLegend.refresh === "function") {
+      explorerColorLegend.refresh().then(function() {
+        if (explorerColorLegend && typeof explorerColorLegend.syncThresholdMirrorFromHost === "function") {
+          explorerColorLegend.syncThresholdMirrorFromHost({
+            thresholdCol: sc.value,
+            level: colorThresholdLevel,
+            range: colorThresholdRange,
+            useMaxChecked: colorHistModeCheckOn()
+          });
+        }
+      }).catch(function() { /* refresh failed */ });
+    }
+    syncParticleExplorerRowExpandForColorHist();
+  }
+
+  function colorHistContinuousRangeModeActive() {
+    return colorThresholdRange != null && colorThresholdColorCol === sc.value;
+  }
+
+  function colorHistModeCheckOn() {
+    return !!(colorHistModeCheck && colorHistModeCheck.checked);
+  }
+
+  /** One shared checkbox: threshold mode → “use as maximum (≤)”; range mode → invert outside range. */
+  function syncColorHistModeCheckboxCaption() {
+    var rangeMode = colorHistContinuousRangeModeActive();
+    if (colorHistModeCheckCaption) {
+      colorHistModeCheckCaption.textContent = rangeMode
+        ? "Invert range selection"
+        : "Use as maximum (≤)";
+    }
+    if (colorHistModeCheckWasRange !== rangeMode) {
+      if (colorHistModeCheck) colorHistModeCheck.checked = false;
+    }
+    colorHistModeCheckWasRange = rangeMode;
+  }
+
+  /**
+   * Lasso/box selection invalidates color-threshold mode. Drop the threshold guide
+   * and status text without rebuilding the violin (avoids O(n log n) histogram work).
+   */
+  function clearColorHistogramThresholdForGeometricSelection() {
+    colorThresholdLevel = null;
+    colorThresholdRange = null;
+    colorThresholdColorCol = null;
+    if (explorerColorLegend) explorerColorLegend.clearThreshold();
+    if (colorThresholdStatus) colorThresholdStatus.textContent = "";
+    syncColorHistModeCheckboxCaption();
+    if (explorerColorLegend) explorerColorLegend.setDiscreteCheckedKeys([]);
+  }
+
+
+
+  var PLOTLY = CryoPlotlyArrays;
+  var customdataLength = PLOTLY.customdataLength;
+  var plotlyArrayLength = PLOTLY.length;
+  var isPlotlyArray = PLOTLY.isArray;
+  var plotlyDataRowAsArray = PLOTLY.rowAsArray;
+
+  function plotlyAt(arr, idx) {
+    return PLOTLY.valueAt(arr, idx);
+  }
+
+  function scatterPlotCustomdata() {
+    if (!gd || !gd.data || !gd.data[0]) return null;
+    return (gd._fullData && gd._fullData[0] && gd._fullData[0].customdata)
+      || gd.data[0].customdata
+      || null;
+  }
+
+  function traceCustomdataColorDisp(ti) {
+    var cd = scatterPlotCustomdata();
+    var len = plotlyArrayLength(cd);
+    if (!cd || ti < 0 || ti >= len) return null;
+    var row = plotlyDataRowAsArray(PLOTLY.rowAt(cd, ti));
+    if (row.length > 2 && row[2] != null && row[2] !== "") return row[2];
+    return null;
+  }
+
+  /** Parse #rgb / #rrggbb → {r,g,b} or null. */
+  function parseMarkerHexRgb(hex) {
+    if (typeof hex !== "string") return null;
+    var h = hex.trim();
+    if (h.charAt(0) !== "#") return null;
+    h = h.slice(1);
+    var r;
+    var g;
+    var b;
+    if (h.length === 3) {
+      r = parseInt(h.charAt(0) + h.charAt(0), 16);
+      g = parseInt(h.charAt(1) + h.charAt(1), 16);
+      b = parseInt(h.charAt(2) + h.charAt(2), 16);
+    } else if (h.length === 6) {
+      r = parseInt(h.slice(0, 2), 16);
+      g = parseInt(h.slice(2, 4), 16);
+      b = parseInt(h.slice(4, 6), 16);
+    } else {
+      return null;
+    }
+    if (!isFinite(r) || !isFinite(g) || !isFinite(b)) return null;
+    return { r: r, g: g, b: b };
+  }
+
+  /**
+   * k-means / discrete ChimeraX colors: lightly pastel cell fill (small blend toward white)
+   * plus a darker saturated tint for the covariate line so it stays readable on the chip.
+   */
+  function discreteLabelMontageStyles(hex) {
+    var rgb = parseMarkerHexRgb(hex);
+    if (!rgb) return { bg: "", covarColor: "" };
+    var r = rgb.r;
+    var g = rgb.g;
+    var b = rgb.b;
+    var towardWhite = 0.3;
+    var rf = Math.round(r * (1 - towardWhite) + 255 * towardWhite);
+    var gf = Math.round(g * (1 - towardWhite) + 255 * towardWhite);
+    var bf = Math.round(b * (1 - towardWhite) + 255 * towardWhite);
+    rf = Math.max(0, Math.min(255, rf));
+    gf = Math.max(0, Math.min(255, gf));
+    bf = Math.max(0, Math.min(255, bf));
+    var textDim = 0.46;
+    var rt = Math.max(0, Math.min(255, Math.round(r * textDim)));
+    var gt = Math.max(0, Math.min(255, Math.round(g * textDim)));
+    var bt = Math.max(0, Math.min(255, Math.round(b * textDim)));
+    return {
+      bg: "rgb(" + rf + "," + gf + "," + bf + ")",
+      covarColor: "rgb(" + rt + "," + gt + "," + bt + ")"
+    };
+  }
+
+  /** Parse ``rgb(r, g, b)`` from a CSS colour string. */
+  function parseRgbCssTriplet(css) {
+    var m = String(css || "").trim().match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s*$/i);
+    if (!m) return null;
+    return { r: +m[1], g: +m[2], b: +m[3] };
+  }
+
+  /** Pastel cell fill + readable annotation tints from a continuous-palette sample (same blend as discrete). */
+  function continuousMontageStylesFromT(t) {
+    var css = covariateScaleCSS(t);
+    var rgb = parseRgbCssTriplet(css);
+    if (!rgb) return { bg: css, covarColor: "", borderCss: css, idxColor: "" };
+    var r = rgb.r;
+    var g = rgb.g;
+    var b = rgb.b;
+    var towardWhite = 0.3;
+    var rf = Math.round(r * (1 - towardWhite) + 255 * towardWhite);
+    var gf = Math.round(g * (1 - towardWhite) + 255 * towardWhite);
+    var bf = Math.round(b * (1 - towardWhite) + 255 * towardWhite);
+    rf = Math.max(0, Math.min(255, rf));
+    gf = Math.max(0, Math.min(255, gf));
+    bf = Math.max(0, Math.min(255, bf));
+    var textDim = 0.46;
+    var rt = Math.max(0, Math.min(255, Math.round(r * textDim)));
+    var gt = Math.max(0, Math.min(255, Math.round(g * textDim)));
+    var bt = Math.max(0, Math.min(255, Math.round(b * textDim)));
+    var cov = "rgb(" + rt + "," + gt + "," + bt + ")";
+    return {
+      bg: "rgb(" + rf + "," + gf + "," + bf + ")",
+      covarColor: cov,
+      borderCss: css,
+      idxColor: cov
+    };
+  }
+
+  function discreteMontageSortKey(ti) {
+    var d = traceCustomdataColorDisp(ti);
+    if (d == null) return { n: NaN, s: "" };
+    if (typeof d === "number" && isFinite(d)) return { n: d, s: String(d) };
+    var sn = String(d);
+    var pn = parseFloat(sn);
+    if (sn !== "" && isFinite(pn) && String(pn) === sn) return { n: pn, s: sn };
+    return { n: NaN, s: sn };
+  }
+
+  /** Covariate colour for montage card border + scatter grid-letter marker outline (CSS colour string). */
+  function montageCovariateBorderCss(ti, colorMode, markerColors, cmin, cmax) {
+    var mcLen = plotlyArrayLength(markerColors);
+    if (!isPlotlyArray(markerColors) || ti < 0 || ti >= mcLen) return ACCENT;
+    if (colorMode === "discrete") {
+      var hx = plotlyAt(markerColors, ti);
+      return typeof hx === "string" && hx.charAt(0) === "#" ? hx : String(hx || ACCENT);
+    }
+    var val = plotlyAt(markerColors, ti);
+    var t = cmax > cmin && typeof val === "number" && isFinite(val)
+      ? (val - cmin) / (cmax - cmin)
+      : 0.5;
+    return covariateScaleCSS(t);
+  }
+
+  /**
+   * Grid-letter scatter overlay (trace 1): constant marker opacity; selection is shown only by filled vs hollow
+   * markers; each point keeps a white marker ring; fill reflects covariate / selection.
+   * When no selection exists yet, every annotated grid point is drawn filled (same as “in selection”).
+   * (cryo-grid-highlight-marker-policy)
+   */
+  var GRID_HIGHLIGHT_CLEAR_FILL = "rgba(0,0,0,0)";
+  var GRID_HIGHLIGHT_LINE_WIDTH = 2.5;
+  /** White ring around grid-letter marker circles (fill still reflects covariate / selection). */
+  var GRID_HIGHLIGHT_MARKER_LINE_COLOR = "#ffffff";
+  /** Match ``scatter_json`` marker opacity for the main explorer scatter trace. */
+  var EXPLORER_SCATTER_MARKER_OPACITY = 0.35;
+  var GRID_HIGHLIGHT_MARKER_OPACITY = 0.53;
+  /** Grid letters on the scatter plot (HTML overlay + Plotly trace) are always white. */
+  var GRID_HIGHLIGHT_TEXT_COLOR = "#ffffff";
+  var gridLetterGlyphsOverlayEl = document.getElementById("scatter-grid-letter-glyphs-overlay");
+  var gridLetterGlyphHookWired = false;
+
+  /**
+   * Keep grid-letter trace (index 1) from inheriting scattergl selection dimming when trace 0 has
+   * ``selectedpoints`` — use SVG scatter + explicit ``unselected`` opacities (cryo-grid-highlight-no-dim).
+   */
+  /** Image grid row count for highlight sizing (1–8). */
+  function gridHighlightRowsForSizing(gridSz) {
+    var n = parseInt(gridSz, 10);
+    if (!isFinite(n) || n < 1) n = 1;
+    if (n > 8) n = 8;
+    return n;
+  }
+
+  /** Marker diameter: 24 at 1×1, −1 per row (17 at 8×8). */
+  function gridHighlightMarkerSizePx(gridSz) {
+    return 25 - gridHighlightRowsForSizing(gridSz);
+  }
+
+  /** Plot letter size: 16 at 1×1, −1 per row (9 at 8×8). */
+  function gridHighlightTextSizePx(gridSz) {
+    return 17 - gridHighlightRowsForSizing(gridSz);
+  }
+
+  function explorerDataToPlotStackXY(dataX, dataY) {
+    var fl = gd && gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.yaxis || !gridLetterGlyphsOverlayEl || !gd) return null;
+    var plotArea = gd.querySelector(".nsewdrag");
+    if (!plotArea) return null;
+    var plotRect = plotArea.getBoundingClientRect();
+    var stackEl = gridLetterGlyphsOverlayEl.parentElement;
+    if (!stackEl) return null;
+    var stackRect = stackEl.getBoundingClientRect();
+    var xr = fl.xaxis.range;
+    var yr = fl.yaxis.range;
+    if (!xr || xr.length < 2 || !yr || yr.length < 2) return null;
+    if (xr[1] === xr[0] || yr[1] === yr[0]) return null;
+    var fracX = (dataX - xr[0]) / (xr[1] - xr[0]);
+    var fracY = (yr[1] - dataY) / (yr[1] - yr[0]);
+    return [
+      plotRect.left - stackRect.left + fracX * plotRect.width,
+      plotRect.top - stackRect.top + fracY * plotRect.height
+    ];
+  }
+
+  function clearGridLetterGlyphOverlay() {
+    if (gridLetterGlyphsOverlayEl) gridLetterGlyphsOverlayEl.innerHTML = "";
+  }
+
+  function syncGridLetterGlyphOverlay() {
+    clearGridLetterGlyphOverlay();
+    if (!gridLetterGlyphsOverlayEl || !gd || !gd._fullLayout || !showGridHighlightsOnPlot()) {
+      if (gridLetterGlyphsOverlayEl) {
+        gridLetterGlyphsOverlayEl.setAttribute("aria-hidden", "true");
+      }
+      return;
+    }
+    var tr = gd.data && gd.data[1];
+    var trXLen = plotlyArrayLength(tr && tr.x);
+    if (!tr || !isPlotlyArray(tr.x) || !trXLen) {
+      gridLetterGlyphsOverlayEl.setAttribute("aria-hidden", "true");
+      return;
+    }
+    gridLetterGlyphsOverlayEl.setAttribute("aria-hidden", "false");
+    var fontSize = gridHighlightTextSizePx(gridSize);
+    if (tr.textfont && typeof tr.textfont.size === "number" && isFinite(tr.textfont.size)) {
+      fontSize = tr.textfont.size;
+    }
+    var fontFamily = (tr.textfont && tr.textfont.family)
+      ? String(tr.textfont.family)
+      : "Georgia, 'Times New Roman', serif";
+    for (var gi = 0; gi < trXLen; gi++) {
+      var lab = "";
+      if (isPlotlyArray(tr.text) && PLOTLY.valueAt(tr.text, gi) != null) {
+        lab = String(PLOTLY.valueAt(tr.text, gi));
+      } else if (gi < labels.length) {
+        lab = String(labels[gi]);
+      }
+      if (!lab) continue;
+      var pt = explorerDataToPlotStackXY(
+        PLOTLY.valueAt(tr.x, gi),
+        PLOTLY.valueAt(tr.y, gi)
+      );
+      if (!pt) continue;
+      var glyph = document.createElement("span");
+      glyph.className = "cryo-explorer-grid-letter-glyph";
+      glyph.style.left = pt[0].toFixed(2) + "px";
+      glyph.style.top = pt[1].toFixed(2) + "px";
+      glyph.style.fontSize = fontSize + "px";
+      glyph.style.fontFamily = fontFamily;
+      glyph.style.color = GRID_HIGHLIGHT_TEXT_COLOR;
+      glyph.textContent = lab;
+      gridLetterGlyphsOverlayEl.appendChild(glyph);
+    }
+  }
+
+  function wireGridLetterGlyphOverlayHook() {
+    if (gridLetterGlyphHookWired || !gd) return;
+    gridLetterGlyphHookWired = true;
+    gd.on("plotly_afterplot", syncGridLetterGlyphOverlay);
+    gd.on("plotly_relayout", syncGridLetterGlyphOverlay);
+  }
+
+  function stampHighlightTraceAntiDim(restyleData) {
+    if (!restyleData) return;
+    restyleData.selectedpoints = [null];
+    restyleData["unselected.marker.opacity"] = [1];
+    restyleData["unselected.textfont.opacity"] = [1];
+  }
+
+  function nudgeHighlightTraceAfterScatterglSelectRestyle() {
+    if (!highlightTraceAdded || !gd || !gd.data || gd.data.length < 2) return;
+    try {
+      Plotly.restyle(
+        gd,
+        {
+          type: "scatter",
+          selectedpoints: [null],
+          "unselected.marker.opacity": [1],
+          "unselected.textfont.opacity": [1]
+        },
+        [1]
+      );
+    } catch (e) {
+      try {
+        Plotly.restyle(
+          gd,
+          {
+            selectedpoints: [null],
+            "unselected.marker.opacity": [1],
+            "unselected.textfont.opacity": [1]
+          },
+          [1]
+        );
+      } catch (e2) { /* ignore */ }
+    }
+  }
+
+  function appendGridHighlightMarkerRestyle(
+    restyleData,
+    nbs,
+    hasColor,
+    colorMode,
+    markerColors,
+    cmin,
+    cmax
+  ) {
+    var selRows = saveSelectionRows || [];
+    var treatAllGridPointsAsSelected = !selRows.length;
+    var selSet = null;
+    if (!treatAllGridPointsAsSelected) {
+      selSet = new Set();
+      for (var sri = 0; sri < selRows.length; sri++) {
+        var sn = Number(selRows[sri]);
+        if (isFinite(sn)) selSet.add(sn);
+      }
+      if (!selSet.size) selSet = null;
+    }
+    var treatAll = !selSet;
+    var fillColors = [];
+    var lineColors = [];
+    var textFontColors = [];
+    var multiGeom = committedScatterRegions && committedScatterRegions.length >= 2;
+    for (var hk = 0; hk < nbs.length; hk++) {
+      var tiH = nbs[hk].ti;
+      var rowH = nbs[hk].row;
+      var rowN = Number(rowH);
+      var inSel = treatAll || (isFinite(rowN) && selSet.has(rowN));
+      var rIdxgeom = (!hasColor && multiGeom) ? selectionRegionIndexForRow(rowH) : -1;
+      lineColors.push(GRID_HIGHLIGHT_MARKER_LINE_COLOR);
+      if (!hasColor) {
+        if (multiGeom && rIdxgeom >= 0) {
+          var stRg = selectionRegionMontageStyles(rIdxgeom);
+          fillColors.push(inSel ? stRg.bg : GRID_HIGHLIGHT_CLEAR_FILL);
+          textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
+        } else if (multiGeom && rIdxgeom < 0) {
+          fillColors.push(GRID_HIGHLIGHT_CLEAR_FILL);
+          textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
+        } else {
+          fillColors.push(inSel ? ACCENT : GRID_HIGHLIGHT_CLEAR_FILL);
+          textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
+        }
+      } else if (colorMode === "discrete") {
+        fillColors.push(inSel ? String(plotlyAt(markerColors, tiH)) : GRID_HIGHLIGHT_CLEAR_FILL);
+        textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
+      } else {
+        fillColors.push(
+          inSel ? montageCovariateBorderCss(tiH, colorMode, markerColors, cmin, cmax) : GRID_HIGHLIGHT_CLEAR_FILL
+        );
+        textFontColors.push(GRID_HIGHLIGHT_TEXT_COLOR);
+      }
+    }
+    restyleData["marker.color"] = [fillColors];
+    restyleData["marker.line.color"] = [lineColors];
+    restyleData["marker.line.width"] = [GRID_HIGHLIGHT_LINE_WIDTH];
+    restyleData["marker.size"] = [gridHighlightMarkerSizePx(gridSize)];
+    restyleData["marker.opacity"] = [GRID_HIGHLIGHT_MARKER_OPACITY];
+    restyleData["textfont.size"] = [gridHighlightTextSizePx(gridSize)];
+    restyleData["textfont.color"] = [textFontColors];
+    stampHighlightTraceAntiDim(restyleData);
+  }
+
+  function montageItemsFromLastRows() {
+    var out = [];
+    if (!lastMontageRows || !lastMontageRows.length) return out;
+    for (var li = 0; li < lastMontageRows.length; li++) {
+      var it = montageItemForRow(lastMontageRows[li]);
+      if (it) out.push(it);
+    }
+    return out;
+  }
+
+  /**
+   * After lasso/threshold selection changes without replacing montage rows, keep grid-letter marker fill/hollow
+   * state in sync with ``saveSelectionRows``.
+   */
+  function refreshGridHighlightMarkerStylesFromLastRows() {
+    if (!showGridHighlightsOnPlot()) return;
+    if (!highlightTraceAdded || !gd || !gd.data || !gd.data[0] || !gd.data[1]) return;
+    var items = montageItemsFromLastRows();
+    if (!items.length) return;
+    var markerColors = gd.data[0].marker ? gd.data[0].marker.color : null;
+    var colorCol = sc.value;
+    var hasColor = colorCol !== "none" && isPlotlyArray(markerColors);
+    var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
+    var cmin = Infinity;
+    var cmax = -Infinity;
+    if (hasColor && colorMode === "continuous") {
+      var mcLen = plotlyArrayLength(markerColors);
+      for (var ci = 0; ci < mcLen; ci++) {
+        var vci = plotlyAt(markerColors, ci);
+        if (typeof vci === "number" && isFinite(vci)) {
+          if (vci < cmin) cmin = vci;
+          if (vci > cmax) cmax = vci;
+        }
+      }
+    }
+    var patch = {};
+    appendGridHighlightMarkerRestyle(patch, items, hasColor, colorMode, markerColors, cmin, cmax);
+    queueHighlightRestyle(patch);
+  }
+
+  // row (plot_df row index) → trace index lookup for the current scatter load.
+  // This removes repeated O(N) scans during selection + geometry bucketing.
+  var rowToTraceIndexMap = null;
+
+  function buildTraceMapFromRows(rows) {
+    rows = rows || [];
+    rowToTraceIndexMap = new Map();
+    for (var i = 0; i < rows.length; i++) {
+      var rowN = Number(rows[i]);
+      if (isFinite(rowN)) rowToTraceIndexMap.set(rowN, i);
+    }
+  }
+
+  function buildTraceMap() {
+    if (!gd || !gd.data || !gd.data[0]) return;
+    var trace = gd.data[0];
+    var cd = (gd._fullData && gd._fullData[0] && gd._fullData[0].customdata)
+      || trace.customdata;
+    if (!cd) return;
+    rowToTraceIndexMap = new Map();
+    var tm = [];
+    var hasPreloaded = !!preloaded;
+    var len = plotlyArrayLength(trace.x);
+    if (!len) len = customdataLength(cd);
+    for (var i = 0; i < len; i++) {
+      var rowData = PLOTLY.rowAt(cd, i);
+      if (!rowData.length) continue;
+      var row = rowData[1];
+      var rowN = Number(row);
+      if (isFinite(rowN)) rowToTraceIndexMap.set(rowN, i);
+      if (hasPreloaded) {
+        // Check for row in both original form and as string/number
+        var rowKey = preloaded.rows.has(row) ? row : (preloaded.rows.has(String(row)) ? String(row) : (preloaded.rows.has(rowN) ? rowN : null));
+        if (rowKey !== null) {
+          tm.push({ti: i, src: preloaded.rowToSrc.get(rowKey) || preloaded.rowToSrc.get(row) || preloaded.rowToSrc.get(String(row)) || preloaded.rowToSrc.get(rowN) || "", row: rowN});
+        }
+      }
+    }
+    if (hasPreloaded) {
+      preloaded.traceMap = tm;
+      syncMontageResampleFromCacheButton();
+    }
+  }
+
+  /** Montage chip border: top stays thin; left, right, and bottom 50% thicker (3px vs 2px). */
+  function setMontageCellSelectionBorderStyle(cellEl, colorCss) {
+    cellEl.style.boxSizing = "border-box";
+    cellEl.style.borderStyle = "solid";
+    cellEl.style.borderColor = colorCss;
+    cellEl.style.borderWidth = "2px 3px 3px 3px";
+  }
+
+  /**
+   * Pick up to ``want`` cached scatter points: shuffle selected-in-cache first, then pad from the
+   * rest of the cache so the grid stays full when the selection has fewer cached thumbnails.
+   */
+  function pickMontageItemsSelectionFirstFromCache(want) {
+    if (!preloaded || !preloaded.traceMap || !preloaded.traceMap.length) return [];
+    var w = Math.floor(Number(want));
+    if (!isFinite(w) || w < 1) w = neighborK;
+    w = Math.min(w, neighborK, preloaded.traceMap.length);
+    var tm = preloaded.traceMap;
+    var rowSet = null;
+    if (saveSelectionRows && saveSelectionRows.length) {
+      rowSet = new Set();
+      for (var rs = 0; rs < saveSelectionRows.length; rs++) {
+        var rsn = Number(saveSelectionRows[rs]);
+        if (isFinite(rsn)) rowSet.add(rsn);
+      }
+      if (!rowSet.size) rowSet = null;
+    }
+    var primary = [];
+    if (rowSet && rowSet.size) {
+      for (var pi = 0; pi < tm.length; pi++) {
+        var rtm = Number(tm[pi].row);
+        if (isFinite(rtm) && rowSet.has(rtm)) primary.push(tm[pi]);
+      }
+      shuffleInPlace(primary);
+    }
+    var out = [];
+    var seen = new Set();
+    for (var a = 0; a < primary.length && out.length < w; a++) {
+      var rpa = Number(primary[a].row);
+      if (!isFinite(rpa) || seen.has(rpa)) continue;
+      seen.add(rpa);
+      out.push(primary[a]);
+    }
+    if (out.length < w) {
+      var fallback = tm.slice();
+      shuffleInPlace(fallback);
+      for (var b = 0; b < fallback.length && out.length < w; b++) {
+        var rfb = Number(fallback[b].row);
+        if (!isFinite(rfb) || seen.has(rfb)) continue;
+        seen.add(rfb);
+        out.push(fallback[b]);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Keep existing montage items (e.g. after axis reload) and top up to ``want`` using the same
+   * selection-first + cache-fill rule, without duplicating rows already in ``haveItems``.
+   */
+  function completeMontageItemsSelectionFirstPartial(haveItems, want) {
+    if (!preloaded || !preloaded.traceMap) return (haveItems || []).slice();
+    want = Math.min(Math.floor(Number(want)) || neighborK, neighborK, preloaded.traceMap.length);
+    var out = (haveItems || []).slice();
+    var seen = new Set();
+    for (var u = 0; u < out.length; u++) {
+      var ru = Number(out[u].row);
+      if (isFinite(ru)) seen.add(ru);
+    }
+    var rowSet = null;
+    if (saveSelectionRows && saveSelectionRows.length) {
+      rowSet = new Set();
+      for (var rs2 = 0; rs2 < saveSelectionRows.length; rs2++) {
+        var rsn2 = Number(saveSelectionRows[rs2]);
+        if (isFinite(rsn2)) rowSet.add(rsn2);
+      }
+      if (!rowSet.size) rowSet = null;
+    }
+    var primary = [];
+    if (rowSet && rowSet.size) {
+      for (var pi = 0; pi < preloaded.traceMap.length; pi++) {
+        var it = preloaded.traceMap[pi];
+        var rIt = Number(it.row);
+        if (isFinite(rIt) && rowSet.has(rIt) && !seen.has(rIt)) primary.push(it);
+      }
+      shuffleInPlace(primary);
+    }
+    for (var a = 0; a < primary.length && out.length < want; a++) {
+      var rpa2 = Number(primary[a].row);
+      if (!isFinite(rpa2)) continue;
+      seen.add(rpa2);
+      out.push(primary[a]);
+    }
+    if (out.length < want) {
+      var rest = [];
+      for (var ri = 0; ri < preloaded.traceMap.length; ri++) {
+        var it2 = preloaded.traceMap[ri];
+        var r2n = Number(it2.row);
+        if (!isFinite(r2n) || seen.has(r2n)) continue;
+        rest.push(it2);
+      }
+      shuffleInPlace(rest);
+      for (var b = 0; b < rest.length && out.length < want; b++) {
+        var rbn = Number(rest[b].row);
+        if (!isFinite(rbn)) continue;
+        seen.add(rbn);
+        out.push(rest[b]);
+      }
+    }
+    return out;
+  }
+
+  function montageResampleSuppressed() {
+    return Date.now() < suppressMontageResampleUntil;
+  }
+
+  function armMontageResampleSuppress(extraMs) {
+    var ms = extraMs != null ? Number(extraMs) : 0;
+    if (!isFinite(ms) || ms < 0) ms = 0;
+    suppressMontageResampleUntil = Math.max(suppressMontageResampleUntil, Date.now() + ms);
+  }
+
+  function showRandomPreloaded() {
+    if (montageResampleSuppressed()) return;
+    if (!preloaded || !preloaded.traceMap) return;
+    var items = pickMontageItemsSelectionFirstFromCache(neighborK);
+    if (!items.length) return;
+    updateMontage(items);
+  }
+
+  function updateMontage(nbs) {
+    if (montageResampleSuppressed()) return;
+    nbs = nbs.slice();
+    if (!showGridHighlightsEnabled()) {
+      updateMontageOrdered([]);
+      return;
+    }
+    var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
+    var colorCol = sc.value;
+    var hasColor = colorCol !== "none" && isPlotlyArray(markerColors);
+    var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
+    if (hasColor && colorMode === "discrete") {
+      nbs = nbs.slice().sort(function(a, b) {
+        var ka = discreteMontageSortKey(a.ti);
+        var kb = discreteMontageSortKey(b.ti);
+        if (isFinite(ka.n) && isFinite(kb.n) && ka.n !== kb.n) return ka.n - kb.n;
+        if (ka.s !== kb.s) return ka.s < kb.s ? -1 : ka.s > kb.s ? 1 : 0;
+        return a.row - b.row;
+      });
+    } else if (
+      !hasColor &&
+      committedScatterRegions.length > 1 &&
+      imagesViewEnabled &&
+      preloaded &&
+      preloaded.traceMap
+    ) {
+      nbs = nbs.slice().sort(function(a, b) {
+        var ra = selectionRegionIndexForRow(a.row);
+        var rb = selectionRegionIndexForRow(b.row);
+        if (ra !== rb) return ra - rb;
+        return a.row - b.row;
+      });
+    } else if (hasColor) {
+      nbs = nbs.slice().sort(function(a, b) {
+        return plotlyAt(markerColors, a.ti) - plotlyAt(markerColors, b.ti);
+      });
+    } else {
+      var xs = gd.data && gd.data[0] ? gd.data[0].x : null;
+      nbs = nbs.slice().sort(function(a, b) {
+        var ax = xs ? (PLOTLY.valueAt(xs, a.ti) || 0) : 0;
+        var bx = xs ? (PLOTLY.valueAt(xs, b.ti) || 0) : 0;
+        if (ax !== bx) return ax - bx;
+        return a.row - b.row;
+      });
+    }
+    updateMontageOrdered(nbs);
+  }
+
+  /** Paint montage cells in caller order (no covariate / region re-sort). */
+  function montageCellStyleContext() {
+    var colorCol = sc.value;
+    var colorColLabel = covariateDisplayMap[colorCol] || colorCol;
+    var markerColors = gd.data && gd.data[0] && gd.data[0].marker ? gd.data[0].marker.color : null;
+    var hasColor = colorCol !== "none" && isPlotlyArray(markerColors);
+    var colorMode = hasColor ? scatterTraceColorMode() : "continuous";
+    var cmin = Infinity;
+    var cmax = -Infinity;
+    if (hasColor && colorMode === "continuous") {
+      var mcLen = plotlyArrayLength(markerColors);
+      for (var ci = 0; ci < mcLen; ci++) {
+        var vci = plotlyAt(markerColors, ci);
+        if (typeof vci === "number" && isFinite(vci)) {
+          if (vci < cmin) cmin = vci;
+          if (vci > cmax) cmax = vci;
+        }
+      }
+    }
+    var selMem = null;
+    if (saveSelectionRows && saveSelectionRows.length) {
+      selMem = new Set();
+      for (var sm = 0; sm < saveSelectionRows.length; sm++) {
+        var snm = Number(saveSelectionRows[sm]);
+        if (isFinite(snm)) selMem.add(snm);
+      }
+      if (!selMem.size) selMem = null;
+    }
+    return {
+      colorCol: colorCol,
+      colorColLabel: colorColLabel,
+      markerColors: markerColors,
+      hasColor: hasColor,
+      colorMode: colorMode,
+      cmin: cmin,
+      cmax: cmax,
+      selMem: selMem
+    };
+  }
+
+  function clearMontageCellAtIndex(i) {
+    if (i < 0 || i >= montageCells.length) return;
+    montageCells[i].img.src = "";
+    montageCells[i].img.style.opacity = "";
+    montageCells[i].idx.textContent = "";
+    montageCells[i].idx.style.color = "";
+    montageCells[i].covar.textContent = "";
+    montageCells[i].covar.style.color = "";
+    montageCells[i].cell.style.background = "";
+    montageCells[i].cell.style.border = "";
+    if (montageCells[i].lbl) montageCells[i].lbl.style.color = "";
+  }
+
+  function paintMontageCellAtIndex(i, item, ctx) {
+    if (i < 0 || i >= montageCells.length || !item) return;
+    ctx = ctx || montageCellStyleContext();
+    var hasColor = ctx.hasColor;
+    var colorMode = ctx.colorMode;
+    var markerColors = ctx.markerColors;
+    var cmin = ctx.cmin;
+    var cmax = ctx.cmax;
+    var selMem = ctx.selMem;
+    var colorCol = ctx.colorCol;
+    var colorColLabel = ctx.colorColLabel;
+    montageCells[i].img.src = item.src || "";
+    montageCells[i].idx.textContent = "idx " + item.row;
+    montageCells[i].cell.classList.add("cryo-montage-cell--light");
+    if (montageCells[i].lbl) montageCells[i].lbl.style.color = "";
+    if (hasColor) {
+      var ti = item.ti;
+      var dispVal = traceCustomdataColorDisp(ti);
+      if (dispVal == null && colorMode === "continuous") {
+        var vmc = plotlyAt(markerColors, ti);
+        dispVal = typeof vmc === "number" && isFinite(vmc) ? vmc : vmc;
+      }
+      var dispStr = dispVal == null ? "—" : (
+        typeof dispVal === "number" && isFinite(dispVal) ? dispVal.toFixed(2) : String(dispVal)
+      );
+      montageCells[i].covar.textContent = colorCol === "labels"
+        ? ("k-means cluster = " + dispStr)
+        : (colorColLabel + "=" + dispStr);
+      if (colorMode === "discrete") {
+        var hexCol = plotlyAt(markerColors, ti);
+        var dStyles = discreteLabelMontageStyles(String(hexCol));
+        montageCells[i].cell.style.background = dStyles.bg;
+        setMontageCellSelectionBorderStyle(montageCells[i].cell, String(hexCol));
+        montageCells[i].covar.style.color = dStyles.covarColor || "";
+        montageCells[i].idx.style.color = dStyles.covarColor || "";
+      } else {
+        var valC = plotlyAt(markerColors, ti);
+        var tCell = cmax > cmin && typeof valC === "number" && isFinite(valC)
+          ? (valC - cmin) / (cmax - cmin)
+          : 0.5;
+        var cStyles = continuousMontageStylesFromT(tCell);
+        montageCells[i].cell.style.background = cStyles.bg;
+        setMontageCellSelectionBorderStyle(
+          montageCells[i].cell,
+          cStyles.borderCss || cStyles.bg
+        );
+        montageCells[i].covar.style.color = cStyles.covarColor || "";
+        montageCells[i].idx.style.color = cStyles.idxColor || cStyles.covarColor || "";
+      }
+    } else {
+      montageCells[i].covar.textContent = "";
+      montageCells[i].covar.style.color = "";
+      montageCells[i].idx.style.color = "";
+      montageCells[i].cell.style.background = "";
+      var borderNoCov = ACCENT;
+      if (imagesViewEnabled && preloaded && preloaded.traceMap && committedScatterRegions.length) {
+        var ridxM = selectionRegionIndexForRow(item.row);
+        if (ridxM >= 0) {
+          borderNoCov = scatterRegionPlotStyle(ridxM).line;
+          var rsMont = selectionRegionMontageStyles(ridxM);
+          montageCells[i].cell.style.background = rsMont.bg;
+          montageCells[i].covar.style.color = rsMont.covarColor || "";
+          montageCells[i].idx.style.color = rsMont.covarColor || "";
+          if (committedScatterRegions.length > 1) {
+            montageCells[i].covar.textContent = "Region " + (ridxM + 1);
+          }
+          if (montageCells[i].lbl && committedScatterRegions.length >= 2) {
+            montageCells[i].lbl.style.color = rsMont.covarColor || "";
+          }
+        } else if (committedScatterRegions.length > 1) {
+          borderNoCov = "#94a3b8";
+          montageCells[i].cell.style.background = "";
+          montageCells[i].covar.textContent = "";
+          montageCells[i].covar.style.color = "";
+          montageCells[i].idx.style.color = "#64748b";
+          if (montageCells[i].lbl) montageCells[i].lbl.style.color = "#64748b";
+        }
+      }
+      setMontageCellSelectionBorderStyle(montageCells[i].cell, borderNoCov);
+    }
+    var rowNj = Number(item.row);
+    var inScatterSel = !selMem || (isFinite(rowNj) && selMem.has(rowNj));
+    if (imagesViewEnabled && selMem) {
+      montageCells[i].img.style.opacity = inScatterSel ? "1" : "0.5";
+      if (!inScatterSel) {
+        setMontageCellSelectionBorderStyle(montageCells[i].cell, "#94a3b8");
+        if (montageCells[i].lbl) montageCells[i].lbl.style.color = "#64748b";
+        montageCells[i].idx.style.color = "#64748b";
+        if (hasColor) {
+          montageCells[i].covar.style.color = "#64748b";
+        }
+      } else if (montageCells[i].lbl && hasColor) {
+        montageCells[i].lbl.style.color = "";
+      } else {
+        if (montageCells[i].lbl && !hasColor && committedScatterRegions.length <= 1) {
+          montageCells[i].lbl.style.color = "";
+        }
+      }
+    } else {
+      montageCells[i].img.style.opacity = "";
+    }
+  }
+
+  function syncHighlightTraceFromMontageItems(items) {
+    if (!highlightTraceAdded || !gd.data || !gd.data[0] || !items.length) return;
+    var ctx = montageCellStyleContext();
+    var nx = [], ny = [], txt = [];
+    var showPlotHighlights = showGridHighlightsOnPlot();
+    for (var k = 0; k < items.length; k++) {
+      nx.push(PLOTLY.traceValueAt(gd, 0, "x", items[k].ti));
+      ny.push(PLOTLY.traceValueAt(gd, 0, "y", items[k].ti));
+      if (showPlotHighlights) txt.push(labels[k]);
+    }
+    var restyleData = {
+      x: [nx],
+      y: [ny],
+      mode: ["markers"],
+      text: [txt],
+      visible: [showPlotHighlights]
+    };
+    appendGridHighlightMarkerRestyle(
+      restyleData,
+      items,
+      ctx.hasColor,
+      ctx.colorMode,
+      ctx.markerColors,
+      ctx.cmin,
+      ctx.cmax
+    );
+    queueHighlightRestyle(restyleData);
+    syncGridLetterGlyphOverlay();
+  }
+
+  function updateMontageOrdered(nbs) {
+    nbs = nbs.slice();
+    cancelPendingHighlightRestyle();
+    if (!showGridHighlightsEnabled()) {
+      nbs = [];
+    }
+    var newOrdered = nbs.map(function(x) { return x.row; }).join(",");
+    var oldOrdered = lastMontageRows.join(",");
+    var newStable = nbs.map(function(x) { return x.row; }).slice().sort(function(a, b) { return a - b; }).join(",");
+    var oldStable = lastMontageRows.length
+      ? lastMontageRows.slice().sort(function(a, b) { return a - b; }).join(",")
+      : "";
+    if (newOrdered !== oldOrdered || newStable !== oldStable) {
+      invalidateVolumeArtifacts();
+    }
+    var ctx = montageCellStyleContext();
+    for (var i = 0; i < montageCells.length; i++) {
+      if (i < nbs.length) {
+        paintMontageCellAtIndex(i, nbs[i], ctx);
+      } else {
+        clearMontageCellAtIndex(i);
+      }
+    }
+    syncHighlightTraceFromMontageItems(nbs);
+    lastMontageRows = [];
+    for (var mi = 0; mi < nbs.length; mi++) {
+      lastMontageRows.push(nbs[mi].row);
+    }
+    if (montageDisplayMode === "volumes") {
+      var vkey = montageRowsOrderKey();
+      if (volumeStaticDataUrls && volumeStaticKey === vkey && volumeStaticDataUrls.length) {
+        showVolumesInMontage();
+      } else {
+        syncVolumeExploreButtons();
+      }
+    } else {
+      syncVolumeExploreButtons();
+    }
+    scheduleSyncMontageGridRegionLayout();
+    syncExplorerMontagePanelReadiness();
+  }
+
+  /** Replace one montage letter slot; other cells are left unchanged (double-click → A). */
+  function replaceMontageSlotAt(slotIndex, item) {
+    if (!item || slotIndex !== 0 || !showGridHighlightsEnabled()) return;
+    if (slotIndex >= montageCells.length) return;
+    var prevRow = lastMontageRows.length ? lastMontageRows[0] : undefined;
+    if (prevRow != null && Number(prevRow) !== Number(item.row)) {
+      invalidateVolumeArtifacts();
+    }
+    if (!lastMontageRows.length) {
+      lastMontageRows = [item.row];
+    } else {
+      lastMontageRows[0] = item.row;
+    }
+    var ctx = montageCellStyleContext();
+    paintMontageCellAtIndex(slotIndex, item, ctx);
+    if (montageDisplayMode === "volumes") {
+      var vkey = montageRowsOrderKey();
+      if (volumeStaticDataUrls && volumeStaticKey === vkey && volumeStaticDataUrls.length) {
+        montageCells[slotIndex].img.src = volumeStaticDataUrls[slotIndex] || "";
+      } else {
+        syncVolumeExploreButtons();
+      }
+    }
+    syncHighlightTraceAfterSlotReplace(slotIndex, item);
+    syncVolumeExploreButtons();
+  }
+
+  /** Update grid-letter overlay for one slot; keep other highlight positions when possible. */
+  function syncHighlightTraceAfterSlotReplace(slotIndex, item) {
+    if (!highlightTraceAdded || !gd.data || !gd.data[0] || !gd.data[1] || !item) return;
+    var n = lastMontageRows.length;
+    if (!n) return;
+    var trace = gd.data[1];
+    var oldX = isPlotlyArray(trace.x) ? PLOTLY.slice(trace.x) : [];
+    var oldY = isPlotlyArray(trace.y) ? PLOTLY.slice(trace.y) : [];
+    var oldText = isPlotlyArray(trace.text) ? PLOTLY.slice(trace.text) : [];
+    if (oldX.length !== n || slotIndex >= n) {
+      syncHighlightTraceFromMontageItems(montageItemsFromLastRows());
+      return;
+    }
+    var items = [];
+    for (var hi = 0; hi < n; hi++) {
+      if (hi === slotIndex) {
+        items.push(item);
+        continue;
+      }
+      var keptHi = montageItemForRow(lastMontageRows[hi]);
+      if (!keptHi) {
+        syncHighlightTraceFromMontageItems(montageItemsFromLastRows());
+        return;
+      }
+      items.push(keptHi);
+    }
+    oldX[slotIndex] = PLOTLY.traceValueAt(gd, 0, "x", item.ti);
+    oldY[slotIndex] = PLOTLY.traceValueAt(gd, 0, "y", item.ti);
+    var showPlotHighlights = showGridHighlightsOnPlot();
+    var ctx = montageCellStyleContext();
+    var restyleData = {
+      x: [oldX],
+      y: [oldY],
+      mode: ["markers"],
+      text: [showPlotHighlights ? oldText : []],
+      visible: [showPlotHighlights]
+    };
+    appendGridHighlightMarkerRestyle(
+      restyleData,
+      items,
+      ctx.hasColor,
+      ctx.colorMode,
+      ctx.markerColors,
+      ctx.cmin,
+      ctx.cmax
+    );
+    queueHighlightRestyle(restyleData);
+    syncGridLetterGlyphOverlay();
+  }
+
+  function rowFromPlotlyPoint(pt) {
+    if (!pt) return NaN;
+    var ptRow = plotlyDataRowAsArray(pt.customdata);
+    if (ptRow.length > 1) {
+      var r0 = Number(ptRow[1]);
+      if (isFinite(r0)) return r0;
+    }
+    var pi = pt.pointIndex;
+    if (pi != null && scatterPlotCustomdata()) {
+      var row = plotlyDataRowAsArray(PLOTLY.rowAt(scatterPlotCustomdata(), pi));
+      if (row.length > 1) {
+        var r1 = Number(row[1]);
+        if (isFinite(r1)) return r1;
+      }
+    }
+    return NaN;
+  }
+
+  function ensureRowCachedForMontage(row) {
+    row = Number(row);
+    if (!isFinite(row)) return Promise.reject(new Error("invalid row"));
+    if (preloaded && preloaded.rows && preloaded.rows.has(row)) {
+      buildTraceMap();
+      return Promise.resolve();
+    }
+    var have = preloaded ? cachedImageCount() : 0;
+    return preloadImagesInChunksToTarget({
+      finalTarget: have + 1,
+      overlayLabel: "Caching 1 image…",
+      enableImages: true,
+      selectedRows: [row],
+      restrictToScatterPlot: true,
+      suppressMontageRefresh: true
+    });
+  }
+
+  function assignScatterRowToMontageSlotA(row) {
+    return ensureRowCachedForMontage(row).then(function() {
+      if (!showGridHighlightsEnabled()) return;
+      var item = montageItemForRow(row);
+      if (item) replaceMontageSlotAt(0, item);
+    });
+  }
+
+  /** After color-only scatter reload: same particles, pad from lasso pool or full cache if grid needs more. */
+  function restoreMontageAfterScatterReload() {
+    if (!preloaded || !preloaded.traceMap) return;
+    var rowToItem = new Map();
+    for (var ri = 0; ri < preloaded.traceMap.length; ri++) {
+      var it0 = preloaded.traceMap[ri];
+      rowToItem.set(it0.row, it0);
+    }
+    var want = neighborK;
+    var items = [];
+    if (lastMontageRows && lastMontageRows.length) {
+      for (var i = 0; i < lastMontageRows.length && items.length < want; i++) {
+        var found = rowToItem.get(lastMontageRows[i]);
+        if (found) items.push(found);
+      }
+    }
+    items = completeMontageItemsSelectionFirstPartial(items, want);
+    if (items.length) {
+      updateMontage(items);
+    } else {
+      showRandomPreloaded();
+    }
+  }
+
+  /** After grid size change: keep current rows where possible; top up from cache (selection-first when applicable). */
+  function refillMontageForNewGridSize() {
+    var want = neighborK;
+    if (!preloaded || !preloaded.traceMap) {
+      if (!plotHasScatterData() || !lastMontageRows.length) return;
+      ensureHighlightTrace();
+      var picked = pickRandomMontageItemsFilled(want);
+      if (picked.length) updateMontage(picked);
+      return;
+    }
+    if (!preloaded.traceMap.length) return;
+    var byRow = new Map();
+    for (var pi = 0; pi < preloaded.traceMap.length; pi++) {
+      byRow.set(preloaded.traceMap[pi].row, preloaded.traceMap[pi]);
+    }
+    var items = [];
+    if (lastMontageRows && lastMontageRows.length) {
+      for (var i = 0; i < lastMontageRows.length && items.length < want; i++) {
+        var it = byRow.get(lastMontageRows[i]);
+        if (it) items.push(it);
+      }
+    }
+    items = completeMontageItemsSelectionFirstPartial(items, want);
+    if (items.length) {
+      updateMontage(items);
+    } else if (preloaded.traceMap.length >= want) {
+      showRandomPreloaded();
+    }
+    if (highlightTraceAdded && lastMontageRows && lastMontageRows.length) {
+      refreshGridHighlightMarkerStylesFromLastRows();
+      syncGridLetterGlyphOverlay();
+    }
+  }
+
+  /* ---------- rendering overlay ---------- */
+  function cancelPendingScatterAfterPlot() {
+    if (pendingScatterAfterPlot) {
+      gd.removeListener("plotly_afterplot", pendingScatterAfterPlot);
+      pendingScatterAfterPlot = null;
+    }
+  }
+  function clearScatterPlotWatchdog() {
+    if (scatterPlotWatchdog) { clearTimeout(scatterPlotWatchdog); scatterPlotWatchdog = null; }
+  }
+  function discreteLegendWrapIsActive() {
+    if (!colorDiscreteWrap) return false;
+    return colorDiscreteWrap.classList.contains("cryo-cc-discrete-wrap--show")
+      || colorDiscreteWrap.classList.contains("cryo-color-discrete-wrap--show");
+  }
+
+  /** True whenever the sequential palette UI is irrelevant (K-means, labels, …) — not only ``labels``. */
+  function scatterColorByIsDiscrete() {
+    if (discreteLegendWrapIsActive()) return true;
+    try {
+      if (gd && gd.data && gd.data[0]) {
+        return scatterTraceColorMode() === "discrete";
+      }
+    } catch (e) { /* ignore */ }
+    return sc.value === "labels";
+  }
+
+  function syncScatterLegendToggleCaption() {
+    if (!scatterPaletteToggle) return;
+    var labelSpan = document.getElementById("scatter-palette-toggle-label");
+    if (labelSpan) labelSpan.textContent = "Choose palette";
+    scatterPaletteToggle.setAttribute("aria-controls", "scatter-palette-options");
+  }
+
+  function syncScatterPaletteFieldset() {
+    if (!paletteFieldset) return;
+    var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
+    var hasColor = sc.value && sc.value !== "none";
+    var suppress = rendering || !hasColor;
+    paletteFieldset.classList.toggle("scatter-palette-radios--suppressed", suppress);
+    paletteFieldset.classList.toggle(
+      "cryo-explorer-scatter-palette-heading-toggle-host--suppressed",
+      suppress
+    );
+    syncScatterLegendToggleCaption();
+    syncScatterPaletteOptions();
+    if (colorHistPanel) {
+      colorHistPanel.classList.toggle(
+        "cryo-explorer-discrete-hides-scatter-palette-radios",
+        hasColor && !rendering && scatterColorByIsDiscrete()
+      );
+      var paletteExpanded = !!(scatterPaletteToggle && scatterPaletteToggle.getAttribute("aria-expanded") === "true");
+      colorHistPanel.classList.toggle(
+        "cryo-explorer-continuous-palette-pane-collapsed",
+        hasColor && !rendering && !scatterColorByIsDiscrete() && !paletteExpanded
+      );
+    }
+  }
+  function syncScatterPaletteOptions() {
+    if (!scatterPaletteOptions || !paletteFieldset) return;
+    if (paletteFieldset.classList.contains("scatter-palette-radios--suppressed")) {
+      scatterPaletteOptions.classList.add("cryo-palette-select__options--collapsed");
+      return;
+    }
+    var expanded = !!(scatterPaletteToggle && scatterPaletteToggle.getAttribute("aria-expanded") === "true");
+    if (scatterColorByIsDiscrete()) {
+      scatterPaletteOptions.classList.add("cryo-palette-select__options--collapsed");
+      return;
+    }
+    if (explorerColorLegend) {
+      explorerColorLegend.setDiscretePanelCollapsed(false);
+    } else if (colorDiscreteWrap) {
+      colorDiscreteWrap.classList.remove("cryo-discrete-legend--collapsed");
+      colorDiscreteWrap.classList.remove("cryo-cc-discrete-panel--collapsed");
+    }
+    scatterPaletteOptions.classList.toggle("cryo-palette-select__options--collapsed", !expanded);
+  }
+  function setRendering(on) {
+    if (overlay) {
+      if (on) {
+        if (scatterRenderingEverCompleted) {
+          overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+        } else {
+          overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        }
+      } else {
+        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+      }
+      overlay.classList.toggle("cryo-plot-rendering-overlay--show", on);
+      overlay.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    syncScatterPaletteFieldset();
+  }
+
+  var scatterSelectionRenderingDepth = 0;
+
+  function beginScatterSelectionRenderingOverlay() {
+    if (!overlay || !scatterRenderingEverCompleted) return;
+    scatterSelectionRenderingDepth++;
+    if (scatterSelectionRenderingDepth !== 1) return;
+    overlay.classList.add("cryo-plot-rendering-overlay--nonblocking");
+    overlay.classList.add("cryo-plot-rendering-overlay--show");
+    overlay.setAttribute("aria-hidden", "false");
+    var lab = overlay.querySelector(".cryo-plot-rendering-overlay__label");
+    if (lab) lab.textContent = "Rendering\u2026";
+  }
+
+  function endScatterSelectionRenderingOverlay() {
+    if (!scatterRenderingEverCompleted) {
+      scatterSelectionRenderingDepth = Math.max(0, scatterSelectionRenderingDepth - 1);
+      return;
+    }
+    scatterSelectionRenderingDepth = Math.max(0, scatterSelectionRenderingDepth - 1);
+    if (scatterSelectionRenderingDepth > 0) return;
+    window.requestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
+        if (scatterSelectionRenderingDepth > 0 || !overlay) return;
+        if (!overlay.classList.contains("cryo-plot-rendering-overlay--nonblocking")) return;
+        overlay.classList.remove("cryo-plot-rendering-overlay--show");
+        overlay.classList.remove("cryo-plot-rendering-overlay--nonblocking");
+        overlay.setAttribute("aria-hidden", "true");
+        syncScatterPaletteFieldset();
+      });
+    });
+  }
+
+  /* ---------- lasso / selection state (shared by scatter load + events) ---------- */
+  var activePool = null;
+  var lassoSelectedRowSet = null;
+  var lassoSelectionDebounceTimer = null;
+  var LASSO_SELECTION_DEBOUNCE_MS = 200;
+  /** While set, skip full-grid montage resamples (e.g. during double-click → slot A). */
+  var suppressMontageResampleUntil = 0;
+  var highlightRestyleRaf = null;
+  var pendingHighlightRestyle = null;
+
+  /* ---------- scattergl selection highlight (``selectedpoints`` dimming; trace map for O(1) row→index) ---------- */
+  /**
+   * Finished lasso/box regions: raw ``layout.selections``-style objects plus particle count.
+   * Drawn as ``layout.shapes`` / ``layout.annotations`` so they survive while a new selection is in progress.
+   */
+  var committedScatterRegions = [];
+  var committedScatterOverlayRaf = null;
+
+  function cloneScatterSelectionShapes(arr) {
+    try {
+      return JSON.parse(JSON.stringify(arr || []));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function scatterSelectionShapesEqual(a, b) {
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function scatterSelectionsPrefixMatches(full, prefix) {
+    if (prefix.length > full.length) return false;
+    for (var i = 0; i < prefix.length; i++) {
+      if (!scatterSelectionShapesEqual(full[i], prefix[i])) return false;
+    }
+    return true;
+  }
+
+  /** Drop consecutive duplicate shapes (Plotly sometimes re-emits an unchanged lasso path). */
+  function dedupeConsecutiveEqualScatterShapes(arr) {
+    if (!arr || !arr.length) return [];
+    var out = [cloneScatterSelectionShapes([arr[0]])[0]];
+    for (var i = 1; i < arr.length; i++) {
+      if (!scatterSelectionShapesEqual(arr[i], out[out.length - 1])) {
+        out.push(cloneScatterSelectionShapes([arr[i]])[0]);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Plotly may either append to ``layout.selections`` or replace it with the latest shape only.
+   * Merge ``fromPlotly`` into ``prevPersisted`` so we keep every completed region on screen.
+   */
+  function mergePersistedScatterSelectionShapes(prevPersisted, fromPlotly) {
+    fromPlotly = fromPlotly || [];
+    prevPersisted = prevPersisted || [];
+    if (!fromPlotly.length) return cloneScatterSelectionShapes(prevPersisted);
+    if (fromPlotly.length >= prevPersisted.length
+        && scatterSelectionsPrefixMatches(fromPlotly, prevPersisted)) {
+      return cloneScatterSelectionShapes(fromPlotly);
+    }
+    return prevPersisted.concat(cloneScatterSelectionShapes(fromPlotly));
+  }
+
+  /**
+   * True for filled region overlays we draw on the scatter (``scatterRawSelectionToCommitShape``):
+   * named ``cdrgn_commit_shape_*``, or ``layer: "between"`` ``path``/``rect`` on the main ``x``/``y`` axes
+   * (the explorer does not use other ``between`` shapes on that subplot).
+   */
+  function shapeMatchesCryoCommittedScatterRegion(sh) {
+    if (!sh) return false;
+    var nm = String(sh.name || "");
+    if (nm.indexOf("cdrgn_commit_shape") === 0) return true;
+    if (sh.layer !== "between") return false;
+    if (sh.type !== "path" && sh.type !== "rect") return false;
+    var xr = String(sh.xref || "");
+    var yr = String(sh.yref || "");
+    var onAxes = (xr === "x" || (xr.length && xr.charAt(0) === "x"))
+      && (yr === "y" || (yr.length && yr.charAt(0) === "y"));
+    return onAxes;
+  }
+
+  function scatterExplorerBaseShapes() {
+    var raw = (gd && gd.layout && gd.layout.shapes) ? gd.layout.shapes : [];
+    var out = [];
+    for (var si = 0; si < raw.length; si++) {
+      var sh = raw[si];
+      if (!sh) continue;
+      if (String(sh.name || "").indexOf("cdrgn_commit") === 0) continue;
+      if (shapeMatchesCryoCommittedScatterRegion(sh)) continue;
+      out.push(sh);
+    }
+    return out;
+  }
+
+  /**
+   * Drop transient scatter selection paths, explorer-committed region fills, and anything
+   * matching our committed overlay signature so ``layout.shapes`` cannot keep drawing after a clear.
+   */
+  function scatterExplorerShapesPurgeForGeometryClear(rawShapes) {
+    rawShapes = rawShapes || [];
+    var out = [];
+    for (var si = 0; si < rawShapes.length; si++) {
+      var sh = rawShapes[si];
+      if (!sh) continue;
+      if (String(sh.name || "").indexOf("cdrgn_commit") === 0) continue;
+      if (shapeMatchesCryoCommittedScatterRegion(sh)) continue;
+      var nm = String(sh.name || "");
+      if (!nm && (sh.type === "path" || sh.type === "rect")) {
+        var xr = String(sh.xref || "");
+        var yr = String(sh.yref || "");
+        var onAxes = (xr === "x" || (xr.length && xr.charAt(0) === "x"))
+          && (yr === "y" || (yr.length && yr.charAt(0) === "y"));
+        if (onAxes) continue;
+      }
+      out.push(sh);
+    }
+    return out;
+  }
+
+  /** Region count badges on the scatter (``cdrgn_commit_lbl_*`` or same styling without ``name``). */
+  function annotationMatchesCryoCommittedRegionLabel(an) {
+    if (!an) return false;
+    var nm = String(an.name || "");
+    if (nm.indexOf("cdrgn_commit_lbl_") === 0) return true;
+    if (an.showarrow) return false;
+    var fn = an.font && an.font.family;
+    if (!fn || String(fn).indexOf("Barlow") === -1) return false;
+    var sz = an.font && an.font.size;
+    if (Number(sz) !== 8 && String(sz) !== "8") return false;
+    if (an.bgcolor && an.xref === "x" && an.yref === "y") return true;
+    return false;
+  }
+
+  function scatterExplorerBaseAnnotations() {
+    var raw = (gd && gd.layout && gd.layout.annotations) ? gd.layout.annotations : [];
+    var out = [];
+    for (var ai = 0; ai < raw.length; ai++) {
+      var an = raw[ai];
+      if (!an) continue;
+      if (String(an.name || "").indexOf("cdrgn_commit") === 0) continue;
+      if (annotationMatchesCryoCommittedRegionLabel(an)) continue;
+      out.push(an);
+    }
+    return out;
+  }
+
+  function scatterRawSelectionCentroid(raw) {
+    if (!raw) return null;
+    if (raw.type === "rect" || (raw.x0 != null && raw.x1 != null && raw.y0 != null && raw.y1 != null)) {
+      var x0 = Number(raw.x0), x1 = Number(raw.x1), y0 = Number(raw.y0), y1 = Number(raw.y1);
+      if (!isFinite(x0 + x1 + y0 + y1)) return null;
+      return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+    }
+    if (raw.type === "path" && raw.path) {
+      var nums = String(raw.path).match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi);
+      if (!nums || nums.length < 2) return null;
+      var sx = 0, sy = 0, nk = 0;
+      for (var k = 0; k + 1 < nums.length; k += 2) {
+        var px = parseFloat(nums[k]), py = parseFloat(nums[k + 1]);
+        if (isFinite(px) && isFinite(py)) {
+          sx += px;
+          sy += py;
+          nk++;
+        }
+      }
+      if (!nk) return null;
+      return { x: sx / nk, y: sy / nk };
+    }
+    return null;
+  }
+
+  /**
+   * Ordered palette: region 0 always gets index 0, region 1 index 1, … (same colours every time).
+   * Used for scatter overlay shapes/labels and for montage chips when colour covariate is ``none``.
+   */
+  var SCATTER_REGION_GRID_HEX = [
+    "#b45309", "#1d4ed8", "#0f766e", "#86198f", "#b91c1c", "#365314", "#a16207"
+  ];
+
+  function buildMultiRegionSelPieBackground() {
+    if (!committedScatterRegions || committedScatterRegions.length < 2) {
+      return null;
+    }
+    if (!totalParticles || totalParticles <= 0) return null;
+    var stops = ["from -90deg"];
+    var acc = 0;
+    for (var ri = 0; ri < committedScatterRegions.length; ri++) {
+      var nPr = committedScatterRegions[ri].nParticles || 0;
+      if (!nPr) continue;
+      var fracR = Math.min(1, Math.max(0, nPr / totalParticles));
+      var col = scatterRegionPlotStyle(ri).line;
+      var startPct = acc * 100;
+      acc += fracR;
+      var endPct = acc * 100;
+      stops.push(col + " " + startPct + "% " + endPct + "%");
+    }
+    if (stops.length < 2) return null;
+    var grey = "rgba(36, 59, 83, 0.14)";
+    var unionFrac = 0;
+    if (saveSelectionRows && saveSelectionRows.length && totalParticles > 0) {
+      unionFrac = Math.min(1, Math.max(0, saveSelectionRows.length / totalParticles));
+    }
+    if (unionFrac < 1) {
+      stops.push(grey + " " + (unionFrac * 100) + "% 100%");
+    }
+    return "conic-gradient(" + stops.join(", ") + ")";
+  }
+
+  function applySelectionPieVisual(frac, pctStr) {
+    if (!selPieEl) return;
+    var multi = committedScatterRegions && committedScatterRegions.length >= 2;
+    var bg = multi ? buildMultiRegionSelPieBackground() : null;
+    if (multi && bg) {
+      selPieEl.classList.add("cryo-explorer-sel-pie--multi-region");
+      selPieEl.style.background = bg;
+      selPieEl.style.removeProperty("--sel-frac");
+    } else {
+      selPieEl.classList.remove("cryo-explorer-sel-pie--multi-region");
+      selPieEl.style.removeProperty("background");
+      selPieEl.style.setProperty("--sel-frac", String(frac));
+    }
+    selPieEl.title = pctStr + " of dataset particles selected";
+    if (selPiePctEl) {
+      selPiePctEl.style.color = multi ? "#1a2332" : "";
+    }
+  }
+
+  function scatterRegionPlotStyle(regionIdx) {
+    var hex = "";
+    try {
+      if (
+        committedScatterRegions[regionIdx]
+        && committedScatterRegions[regionIdx].colorHex
+      ) {
+        hex = CryoColorCovariateLegend.normalizeDiscreteLegendHex(
+          String(committedScatterRegions[regionIdx].colorHex)
+        ) || "";
+      }
+    } catch (eHx) {
+      hex = "";
+    }
+    if (!hex) {
+      hex = SCATTER_REGION_GRID_HEX[
+        Math.max(0, regionIdx) % SCATTER_REGION_GRID_HEX.length
+      ];
+    }
+    var rgb = parseMarkerHexRgb(hex);
+    var border = "rgba(255, 255, 255, 0.5)";
+    if (!rgb) {
+      return {
+        line: "#b45309",
+        fill: "rgba(180, 83, 9, 0.1)",
+        badgeBg: "rgba(180, 83, 9, 0.9)",
+        labelFont: "rgba(255, 255, 255, 0.98)",
+        border: border
+      };
+    }
+    return {
+      line: hex,
+      fill: "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.11)",
+      badgeBg: "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.88)",
+      labelFont: "#ffffff",
+      border: border
+    };
+  }
+
+  /** Ray-cast ``(x,y)`` vs closed polygon (Plotly lasso ``path`` vertices in data space). */
+  function pointInPolygonXY(x, y, polyX, polyY) {
+    var n = polyX.length;
+    if (n < 3) return false;
+    var inside = false;
+    for (var i = 0, j = n - 1; i < n; j = i++) {
+      var xi = polyX[i], yi = polyY[i];
+      var xj = polyX[j], yj = polyY[j];
+      var dy = yj - yi;
+      if (Math.abs(dy) < 1e-12) continue;
+      if ((yi > y) === (yj > y)) continue;
+      var xinters = ((xj - xi) * (y - yi)) / dy + xi;
+      if (x < xinters) inside = !inside;
+    }
+    return inside;
+  }
+
+  /**
+   * Whether ``(xd,yd)`` lies inside a committed lasso/box shape (``layout.selections``-style).
+   */
+  function scatterRawShapeContainsDataXY(raw, xd, yd) {
+    if (!raw || !isFinite(xd) || !isFinite(yd)) return false;
+    if (raw.type === "rect" || (raw.x0 != null && raw.x1 != null && raw.y0 != null && raw.y1 != null)) {
+      var x0 = Number(raw.x0), x1 = Number(raw.x1), y0 = Number(raw.y0), y1 = Number(raw.y1);
+      if (!isFinite(x0 + x1 + y0 + y1)) return false;
+      var xmin = Math.min(x0, x1), xmax = Math.max(x0, x1);
+      var ymin = Math.min(y0, y1), ymax = Math.max(y0, y1);
+      return xd >= xmin && xd <= xmax && yd >= ymin && yd <= ymax;
+    }
+    if (raw.type === "path" && raw.path) {
+      var nums = String(raw.path).match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi);
+      if (!nums || nums.length < 6) return false;
+      var vx = [], vy = [];
+      for (var k = 0; k + 1 < nums.length; k += 2) {
+        var px = parseFloat(nums[k]), py = parseFloat(nums[k + 1]);
+        if (isFinite(px) && isFinite(py)) {
+          vx.push(px);
+          vy.push(py);
+        }
+      }
+      return pointInPolygonXY(xd, yd, vx, vy);
+    }
+    return false;
+  }
+
+  function traceIndexForPlotDfRow(row) {
+    if (!rowToTraceIndexMap) return -1;
+    var r = Number(row);
+    if (!isFinite(r)) return -1;
+    var ti = rowToTraceIndexMap.get(r);
+    return ti === undefined ? -1 : ti;
+  }
+
+  /**
+   * Fill ``committedScatterRegions[*].rows`` from ``saveSelectionRows`` + region geometry.
+   * Plotly merge logic only tags ``rowsSnap`` onto the last shape; without this, montage /
+   * grid-letter colours cannot resolve which region a particle belongs to after multi-lasso.
+   * Overlapping lassos: each region keeps every selected particle inside its geometry (no
+   * redistribution when a newer lasso overlaps an older one).
+   */
+  function recomputeCommittedScatterRegionRowsFromGeometry() {
+    if (!gd || !gd.data || !gd.data[0] || !committedScatterRegions || !committedScatterRegions.length) {
+      return;
+    }
+    var rowsSel = saveSelectionRows && saveSelectionRows.length ? saveSelectionRows : [];
+    var nReg = committedScatterRegions.length;
+    var buckets = new Array(nReg);
+    for (var bi = 0; bi < nReg; bi++) {
+      buckets[bi] = [];
+    }
+    if (!rowsSel.length) {
+      for (var ej = 0; ej < nReg; ej++) {
+        committedScatterRegions[ej].rows = [];
+        committedScatterRegions[ej].nParticles = 0;
+      }
+      return;
+    }
+    for (var ri = 0; ri < nReg; ri++) {
+      var raw = committedScatterRegions[ri].raw;
+      for (var si = 0; si < rowsSel.length; si++) {
+        var row = rowsSel[si];
+        var rNum = Number(row);
+        if (!isFinite(rNum)) continue;
+        var ti = traceIndexForPlotDfRow(row);
+        if (ti < 0) continue;
+        var xd = PLOTLY.traceValueAt(gd, 0, "x", ti);
+        var yd = PLOTLY.traceValueAt(gd, 0, "y", ti);
+        if (!isFinite(xd) || !isFinite(yd)) continue;
+        if (scatterRawShapeContainsDataXY(raw, xd, yd)) {
+          buckets[ri].push(rNum);
+        }
+      }
+    }
+    for (var rj = 0; rj < nReg; rj++) {
+      committedScatterRegions[rj].rows = buckets[rj];
+      committedScatterRegions[rj].nParticles = buckets[rj].length;
+    }
+  }
+
+  /** Union of ``committedScatterRegions[*].rows`` after geometry bucketing (drops off-shape rows). */
+  function rowsUnionFromCommittedScatterRegions() {
+    if (!committedScatterRegions || !committedScatterRegions.length) return [];
+    var u = new Set();
+    for (var ri = 0; ri < committedScatterRegions.length; ri++) {
+      var rw = committedScatterRegions[ri].rows;
+      if (!rw || !rw.length) continue;
+      for (var j = 0; j < rw.length; j++) u.add(rw[j]);
+    }
+    return Array.from(u);
+  }
+
+  function selectionRegionIndexForRow(row) {
+    if (!committedScatterRegions.length) return -1;
+    var r = Number(row);
+    if (!isFinite(r)) return -1;
+    for (var ri = committedScatterRegions.length - 1; ri >= 0; ri--) {
+      var rs = committedScatterRegions[ri].rows;
+      if (!rs || !rs.length) continue;
+      for (var j = 0; j < rs.length; j++) {
+        if (Number(rs[j]) === r) return ri;
+      }
+    }
+    return -1;
+  }
+
+  function selectionRegionMontageStyles(regionIdx) {
+    var lineHex = scatterRegionPlotStyle(regionIdx).line;
+    return discreteLabelMontageStyles(lineHex);
+  }
+
+  /** Completed lasso/box overlay outline (~30% thinner than the prior 2.25px stroke). */
+  var CDRGN_COMMIT_REGION_LINE_WIDTH = 1.575;
+
+  function scatterRawSelectionToCommitShape(raw, idx) {
+    if (!raw) return null;
+    var st = scatterRegionPlotStyle(idx);
+    var base = {
+      name: "cdrgn_commit_shape_" + idx,
+      /* Draw selection fill between grid and traces so grid-letter markers stay visible on top. */
+      layer: "between",
+      line: { color: st.line, width: CDRGN_COMMIT_REGION_LINE_WIDTH, dash: "6 4" },
+      fillcolor: st.fill,
+      xref: raw.xref || "x",
+      yref: raw.yref || "y"
+    };
+    if (raw.type === "path" && raw.path) {
+      return Object.assign({}, base, { type: "path", path: raw.path });
+    }
+    return Object.assign({}, base, {
+      type: "rect",
+      x0: raw.x0,
+      x1: raw.x1,
+      y0: raw.y0,
+      y1: raw.y1
+    });
+  }
+
+  /**
+   * Plotly.js can leave stale SVG shape nodes if ``shapes`` is only patched in place.
+   * Clear the array first, then apply the intended ``layout`` patch.
+   */
+  function plotlyRelayoutShapesHardReplaceThenPatch(layoutPatch) {
+    if (!gd || !layoutPatch) return;
+    try {
+      var cur = (gd.layout && gd.layout.shapes) ? gd.layout.shapes : [];
+      if (cur && cur.length) {
+        var patchDel = {};
+        for (var si = cur.length - 1; si >= 0; si--) {
+          patchDel["shapes[" + si + "]"] = null;
+        }
+        Plotly.relayout(gd, patchDel);
+      } else {
+        Plotly.relayout(gd, { shapes: [] });
+      }
+    } catch (e0) {
+      try { Plotly.relayout(gd, { shapes: [] }); } catch (e0b) { /* ignore */ }
+    }
+    try {
+      Plotly.relayout(gd, layoutPatch);
+    } catch (e1) {
+      try {
+        Plotly.relayout(gd, layoutPatch);
+      } catch (e2) { /* ignore */ }
+    }
+  }
+
+  /**
+   * opts: optional ``clearSelections`` (boolean) — when true, clear Plotly ``layout.selections``.
+   */
+  function syncCommittedScatterRegionOverlays(opts) {
+    if (!gd) return;
+    opts = opts || {};
+    var clearSel = !!opts.clearSelections;
+    var nReg = committedScatterRegions.length;
+    var baseShapes;
+    if (clearSel) {
+      var raw0 = (gd.layout && gd.layout.shapes) ? gd.layout.shapes.slice() : [];
+      baseShapes = scatterExplorerShapesPurgeForGeometryClear(raw0);
+    } else {
+      baseShapes = scatterExplorerBaseShapes();
+    }
+    var overlayShapes = [];
+    for (var ri = 0; ri < nReg; ri++) {
+      var rawDraw = committedScatterRegions[ri].raw;
+      if (!rawDraw) continue;
+      var sh = scatterRawSelectionToCommitShape(rawDraw, ri);
+      if (sh) overlayShapes.push(sh);
+    }
+    var shapesOut = baseShapes.concat(overlayShapes);
+    var annBase = scatterExplorerBaseAnnotations();
+    /* Multi-region counts + solo / colour controls: HTML chips (``#scatter-region-chips-overlay``), not Plotly text. */
+    var annOver = [];
+    var patch = {
+      shapes: shapesOut,
+      annotations: annBase.concat(annOver),
+      selectionrevision: (gd.layout && gd.layout.selectionrevision != null
+        ? gd.layout.selectionrevision + 1
+        : Date.now())
+    };
+    if (clearSel) patch.selections = [];
+    try {
+      if (clearSel) {
+        plotlyRelayoutShapesHardReplaceThenPatch(patch);
+      } else {
+        Plotly.relayout(gd, patch);
+      }
+    } catch (e) { /* ignore */ }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
+    scheduleScatterRegionLabelChipsSync();
+  }
+
+  var scatterRegionChipsOverlay = null;
+  var scatterRegionChipsSyncQueued = false;
+
+  function scheduleScatterRegionLabelChipsSync() {
+    if (scatterRegionChipsSyncQueued) return;
+    scatterRegionChipsSyncQueued = true;
+    requestAnimationFrame(function() {
+      scatterRegionChipsSyncQueued = false;
+      syncScatterRegionLabelChips();
+    });
+  }
+
+  function soloCommittedScatterRegion(regionIdx) {
+    if (!committedScatterRegions.length) return;
+    if (regionIdx < 0 || regionIdx >= committedScatterRegions.length) return;
+    var keep = committedScatterRegions[regionIdx];
+    var rawClone = cloneScatterSelectionShapes([keep.raw])[0];
+    committedScatterRegions = [{
+      raw: rawClone,
+      nParticles: 0,
+      rows: [],
+      labelX: keep.labelX,
+      labelY: keep.labelY,
+      colorHex: keep.colorHex
+    }];
+    recomputeCommittedScatterRegionRowsFromGeometry();
+    var rows = (committedScatterRegions[0].rows && committedScatterRegions[0].rows.slice)
+      ? committedScatterRegions[0].rows.slice()
+      : [];
+    applyRowsSelection(rows, "Lasso", LASSO_SELECTION_DEBOUNCE_MS + 120);
+    recomputeCommittedScatterRegionRowsFromGeometry();
+    syncCommittedScatterRegionOverlays({ clearSelections: true });
+  }
+
+  function removeCommittedScatterRegion(regionIdx) {
+    if (!committedScatterRegions.length) return;
+    if (regionIdx < 0 || regionIdx >= committedScatterRegions.length) return;
+    committedScatterRegions.splice(regionIdx, 1);
+    if (!committedScatterRegions.length) {
+      applyRowsSelection([], "Lasso", LASSO_SELECTION_DEBOUNCE_MS + 120);
+      syncCommittedScatterRegionOverlays({ clearSelections: true });
+      return;
+    }
+    recomputeCommittedScatterRegionRowsFromGeometry();
+    var merged = new Set();
+    for (var ri = 0; ri < committedScatterRegions.length; ri++) {
+      var rs = committedScatterRegions[ri].rows;
+      if (!rs || !rs.length) continue;
+      for (var rj = 0; rj < rs.length; rj++) merged.add(rs[rj]);
+    }
+    applyRowsSelection(Array.from(merged), "Lasso", LASSO_SELECTION_DEBOUNCE_MS + 120);
+    recomputeCommittedScatterRegionRowsFromGeometry();
+    syncCommittedScatterRegionOverlays({ clearSelections: true });
+  }
+
+  function syncScatterRegionLabelChips() {
+    if (!scatterRegionChipsOverlay) {
+      scatterRegionChipsOverlay = document.getElementById("scatter-region-chips-overlay");
+    }
+    if (!scatterRegionChipsOverlay || !gd) return;
+    scatterRegionChipsOverlay.innerHTML = "";
+    var nReg = committedScatterRegions.length;
+    if (nReg < 2) {
+      scatterRegionChipsOverlay.setAttribute("aria-hidden", "true");
+      return;
+    }
+    scatterRegionChipsOverlay.setAttribute("aria-hidden", "false");
+    var rectO = scatterRegionChipsOverlay.getBoundingClientRect();
+    if (!rectO.width || !rectO.height) return;
+    for (var aj = 0; aj < nReg; aj++) {
+      (function (regionIdx) {
+        var reg = committedScatterRegions[regionIdx];
+        var c0 = scatterRawSelectionCentroid(reg.raw);
+        if (!c0 || !isFinite(c0.x) || !isFinite(c0.y)) return;
+        var useX = reg.labelX != null && isFinite(reg.labelX) ? reg.labelX : c0.x;
+        var useY = reg.labelY != null && isFinite(reg.labelY) ? reg.labelY : c0.y;
+        var px = scatterPlotClientXYFromData(useX, useY);
+        if (!px) return;
+        var pst = scatterRegionPlotStyle(regionIdx);
+        var catKey = "__cdrgnScatterRegion:" + regionIdx;
+        var cell = document.createElement("div");
+        cell.className =
+          "cryo-cc-discrete-cell cryo-cc-discrete-cell--plastic cryo-explorer-scatter-region-chip";
+        cell.setAttribute("data-region-idx", String(regionIdx));
+        cell.title = "Region " + (regionIdx + 1) + " — drag count to reposition";
+
+        var rowInner = document.createElement("div");
+        rowInner.className = "cryo-explorer-scatter-region-chip__row";
+
+        var sw = document.createElement("div");
+        sw.className = "cryo-cc-discrete-switch";
+        var sp = document.createElement("span");
+        sp.className = "cryo-cc-discrete-switch-label";
+        sp.setAttribute("aria-hidden", "true");
+        sp.textContent = "\u00a0";
+        var cn = document.createElement("span");
+        cn.className = "cryo-cc-discrete-switch-count";
+        cn.textContent = fmtRegionPtsLabel(reg.nParticles);
+        sw.appendChild(sp);
+        sw.appendChild(cn);
+
+        var actions = document.createElement("div");
+        actions.className = "cryo-explorer-scatter-region-chip__actions";
+
+        var wheelSolo = document.createElement("div");
+        wheelSolo.className = "cryo-explorer-scatter-region-chip__wheel-solo";
+
+        var wheelSlot = document.createElement("div");
+        wheelSlot.className = "cryo-cc-discrete-wheel-slot";
+        var pick = document.createElement("button");
+        pick.type = "button";
+        pick.className = "cryo-cc-discrete-colorwheel-btn";
+        pick.title = "Choose colour…";
+        pick.setAttribute(
+          "aria-label",
+          "Choose colour for selection region " + (regionIdx + 1)
+        );
+        pick.innerHTML =
+          typeof CryoColorCovariateLegend !== "undefined"
+          && typeof CryoColorCovariateLegend.discreteColorWheelSvgInnerHTML === "function"
+            ? (function () {
+              var gid =
+                "cryo-cc-rainbow-r" + regionIdx + "-" + String(Math.random()).slice(2, 8);
+              return CryoColorCovariateLegend.discreteColorWheelSvgInnerHTML().replace(
+                /cryo-cc-rainbow/g,
+                gid
+              );
+            })()
+            : "";
+        pick.addEventListener("mousedown", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+        pick.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (
+            !explorerColorLegend
+            || typeof explorerColorLegend._openDiscreteColorPopover !== "function"
+          ) {
+            return;
+          }
+          var hx = pst.line;
+          explorerColorLegend._openDiscreteColorPopover(pick, cell, catKey, hx);
+        });
+        wheelSlot.appendChild(pick);
+
+        var soloBtn = document.createElement("button");
+        soloBtn.type = "button";
+        soloBtn.className = "cryo-cc-discrete-solo-btn";
+        soloBtn.title = "Keep only this lasso/box region";
+        soloBtn.setAttribute(
+          "aria-label",
+          "Select only region " + (regionIdx + 1)
+        );
+        soloBtn.textContent = "1";
+        soloBtn.addEventListener("mousedown", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+        soloBtn.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          soloCommittedScatterRegion(regionIdx);
+        });
+
+        wheelSolo.appendChild(wheelSlot);
+        wheelSolo.appendChild(soloBtn);
+
+        var saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "cryo-explorer-scatter-region-chip__save";
+        saveBtn.title = "Save this region's indices as…";
+        saveBtn.setAttribute(
+          "aria-label",
+          "Save indices for region " + (regionIdx + 1) + " as…"
+        );
+        if (
+          typeof CryoDashboardIcons !== "undefined"
+          && typeof CryoDashboardIcons.decorateSaveButton === "function"
+        ) {
+          CryoDashboardIcons.decorateSaveButton(saveBtn, { iconOnly: true });
+        }
+        saveBtn.addEventListener("mousedown", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+        saveBtn.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          saveCommittedScatterRegion(regionIdx);
+        });
+
+        var rmBtn = document.createElement("button");
+        rmBtn.type = "button";
+        rmBtn.className = "cryo-explorer-scatter-region-chip__remove";
+        rmBtn.title = "Remove this region from the selection";
+        rmBtn.setAttribute("aria-label", "Remove region " + (regionIdx + 1) + " from selection");
+        rmBtn.textContent = "\u00d7";
+        rmBtn.addEventListener("mousedown", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+        rmBtn.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          removeCommittedScatterRegion(regionIdx);
+        });
+
+        actions.appendChild(wheelSolo);
+        actions.appendChild(saveBtn);
+        actions.appendChild(rmBtn);
+
+        rowInner.appendChild(sw);
+        rowInner.appendChild(actions);
+        cell.appendChild(rowInner);
+
+        if (
+          explorerColorLegend
+          && typeof explorerColorLegend._applyDiscreteCellPaint === "function"
+        ) {
+          explorerColorLegend._applyDiscreteCellPaint(cell, pst.line);
+        }
+
+        cell.addEventListener("pointerdown", scatterRegionChipPointerDown);
+
+        var left = px.clientX - rectO.left;
+        var top = px.clientY - rectO.top;
+        cell.style.position = "absolute";
+        cell.style.left = left + "px";
+        cell.style.top = top + "px";
+        cell.style.transform = "translate(-50%, -50%)";
+
+        scatterRegionChipsOverlay.appendChild(cell);
+      })(aj);
+    }
+  }
+
+  function scheduleCommittedScatterRegionOverlaySync() {
+    if (committedScatterOverlayRaf != null) return;
+    committedScatterOverlayRaf = requestAnimationFrame(function() {
+      committedScatterOverlayRaf = null;
+      syncCommittedScatterRegionOverlays({ clearSelections: false });
+    });
+  }
+
+  var scatterglSelectionPaintFlushTok = 0;
+
+  /**
+   * Scattergl often keeps lasso/box selection paint until the drag layer resets.
+   * Nudge ``dragmode`` through ``false`` then back so the WebGL selection overlay is dropped.
+   */
+  function pulseScatterglDragmodeToFlushSelectionPaint() {
+    if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== "scattergl") return;
+    var dm = gd.layout && gd.layout.dragmode != null ? gd.layout.dragmode : "zoom";
+    try {
+      Plotly.relayout(gd, { selections: [], dragmode: false });
+      Plotly.relayout(gd, { dragmode: dm });
+    } catch (e) {
+      try {
+        Plotly.relayout(gd, { dragmode: "pan" });
+        Plotly.relayout(gd, { dragmode: dm });
+      } catch (e2) { /* ignore */ }
+    }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
+  }
+
+  /** After ``relayout``, scattergl may repaint the selection mask on the next tick — pulse a few times. */
+  function scheduleScatterglSelectionPaintFlushAfterClear() {
+    scatterglSelectionPaintFlushTok++;
+    var tok = scatterglSelectionPaintFlushTok;
+    function run() {
+      if (tok !== scatterglSelectionPaintFlushTok) return;
+      pulseScatterglDragmodeToFlushSelectionPaint();
+    }
+    window.requestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
+        run();
+        window.setTimeout(run, 0);
+        window.setTimeout(run, 95);
+        window.setTimeout(run, 210);
+        window.setTimeout(function() {
+          if (tok !== scatterglSelectionPaintFlushTok || !gd) return;
+          try {
+            if (Plotly.Plots && typeof Plotly.Plots.redraw === "function") {
+              Plotly.Plots.redraw(gd);
+            }
+          } catch (eR) { /* ignore */ }
+        }, 320);
+      });
+    });
+  }
+
+  function clearScatterGeometricSelection() {
+    if (committedScatterOverlayRaf != null) {
+      cancelAnimationFrame(committedScatterOverlayRaf);
+      committedScatterOverlayRaf = null;
+    }
+    committedScatterRegions = [];
+    if (!gd) return;
+    var rawShapes = (gd.layout && gd.layout.shapes) ? gd.layout.shapes.slice() : [];
+    var basesh = scatterExplorerShapesPurgeForGeometryClear(rawShapes);
+    var annb = scatterExplorerBaseAnnotations();
+    var selRev = (gd.layout && gd.layout.selectionrevision != null
+      ? gd.layout.selectionrevision + 1
+      : Date.now());
+    try {
+      plotlyRelayoutShapesHardReplaceThenPatch({
+        shapes: basesh,
+        annotations: annb,
+        selections: [],
+        selectionrevision: selRev
+      });
+    } catch (e) {
+      try {
+        Plotly.relayout(gd, { selections: [], selectionrevision: Date.now() });
+      } catch (e2) {}
+    }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
+    scheduleScatterglSelectionPaintFlushAfterClear();
+    scheduleScatterRegionLabelChipsSync();
+  }
+
+  /**
+   * Clear geometric selections without allowing a follow-up ``plotly_deselect``
+   * to reset legend-driven threshold / range state.
+   */
+  function clearScatterGeometricSelectionSuppressed() {
+    var prevSuppress = suppressSelectionEvents;
+    suppressSelectionEvents = true;
+    clearScatterGeometricSelection();
+    setTimeout(function() {
+      suppressSelectionEvents = prevSuppress;
+    }, LASSO_SELECTION_DEBOUNCE_MS + 80);
+  }
+
+  function applyPreselectedTraceIndices() {
+    var meta = gd.layout && gd.layout.meta;
+    var pre = meta && meta.cdrgn_preselected;
+    if (!pre || !pre.length) return;
+    try {
+      applyScatterSelectionHighlight(pre);
+    } catch (err) {
+      console.error(err);
+    }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
+  }
+
+  function applySavedSelectionToCurrentTrace() {
+    if (!gd || !gd.data || !gd.data[0] || !gd.data[0].customdata) return;
+    var rows = saveSelectionRows && saveSelectionRows.length ? saveSelectionRows : [];
+    if (!rows.length) {
+      beginScatterSelectionRenderingOverlay();
+      try { clearScatterSelectionHighlight(false); } catch (err) {}
+      finally { endScatterSelectionRenderingOverlay(); }
+      lassoSelectedRowSet = null;
+      nudgeHighlightTraceAfterScatterglSelectRestyle();
+      refreshGridHighlightMarkerStylesFromLastRows();
+      return;
+    }
+    var cd = gd.data[0].customdata;
+    var selected = selectionRowsToTraceIndices(rows);
+    beginScatterSelectionRenderingOverlay();
+    try {
+      applyScatterSelectionHighlight(selected);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      endScatterSelectionRenderingOverlay();
+    }
+    lassoSelectedRowSet = new Set();
+    for (var si = 0; si < selected.length; si++) {
+      var r = PLOTLY.rowValue(cd, selected[si], 1);
+      lassoSelectedRowSet.add(r);
+    }
+    nudgeHighlightTraceAfterScatterglSelectRestyle();
+    refreshGridHighlightMarkerStylesFromLastRows();
+  }
+
+  /* ---------- highlight trace + montage grid coupling ---------- */
+  function showGridHighlightsEnabled() {
+    if (!imageGridMenuIsOpen()) return false;
+    return !!(imagesViewEnabled && preloaded && preloaded.traceMap && preloaded.traceMap.length);
+  }
+
+  function showGridHighlightsOnPlot() {
+    return !suppressPlotGridHighlights && showGridHighlightsEnabled();
+  }
+
+  function syncHighlightTraceAnnotations() {
+    if (!highlightTraceAdded || !gd.data || !gd.data[1]) return;
+    var showHighlights = showGridHighlightsOnPlot();
+    var text = [];
+    if (showHighlights && lastMontageRows && lastMontageRows.length) {
+      for (var i = 0; i < lastMontageRows.length && i < labels.length; i++) {
+        text.push(labels[i]);
+      }
+    }
+    try {
+      Plotly.restyle(gd, {
+        mode: ["markers"],
+        text: [text],
+        visible: [showHighlights],
+        selectedpoints: [null],
+        "unselected.marker.opacity": [1],
+        "unselected.textfont.opacity": [1]
+      }, [1]);
+    } catch (err) {
+      console.error(err);
+    }
+    refreshGridHighlightMarkerStylesFromLastRows();
+    syncGridLetterGlyphOverlay();
+  }
+
+  function ensureHighlightTrace() {
+    if (highlightTraceAdded) return;
+    highlightTraceAdded = true;
+    wireGridLetterGlyphOverlayHook();
+    Plotly.addTraces(gd, [{
+      type: "scatter",
+      x: [], y: [],
+      mode: "markers",
+      text: [],
+      textposition: "middle center",
+      textfont: {
+        size: gridHighlightTextSizePx(gridSize),
+        color: GRID_HIGHLIGHT_TEXT_COLOR,
+        family: "Georgia, 'Times New Roman', serif"
+      },
+      selectedpoints: null,
+      unselected: { marker: { opacity: 1 }, textfont: { opacity: 1 } },
+      marker: {
+        size: gridHighlightMarkerSizePx(gridSize),
+        opacity: GRID_HIGHLIGHT_MARKER_OPACITY,
+        color: ACCENT,
+        line: {width: GRID_HIGHLIGHT_LINE_WIDTH, color: GRID_HIGHLIGHT_MARKER_LINE_COLOR}
+      },
+      visible: showGridHighlightsOnPlot(),
+      hoverinfo: "skip",
+      showlegend: false
+    }]);
+    syncGridLetterGlyphOverlay();
+  }
+
+  /* ---------- scatter load ---------- */
+  function loadPlot(axesChanged) {
+    var gen = ++scatterLoadGeneration;
+    if (axesChanged) {
+      committedScatterRegions = [];
+    }
+    var preservedDragMode = (
+      gd && gd.layout && gd.layout.dragmode
+    ) ? String(gd.layout.dragmode) : "";
+    var hasActiveSelection = !!(saveSelectionRows && saveSelectionRows.length);
+    suppressSelectionEvents = true;
+    highlightTraceAdded = false;
+    clearGridLetterGlyphOverlay();
+    cancelLassoSelectionDebounce();
+    cancelPendingHighlightRestyle();
+    cancelPendingScatterAfterPlot();
+    clearScatterPlotWatchdog();
+    if (plotStatus) plotStatus.textContent = "";
+    hideColorHistogram();
+    setRendering(true);
+    scatterPlotWatchdog = setTimeout(function() {
+      scatterPlotWatchdog = null;
+      if (!overlay || !overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
+      cancelPendingScatterAfterPlot();
+      setRendering(false);
+      suppressSelectionEvents = false;
+      if (plotStatus) plotStatus.textContent = "Plot took too long — try a hard refresh.";
+    }, SCATTER_PLOT_TIMEOUT_MS);
+    var x = sx.value, y = sy.value, c = sc.value;
+    var q = "x=" + encodeURIComponent(x)
+      + "&y=" + encodeURIComponent(y)
+      + "&color=" + encodeURIComponent(c)
+      + "&explorer_scatter=1"
+      + "&marker_size=2"
+      + "&palette=" + encodeURIComponent(selectedScatterPalette());
+    if (preselectRowsForNextFetch.length) {
+      q += "&preselect_rows=" + preselectRowsForNextFetch.map(Number).join(",");
+    }
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        fetch("{{ url_for('api_scatter') }}?" + q)
+          .then(function(r) {
+            return r.text().then(function(text) {
+              var j;
+              try { j = JSON.parse(text); }
+              catch (e) { throw new Error("Scatter API did not return JSON"); }
+              if (!r.ok) throw new Error(j.error || r.statusText);
+              return j;
+            });
+          })
+          .then(function(fig) {
+            fig.layout.title = "";
+            fig.layout.margin = Object.assign({}, fig.layout.margin || {}, {
+              l: 38,
+              r: 10,
+              t: 4,
+              b: 38,
+              pad: 0
+            });
+            var nextDragMode = preservedDragMode;
+            if (hasActiveSelection) {
+              if (nextDragMode !== "lasso" && nextDragMode !== "select") {
+                nextDragMode = "select";
+              }
+            }
+            if (nextDragMode) {
+              fig.layout.dragmode = nextDragMode;
+            }
+            var axFont = {size: 21.45, family: "Barlow, sans-serif", color: "#243b53", weight: 700};
+            fig.layout.xaxis = Object.assign(fig.layout.xaxis || {}, {
+              title: { text: "<b>" + escapeHtmlText(x) + "</b>", font: axFont }
+            });
+            fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {
+              title: { text: "<b>" + escapeHtmlText(y) + "</b>", font: axFont }
+            });
+            if (/^umap/i.test(x)) fig.layout.xaxis.showticklabels = false;
+            if (/^umap/i.test(y)) fig.layout.yaxis.showticklabels = false;
+            function finishScatterDraw() {
+              if (gen !== scatterLoadGeneration) return;
+              cancelPendingScatterAfterPlot();
+              wireUpPlotlyEvents();
+              suppressSelectionEvents = true;
+              renderedScatterAxes = {x: x, y: y};
+              clearScatterPlotWatchdog();
+              scatterRenderingEverCompleted = true;
+              setRendering(false);
+              buildTraceMap();
+              updateParticleSelFieldset();
+              if (preselectRowsForNextFetch.length) {
+                saveSelectionRows = preselectRowsForNextFetch.slice();
+                updateParticleSelFieldset();
+                applyPreselectedTraceIndices();
+                preselectRowsForNextFetch = [];
+              }
+              applySavedSelectionToCurrentTrace();
+              syncCommittedScatterRegionOverlays({ clearSelections: true });
+              syncColorCovariateSidePanel();
+              if (imagesViewEnabled && preloaded && preloaded.traceMap) {
+                if (lassoSelectedRowSet && lassoSelectedRowSet.size) {
+                  activePool = preloaded.traceMap.filter(function(item) {
+                    return lassoSelectedRowSet.has(item.row);
+                  });
+                  if (preloadStatus) {
+                    if (activePool.length) {
+                      preloadStatus.textContent = formatCachedSelectionStatusCore(activePool.length) + ".";
+                    } else {
+                      setPreloadStatusCachedTotalOnly();
+                    }
+                  }
+                }
+                if (lastMontageRows.length) {
+                  restoreMontageAfterScatterReload();
+                } else {
+                  showRandomPreloaded();
+                }
+              } else if (!imagesViewEnabled) {
+                if (lastMontageRows.length) {
+                  ensureHighlightTrace();
+                  var keepItems = [];
+                  for (var li = 0; li < lastMontageRows.length; li++) {
+                    var itKeep = montageItemForRow(lastMontageRows[li]);
+                    if (itKeep) keepItems.push(itKeep);
+                  }
+                  if (keepItems.length) updateMontage(keepItems);
+                } else {
+                  updateMontage([]);
+                }
+              }
+              if (showVolumeExplorer) syncVolumeExploreButtons();
+              var montageOverlayBusy = montagePreloadOverlayEl
+                && montagePreloadOverlayEl.classList.contains("cryo-plot-rendering-overlay--show");
+              if (!montageOverlayBusy) syncImageCacheButton(false);
+              // Re-check button state with retries to handle race condition
+              // where plot data isn't fully populated when finishScatterDraw runs.
+              // Plotly may use TypedArrays instead of regular JS arrays.
+              var retries = 0;
+              function retrySyncCacheButton() {
+                if (montageOverlayBusy || retries >= 10) return;
+                retries++;
+                var hasData = plotHasScatterData();
+                if (!hasData) {
+                  setTimeout(retrySyncCacheButton, 200);
+                } else {
+                  syncImageCacheButton(false);
+                }
+              }
+              setTimeout(retrySyncCacheButton, 100);
+              syncScatterControlsAlignment();
+              requestAnimationFrame(function() {
+                try { Plotly.Plots.resize(gd); } catch (e) {}
+                if (colorHistPanel && !colorHistPanel.hidden && colorHistDiv) {
+                  try { Plotly.Plots.resize(colorHistDiv); } catch (e2) {}
+                }
+              });
+              explorerApplyDiscreteMarkerColoursFromOverrides();
+              setTimeout(function() { suppressSelectionEvents = false; }, 0);
+            }
+            var opts = {responsive: true, doubleClick: false};
+            var p;
+            try {
+              if (!gd.data || gd.data.length === 0) {
+                p = Plotly.newPlot(gd, fig.data, fig.layout, opts);
+              } else {
+                p = Plotly.react(gd, fig.data, fig.layout, opts);
+              }
+            } catch (err) { throw err; }
+            pendingScatterAfterPlot = finishScatterDraw;
+            gd.on("plotly_afterplot", pendingScatterAfterPlot);
+            setTimeout(function() {
+              if (gen !== scatterLoadGeneration) return;
+              if (pendingScatterAfterPlot && gd.data && gd.data.length) finishScatterDraw();
+            }, 800);
+            if (p && typeof p.then === "function") {
+              return p.catch(function(err) { cancelPendingScatterAfterPlot(); throw err; });
+            }
+            return Promise.resolve();
+          })
+          .catch(function(e) {
+            console.error(e);
+            cancelPendingScatterAfterPlot();
+            clearScatterPlotWatchdog();
+            setRendering(false);
+            suppressSelectionEvents = false;
+            if (plotStatus) plotStatus.textContent = e.message || "Could not load scatter.";
+          });
+      });
+    });
+  }
+
+  function cancelLassoSelectionDebounce() {
+    if (lassoSelectionDebounceTimer) {
+      clearTimeout(lassoSelectionDebounceTimer);
+      lassoSelectionDebounceTimer = null;
+    }
+  }
+
+  function cancelPendingHighlightRestyle() {
+    if (highlightRestyleRaf != null) {
+      cancelAnimationFrame(highlightRestyleRaf);
+      highlightRestyleRaf = null;
+    }
+    pendingHighlightRestyle = null;
+  }
+
+  /** Copy indices immediately — Plotly may reuse the event object on the next tick. */

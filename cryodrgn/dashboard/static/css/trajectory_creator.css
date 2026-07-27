@@ -1172,11 +1172,11 @@
   .cryo-vslice-under-tools[hidden] {
     display: none !important;
   }
-  .cryo-vslice-under-tools--slice {
+  .cryo-vslice-under-tools--beside {
     justify-content: flex-start;
     align-items: flex-end;
   }
-  .cryo-vslice-under-tools--slice .cryo-vslice-pad-column:not([hidden]) {
+  .cryo-vslice-under-tools--beside .cryo-vslice-pad-column:not([hidden]) {
     margin: 0;
     align-self: flex-end;
     width: min(4.75rem, 42%);

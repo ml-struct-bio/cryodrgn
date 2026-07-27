@@ -1815,8 +1815,8 @@
   };
 
   /**
-   * In 2D slice mode, host pan + iso/contrast beside each other under the
-   * viewport. VTK / ChimeraX keep iso+reset in the controls dock.
+   * Host pan/zoom + iso/reset (and slice contrast) beside each other under the
+   * viewport for VTK and 2D slice. ChimeraX keeps iso+reset in the controls dock.
    */
   TrajectoryVolumeDisplay.prototype._syncSliceControlHosts = function () {
     var under = this.underToolsEl;
@@ -1825,19 +1825,27 @@
     var controls = this.vtkSliceControlsEl;
     if (!under || !sliderCol || !isoResetRow) return;
     var isSlice = this.backend === "slice";
+    var isVtk = this.backend === "vtk";
+    var besideUnder = isSlice || isVtk;
 
-    if (isSlice) {
+    if (besideUnder) {
       if (this.padColumnEl && this.padColumnEl.parentElement !== under) {
         under.insertBefore(this.padColumnEl, sliderCol);
       }
-      if (this.rotationLockToolbarEl) {
+      if (isSlice && this.rotationLockToolbarEl) {
         sliderCol.appendChild(this.rotationLockToolbarEl);
+      } else if (this.rotationLockToolbarEl && controls) {
+        controls.insertBefore(this.rotationLockToolbarEl, controls.firstChild);
       }
       if (this.isoControlsEl) sliderCol.appendChild(this.isoControlsEl);
-      if (this.sliceControlsRowEl) sliderCol.appendChild(this.sliceControlsRowEl);
+      if (isSlice && this.sliceControlsRowEl) {
+        sliderCol.appendChild(this.sliceControlsRowEl);
+      } else if (this.sliceControlsRowEl && controls) {
+        controls.appendChild(this.sliceControlsRowEl);
+      }
       if (this.btnResetView) sliderCol.appendChild(this.btnResetView);
       sliderCol.hidden = false;
-      under.classList.add("cryo-vslice-under-tools--slice");
+      under.classList.add("cryo-vslice-under-tools--beside");
     } else {
       if (this.rotationLockToolbarEl && controls) {
         controls.insertBefore(this.rotationLockToolbarEl, controls.firstChild);
@@ -1854,7 +1862,7 @@
         controls.appendChild(this.sliceControlsRowEl);
       }
       sliderCol.hidden = true;
-      under.classList.remove("cryo-vslice-under-tools--slice");
+      under.classList.remove("cryo-vslice-under-tools--beside");
     }
   };
 
@@ -1889,10 +1897,10 @@
     } else if (this.viewportEl) {
       this.viewportEl.hidden = !(hasVol || placeholder);
     }
-    // Slice hosts iso/contrast beside the pan pad under the viewer, so the
-    // dock is only needed for VTK / ChimeraX control blocks.
-    var showControlsDock = !isSlice
-      && (showInteractive || showChimeraxPanel)
+    // VTK / slice host iso (+ contrast) beside the pan pad under the viewer;
+    // the dock is only needed for ChimeraX control blocks.
+    var showControlsDock = isChimeraX
+      && showChimeraxPanel
       && (hasVol || hasCxImages);
     if (this.controlsDockEl) {
       this.controlsDockEl.hidden = !showControlsDock;
@@ -1901,10 +1909,13 @@
       // Pan / iso / contrast stay hidden while volumes are still loading.
       var showUnder = !isChimeraX && hasVol;
       this.underToolsEl.hidden = !showUnder;
-      this.underToolsEl.classList.toggle("cryo-vslice-under-tools--slice", isSlice && showUnder);
+      this.underToolsEl.classList.toggle(
+        "cryo-vslice-under-tools--beside",
+        (isSlice || isVtk) && showUnder
+      );
     }
     if (this.vtkSliceControlsEl) {
-      if (isSlice) {
+      if (isSlice || isVtk) {
         this.vtkSliceControlsEl.hidden = true;
         this.vtkSliceControlsEl.classList.remove("cryo-traj-vol-backend-panel--inactive");
       } else if (this.stableBackendChrome && showControlsDock) {
@@ -1941,7 +1952,7 @@
       this.sliceControlsRowEl.hidden = !isSlice || !hasVol;
     }
     if (this.sliceSliderColumnEl) {
-      this.sliceSliderColumnEl.hidden = !isSlice || !hasVol;
+      this.sliceSliderColumnEl.hidden = !((isSlice || isVtk) && hasVol);
     }
     if (this.canvasEl) this.canvasEl.hidden = isVtk || isChimeraX;
     if (this.vtkContainerEl) this.vtkContainerEl.hidden = !isVtk;

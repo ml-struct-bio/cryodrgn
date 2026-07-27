@@ -546,11 +546,6 @@ def _cmd_argv_for_nav_display(cmd_parts: list[str]) -> list[str]:
     return parts
 
 
-def _abbrev_middle_token(text: str, maxlen: int = 120) -> str:
-    """Like :func:`abbrev_middle` with a longer default for raw CLI tokens."""
-    return abbrev_middle(text, maxlen)
-
-
 def _argv_four_command_lines(argv: list[str]) -> list[str]:
     """Format argv as at most four lines for the nav ribbon.
 

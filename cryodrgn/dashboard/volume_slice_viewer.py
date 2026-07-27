@@ -224,10 +224,6 @@ _ANALYZE_CATALOG_CACHE: dict[tuple[str, int, int], list[dict]] = {}
 _ANALYZE_VOL_CACHE_LOCK = threading.Lock()
 
 
-def _analyze_dir(exp: DashboardExperiment) -> str:
-    return exp.analyze_dir
-
-
 def _sorted_vol_mrc_paths(directory: str) -> list[tuple[int, str]]:
     """Return ``(vol_index, path)`` for ``vol_NNN.mrc`` files under ``directory``."""
     if not os.path.isdir(directory):
@@ -252,7 +248,7 @@ def discover_analyze_volume_catalog(exp: DashboardExperiment) -> list[dict]:
         if cached is not None:
             return [dict(e) for e in cached]
 
-    anlz = _analyze_dir(exp)
+    anlz = exp.analyze_dir
     if not os.path.isdir(anlz):
         return []
 
@@ -279,12 +275,10 @@ def discover_analyze_volume_catalog(exp: DashboardExperiment) -> list[dict]:
                 for entry in it
                 if entry.is_dir() and _PC_DIR_RE.fullmatch(entry.name)
             ),
-            key=lambda name: int(_PC_DIR_RE.fullmatch(name).group(1)),  # type: ignore[union-attr]
+            key=lambda name: int(name[2:]),
         )
     for pc_name in pc_dirs:
-        m_pc = _PC_DIR_RE.fullmatch(pc_name)
-        assert m_pc is not None
-        pc_num = int(m_pc.group(1))
+        pc_num = int(pc_name[2:])
         pc_dir = os.path.join(anlz, pc_name)
         paths = _sorted_vol_mrc_paths(pc_dir)
         if not paths:
@@ -471,7 +465,7 @@ def discover_analyze_volume_markers(
     if catalog is None:
         catalog = discover_analyze_volume_catalog(exp)
 
-    km_dir = os.path.join(_analyze_dir(exp), f"kmeans{int(exp.kmeans_folder_id)}")
+    km_dir = os.path.join(exp.analyze_dir, f"kmeans{int(exp.kmeans_folder_id)}")
     km_rows = _load_kmeans_center_plot_rows(km_dir)
 
     pc_nums = sorted(
@@ -479,7 +473,7 @@ def discover_analyze_volume_markers(
     )
     pc_z_cache: dict[int, np.ndarray] = {}
     pc_row_cache: dict[int, list[int]] = {}
-    anlz = _analyze_dir(exp)
+    anlz = exp.analyze_dir
     pca = None
     for pc_num in pc_nums:
         pc_dir = os.path.join(anlz, f"pc{pc_num}")
@@ -652,7 +646,7 @@ def _enrich_kmeans_catalog_znorm(exp: DashboardExperiment, catalog: list[dict]) 
     """Attach ``znorm`` at each k-means center's nearest plot row (in-place)."""
     if "znorm" not in exp.plot_df.columns:
         return
-    km_dir = os.path.join(_analyze_dir(exp), f"kmeans{int(exp.kmeans_folder_id)}")
+    km_dir = os.path.join(exp.analyze_dir, f"kmeans{int(exp.kmeans_folder_id)}")
     km_rows = _load_kmeans_center_plot_rows(km_dir)
     if km_rows is None:
         return

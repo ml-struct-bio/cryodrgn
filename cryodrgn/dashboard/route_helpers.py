@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Callable, TypeVar
+from typing import Any
 
 import numpy as np
 from flask import jsonify, redirect, url_for
@@ -98,11 +98,6 @@ def default_embedding_xy_cols(
     if len(cols) == 1:
         return cols[0], cols[0]
     return cols[0] if cols else "z0", cols[1] if len(cols) > 1 else "z1"
-
-
-def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
-    """Pick sensible default X/Y axes (UMAP if available, else first two)."""
-    return default_embedding_xy_cols(cols)
 
 
 def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str | None]:
@@ -277,31 +272,3 @@ def _add_direct_anchor_pidx(
     if pidx is not None:
         payload["traj_particle_indices"] = pidx
     payload["anchor_path_order"] = p.get("anchor_path_order", "preserve")
-
-
-_T = TypeVar("_T")
-
-
-def _api_try(
-    fn: Callable[[], _T], msg: str, *, logger: Any = None
-) -> _T | tuple[Any, int]:
-    """Execute ``fn`` and return Flask response with standardized error handling.
-
-    - ValueError -> 400 with error message
-    - RuntimeError -> 500 with error message
-    - Exception -> 500 with error message, logs via ``logger.exception(msg)``
-
-    Returns ``(jsonify_result, status_code)`` tuple on error, or the result of ``fn``
-    on success. Caller should check if return is a tuple to determine if it's an error
-    response that should be returned directly.
-    """
-    try:
-        return fn()
-    except ValueError as err:
-        return jsonify(error=str(err)), 400
-    except RuntimeError as err:
-        return jsonify(error=str(err)), 500
-    except Exception as err:
-        if logger is not None:
-            logger.exception(msg)
-        return jsonify(error=str(err)), 500

@@ -257,13 +257,6 @@ def vol_mrc_path(kmeans_dir: str, vol_index: int) -> str:
     return p
 
 
-def _volsketch_covariate_display(name: str) -> str:
-    """Match particle explorer naming for covariate selectors."""
-    if name == "labels":
-        return "k-means labels"
-    return covariate_display_name(name)
-
-
 def sketch_plot_color_covariate_variable_label(plot_color_mode: str) -> str | None:
     """Human-readable color dimension name for GIF preview (matches Color by column)."""
     raw = (plot_color_mode or "").strip()
@@ -284,7 +277,7 @@ def landscape_color_options(exp: DashboardExperiment) -> list[dict[str, str]]:
         {"value": "state", "label": "Agglomerative state"},
     ]
     for c in exp.numeric_columns:
-        opts.append({"value": c, "label": _volsketch_covariate_display(c)})
+        opts.append({"value": c, "label": covariate_display_name(c)})
     return opts
 
 

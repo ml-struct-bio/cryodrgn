@@ -428,6 +428,8 @@ class TestLandscapeVolpcaPureHelpers:
         assert "none" in values
         assert "state" in values
         assert any(v not in ("none", "state") for v in values)
+        labels_option = next(o for o in opts if o["value"] == "labels")
+        assert labels_option["label"] == "k-means labels"
 
     def test_load_sketch_centroid_plot_df_rows_errors(self, tmp_path: Path) -> None:
         land, km = _write_landscape_bundle(tmp_path, bad_centers=True)

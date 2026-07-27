@@ -219,6 +219,7 @@ def _grid_spaced_outlier_pick(
     ny = (coords[:, 1] - y0) / ry
 
     picked: list[int] = []
+    picked_set: set[int] = set()
     used_cells: set[tuple[int, int]] = set()
     nb = max(2, int(n_bins))
 
@@ -235,15 +236,17 @@ def _grid_spaced_outlier_pick(
             continue
         used_cells.add(cell)
         picked.append(i)
+        picked_set.add(i)
 
     if len(picked) < want:
         for li in order_by_score_desc:
             if len(picked) >= want:
                 break
             i = int(li)
-            if i in exclude or i in picked:
+            if i in exclude or i in picked_set:
                 continue
             picked.append(i)
+            picked_set.add(i)
     return picked[:want]
 
 
@@ -307,17 +310,16 @@ def sample_plot_df_rows_for_preload(
     """
     max_images = max(1, int(max_images))
     n = len(exp.plot_df)
-    coords_full = exp.plot_df[[xcol, ycol]].values.astype(np.float64)
     rng = np.random.default_rng(42)
 
     if restrict_to_rows is not None:
         sub_idx = sorted({int(r) for r in restrict_to_rows if 0 <= int(r) < n})
         if not sub_idx:
             return [], []
-        coords = coords_full[np.array(sub_idx, dtype=int)]
+        coords = exp.plot_df.iloc[sub_idx][[xcol, ycol]].to_numpy(dtype=np.float64)
         inv_map = sub_idx
     else:
-        coords = coords_full
+        coords = exp.plot_df[[xcol, ycol]].to_numpy(dtype=np.float64)
         inv_map = list(range(n))
 
     if exclude_rows:

@@ -24,7 +24,7 @@ from cryodrgn.dashboard.data import DashboardExperiment
 
 _LANDSCAPE_FULL_SUBDIR = "landscape_full"
 _LANDSCAPE_VOL_PC_COL_RE = re.compile(r"^landscape_vol_PC(\d+)$")
-_SKETCH_CENTERS_IND_CACHE: dict[tuple[str, int], np.ndarray] = {}
+_SKETCH_CENTERS_IND_CACHE: dict[tuple[str, int], np.ndarray | None] = {}
 _LANDSCAPE_FULL_SAMPLED_DF_CACHE: dict[tuple, pd.DataFrame] = {}
 
 
@@ -68,10 +68,7 @@ def _sketch_centers_ind_for_epoch(workdir: str, epoch: int) -> np.ndarray | None
         centers_ind = load_sketch_centroid_plot_df_rows(kmeans_dir, n_expected)
     except Exception:
         centers_ind = None
-    if centers_ind is None:
-        _SKETCH_CENTERS_IND_CACHE[key] = None  # type: ignore[assignment]
-    else:
-        _SKETCH_CENTERS_IND_CACHE[key] = centers_ind
+    _SKETCH_CENTERS_IND_CACHE[key] = centers_ind
     return centers_ind
 
 

@@ -19,7 +19,6 @@ from cryodrgn.dashboard.context import (
     EXP_CACHE,
     EXPERIMENT_STORE,
     PRELOAD_CACHE,
-    _abbrev_middle_token,
     _argv_four_command_lines,
     _cmd_argv_for_nav_display,
     _config_has_cryodrgn_cmd,
@@ -138,6 +137,13 @@ class TestDashboardPages:
         r = flask_client.get(path)
         assert r.status_code == 200, f"{path} returned {r.status_code}"
         assert r.data, f"{path} returned empty body"
+
+    def test_explorer_page_preserves_embedding_axis_defaults(
+        self, flask_client
+    ) -> None:
+        body = flask_client.get("/explorer").get_data(as_text=True)
+        assert 'var dx = "UMAP1";' in body
+        assert 'var dy = "UMAP2";' in body
 
     def test_volume_viewer_url_redirects_to_trajectory(self, flask_client) -> None:
         r = flask_client.get("/volume-viewer", follow_redirects=False)
@@ -332,75 +338,6 @@ class TestDashboardScatterCapHelpers:
         monkeypatch.setenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", "bad")
         assert dash_app._particle_explorer_scatter_cap_from_env() is False
         monkeypatch.delenv("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS", raising=False)
-
-
-class TestApiTryHelper:
-    """Tests for the _api_try helper that standardizes API error handling."""
-
-    @pytest.fixture
-    def api_try(self):
-        """Fixture to run _api_try tests within a Flask app context."""
-        from cryodrgn.dashboard.route_helpers import _api_try
-
-        app = dash_app.create_app(workdir=None)
-        with app.app_context():
-            yield _api_try
-
-    def test_api_try_success_returns_result(self, api_try) -> None:
-        def success_fn():
-            return {"data": "success"}
-
-        result = api_try(success_fn, "test error")
-        assert result == {"data": "success"}
-
-    def test_api_try_valueerror_returns_400(self, api_try) -> None:
-        def raise_valueerror():
-            raise ValueError("invalid input")
-
-        response, status = api_try(raise_valueerror, "test error")
-        assert status == 400
-        assert "error" in response.get_json()
-        assert "invalid input" in response.get_json()["error"]
-
-    def test_api_try_runtimeerror_returns_500(self, api_try) -> None:
-        def raise_runtimeerror():
-            raise RuntimeError("server error")
-
-        response, status = api_try(raise_runtimeerror, "test error")
-        assert status == 500
-        assert "error" in response.get_json()
-        assert "server error" in response.get_json()["error"]
-
-    def test_api_try_exception_returns_500_with_logging(self, api_try) -> None:
-        def raise_exception():
-            raise Exception("unexpected error")
-
-        # Create a mock logger
-        class MockLogger:
-            def __init__(self):
-                self.messages = []
-
-            def exception(self, msg):
-                self.messages.append(msg)
-
-        mock_logger = MockLogger()
-        response, status = api_try(
-            raise_exception, "custom error message", logger=mock_logger
-        )
-
-        assert status == 500
-        assert "error" in response.get_json()
-        assert "unexpected error" in response.get_json()["error"]
-        assert "custom error message" in mock_logger.messages
-
-    def test_api_try_no_logger_doesnt_fail(self, api_try) -> None:
-        def raise_exception():
-            raise Exception("error without logger")
-
-        # Should not raise even with no logger
-        response, status = api_try(raise_exception, "test message")
-        assert status == 500
-        assert "error" in response.get_json()
 
 
 class TestDashboardZPkl:
@@ -668,12 +605,6 @@ class TestContextDisplayHelpers:
             ["cryodrgn", "train_vae", "/a/" + "x" * 300]
         )
         assert any("\u2026" in line for line in long_out)
-
-    def test_abbrev_middle_token_keeps_short_and_abbreviates_long(self) -> None:
-        assert _abbrev_middle_token("short") == "short"
-        out = _abbrev_middle_token("/" + "x" * 200, maxlen=50)
-        assert len(out) == 50
-        assert "\u2026" in out
 
 
 class TestExperimentStore:

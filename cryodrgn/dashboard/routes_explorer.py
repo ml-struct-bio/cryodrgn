@@ -90,7 +90,6 @@ from cryodrgn.dashboard.volume_slice_viewer import (
 from cryodrgn.dashboard.route_helpers import (
     _EXPLORER_VOLUMES_INELIGIBLE_MSG,
     _covariate_display_map,
-    _default_xy_cols,
     _filter_ui_scatter_max_points,
     _parse_color_filter_for_column,
     _parse_optional_discrete_label_colors,
@@ -99,6 +98,7 @@ from cryodrgn.dashboard.route_helpers import (
     _particle_explorer_scatter_cap_from_env,
     _particle_explorer_scatter_max_points,
     _redirect,
+    default_embedding_xy_cols,
     discrete_color_columns_for_exp,
 )
 
@@ -407,7 +407,7 @@ def explorer():
         )
     axis_cols = e.numeric_columns
     color_cols = e.color_covariate_columns
-    dx, dy = _default_xy_cols(axis_cols)
+    dx, dy = default_embedding_xy_cols(axis_cols)
     initial_rows = load_plot_df_rows_from_plot_inds_file(
         e, current_app.config.get("FILTER_PLOT_INDS")
     )
@@ -439,9 +439,7 @@ def explorer():
 
 def volume_viewer_page():
     """Redirect to trajectory creator (volume viewing is integrated there)."""
-    from flask import redirect, url_for
-
-    return redirect(url_for("trajectory_creator_page"))
+    return _redirect("trajectory_creator_page")
 
 
 def api_explorer_volume_media():

@@ -361,6 +361,11 @@
             pathN: opts.pathN
           });
         }
+        if (typeof scheduleManualParticleSetPickerRefresh === "function"
+            && typeof manualVolumeSelectionActive === "function"
+            && manualVolumeSelectionActive()) {
+          scheduleManualParticleSetPickerRefresh();
+        }
       },
       syncTickLabels: function() {
         if (typeof syncManualVolumeSliderTickLabels === "function") {
@@ -1115,10 +1120,10 @@
 
   function manualPathRowsForCurrentVolumeSlots() {
     var rows = null;
-    if (trajPlotRows && trajPlotRows.length >= 2) {
-      rows = trajPlotRows;
-    } else if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
+    if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
       rows = anchorIndicesActive;
+    } else if (trajPlotRows && trajPlotRows.length >= 2) {
+      rows = trajPlotRows;
     }
     if (!rows || rows.length < 2) return [];
     return rows.map(function(row) {
@@ -1332,6 +1337,10 @@
    * densified interiors), not only analyze-catalog volume loads.
    */
   function manualWaypointDecodePathActive() {
+    if (typeof directTraceMixedWaypointPathActive === "function"
+        && directTraceMixedWaypointPathActive()) {
+      return true;
+    }
     if (!isManualTraversalMode()) return false;
     if (manualActiveCustomPlotRows && manualActiveCustomPlotRows.length > 0) {
       return true;
@@ -3048,6 +3057,17 @@
 
   function particleSetDrivenDirectPath() {
     return directTraceTraversalMode() && particleSetCatalogSelectionActive();
+  }
+
+  /**
+   * Direct-trace path with both catalog particle-set volumes and active Other
+   * waypoints (e.g. snap-to-nearest then re-select PC1). Must use full waypoint
+   * geometry and decode/render debts — not sparse endpoint catalog mode.
+   */
+  function directTraceMixedWaypointPathActive() {
+    return directTraceTraversalMode()
+      && manualActiveCustomPlotRows && manualActiveCustomPlotRows.length > 0
+      && manualSelectedVolIds && manualSelectedVolIds.length > 0;
   }
 
   function manualVolumeSelectionActive() {

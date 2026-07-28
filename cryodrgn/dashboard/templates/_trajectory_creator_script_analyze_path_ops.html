@@ -1,42 +1,4 @@
 {# Trajectory analyze: path snap/traversal, k-means reorder, anchor selection sync #}
-  // #region agent log
-  function __agentDbgPathCounts(extra) {
-    var data = Object.assign({
-      mode: String(typeof trajectoryMode !== "undefined" ? trajectoryMode : ""),
-      anchors: (typeof anchorIndicesActive !== "undefined" && anchorIndicesActive)
-        ? anchorIndicesActive.length : 0,
-      trajRows: (typeof trajPlotRows !== "undefined" && trajPlotRows) ? trajPlotRows.length : 0,
-      anchorXY: (typeof anchorTrajXY !== "undefined" && anchorTrajXY) ? anchorTrajXY.length : 0,
-      interpN: Number(typeof manualInterpTrajectoryCount !== "undefined"
-        ? manualInterpTrajectoryCount : 0) || 0,
-      volIds: (typeof manualSelectedVolIds !== "undefined" && manualSelectedVolIds)
-        ? manualSelectedVolIds.length : 0,
-      activeCustom: (typeof manualActiveCustomPlotRows !== "undefined"
-        && manualActiveCustomPlotRows) ? manualActiveCustomPlotRows.length : 0,
-      volSnap: !!(typeof manualVolumeSnapActive !== "undefined" && manualVolumeSnapActive),
-      partSnap: !!(typeof manualParticleSnapPathActive !== "undefined"
-        && manualParticleSnapPathActive),
-      graph: !!(typeof graphTraversalActive !== "undefined" && graphTraversalActive),
-      snapPts: (typeof readManualSnapNPoints === "function") ? readManualSnapNPoints() : null
-    }, extra || {});
-    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Debug-Session-Id': '4ef8ba'
-      },
-      body: JSON.stringify({
-        sessionId: '4ef8ba',
-        location: data.location || 'path_ops',
-        message: data.message || 'path_counts',
-        data: data,
-        timestamp: Date.now(),
-        hypothesisId: data.hypothesisId || 'H0',
-        runId: data.runId || 'pre-fix'
-      })
-    }).catch(function() {});
-  }
-  // #endregion
   function toggleManualVolumeGroup(groupKey) {
     if (groupKey === "custom") {
       toggleManualCustomVolumeGroup();
@@ -112,6 +74,26 @@
     buildManualPickerCompactRow();
     buildManualPickerDetailRows();
     syncManualPickerExpandUI();
+  }
+
+  function manualParticleSetPickerChromeActive() {
+    return (typeof isManualTraversalMode === "function" && isManualTraversalMode())
+      || (typeof directTraceTraversalMode === "function" && directTraceTraversalMode())
+      || (manualCustomPlotRows && manualCustomPlotRows.length > 0)
+      || (manualSelectedVolIds && manualSelectedVolIds.length > 0);
+  }
+
+  /**
+   * Rebuild particle-set buttons after async / path mutations (snap-to-nearest
+   * densify, Other splice, random append). Callers may update
+   * manualCustomPlotRowsDisplayOrder after an eager buildManualPickerRows().
+   */
+  function scheduleManualParticleSetPickerRefresh() {
+    if (typeof buildManualPickerRows !== "function") return;
+    if (!manualParticleSetPickerChromeActive()) return;
+    requestAnimationFrame(function() {
+      buildManualPickerRows();
+    });
   }
 
   function persistManualVolumeSelection() {
@@ -201,22 +183,6 @@
   function persistManualWaypointSession() {
     var snap = snapshotManualWaypointSession();
     if (snap) lastManualWaypointSession = snap;
-    // #region agent log
-    __agentDbgPathCounts({
-      location: 'path_ops:persistManualWaypointSession',
-      message: 'persist waypoint session',
-      hypothesisId: 'H1-H3',
-      snapAnchors: snap && snap.anchorIndices ? snap.anchorIndices.length : 0,
-      snapTrajRows: snap && snap.trajPlotRows ? snap.trajPlotRows.length : 0,
-      snapInterp: snap ? snap.interpTrajectoryCount : null,
-      snapArmed: snap ? !!snap.interpolationArmed : null,
-      snapVolSnap: snap ? !!snap.volumeSnapActive : null,
-      snapGraph: snap ? !!snap.graphActive : null,
-      snapActiveCustom: snap && snap.activeCustomPlotRows
-        ? snap.activeCustomPlotRows.length : 0,
-      snapSnapN: snap ? snap.snapNPoints : null
-    });
-    // #endregion
     persistManualVolumeSelection();
   }
 
@@ -371,21 +337,6 @@
     if (!hasVtkBlobs && volumePayload() && typeof loadedManualVolumeCount === "function") {
       hasVtkBlobs = loadedManualVolumeCount(volumeSlots() || []) > 0;
     }
-    // #region agent log
-    __agentDbgPathCounts({
-      location: 'path_ops:restoreManualWaypointSession:volumeBranch',
-      message: 'restore volume display branch',
-      hypothesisId: 'V6',
-      runId: 'vol-fix',
-      backend: String(backend || ''),
-      hasCx: !!hasCx,
-      hasVtkBlobs: !!hasVtkBlobs,
-      payloadVolLen: lastVolumePayload && lastVolumePayload.volumes
-        ? lastVolumePayload.volumes.length : 0,
-      payloadImgLen: lastVolumePayload && lastVolumePayload.images
-        ? lastVolumePayload.images.length : 0
-    });
-    // #endregion
     if (hasCx) {
       selectTrajVolumeBackend("chimerax");
       applyVolumePayloadDisplay(lastVolumePayload, "chimerax");
@@ -435,23 +386,6 @@
       // Rebuild path in the live axis frame from catalog markers / plot rows.
       var wantInterp = !!(manualVolumeSnapActive || graphTraversalActive
         || (session.interpolationArmed && (session.volumeSnapActive || session.graphActive)));
-      // #region agent log
-      __agentDbgPathCounts({
-        location: 'path_ops:finishRestoredWaypointGeometry:before',
-        message: 'restore geometry branch',
-        hypothesisId: 'H1-H2-H5',
-        wantInterp: wantInterp,
-        sessArmed: !!session.interpolationArmed,
-        sessVolSnap: !!session.volumeSnapActive,
-        sessGraph: !!session.graphActive,
-        sessAnchors: session.anchorIndices ? session.anchorIndices.length : 0,
-        sessTrajRows: session.trajPlotRows ? session.trajPlotRows.length : 0,
-        sessInterp: session.interpTrajectoryCount,
-        sessActiveCustom: session.activeCustomPlotRows
-          ? session.activeCustomPlotRows.length : 0,
-        pendingOrigReorder: !!pendingOriginalCatalogIndexReorder
-      });
-      // #endregion
       if (wantInterp && typeof syncManualSelectionToAnchors === "function") {
         syncManualSelectionToAnchors({
           forceInterp: true,
@@ -461,14 +395,6 @@
       } else if (typeof syncManualAnchorsPreview === "function") {
         syncManualAnchorsPreview({ skipVolumeSync: true });
       }
-      // #region agent log
-      __agentDbgPathCounts({
-        location: 'path_ops:finishRestoredWaypointGeometry:after',
-        message: 'restore geometry complete',
-        hypothesisId: 'H1-H2-H5',
-        wantInterp: wantInterp
-      });
-      // #endregion
       redrawTrajectoryOverlay();
       scheduleTrajGlyphOverlaySync();
       syncDirectModeVolumePendingOverlay();
@@ -578,16 +504,6 @@
     var preservedVolIds = (directEndpointSnapshot && directEndpointSnapshot.ids)
       ? directEndpointSnapshot.ids.slice()
       : currentPathEndpointVolumeIds();
-    // #region agent log
-    __agentDbgPathCounts({
-      location: 'path_ops:leaveManualForScatterMode',
-      message: 'leave choose-waypoints for direct-trace',
-      hypothesisId: 'H3-H4',
-      pathPointCount: pathPointCount,
-      hasEndpoints: !!endpoints,
-      enterMode: mode
-    });
-    // #endregion
     clearInteractiveAnchorState();
     manualSelectedVolIds = [];
     manualTrajectoryVolumeIds = [];
@@ -846,12 +762,20 @@
       volsByRow[row].push(String(id));
     });
     var out = [];
+    var customSet = {};
+    (manualActiveCustomPlotRows || []).forEach(function(row) {
+      row = Number(row);
+      if (isFinite(row)) customSet[row] = true;
+    });
     for (var i = 0; i < orderedRows.length; i++) {
       var want = Number(orderedRows[i]);
       if (!isFinite(want)) return null;
       var list = volsByRow[want];
       var pt = null;
-      if (list && list.length) {
+      if (customSet[want] && typeof scatterXYForPlotRow === "function") {
+        pt = scatterXYForPlotRow(want);
+      }
+      if (!pt && list && list.length) {
         var volId = list.shift();
         pt = typeof scatterXYForVolumeId === "function"
           ? scatterXYForVolumeId(volId)
@@ -864,6 +788,60 @@
       out.push(pt.slice());
     }
     return out;
+  }
+
+  function resolveWaypointPathXYForRows(orderedRows) {
+    orderedRows = (orderedRows || []).map(Number).filter(function(row) {
+      return isFinite(row);
+    });
+    if (orderedRows.length < 2) return null;
+    if (typeof manualPathXYForOrderedAnchorRows === "function") {
+      var primary = manualPathXYForOrderedAnchorRows(orderedRows);
+      if (primary && primary.length === orderedRows.length) return primary;
+    }
+    if (typeof trajXYFromPlotRows === "function") {
+      var scatter = trajXYFromPlotRows(orderedRows);
+      if (scatter && scatter.length === orderedRows.length) return scatter;
+    }
+    return null;
+  }
+
+  function installWaypointAnchorPathXY(orderedRows) {
+    orderedRows = (orderedRows || []).map(Number).filter(function(row) {
+      return isFinite(row);
+    });
+    if (orderedRows.length < 2) return false;
+    var xy = resolveWaypointPathXYForRows(orderedRows);
+    if (!xy || xy.length !== orderedRows.length) return false;
+    anchorIndicesActive = orderedRows.slice();
+    anchorTrajXY = xy.map(function(p) {
+      return [Number(p[0]), Number(p[1])];
+    });
+    editableTrajXY = null;
+    trajPlotRows = null;
+    lastLatentTrajectoryPointCount = orderedRows.length;
+    var pathObj = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+    if (pathObj) {
+      if (typeof pathObj.setAnchorRows === "function") pathObj.setAnchorRows(orderedRows.slice());
+      if (typeof pathObj.setAnchorPathXY === "function") {
+        pathObj.setAnchorPathXY(anchorTrajXY.map(function(p) { return p.slice(); }));
+      }
+      if (typeof pathObj.setEditableXY === "function") pathObj.setEditableXY(null);
+      if (typeof pathObj.setSamplePlotRows === "function") pathObj.setSamplePlotRows(null);
+    }
+    return true;
+  }
+
+  function ensureWaypointPathXYForOverlay() {
+    if (anchorTrajXY && anchorTrajXY.length >= 2
+        && (!anchorIndicesActive || anchorTrajXY.length === anchorIndicesActive.length)) {
+      return anchorTrajXY;
+    }
+    if (hasAnchorIndices() && anchorIndicesActive && anchorIndicesActive.length >= 2
+        && installWaypointAnchorPathXY(anchorIndicesActive)) {
+      return anchorTrajXY;
+    }
+    return anchorTrajXY;
   }
 
   function activeManualTrajectoryXY() {
@@ -2011,6 +1989,7 @@
       scheduleTrajGlyphOverlaySync();
       syncGenerateVolumesButtonVisibility();
       updateGenerateVolumesButtonLabel();
+      scheduleManualParticleSetPickerRefresh();
       return;
     }
     reorderManualSelectionFromAnchorRows(orderedRows);
@@ -2119,6 +2098,12 @@
     opts = opts || {};
     var directTrace = directTraceTraversalMode();
     if (!isManualTraversalMode() && !directTrace) return;
+    if (directTrace
+        && editableTrajXY && trajPlotRows
+        && editableTrajXY.length === trajPlotRows.length
+        && typeof rememberPlotRowXYList === "function") {
+      rememberPlotRowXYList(trajPlotRows, editableTrajXY);
+    }
     // When visit order resets to Original (e.g. after adding points), rewrite
     // PC1 / PC2 / kmeans subsets into native index order while leaving Other
     // slots where they are.
@@ -2155,6 +2140,10 @@
       || (typeof manualSnappedDecodePathActive === "function" && manualSnappedDecodePathActive())
     );
     if (preserveArmedPath) {
+      if (typeof refreshManualCustomPlotRowsDisplayOrderFromTrajectory === "function") {
+        refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
+      }
+      scheduleManualParticleSetPickerRefresh();
       redrawTrajectoryOverlay();
       scheduleTrajGlyphOverlaySync();
       if (typeof manualSnappedDecodePathActive === "function" && manualSnappedDecodePathActive()) {
@@ -2192,20 +2181,6 @@
       rebuilt = path.rebuildFromSelection(pathRebuildOpts);
     }
     var rows = (rebuilt && rebuilt.rows) ? rebuilt.rows : [];
-    // #region agent log
-    if (isManualTraversalMode()) {
-      __agentDbgPathCounts({
-        location: 'path_ops:syncManualAnchorsPreview:rebuild',
-        message: 'rebuildFromSelection result',
-        hypothesisId: 'H2',
-        rebuiltOk: !!(rebuilt && rebuilt.ok),
-        rebuiltCleared: !!(rebuilt && rebuilt.cleared),
-        rebuiltRowsN: rows.length,
-        skipVolumeSync: !!opts.skipVolumeSync,
-        pendingOrigReorder: !!pendingOriginalCatalogIndexReorder
-      });
-    }
-    // #endregion
     if (rows.length < 2) {
       if (isManualTraversalMode()
           && typeof manualSnappedDecodePathActive === "function"
@@ -2254,6 +2229,9 @@
     if (directTrace) {
       anchorKmeansVolumeIds = manualSelectedVolIds.slice();
       setTrajectoryModesLockedForAnchors(true);
+      if (rows.length >= 2 && typeof installWaypointAnchorPathXY === "function") {
+        installWaypointAnchorPathXY(rows);
+      }
     }
     syncAnchorIndicesUI();
     syncTraversalAltButtons();
@@ -2266,7 +2244,11 @@
       // parity). fetchTrajectoryCoords densifies between anchors and places
       // non-selection particles on the path.
       if (!opts.skipVolumeSync && !trajectoryVolumeDisplayReorderPending) {
-        if (typeof manualPathEndpointsDisplacedFromDefaults === "function"
+        if (typeof directTraceMixedWaypointPathActive === "function"
+            && directTraceMixedWaypointPathActive()
+            && typeof expandManualVolumeDisplayAfterWaypointAppend === "function") {
+          expandManualVolumeDisplayAfterWaypointAppend();
+        } else if (typeof manualPathEndpointsDisplacedFromDefaults === "function"
             && manualPathEndpointsDisplacedFromDefaults()
             && typeof syncManualVolumeSliderPreview === "function") {
           syncManualVolumeSliderPreview({ fromSession: true });
@@ -2275,12 +2257,14 @@
         }
       }
       refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
+      scheduleManualParticleSetPickerRefresh();
       if (typeof refreshTrajectoryZPanel === "function") {
         refreshTrajectoryZPanel();
       }
       return;
     }
     refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
+    scheduleManualParticleSetPickerRefresh();
     if (!opts.skipVolumeSync && !trajectoryVolumeDisplayReorderPending) {
       if (typeof manualPathEndpointsDisplacedFromDefaults === "function"
           && manualPathEndpointsDisplacedFromDefaults()
@@ -2378,18 +2362,6 @@
         && typeof applyManualInterpolatedScatterPath === "function") {
       var nInterpDirect = readManualSnapNPoints();
       var linearXY = buildLinearInterpolatedPathXY(waypointXY, nInterpDirect);
-      // #region agent log
-      __agentDbgPathCounts({
-        location: 'path_ops:syncManualSelectionToAnchors:directLine',
-        message: 'forceInterp direct-line densify',
-        hypothesisId: 'H1',
-        forceInterp: !!opts.forceInterp,
-        rowN: rows.length,
-        waypointXYN: waypointXY.length,
-        nInterpDirect: nInterpDirect,
-        linearXYN: linearXY ? linearXY.length : 0
-      });
-      // #endregion
       if (linearXY && linearXY.length >= 2) {
         applyManualInterpolatedScatterPath(null, linearXY);
       } else {

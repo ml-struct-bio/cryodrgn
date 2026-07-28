@@ -454,6 +454,9 @@
 
   function redrawTrajectoryOverlay() {
     if (!gd || !gd.data || !gd.data.length) return;
+    if (!isManualTraversalMode() && typeof ensureWaypointPathXYForOverlay === "function") {
+      ensureWaypointPathXYForOverlay();
+    }
     var pathXY = null;
     var expected = (isManualTraversalMode() && manualInterpolatedPathExpansionArmed())
       ? expectedManualInterpolatedPointCount()
@@ -1342,17 +1345,6 @@
       // Belt-and-suspenders: applyCoordsPayload may still have rewritten geometry.
       restoreManualDirectLinePathXY(preservedDirectXY);
     }
-    // #region agent log
-    if (typeof __agentDbgPathCounts === "function") {
-      __agentDbgPathCounts({
-        location: 'coords_api:onTrajectoryIndicesLoaded:postPromote',
-        message: 'after densify promote + coords payload',
-        hypothesisId: 'H3-fix',
-        densifyPromotedToOther: densifyPromotedToOther,
-        runId: 'post-fix'
-      });
-    }
-    // #endregion
     if (isManualTraversalMode()) {
       syncManualInterpolatedScatterVisuals({ immediate: true });
       scheduleManualScatterTrajectorySync();
@@ -1420,6 +1412,10 @@
       ingestManualCustomPlotRowsFromTrajectoryResponse(res, {
         preserveDirectLineXY: preserveDirectLineXY
       });
+      if (densifyPromotedToOther
+          && typeof scheduleManualParticleSetPickerRefresh === "function") {
+        scheduleManualParticleSetPickerRefresh();
+      }
       snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
     } else if (anchorKmeansVolumeIds.length >= 2 || manualSelectedVolIds.length >= 2) {
       if (finishAnchorPathOrderVolumePreserveIfPending()) {
@@ -1784,8 +1780,10 @@
       scheduleTrajGlyphOverlaySync();
     }
     // Session append registers Other with skipPickerRebuild; refresh here for
-    // both choose-waypoints and particle-set-driven direct-trace.
-    if (typeof buildManualPickerRows === "function"
+    // choose-waypoints, direct-trace, and snap-to-nearest densify paths.
+    if (typeof scheduleManualParticleSetPickerRefresh === "function") {
+      scheduleManualParticleSetPickerRefresh();
+    } else if (typeof buildManualPickerRows === "function"
         && (isManualTraversalMode()
           || (typeof directTraceTraversalMode === "function" && directTraceTraversalMode())
           || (manualCustomPlotRows && manualCustomPlotRows.length > 0))) {

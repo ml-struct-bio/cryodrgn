@@ -1097,6 +1097,9 @@
   }
 
   function trajectoryOverlayPathPoints() {
+    if (!isManualTraversalMode() && typeof ensureWaypointPathXYForOverlay === "function") {
+      ensureWaypointPathXYForOverlay();
+    }
     if (isManualTraversalMode() && typeof manualInterpolatedPathExpansionArmed === "function"
         && manualInterpolatedPathExpansionArmed()) {
       var manualPts = activeManualTrajectoryXY();
@@ -1195,6 +1198,9 @@
 
   function collectTrajGlyphSpecs() {
     var specs = [];
+    if (!isManualTraversalMode() && typeof ensureWaypointPathXYForOverlay === "function") {
+      ensureWaypointPathXYForOverlay();
+    }
     if (typeof ensureManualInterpolatedScatterPath === "function") {
       ensureManualInterpolatedScatterPath();
     } else if (isManualTraversalMode() && (manualParticleSnapPathActive || manualDirectSnapActive())) {
@@ -1599,6 +1605,32 @@
         anchorKmeansVolumeIds = j.kmeans_volume_ids.slice();
       }
       finishAnchorPathOrderVolumePreserveIfPending();
+    }
+    if (!preserveWaypointGeometry && j.traj_rows && j.traj_xy
+        && j.traj_rows.length === j.traj_xy.length
+        && j.traj_rows.length >= 2
+        && typeof rememberPlotRowXYList === "function") {
+      rememberPlotRowXYList(j.traj_rows, j.traj_xy);
+    }
+    var registeredDirectTraceOther = false;
+    if (trajectoryMode === "nearest"
+        && !preserveWaypointGeometry
+        && typeof directTraceTraversalMode === "function"
+        && directTraceTraversalMode()
+        && typeof registerDirectTraceSnappedPathAsOtherWaypoints === "function") {
+      var snapRows = (j.traj_rows && j.traj_rows.length >= 2)
+        ? j.traj_rows
+        : (trajPlotRows && trajPlotRows.length >= 2 ? trajPlotRows : null);
+      if (snapRows) {
+        registeredDirectTraceOther = registerDirectTraceSnappedPathAsOtherWaypoints(snapRows);
+      }
+    }
+    if (trajectoryMode === "nearest"
+        && typeof scheduleManualParticleSetPickerRefresh === "function"
+        && ((typeof manualVolumeSelectionActive === "function" && manualVolumeSelectionActive())
+            || registeredDirectTraceOther
+            || (manualCustomPlotRows && manualCustomPlotRows.length > 0))) {
+      scheduleManualParticleSetPickerRefresh();
     }
   }
 

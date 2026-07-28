@@ -27,9 +27,6 @@
     // to the two interior frames.
     if (!ids.length && !includeCacheRerender) return false;
     var cxGen = ++manualChimeraxLoadGeneration;
-    // #region agent log
-    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'volume_ui:syncManualChimeraxDisplay',message:'syncManualChimeraxDisplay entered',data:{mode:String(typeof trajectoryMode!=='undefined'?trajectoryMode:''),idsN:(ids&&ids.length)||0,cxGen:cxGen,includeCache:!!includeCacheRerender,userInitiated:!!opts.userInitiated,stack:(new Error()).stack.split('\n').slice(1,6).map(function(s){return s.trim();})},timestamp:Date.now(),hypothesisId:'V2',runId:'vol-debug'})}).catch(function(){});
-    // #endregion
     var volumeGen = opts.volumeGen;
     var pathExpected = Math.max(
       snapshot.expectedCount || 0,

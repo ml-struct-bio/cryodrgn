@@ -1113,9 +1113,6 @@
   }
 
   function fetchDirectEndpointCatalogVolumes() {
-    // #region agent log
-    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'volume_display:fetchDirectEndpointCatalogVolumes',message:'direct-trace endpoint catalog fetch',data:{mode:String(typeof trajectoryMode!=='undefined'?trajectoryMode:''),endpointN:(directEndpointVolumeIds&&directEndpointVolumeIds.length)||0,stack:(new Error()).stack.split('\n').slice(1,5).map(function(s){return s.trim();})},timestamp:Date.now(),hypothesisId:'V4',runId:'vol-debug'})}).catch(function(){});
-    // #endregion
     if (!prepareDirectEndpointCatalogSlots()) return false;
     var backend = preferredManualVolumeBackend();
     if (payloadHasVolumeB64(volumePayload() || {})) {
@@ -1757,11 +1754,6 @@
   }
 
   function setVolumeViewerJobStatus(msg, busy) {
-    // #region agent log
-    if (busy && msg && /Loading volume/i.test(String(msg))) {
-      fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'volume_display:setVolumeViewerJobStatus',message:'Loading volume status set',data:{msg:String(msg),mode:String(typeof trajectoryMode!=='undefined'?trajectoryMode:''),backend:(trajVolDisplay&&trajVolDisplay.backend)||null,cxRendering:!!(trajVolDisplay&&trajVolDisplay.chimeraxRendering),stack:(new Error()).stack.split('\n').slice(1,7).map(function(s){return s.trim();})},timestamp:Date.now(),hypothesisId:'V6',runId:'vol-fix'})}).catch(function(){});
-    }
-    // #endregion
     // Never suppress an in-flight ChimeraX render status just because VTK
     // volumes are already on the slider (post-Decode). That made Render look
     // like a no-op and raced with progress updates. Same for interactive
@@ -1964,6 +1956,10 @@
     }
     if (hasAnchorIndices()
         && (anchorKmeansVolumeIds.length >= 2 || manualSelectedVolIds.length >= 2)) {
+      if (typeof directTraceMixedWaypointPathActive === "function"
+          && directTraceMixedWaypointPathActive()) {
+        return false;
+      }
       if (directTraceCatalogHasInteriorSamples()) return false;
       return true;
     }
@@ -2270,6 +2266,10 @@
     // Direct-trace counterpart of catalogAnchorRenderModeActive: before Generate,
     // Render targets the two endpoint catalog volumes; Generate covers interiors.
     if (!isScatterDirectOrNearestMode() || hasGeneratedTrajectoryVolumes()) return false;
+    if (typeof directTraceMixedWaypointPathActive === "function"
+        && directTraceMixedWaypointPathActive()) {
+      return false;
+    }
     if (hasAnchorIndices()) return false;
     if (!directEndpointPathConfigured() && !directTraceEndpointCatalogDeferActive()) {
       return false;

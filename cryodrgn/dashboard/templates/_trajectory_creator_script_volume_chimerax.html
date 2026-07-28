@@ -2388,9 +2388,6 @@
   }
 
   function beginManualChimeraxVolumeLoad(ids, gen) {
-    // #region agent log
-    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'chimerax:beginManualChimeraxVolumeLoad',message:'ChimeraX volume load started',data:{mode:String(typeof trajectoryMode!=='undefined'?trajectoryMode:''),idsN:(ids&&ids.length)||0,gen:gen,defer:!!(typeof deferManualWaypointVolumeRerender==='function'&&deferManualWaypointVolumeRerender()),hasGen:!!(typeof hasGeneratedTrajectoryVolumes==='function'&&hasGeneratedTrajectoryVolumes()),activeCustom:(typeof manualActiveCustomPlotRows!=='undefined'&&manualActiveCustomPlotRows)?manualActiveCustomPlotRows.length:0,anchors:(typeof anchorIndicesActive!=='undefined'&&anchorIndicesActive)?anchorIndicesActive.length:0,stack:(new Error()).stack.split('\n').slice(1,6).map(function(s){return s.trim();})},timestamp:Date.now(),hypothesisId:'V1',runId:'vol-debug'})}).catch(function(){});
-    // #endregion
     if (typeof deferManualWaypointVolumeRerender === "function"
         && deferManualWaypointVolumeRerender()) {
       return;
@@ -2797,9 +2794,6 @@
   }
 
   function syncAnalyzeVolumeDisplay() {
-    // #region agent log
-    fetch('http://localhost:7535/ingest/e17fc64b-b7e3-4e42-a324-23b8fdf007ad',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4ef8ba'},body:JSON.stringify({sessionId:'4ef8ba',location:'chimerax:syncAnalyzeVolumeDisplay',message:'syncAnalyzeVolumeDisplay called',data:{mode:String(typeof trajectoryMode!=='undefined'?trajectoryMode:''),backend:(typeof preferredAnalyzeVolumeBackend==='function'?preferredAnalyzeVolumeBackend():null),idsN:(typeof activeAnalyzeVolumeIds==='function'?activeAnalyzeVolumeIds().length:0),stack:(new Error()).stack.split('\n').slice(1,6).map(function(s){return s.trim();})},timestamp:Date.now(),hypothesisId:'V1',runId:'vol-debug'})}).catch(function(){});
-    // #endregion
     var ids = activeAnalyzeVolumeIds();
     if (!ids.length) {
       clearManualAnalyzeVolumeDisplay();

@@ -11,12 +11,12 @@ import pandas as pd
 import pytest
 
 from cryodrgn.dashboard import app as dash_app
+from cryodrgn.dashboard import route_helpers as dash_route_helpers
 from cryodrgn.dashboard.route_helpers import (
     _TRAJECTORY_INELIGIBLE_MSG,
     _trajectory_eligibility_error,
 )
 from cryodrgn.dashboard.data import DashboardExperiment
-from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
 from cryodrgn.dashboard.trajectory import (
     _compute_direct_anchor_trajectory,
     _dijkstra_path_from_neighbors,
@@ -58,9 +58,25 @@ from tests.conftest import _monkeypatch_explorer_volumes_eligible
 pytestmark = pytest.mark.dashboard
 
 
-def _traj_flask_200_or_ineligible(r, experiment: DashboardExperiment) -> bool:
-    """If volume exploration is eligible, require HTTP 200; otherwise require the standard 400."""
-    if explorer_volumes_eligible(experiment):
+def _traj_flask_200_or_ineligible(
+    r,
+    experiment: DashboardExperiment,
+    *,
+    force_eligible: bool | None = None,
+) -> bool:
+    """If volume exploration is eligible, require HTTP 200; otherwise require the standard 400.
+
+    Pass ``force_eligible=True`` when the Flask client monkeypatches eligibility
+    (e.g. ``flask_client_volumes_eligible``) so this helper does not re-check GPU.
+    """
+    eligible = (
+        force_eligible
+        if force_eligible is not None
+        # Resolve via the module so monkeypatches of
+        # ``route_helpers.explorer_volumes_eligible`` are visible.
+        else dash_route_helpers.explorer_volumes_eligible(experiment)
+    )
+    if eligible:
         assert (
             r.status_code == 200
         ), f"{r.status_code}: {r.get_data(as_text=True)[:500]!r}"
@@ -303,39 +319,32 @@ class TestDashboardTrajectoryCoords:
 class TestParseAnchorIndicesTxt:
     """Whitespace-delimited anchor-index parsing with user-supplied text."""
 
-    def test_parses_whitespace(self) -> None:
-        assert parse_anchor_indices_txt(b"0 5 10\n") == [0, 5, 10]
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            (b"0 5 10\n", [0, 5, 10]),
+            (b"0,5;10\t12", [0, 5, 10, 12]),
+            (b"\n  1  2\r\n3\n", [1, 2, 3]),
+            # Range validation is caller-side; parser only requires int literals.
+            (b"-1 0 1", [-1, 0, 1]),
+        ],
+    )
+    def test_parses_ok(self, raw: bytes, expected: list[int]) -> None:
+        assert parse_anchor_indices_txt(raw) == expected
 
-    def test_parses_commas_and_semicolons(self) -> None:
-        assert parse_anchor_indices_txt(b"0,5;10\t12") == [0, 5, 10, 12]
-
-    def test_strips_surrounding_whitespace_and_newlines(self) -> None:
-        assert parse_anchor_indices_txt(b"\n  1  2\r\n3\n") == [1, 2, 3]
-
-    def test_allows_negative_and_zero(self) -> None:
-        # Range validation happens at the caller (compute_*); parser only
-        # checks that each token is an int literal.
-        assert parse_anchor_indices_txt(b"-1 0 1") == [-1, 0, 1]
-
-    def test_rejects_single_index(self) -> None:
-        with pytest.raises(ValueError, match="at least two"):
-            parse_anchor_indices_txt(b"42")
-
-    def test_rejects_empty(self) -> None:
-        with pytest.raises(ValueError, match="at least two"):
-            parse_anchor_indices_txt(b"   \n  ")
-
-    def test_rejects_non_integer_tokens(self) -> None:
-        with pytest.raises(ValueError, match="Invalid anchor index token"):
-            parse_anchor_indices_txt(b"0 5 foo")
-
-    def test_rejects_floats(self) -> None:
-        with pytest.raises(ValueError, match="Invalid anchor index token"):
-            parse_anchor_indices_txt(b"0 5 3.14")
-
-    def test_rejects_non_utf8(self) -> None:
-        with pytest.raises(ValueError, match="UTF-8"):
-            parse_anchor_indices_txt(b"\xff\xfe\xfd")
+    @pytest.mark.parametrize(
+        "raw,match",
+        [
+            (b"42", "at least two"),
+            (b"   \n  ", "at least two"),
+            (b"0 5 foo", "Invalid anchor index token"),
+            (b"0 5 3.14", "Invalid anchor index token"),
+            (b"\xff\xfe\xfd", "UTF-8"),
+        ],
+    )
+    def test_rejects_invalid(self, raw: bytes, match: str) -> None:
+        with pytest.raises(ValueError, match=match):
+            parse_anchor_indices_txt(raw)
 
 
 class TestZTrajSavetxtRoundTrip:
@@ -1276,7 +1285,6 @@ class TestTrajectoryVolumeApis:
         self,
         flask_client_volumes_eligible,
         tmp_path,
-        dashboard_experiment: DashboardExperiment,
     ) -> None:
         from tests.conftest import png_b64_rgb
 
@@ -1287,8 +1295,9 @@ class TestTrajectoryVolumeApis:
             "/api/trajectory_save_gif",
             json={"images": [a, b], "fps": 5, "out_path": out_path},
         )
-        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
-            return
+        # Eligibility is forced by flask_client_volumes_eligible; do not re-check GPU.
+        assert r.status_code == 200, r.get_data(as_text=True)[:500]
+        assert r.get_json().get("ok") is True
         assert os.path.isfile(out_path)
         raw = open(out_path, "rb").read()
         assert raw[:6] in (b"GIF87a", b"GIF89a")

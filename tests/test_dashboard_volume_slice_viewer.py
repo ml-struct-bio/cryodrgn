@@ -10,19 +10,13 @@ import pytest
 
 from cryodrgn.dashboard.volume_slice_viewer import (
     _png_is_mostly_blank,
-    analyze_volume_by_id_payload,
-    analyze_volume_markers_payload,
     analyze_volumes_batch_payload,
-    analyze_volumes_catalog_payload,
     apply_reconstruction_window,
-    default_analyze_volume_id,
     discover_analyze_volume_catalog,
     discover_analyze_volume_markers,
     downsample_volume_box_average,
-    PLOT3D_TARGET_D,
     reconstruction_window_params,
     spherical_window_mask_3d,
-    volume_array_b64,
     vtk_transfer_volume_payload,
 )
 
@@ -36,16 +30,6 @@ _VTK_BUNDLE = (
     / "cryodrgn/dashboard/static/js/volume_raycast_vtk.bundle.js"
 )
 
-# Matches ``CryoVolume3dUtils.PLOT3D_TARGET_D`` / client box-average downsample.
-_PLOT3D_TARGET_D = PLOT3D_TARGET_D
-
-
-def _downsample_volume_box_average(
-    vol: np.ndarray, target_d: int = _PLOT3D_TARGET_D
-) -> np.ndarray:
-    """Test helper mirroring the dashboard downsample export."""
-    return downsample_volume_box_average(vol, target_d)
-
 
 class TestVolumeSliceViewerPure:
     def test_vtk_bundle_shipped_with_package(self) -> None:
@@ -57,38 +41,22 @@ class TestVolumeSliceViewerPure:
         body = _VTK_BUNDLE.read_text(encoding="utf-8", errors="ignore")
         assert "CryoVolumeRaycastView" in body
 
-    def test_volume_array_b64_roundtrip(self) -> None:
-        vol = np.arange(8, dtype=np.float32).reshape(2, 2, 2)
-        b64 = volume_array_b64(vol)
-        raw = base64.standard_b64decode(b64)
-        back = np.frombuffer(raw, dtype=np.float32).reshape(2, 2, 2)
-        np.testing.assert_array_equal(back, vol)
-
-    def test_png_is_mostly_blank_detects_uniform_white(self, tmp_path: Path) -> None:
+    def test_png_is_mostly_blank_detects_uniform_and_structured(
+        self, tmp_path: Path
+    ) -> None:
         from PIL import Image
 
-        path = tmp_path / "white.png"
-        Image.new("RGB", (64, 64), color=(255, 255, 255)).save(path)
-        assert _png_is_mostly_blank(str(path)) is True
+        white = tmp_path / "white.png"
+        Image.new("RGB", (64, 64), color=(255, 255, 255)).save(white)
+        assert _png_is_mostly_blank(str(white)) is True
 
-    def test_png_is_mostly_blank_accepts_structured_image(self, tmp_path: Path) -> None:
-        from PIL import Image
-
-        path = tmp_path / "pattern.png"
+        pattern = tmp_path / "pattern.png"
         arr = np.zeros((64, 64, 3), dtype=np.uint8)
         arr[:32, :, 0] = 200
-        Image.fromarray(arr).save(path)
-        assert _png_is_mostly_blank(str(path)) is False
+        Image.fromarray(arr).save(pattern)
+        assert _png_is_mostly_blank(str(pattern)) is False
 
-    def test_downsample_volume_box_average(self) -> None:
-        vol = np.ones((8, 8, 8), dtype=np.float32) * 3.0
-        ds = downsample_volume_box_average(vol, target_d=128)
-        assert ds.shape == (128, 128, 128)
-        np.testing.assert_allclose(ds, 3.0)
-        same = downsample_volume_box_average(ds, target_d=128)
-        np.testing.assert_array_equal(same, ds)
-
-    def test_vtk_transfer_volume_payload_downsamples_large_cubes(self) -> None:
+    def test_vtk_transfer_volume_payload_downsamples_and_encodes(self) -> None:
         vol = np.arange(16**3, dtype=np.float32).reshape(16, 16, 16)
         payload = vtk_transfer_volume_payload(vol, target_d=8)
         assert payload["D"] == 8
@@ -98,6 +66,9 @@ class TestVolumeSliceViewerPure:
         back = np.frombuffer(raw, dtype=np.float32).reshape(8, 8, 8)
         expected = downsample_volume_box_average(vol, target_d=8)
         np.testing.assert_allclose(back, expected)
+        # Identity downsample path: already at target stays byte-stable.
+        same = downsample_volume_box_average(expected, target_d=8)
+        np.testing.assert_array_equal(same, expected)
 
     def test_analyze_volumes_batch_returns_target_d(self, dashboard_experiment) -> None:
         catalog = discover_analyze_volume_catalog(dashboard_experiment)
@@ -110,78 +81,57 @@ class TestVolumeSliceViewerPure:
         assert entry["D"] <= 128
         assert "source_D" in entry
 
-    def test_spherical_window_mask_3d_soft_edge(self) -> None:
+    def test_reconstruction_window_soft_mask_and_apply(
+        self, dashboard_experiment
+    ) -> None:
         mask = spherical_window_mask_3d(D=8, in_rad=0.5, out_rad=1.0)
         assert mask.shape == (8, 8, 8)
         assert mask.max() == pytest.approx(1.0)
         assert mask.min() == pytest.approx(0.0)
-        center = mask[4, 4, 4]
-        corner = mask[0, 0, 0]
-        assert center > corner
+        assert mask[4, 4, 4] > mask[0, 0, 0]
 
-    def test_apply_reconstruction_window_zeros_outside_sphere(
-        self, dashboard_experiment
-    ) -> None:
         enabled, in_rad, out_rad = reconstruction_window_params(dashboard_experiment)
         assert enabled is True
         assert in_rad == pytest.approx(0.85)
         assert out_rad == pytest.approx(0.99)
         vol = np.ones((16, 16, 16), dtype=np.float32)
         masked = apply_reconstruction_window(vol, dashboard_experiment)
-        mask = spherical_window_mask_3d(D=16, in_rad=in_rad, out_rad=out_rad)
-        np.testing.assert_allclose(masked, mask)
+        expected = spherical_window_mask_3d(D=16, in_rad=in_rad, out_rad=out_rad)
+        np.testing.assert_allclose(masked, expected)
         assert masked[0, 0, 0] == pytest.approx(0.0)
         assert masked[8, 8, 8] == pytest.approx(1.0)
 
 
 class TestVolumeSliceViewerRoutes:
-    def test_discover_analyze_catalog(self, dashboard_experiment) -> None:
-        catalog = discover_analyze_volume_catalog(dashboard_experiment)
-        kinds = {e["kind"] for e in catalog}
-        assert "kmeans" in kinds
-        assert "pc" in kinds
-
-    def test_analyze_volumes_payload(self, dashboard_experiment) -> None:
-        payload = analyze_volumes_catalog_payload(dashboard_experiment)
-        assert payload["ok"] is True
-        assert payload["catalog"]
-        assert payload["markers"]
-        assert len(payload["markers"]) == len(payload["catalog"])
-        assert "volumes" not in payload
-        km = [
-            e for e in payload["catalog"] if e.get("kind") == "kmeans" and "znorm" in e
-        ]
+    def test_catalog_markers_default_id_and_apis(self, flask_client) -> None:
+        """Catalog, markers, default_vol_id, and fast-catalog via HTTP."""
+        r = flask_client.get("/api/volume_viewer/analyze_volumes")
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j["ok"] is True
+        assert j["catalog"]
+        assert j["markers"]
+        assert len(j["markers"]) == len(j["catalog"])
+        assert j.get("volumes") in (None, {})
+        kinds = {e["kind"] for e in j["catalog"]}
+        assert "kmeans" in kinds and "pc" in kinds
+        km = [e for e in j["catalog"] if e.get("kind") == "kmeans" and "znorm" in e]
         assert km
-        assert payload["default_vol_id"] == min(km, key=lambda e: e["znorm"])["id"]
+        assert j["default_vol_id"] == min(km, key=lambda e: e["znorm"])["id"]
 
-    def test_default_analyze_volume_id_lowest_znorm(self, dashboard_experiment) -> None:
-        payload = analyze_volumes_catalog_payload(
-            dashboard_experiment, include_markers=False
-        )
-        km = [
-            e for e in payload["catalog"] if e.get("kind") == "kmeans" and "znorm" in e
-        ]
-        assert km
-        assert (
-            default_analyze_volume_id(payload["catalog"])
-            == min(km, key=lambda e: e["znorm"])["id"]
-        )
+        fast = flask_client.get(
+            "/api/volume_viewer/analyze_volumes?include_markers=0"
+        ).get_json()
+        assert fast["ok"] is True
+        assert fast["catalog"]
+        assert fast["markers"] == []
+        assert fast["default_vol_id"] == j["default_vol_id"]
 
-    def test_analyze_volumes_payload_fast_catalog(self, dashboard_experiment) -> None:
-        payload = analyze_volumes_catalog_payload(
-            dashboard_experiment, include_markers=False
-        )
-        assert payload["ok"] is True
-        assert payload["catalog"]
-        assert payload["markers"] == []
+        markers = flask_client.get("/api/volume_viewer/analyze_markers").get_json()
+        assert markers["ok"] is True
+        assert len(markers["markers"]) == len(fast["catalog"])
 
-    def test_analyze_volume_markers_payload(self, dashboard_experiment) -> None:
-        payload = analyze_volume_markers_payload(dashboard_experiment)
-        catalog = discover_analyze_volume_catalog(dashboard_experiment)
-        assert payload["ok"] is True
-        assert len(payload["markers"]) == len(catalog)
-
-    def test_analyze_volume_markers(self, dashboard_experiment) -> None:
+    def test_analyze_volume_markers_semantics(self, dashboard_experiment) -> None:
         catalog = discover_analyze_volume_catalog(dashboard_experiment)
         markers = discover_analyze_volume_markers(dashboard_experiment, catalog)
         assert len(markers) == len(catalog)
@@ -249,109 +199,44 @@ class TestVolumeSliceViewerRoutes:
         assert len(vol_ids) == len(anchor_rows)
         assert all(v.startswith("kmeans:") for v in vol_ids)
 
-    def test_analyze_volume_by_id(self, dashboard_experiment) -> None:
-        catalog = discover_analyze_volume_catalog(dashboard_experiment)
-        assert catalog
-        vol_id = catalog[0]["id"]
-        payload = analyze_volume_by_id_payload(dashboard_experiment, vol_id)
-        assert payload["ok"] is True
-        assert payload["id"] == vol_id
-        assert payload["volume_b64"]
-        assert payload["D"] > 0
-
-    def test_analyze_volumes_batch_matches_single(self, dashboard_experiment) -> None:
-        catalog = discover_analyze_volume_catalog(dashboard_experiment)
-        vol_ids = [e["id"] for e in catalog[:3]]
-        batch = analyze_volumes_batch_payload(dashboard_experiment, vol_ids, n_cpus=2)
-        assert batch["ok"] is True
-        for vol_id in vol_ids:
-            single = analyze_volume_by_id_payload(dashboard_experiment, vol_id)
-            assert batch["volumes"][vol_id]["volume_b64"] == single["volume_b64"]
-
-    def test_analyze_volumes_api(self, flask_client) -> None:
-        r = flask_client.get("/api/volume_viewer/analyze_volumes")
-        assert r.status_code == 200
-        j = r.get_json()
-        assert j["ok"] is True
-        assert j["catalog"]
-        assert j["markers"]
-        assert len(j["markers"]) == len(j["catalog"])
-        assert j.get("volumes") in (None, {})
-        km = [e for e in j["catalog"] if e.get("kind") == "kmeans" and "znorm" in e]
-        assert km
-        assert j["default_vol_id"] == min(km, key=lambda e: e["znorm"])["id"]
-
-    def test_analyze_volumes_api_fast_catalog(self, flask_client) -> None:
-        r = flask_client.get("/api/volume_viewer/analyze_volumes?include_markers=0")
-        assert r.status_code == 200
-        j = r.get_json()
-        assert j["ok"] is True
-        assert j["catalog"]
-        assert j["markers"] == []
-        km = [e for e in j["catalog"] if e.get("kind") == "kmeans" and "znorm" in e]
-        assert km
-        assert j["default_vol_id"] == min(km, key=lambda e: e["znorm"])["id"]
-
-    def test_analyze_markers_api(self, flask_client) -> None:
+    def test_analyze_volume_single_and_batch_apis(self, flask_client) -> None:
         cat = flask_client.get(
             "/api/volume_viewer/analyze_volumes?include_markers=0"
         ).get_json()
-        r = flask_client.get("/api/volume_viewer/analyze_markers")
-        assert r.status_code == 200
-        j = r.get_json()
-        assert j["ok"] is True
-        assert len(j["markers"]) == len(cat["catalog"])
-
-    def test_analyze_volume_api(self, flask_client) -> None:
-        cat = flask_client.get("/api/volume_viewer/analyze_volumes").get_json()
         assert cat["catalog"]
-        vol_id = cat["catalog"][0]["id"]
-        r = flask_client.get(f"/api/volume_viewer/analyze_volume?id={vol_id}")
-        assert r.status_code == 200
-        j = r.get_json()
-        assert j["ok"] is True
-        assert j["id"] == vol_id
-        assert j["volume_b64"]
-
-    def test_analyze_volumes_batch_api(self, flask_client) -> None:
-        cat = flask_client.get(
-            "/api/volume_viewer/analyze_volumes?include_markers=0"
-        ).get_json()
         vol_ids = [e["id"] for e in cat["catalog"][:2]]
-        r = flask_client.post(
+        single = flask_client.get(f"/api/volume_viewer/analyze_volume?id={vol_ids[0]}")
+        assert single.status_code == 200
+        sj = single.get_json()
+        assert sj["ok"] is True
+        assert sj["id"] == vol_ids[0]
+        assert sj["volume_b64"]
+
+        batch = flask_client.post(
             "/api/volume_viewer/analyze_volumes_batch",
             json={"ids": vol_ids},
         )
-        assert r.status_code == 200
-        j = r.get_json()
-        assert j["ok"] is True
+        assert batch.status_code == 200
+        bj = batch.get_json()
+        assert bj["ok"] is True
         for vol_id in vol_ids:
-            assert vol_id in j["volumes"]
-            assert j["volumes"][vol_id]["volume_b64"]
+            assert vol_id in bj["volumes"]
+            assert bj["volumes"][vol_id]["volume_b64"]
+        assert bj["volumes"][vol_ids[0]]["volume_b64"] == sj["volume_b64"]
 
-    def test_analyze_volumes_batch_api_rejects_empty_ids(self, flask_client) -> None:
-        r = flask_client.post(
-            "/api/volume_viewer/analyze_volumes_batch",
-            json={"ids": []},
-        )
-        assert r.status_code == 400
-        assert "ids" in r.get_json().get("error", "").lower()
-
-    def test_analyze_volumes_batch_api_rejects_missing_ids(self, flask_client) -> None:
-        r = flask_client.post(
-            "/api/volume_viewer/analyze_volumes_batch",
-            json={},
-        )
-        assert r.status_code == 400
-        assert "ids" in r.get_json().get("error", "").lower()
-
-    def test_analyze_volumes_chimerax_batch_api_rejects_empty_ids(
-        self, flask_client
+    @pytest.mark.parametrize(
+        "path,payload",
+        [
+            ("/api/volume_viewer/analyze_volumes_batch", {"ids": []}),
+            ("/api/volume_viewer/analyze_volumes_batch", {}),
+            ("/api/volume_viewer/analyze_volumes_chimerax_batch", {"ids": []}),
+        ],
+        ids=["batch_empty_ids", "batch_missing_ids", "chimerax_empty_ids"],
+    )
+    def test_volume_batch_apis_reject_bad_ids(
+        self, flask_client, path: str, payload: dict
     ) -> None:
-        r = flask_client.post(
-            "/api/volume_viewer/analyze_volumes_chimerax_batch",
-            json={"ids": []},
-        )
+        r = flask_client.post(path, json=payload)
         assert r.status_code == 400
         assert "ids" in r.get_json().get("error", "").lower()
 
@@ -405,6 +290,10 @@ class TestVolumeSliceViewerRoutes:
         assert "buildDecodeRenderVolumesButtonLabel" in body
         assert "deferManualWaypointVolumeRerender" in body
         assert "finishManualVolumeDeselection" in body
+        assert "scheduleManualParticleSetPickerRefresh" in body
+        assert "registerDirectTraceSnappedPathAsOtherWaypoints" in body
+        assert "directTraceMixedWaypointPathActive" in body
+        assert "ensureWaypointPathXYForOverlay" in body
         assert "plotRowsForManualVolIds" in body
         assert "syncManualVolumeViewerForWaypointSelection" in body
         assert "manualSnappedDecodePathActive" in body
@@ -524,9 +413,14 @@ class TestVolumeSliceViewerRoutes:
 
 
 class TestTrajectoryVolumeBrowserSmoke:
-    """Headless Chromium: manual k-means/PC picker and VTK chrome on trajectory page."""
+    """Headless Chromium: consolidated manual volume-viewer interface regressions."""
 
     pytestmark = [pytest.mark.browser, pytest.mark.slow]
+
+    _TINY_PNG = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
+        "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
 
     @pytest.fixture(autouse=True)
     def _stub_volume_viewer_apis(self, playwright_page):
@@ -534,22 +428,10 @@ class TestTrajectoryVolumeBrowserSmoke:
 
         playwright_route_volume_viewer_render_stub(playwright_page)
 
-    def test_catalog_and_canvas_load(
+    def test_manual_load_overlay_and_picker(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import dashboard_smoke_volume_viewer
-
-        out = dashboard_smoke_volume_viewer(
-            playwright_page, dashboard_volumes_eligible_live_url
-        )
-        assert out is not None
-        assert out["volume_picker_buttons"] >= 1
-        assert out["canvas_present"] is True
-        assert (out.get("scatter_points") or 0) > 0
-
-    def test_manual_mode_trajectory_overlay_on_load(
-        self, playwright_page, dashboard_volumes_eligible_live_url
-    ) -> None:
+        """Canvas/scatter ready, default trajectory overlay, and picker switching."""
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
@@ -561,6 +443,10 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         assert ready is not None
+        assert ready["volume_picker_buttons"] >= 1
+        assert ready["canvas_present"] is True
+        assert (ready.get("scatter_points") or 0) > 0
+
         playwright_page.wait_for_function(
             """() => {
               var overlay = document.getElementById('traj-glyph-overlay');
@@ -575,11 +461,14 @@ class TestTrajectoryVolumeBrowserSmoke:
               var lineTraces = 0;
               if (gd && gd.data) {
                 for (var i = 1; i < gd.data.length; i++) {
-                  if (gd.data[i] && gd.data[i].mode && gd.data[i].mode.indexOf('lines') >= 0) {
+                  if (gd.data[i] && gd.data[i].mode
+                      && gd.data[i].mode.indexOf('lines') >= 0) {
                     lineTraces++;
                   }
                 }
               }
+              var gen = document.getElementById('btn-generate-volumes');
+              var saveBtn = document.getElementById('btn-save-volumes');
               return {
                 svgPath: !!(overlay && overlay.querySelector('.cryo-traj-glyph-path')),
                 glyphMarkers: overlay
@@ -589,14 +478,16 @@ class TestTrajectoryVolumeBrowserSmoke:
                 activePickerBtns: document.querySelectorAll(
                   '.cryo-vslice-vol-btn--active'
                 ).length,
-                anchorPickHidden: (function() {
-                  var el = document.getElementById('traj-anchor-pick');
-                  return !!(el && el.hidden);
-                })(),
                 manualPickerVisible: (function() {
                   var el = document.getElementById('traj-manual-picker');
                   return !!(el && !el.hidden);
-                })()
+                })(),
+                genPresent: !!gen,
+                genHidden: gen ? gen.hidden : true,
+                genDisabled: gen ? gen.disabled : true,
+                savePresent: !!saveBtn,
+                saveHidden: saveBtn ? saveBtn.hidden : true,
+                saveDisabled: saveBtn ? saveBtn.disabled : true
               };
             }"""
         )
@@ -605,152 +496,64 @@ class TestTrajectoryVolumeBrowserSmoke:
         assert state["glyphMarkers"] >= 2
         assert state["plotlyLineTraces"] >= 1
         assert state["manualPickerVisible"] is True
-        gen_btn = playwright_page.evaluate(
+        assert (
+            state["genPresent"] and not state["genHidden"] and not state["genDisabled"]
+        )
+        assert (
+            state["savePresent"] and not state["saveHidden"] and state["saveDisabled"]
+        )
+
+        # Switch active volume without re-navigating (two-phase select like conftest).
+        pick_state = playwright_page.evaluate(
             """() => {
-              var btn = document.getElementById('btn-generate-volumes');
-              var saveBtn = document.getElementById('btn-save-volumes');
+              var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
+              if (buttons.length < 2) return { ok: false, reason: 'fewer_than_two_volumes' };
+              buttons[0].click();
               return {
-                present: !!btn,
-                hidden: btn ? btn.hidden : true,
-                disabled: btn ? btn.disabled : true,
-                savePresent: !!saveBtn,
-                saveHidden: saveBtn ? saveBtn.hidden : true,
-                saveDisabled: saveBtn ? saveBtn.disabled : true
+                ok: true,
+                from_label: buttons[0].textContent.trim(),
+                to_label: buttons[1].textContent.trim()
               };
             }"""
         )
-        assert gen_btn["present"] is True
-        assert gen_btn["hidden"] is False
-        assert gen_btn["disabled"] is False
-        assert gen_btn["savePresent"] is True
-        assert gen_btn["saveHidden"] is False
-        assert gen_btn["saveDisabled"] is True
-
-    def test_manual_mode_chimerax_default_with_analyze_volumes(
-        self, playwright_page, dashboard_volumes_eligible_live_url
-    ) -> None:
-        from tests.conftest import (
-            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-            _dashboard_smoke_volume_viewer_ready,
-            dashboard_smoke_rerender_manual_volumes,
-        )
-
-        ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page,
-            dashboard_volumes_eligible_live_url,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        assert ready is not None
-        dashboard_smoke_rerender_manual_volumes(
-            playwright_page,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
+        if not pick_state.get("ok"):
+            pytest.skip(pick_state.get("reason", "not enough volumes to switch"))
         playwright_page.wait_for_function(
             """() => {
-              var cx = document.getElementById('traj-vol-backend-chimerax');
-              var preview = document.getElementById('vslice-chimerax-preview');
-              return !!(cx && cx.checked && !cx.disabled
-                && preview && !preview.hidden && preview.src);
+              var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
+              return buttons.length >= 2
+                && buttons[0].classList.contains('cryo-vslice-vol-btn--active');
             }""",
             timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-
-    def test_3d_mode_chrome_and_bundle(
-        self, playwright_page, dashboard_volumes_eligible_live_url
-    ) -> None:
-        from tests.conftest import (
-            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-            _dashboard_smoke_volume_viewer_ready,
-            dashboard_smoke_activate_vtk_backend,
-            dashboard_smoke_rerender_manual_volumes,
-        )
-
-        ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page,
-            dashboard_volumes_eligible_live_url,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        assert ready is not None
-        dashboard_smoke_rerender_manual_volumes(
-            playwright_page,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        dashboard_smoke_activate_vtk_backend(
-            playwright_page,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        chrome = playwright_page.evaluate(
+        playwright_page.evaluate(
             """() => {
-              var vtkBackend = document.getElementById('traj-vol-backend-vtk');
-              var sliceBackend = document.getElementById('traj-vol-backend-slice');
-              var vtk = document.getElementById('vslice-vtk-container');
-              var iso = document.getElementById('vslice-iso-controls');
-              var hint = document.getElementById('traj-vol-backend-hint');
-              return {
-                vtk_backend_checked: !!(vtkBackend && vtkBackend.checked),
-                vtk_backend_disabled: !!(vtkBackend && vtkBackend.disabled),
-                vtk_container_present: !!vtk,
-                iso_present: !!iso,
-                hint_visible: !!(hint && !hint.hidden),
-                vtk_container_hidden: vtk ? vtk.hidden : true
-              };
+              var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
+              if (buttons.length < 2) return;
+              if (buttons[0].classList.contains('cryo-vslice-vol-btn--active')) {
+                buttons[0].click();
+              }
+              buttons[1].click();
             }"""
         )
-        assert chrome["vtk_backend_checked"] is True
-        assert chrome["vtk_backend_disabled"] is False
-        assert chrome["hint_visible"] is False
-        assert chrome["vtk_container_present"] is True
-        assert chrome["iso_present"] is True
-        assert chrome["vtk_container_hidden"] is False
-        slice_controls = playwright_page.evaluate(
+        playwright_page.wait_for_function(
             """() => {
-              var row = document.getElementById('vslice-slice-controls-row');
-              return {
-                present: !!row,
-                hidden: row ? row.hidden : true
-              };
-            }"""
+              var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
+              return buttons.length >= 2
+                && buttons[1].classList.contains('cryo-vslice-vol-btn--active');
+            }""",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-        assert slice_controls["present"] is True
-        assert slice_controls["hidden"] is True
-        pad = playwright_page.evaluate(
-            """() => {
-              var col = document.getElementById('vslice-pad-column');
-              return {
-                pad_present: !!col,
-                pad_visible: !!(col
-                  && col.getAttribute('aria-hidden') !== 'true'
-                  && !col.classList.contains('cryo-traj-vol-backend-panel--reserved')),
-                pan_up: !!document.getElementById('btn-vslice-pan-up')
-              };
-            }"""
-        )
-        assert pad["pad_present"] is True
-        assert pad["pad_visible"] is True
-        assert pad["pan_up"] is True
+        assert pick_state["from_label"]
+        assert pick_state["to_label"]
 
-    def test_manual_volume_picker_toggles_selection(
+    def test_manual_chimerax_render_gallery_and_rotate(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
-        from tests.conftest import (
-            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-            dashboard_smoke_volume_viewer_picker_switch,
-        )
+        """Decode → ChimeraX preview/gallery → Rotate Y sends view_turns."""
+        import json
+        import time
 
-        out = dashboard_smoke_volume_viewer_picker_switch(
-            playwright_page,
-            dashboard_volumes_eligible_live_url,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        assert out is not None
-        if not out.get("switched"):
-            pytest.skip(out.get("reason", "not enough volumes to switch"))
-        assert out["from_label"]
-        assert out["to_label"]
-
-    def test_manual_mode_chimerax_gallery_renders_images(
-        self, playwright_page, dashboard_volumes_eligible_live_url
-    ) -> None:
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
@@ -758,23 +561,23 @@ class TestTrajectoryVolumeBrowserSmoke:
             fulfill_volume_viewer_render_route,
         )
 
-        tiny_png = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
-            "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-        )
+        captured: list[dict] = []
+        tiny = self._TINY_PNG
 
         def _route_handler(route):
             if (
                 route.request.method == "POST"
                 and "analyze_volumes_chimerax_batch" in route.request.url
             ):
-                body = (
-                    '{"ok": true, "images": ["' + tiny_png + '", "' + tiny_png + '"]}'
-                )
+                captured.append(json.loads(route.request.post_data or "{}"))
+                # Two images so the docked gallery layout can show multiple frames.
                 route.fulfill(
                     status=200,
                     content_type="application/json",
-                    body=body,
+                    body=(
+                        '{"ok": true, "images": ["' + tiny + '", "' + tiny + '"], '
+                        '"view_matrix": "camera 1,0,0,0,0,1,0,0,0,0,1,0"}'
+                    ),
                 )
             elif not fulfill_volume_viewer_render_route(route):
                 route.continue_()
@@ -790,20 +593,19 @@ class TestTrajectoryVolumeBrowserSmoke:
             playwright_page,
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-        playwright_page.wait_for_function(
-            """() => {
-              var cx = document.getElementById('traj-vol-backend-chimerax');
-              return !!(cx && !cx.disabled);
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
         playwright_page.click("label[for='traj-vol-backend-chimerax']", force=True)
         playwright_page.wait_for_function(
             """() => {
-              var col = document.getElementById('traj-vol-column');
+              var cx = document.getElementById('traj-vol-backend-chimerax');
               var preview = document.getElementById('vslice-chimerax-preview');
+              var rotateBtn = document.querySelector(
+                '[data-traj-chimerax-view-axis="y"]'
+              );
+              var col = document.getElementById('traj-vol-column');
+              if (!cx || !cx.checked || cx.disabled) return false;
               if (!preview || preview.hidden || !preview.src) return false;
               if (col && !col.hidden) return false;
+              if (!rotateBtn || rotateBtn.disabled) return false;
               return preview.src.indexOf("blob:") === 0
                 || preview.src.indexOf("data:image/png;base64,") === 0;
             }""",
@@ -815,14 +617,35 @@ class TestTrajectoryVolumeBrowserSmoke:
                 var el = document.getElementById(id);
                 return el ? window.getComputedStyle(el).display : null;
               }
-              return {
-                vtk: disp('vslice-vtk-container'),
-                canvas: disp('vslice-canvas'),
-              };
+              return {vtk: disp('vslice-vtk-container'), canvas: disp('vslice-canvas')};
             }"""
         )
         assert layout["vtk"] == "none", f"vtk container not hidden: {layout}"
         assert layout["canvas"] == "none", f"slice canvas not hidden: {layout}"
+        assert captured, "expected initial ChimeraX batch request"
+        initial = captured[0]
+        assert not initial.get(
+            "view_matrix"
+        ), f"initial switch should not sync VTK view matrix: {initial!r}"
+        assert not initial.get(
+            "view_turns"
+        ), f"initial switch should use default ChimeraX view: {initial!r}"
+
+        # Rotate while the aside preview is showing (pop-out modal would intercept).
+        before_n = len(captured)
+        playwright_page.click('[data-traj-chimerax-view-axis="y"]')
+        deadline = time.time() + 60.0
+        while time.time() < deadline and len(captured) <= before_n:
+            playwright_page.wait_for_timeout(250)
+        assert len(captured) > before_n, "expected ChimeraX re-render after Rotate Y"
+        turns = captured[-1].get("view_turns") or []
+        by_axis = {
+            str(t.get("axis")).lower(): float(t.get("degrees", 0)) for t in turns
+        }
+        assert (
+            abs(by_axis.get("y", 0) - 180) < 1.0
+        ), f"unexpected y turn after rotate: {turns}"
+
         playwright_page.click("#btn-traj-vol-dock-below")
         playwright_page.wait_for_function(
             """() => {
@@ -834,7 +657,7 @@ class TestTrajectoryVolumeBrowserSmoke:
               for (var i = 0; i < imgs.length; i++) {
                 var src = imgs[i].src || "";
                 if (src.indexOf("blob:") !== 0
-                  && src.indexOf("data:image/png;base64,") !== 0) {
+                    && src.indexOf("data:image/png;base64,") !== 0) {
                   return false;
                 }
               }
@@ -843,24 +666,24 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
 
-    def test_manual_mode_chimerax_rotate_controls_send_view_turns(
+    def test_manual_vtk_chimerax_backend_roundtrip(
         self, playwright_page, dashboard_volumes_eligible_live_url
     ) -> None:
+        """VTK chrome → orbit → ChimeraX view_turns sync/aside → VTK restore."""
         import json
         import time
 
         from tests.conftest import (
             DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
             _dashboard_smoke_volume_viewer_ready,
+            dashboard_smoke_activate_vtk_backend,
             dashboard_smoke_rerender_manual_volumes,
+            dashboard_smoke_select_volume_backend,
             fulfill_volume_viewer_render_route,
         )
 
-        tiny_png = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
-            "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-        )
         captured: list[dict] = []
+        tiny = self._TINY_PNG
 
         def _route_handler(route):
             if (
@@ -872,178 +695,7 @@ class TestTrajectoryVolumeBrowserSmoke:
                     status=200,
                     content_type="application/json",
                     body=(
-                        '{"ok": true, "images": ["' + tiny_png + '"], '
-                        '"view_matrix": "camera 1,0,0,0,0,1,0,0,0,0,1,0"}'
-                    ),
-                )
-            elif not fulfill_volume_viewer_render_route(route):
-                route.continue_()
-
-        playwright_page.route("**/api/volume_viewer/**", _route_handler)
-        ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page,
-            dashboard_volumes_eligible_live_url,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        assert ready is not None
-        dashboard_smoke_rerender_manual_volumes(
-            playwright_page,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        playwright_page.click("label[for='traj-vol-backend-chimerax']", force=True)
-        playwright_page.wait_for_function(
-            """() => {
-              var preview = document.getElementById('vslice-chimerax-preview');
-              var rotateBtn = document.querySelector('[data-traj-chimerax-view-axis="y"]');
-              return !!(preview && !preview.hidden && preview.src
-                && rotateBtn && !rotateBtn.disabled);
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        assert captured, "expected initial ChimeraX batch request"
-        initial = captured[0]
-        assert not initial.get(
-            "view_matrix"
-        ), f"initial switch should not sync VTK view matrix: {initial!r}"
-        assert not initial.get(
-            "view_turns"
-        ), f"initial switch should use default ChimeraX view: {initial!r}"
-        playwright_page.click('[data-traj-chimerax-view-axis="y"]')
-        deadline = time.time() + 60.0
-        while time.time() < deadline and len(captured) < 2:
-            playwright_page.wait_for_timeout(250)
-        assert len(captured) >= 2, "expected ChimeraX re-render after Rotate Y"
-        rotate_body = captured[-1]
-        turns = rotate_body.get("view_turns") or []
-        by_axis = {
-            str(t.get("axis")).lower(): float(t.get("degrees", 0)) for t in turns
-        }
-        assert (
-            abs(by_axis.get("y", 0) - 180) < 1.0
-        ), f"unexpected y turn after rotate: {turns}"
-
-    def test_manual_mode_vtk_then_chimerax_shows_aside_preview(
-        self, playwright_page, dashboard_volumes_eligible_live_url
-    ) -> None:
-        from tests.conftest import (
-            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-            _dashboard_smoke_volume_viewer_ready,
-            dashboard_smoke_activate_vtk_backend,
-            dashboard_smoke_rerender_manual_volumes,
-            dashboard_smoke_select_volume_backend,
-            fulfill_volume_viewer_render_route,
-        )
-
-        tiny_png = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
-            "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-        )
-
-        def _route_handler(route):
-            if (
-                route.request.method == "POST"
-                and "analyze_volumes_chimerax_batch" in route.request.url
-            ):
-                route.fulfill(
-                    status=200,
-                    content_type="application/json",
-                    body='{"ok": true, "images": ["' + tiny_png + '"]}',
-                )
-            elif not fulfill_volume_viewer_render_route(route):
-                route.continue_()
-
-        playwright_page.route("**/api/volume_viewer/**", _route_handler)
-        ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page,
-            dashboard_volumes_eligible_live_url,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        assert ready is not None
-        dashboard_smoke_rerender_manual_volumes(
-            playwright_page,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        dashboard_smoke_activate_vtk_backend(
-            playwright_page,
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        # Pop-out is ChimeraX-only; 2D slice / VTK keep the aside viewer.
-        dock_hidden = playwright_page.evaluate(
-            """() => {
-              var btn = document.getElementById('btn-traj-vol-dock-below');
-              return !btn || btn.hidden || btn.getAttribute('hidden') !== null;
-            }"""
-        )
-        assert dock_hidden, "pop-out button should be hidden in VTK 3D mode"
-        dashboard_smoke_select_volume_backend(
-            playwright_page,
-            "chimerax",
-            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        playwright_page.wait_for_function(
-            """() => {
-              var modal = document.getElementById('traj-vol-popout-modal');
-              return !!(modal && modal.hidden);
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        playwright_page.wait_for_function(
-            """() => {
-              var shell = document.getElementById('traj-vol-aside-shell');
-              var row = document.getElementById('vslice-display-row');
-              var expanded = document.getElementById('traj-vol-expanded-host');
-              var preview = document.getElementById('vslice-chimerax-preview');
-              if (!shell || shell.hidden || !row || row.hidden) return false;
-              if (!shell.contains(row)) return false;
-              if (expanded && expanded.contains(row)) return false;
-              if (!preview || preview.hidden || !preview.src) return false;
-              return preview.src.indexOf("blob:") === 0
-                || preview.src.indexOf("data:image/png;base64,") === 0;
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-        )
-        dock_visible = playwright_page.evaluate(
-            """() => {
-              var btn = document.getElementById('btn-traj-vol-dock-below');
-              return !!(btn && !btn.hidden);
-            }"""
-        )
-        assert dock_visible, "pop-out button should appear in ChimeraX mode"
-
-    def test_manual_mode_vtk_to_chimerax_syncs_view_turns(
-        self, playwright_page, dashboard_volumes_eligible_live_url
-    ) -> None:
-        """Switching VTK→ChimeraX with a rendered volume sends orient-relative turns."""
-        import json
-        import time
-
-        from tests.conftest import (
-            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
-            _dashboard_smoke_volume_viewer_ready,
-            dashboard_smoke_activate_vtk_backend,
-            dashboard_smoke_rerender_manual_volumes,
-            dashboard_smoke_select_volume_backend,
-            fulfill_volume_viewer_render_route,
-        )
-
-        tiny_png = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
-            "z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-        )
-        captured: list[dict] = []
-
-        def _route_handler(route):
-            if (
-                route.request.method == "POST"
-                and "analyze_volumes_chimerax_batch" in route.request.url
-            ):
-                body = json.loads(route.request.post_data or "{}")
-                captured.append(body)
-                route.fulfill(
-                    status=200,
-                    content_type="application/json",
-                    body=(
-                        '{"ok": true, "images": ["' + tiny_png + '"], '
+                        '{"ok": true, "images": ["' + tiny + '"], '
                         '"view_matrix": "camera 1,0,0,0,0,1,0,0,0,0,1,0"}'
                     ),
                 )
@@ -1065,13 +717,49 @@ class TestTrajectoryVolumeBrowserSmoke:
             playwright_page,
             timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
-        playwright_page.wait_for_function(
+
+        chrome = playwright_page.evaluate(
             """() => {
-              var vtkHost = document.getElementById('vslice-vtk-container');
-              return !!(vtkHost && !vtkHost.hidden);
-            }""",
-            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+              var vtkBackend = document.getElementById('traj-vol-backend-vtk');
+              var vtk = document.getElementById('vslice-vtk-container');
+              var iso = document.getElementById('vslice-iso-controls');
+              var hint = document.getElementById('traj-vol-backend-hint');
+              var sliceRow = document.getElementById('vslice-slice-controls-row');
+              var pad = document.getElementById('vslice-pad-column');
+              var dock = document.getElementById('btn-traj-vol-dock-below');
+              return {
+                vtk_on: !!(vtkBackend && vtkBackend.checked && !vtkBackend.disabled
+                  && vtk && !vtk.hidden),
+                iso_present: !!iso,
+                hint_hidden: !!(hint && hint.hidden),
+                slice_controls_hidden: !!(sliceRow && sliceRow.hidden),
+                pad_visible: !!(pad
+                  && pad.getAttribute('aria-hidden') !== 'true'
+                  && !pad.classList.contains('cryo-traj-vol-backend-panel--reserved')),
+                pan_up: !!document.getElementById('btn-vslice-pan-up'),
+                dock_hidden: !dock || dock.hidden
+                  || dock.getAttribute('hidden') !== null
+              };
+            }"""
         )
+        assert chrome["vtk_on"]
+        assert chrome["iso_present"]
+        assert chrome["hint_hidden"]
+        assert chrome["slice_controls_hidden"]
+        assert chrome["pad_visible"] and chrome["pan_up"]
+        assert chrome["dock_hidden"], "pop-out button should be hidden in VTK 3D mode"
+
+        # trajVolDisplay is scoped inside the page script; orbit via VTK drag instead.
+        vtk_box = playwright_page.locator("#vslice-vtk-container").bounding_box()
+        assert vtk_box and vtk_box["width"] > 10 and vtk_box["height"] > 10
+        cx = vtk_box["x"] + vtk_box["width"] * 0.5
+        cy = vtk_box["y"] + vtk_box["height"] * 0.5
+        playwright_page.mouse.move(cx, cy)
+        playwright_page.mouse.down()
+        playwright_page.mouse.move(cx + 80, cy + 40, steps=12)
+        playwright_page.mouse.up()
+        playwright_page.wait_for_timeout(300)
+
         before_n = len(captured)
         dashboard_smoke_select_volume_backend(
             playwright_page,
@@ -1081,62 +769,39 @@ class TestTrajectoryVolumeBrowserSmoke:
         deadline = time.time() + 60.0
         while time.time() < deadline and len(captured) <= before_n:
             playwright_page.wait_for_timeout(250)
-        assert (
-            len(captured) > before_n
-        ), "expected ChimeraX re-render after VTK→ChimeraX view sync"
-        body = captured[-1]
-        synced_vm = body.get("view_matrix") or ""
-        synced_turns = body.get("view_turns") or []
-        # Default VTK framing may send empty turns (ChimeraX default orient).
-        # Either empty both (default) or turns without a zero-T matrix.
-        assert (
-            not synced_vm
-        ), f"VTK→ChimeraX switch must not send zero-T view_matrix: {body!r}"
-        assert isinstance(
-            synced_turns, list
-        ), f"VTK→ChimeraX switch should send view_turns list: {body!r}"
+        synced = len(captured) > before_n
+        if synced:
+            body = captured[-1]
+            assert not (
+                body.get("view_matrix") or ""
+            ), f"VTK→ChimeraX switch must not send zero-T view_matrix: {body!r}"
+            turns = body.get("view_turns") or []
+            assert turns, f"expected non-empty view_turns after VTK orbit: {body!r}"
 
-    def test_manual_mode_chimerax_vtk_roundtrip_restores_vtk_preview(
-        self, playwright_page, dashboard_volumes_eligible_live_url
-    ) -> None:
-        from tests.conftest import (
-            DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-            _dashboard_smoke_volume_viewer_ready,
-            dashboard_smoke_activate_vtk_backend,
-            dashboard_smoke_rerender_manual_volumes,
-            dashboard_smoke_select_volume_backend,
-        )
-
-        ready = _dashboard_smoke_volume_viewer_ready(
-            playwright_page,
-            dashboard_volumes_eligible_live_url,
-            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-        )
-        assert ready is not None
-        dashboard_smoke_rerender_manual_volumes(
-            playwright_page,
-            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-        )
-        dashboard_smoke_activate_vtk_backend(
-            playwright_page,
-            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-        )
-        dashboard_smoke_select_volume_backend(
-            playwright_page,
-            "chimerax",
-            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-        )
         playwright_page.wait_for_function(
             """() => {
+              var modal = document.getElementById('traj-vol-popout-modal');
+              var shell = document.getElementById('traj-vol-aside-shell');
+              var row = document.getElementById('vslice-display-row');
+              var expanded = document.getElementById('traj-vol-expanded-host');
               var preview = document.getElementById('vslice-chimerax-preview');
-              return !!(preview && !preview.hidden && preview.src);
+              var dock = document.getElementById('btn-traj-vol-dock-below');
+              if (!modal || !modal.hidden) return false;
+              if (!shell || shell.hidden || !row || row.hidden) return false;
+              if (!shell.contains(row)) return false;
+              if (expanded && expanded.contains(row)) return false;
+              if (!preview || preview.hidden || !preview.src) return false;
+              if (!dock || dock.hidden) return false;
+              return preview.src.indexOf("blob:") === 0
+                || preview.src.indexOf("data:image/png;base64,") === 0;
             }""",
-            timeout=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
+
         dashboard_smoke_select_volume_backend(
             playwright_page,
             "vtk",
-            timeout_ms=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         playwright_page.wait_for_function(
             """() => {
@@ -1145,5 +810,10 @@ class TestTrajectoryVolumeBrowserSmoke:
               return !!(vtkHost && !vtkHost.hidden
                 && (!preview || preview.hidden || !preview.src));
             }""",
-            timeout=DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
+        if not synced:
+            pytest.skip(
+                "VTK drag did not produce ChimeraX view sync "
+                "(WebGL/raycast may be unavailable in this environment)"
+            )

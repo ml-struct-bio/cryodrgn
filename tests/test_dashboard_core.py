@@ -688,59 +688,67 @@ class TestActiveWorkdirAndResolveEpoch:
 
 
 class TestFlaskErrorPaths:
-    def test_scatter_bad_axis(self, flask_client) -> None:
-        r = flask_client.get("/api/scatter?x=labels&y=notacolumn")
+    @pytest.mark.parametrize(
+        "method,path,kwargs",
+        [
+            ("get", "/api/scatter?x=labels&y=notacolumn", {}),
+            ("get", "/api/scatter?x=UMAP1&y=UMAP2&color=bogus", {}),
+            ("get", "/api/preview_montage?rows=0,foo,2", {}),
+            ("post", "/api/pairplot", {"json": {"diagonal_emb": "pc"}}),
+            (
+                "post",
+                "/api/pairplot",
+                {
+                    "json": {
+                        "color_col": "labels",
+                        "diagonal_emb": "bogus",
+                        "upper_style": "scatter",
+                    }
+                },
+            ),
+            (
+                "post",
+                "/api/pairplot",
+                {
+                    "json": {
+                        "color_col": "labels",
+                        "diagonal_emb": "umap",
+                        "upper_style": "stack",
+                    }
+                },
+            ),
+            (
+                "post",
+                "/api/pairplot",
+                {
+                    "json": {
+                        "color_col": "z0",
+                        "diagonal_emb": "umap",
+                        "upper_style": "hex",
+                    }
+                },
+            ),
+            ("post", "/api/save_selection", {"json": {"rows": []}}),
+            ("post", "/api/save_selection", {"json": {"rows": [0, 999999]}}),
+        ],
+        ids=[
+            "scatter_bad_axis",
+            "scatter_bad_color",
+            "preview_montage_non_integer_rows",
+            "pairplot_missing_color_col",
+            "pairplot_bogus_diagonal",
+            "pairplot_bogus_upper",
+            "pairplot_z_as_color",
+            "save_selection_empty_rows",
+            "save_selection_out_of_range",
+        ],
+    )
+    def test_common_api_validation_400(
+        self, flask_client, method: str, path: str, kwargs: dict
+    ) -> None:
+        r = getattr(flask_client, method)(path, **kwargs)
         assert r.status_code == 400
-        assert "error" in r.get_json()
-
-    def test_scatter_bad_color(self, flask_client) -> None:
-        r = flask_client.get("/api/scatter?x=UMAP1&y=UMAP2&color=bogus")
-        assert r.status_code == 400
-
-    def test_preview_montage_non_integer_rows(self, flask_client) -> None:
-        r = flask_client.get("/api/preview_montage?rows=0,foo,2")
-        assert r.status_code == 400
-
-    def test_pairplot_missing_color_col(self, flask_client) -> None:
-        r = flask_client.post("/api/pairplot", json={"diagonal_emb": "pc"})
-        assert r.status_code == 400
-
-    def test_pairplot_bogus_diagonal(self, flask_client) -> None:
-        r = flask_client.post(
-            "/api/pairplot",
-            json={
-                "color_col": "labels",
-                "diagonal_emb": "bogus",
-                "upper_style": "scatter",
-            },
-        )
-        assert r.status_code == 400
-
-    def test_pairplot_bogus_upper(self, flask_client) -> None:
-        r = flask_client.post(
-            "/api/pairplot",
-            json={
-                "color_col": "labels",
-                "diagonal_emb": "umap",
-                "upper_style": "stack",
-            },
-        )
-        assert r.status_code == 400
-
-    def test_pairplot_z_as_color_rejected(self, flask_client) -> None:
-        r = flask_client.post(
-            "/api/pairplot",
-            json={"color_col": "z0", "diagonal_emb": "umap", "upper_style": "hex"},
-        )
-        assert r.status_code == 400
-
-    def test_save_selection_empty_rows(self, flask_client) -> None:
-        r = flask_client.post("/api/save_selection", json={"rows": []})
-        assert r.status_code == 400
-
-    def test_save_selection_out_of_range(self, flask_client) -> None:
-        r = flask_client.post("/api/save_selection", json={"rows": [0, 999999]})
-        assert r.status_code == 400
+        assert "error" in (r.get_json() or {})
 
 
 class TestListServerFiles:
@@ -764,16 +772,13 @@ class TestSetEpochEndpoint:
         assert r.status_code == 200
         assert r.get_json() == {"ok": True, "epoch": ANALYZE_EPOCH}
 
-    def test_invalid_epoch_is_400(self, flask_client) -> None:
-        r = flask_client.post("/api/set_epoch", json={"epoch": 99999})
-        assert r.status_code == 400
-
-    def test_non_integer_epoch_is_400(self, flask_client) -> None:
-        r = flask_client.post("/api/set_epoch", json={"epoch": "abc"})
-        assert r.status_code == 400
-
-    def test_missing_epoch_is_400(self, flask_client) -> None:
-        r = flask_client.post("/api/set_epoch", json={})
+    @pytest.mark.parametrize(
+        "payload",
+        [{"epoch": 99999}, {"epoch": "abc"}, {}],
+        ids=["invalid_epoch", "non_integer_epoch", "missing_epoch"],
+    )
+    def test_invalid_epoch_payload_is_400(self, flask_client, payload: dict) -> None:
+        r = flask_client.post("/api/set_epoch", json=payload)
         assert r.status_code == 400
 
 

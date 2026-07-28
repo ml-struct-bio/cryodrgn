@@ -496,6 +496,7 @@ _DASHBOARD_DEFAULT_TEST_CACHE = os.path.join(
 _DASHBOARD_FIXTURE_SUBDIR = "pytest_dashboard_fixture"
 
 _EXPLORER_ELIGIBLE_PATCH_TARGETS = (
+    "cryodrgn.dashboard.particle_explorer.explorer_volumes_eligible",
     "cryodrgn.dashboard.routes_analysis.explorer_volumes_eligible",
     "cryodrgn.dashboard.routes_explorer.explorer_volumes_eligible",
     "cryodrgn.dashboard.route_helpers.explorer_volumes_eligible",

@@ -1216,6 +1216,11 @@
           return typeof trajectorySlotChimeraxReady === "function"
             && trajectorySlotChimeraxReady(index);
         }
+        // VTK / slice: require a hydrated volume_b64, not mere catalog availability
+        // (trajectorySlotVtkDecoded is true for all PC1 analyze MRCs).
+        if (typeof trajectorySlotHasVolumeB64 === "function") {
+          return !!trajectorySlotHasVolumeB64(index);
+        }
         return typeof trajectorySlotVtkDecoded === "function"
           && trajectorySlotVtkDecoded(index);
       },

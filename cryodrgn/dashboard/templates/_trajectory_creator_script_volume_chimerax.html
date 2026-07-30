@@ -1970,31 +1970,98 @@
     return focusIdx;
   }
 
-  function focusSlotHasVolumeB64(ids, slots) {
-    var fi = resolveInteractiveFocusIndex(ids);
-    return !!(slots && fi < slots.length && slots[fi] && slots[fi].volume_b64);
+  /**
+   * True when a path slot is already client-decoded for VTK hydration: a real
+   * ``volume_b64`` or an MRC-cache Generate slot. Bare ``{decoded:true}``
+   * catalog bookkeeping markers do not qualify (they would mass-fetch interiors).
+   */
+  function slotAlreadyClientDecodedForVtk(index, slots) {
+    index = Math.floor(Number(index));
+    if (!Number.isFinite(index) || index < 0) return false;
+    var slot = slots && index < slots.length ? slots[index] : null;
+    if (slot && slot.volume_b64) return true;
+    if (typeof trajectorySlotCacheDecoded === "function"
+        && trajectorySlotCacheDecoded(index)) {
+      return true;
+    }
+    return false;
   }
 
   /**
-   * Catalog ids to fetch for interactive backends. Slice needs every missing
-   * montage layer; VTK only hydrates the focused slider slot.
+   * Catalog ids still missing ``volume_b64`` for slots that are already
+   * client-decoded (Generate / cache markers). Never includes undecoded
+   * interiors that still owe Decode.
+   */
+  function catalogIdsClientDecodedNeedingVolumeB64(ids, slots) {
+    var out = [];
+    var seen = {};
+    ids = ids || [];
+    slots = slots || [];
+    var n = Math.max(ids.length, slots.length);
+    for (var i = 0; i < n; i++) {
+      var slot = i < slots.length ? slots[i] : null;
+      if (slot && slot.volume_b64) continue;
+      if (!slotAlreadyClientDecodedForVtk(i, slots)) continue;
+      var id = i < ids.length ? ids[i] : null;
+      if (!id && slot) {
+        id = slot.catalog_id || slot.vol_id || slot.id || null;
+      }
+      if (id == null || id === "") continue;
+      var key = String(id);
+      if (key === "null" || key === "undefined") continue;
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push(id);
+    }
+    return out;
+  }
+
+  /**
+   * Path-endpoint catalog ids missing ``volume_b64`` (PC1 vol1 / vol10). Without
+   * manual Decode these on-disk analyze MRCs are the only VTK slots to hydrate.
+   */
+  function catalogEndpointIdsNeedingVolumeB64(ids, slots) {
+    var out = [];
+    var seen = {};
+    ids = ids || [];
+    slots = slots || [];
+    if (ids.length < 2) return out;
+    var endpoints = [0, ids.length - 1];
+    for (var ei = 0; ei < endpoints.length; ei++) {
+      var i = endpoints[ei];
+      var slot = i < slots.length ? slots[i] : null;
+      if (slot && slot.volume_b64) continue;
+      var id = i < ids.length ? ids[i] : null;
+      if (!id && slot) {
+        id = slot.catalog_id || slot.vol_id || slot.id || null;
+      }
+      if (id == null || id === "") continue;
+      var key = String(id);
+      if (key === "null" || key === "undefined") continue;
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push(id);
+    }
+    return out;
+  }
+
+  /**
+   * Catalog ids to fetch for interactive backends.
+   * Slice: every missing montage layer.
+   * VTK: only already-decoded slots (all at once); if none, catalog endpoints
+   * only — never mass-fetch undecoded interiors without Decode.
    */
   function interactiveCatalogFetchIds(backend, ids, slots) {
     if (String(backend || "").toLowerCase() !== "vtk") {
       return catalogIdsNeedingVolumeB64(ids, slots);
     }
-    var fi = resolveInteractiveFocusIndex(ids);
-    if (slots && fi < slots.length && slots[fi] && slots[fi].volume_b64) {
+    var decoded = catalogIdsClientDecodedNeedingVolumeB64(ids, slots);
+    if (decoded.length) return decoded;
+    if (typeof hasGeneratedTrajectoryVolumes === "function"
+        && hasGeneratedTrajectoryVolumes()) {
       return [];
     }
-    var id = ids && fi < ids.length ? ids[fi] : null;
-    if ((id == null || id === "") && slots && fi < slots.length && slots[fi]) {
-      id = slots[fi].catalog_id || slots[fi].vol_id || slots[fi].id || null;
-    }
-    if (id == null || id === "") return [];
-    var key = String(id);
-    if (key === "null" || key === "undefined") return [];
-    return [id];
+    return catalogEndpointIdsNeedingVolumeB64(ids, slots);
   }
 
   var interactiveVolumeLoadSeq = 0;
@@ -2054,6 +2121,10 @@
       prio.push(id);
     }
     if (ids && ids.length) {
+      // Focus first so VTK/slice can paint the current slider tick ASAP while
+      // remaining catalog volumes continue to load in the background.
+      var fi = resolveInteractiveFocusIndex(ids);
+      if (fi >= 0 && fi < ids.length) add(ids[fi]);
       add(ids[0]);
       if (ids.length > 1) add(ids[ids.length - 1]);
     }
@@ -2067,16 +2138,9 @@
     var noun = (typeof volumeCountNoun === "function")
       ? volumeCountNoun(total)
       : (total === 1 ? "volume" : "volumes");
-    // VTK hydrates a single focused slot — keep the message singular/simple.
-    var msg;
-    if (total === 1 && typeof currentVolumeRenderBackend === "function"
-        && currentVolumeRenderBackend() === "vtk") {
-      msg = "Loading volume\u2026";
-    } else {
-      msg = total > 0
-        ? ("Loading " + done + "/" + total + " " + noun + "\u2026")
-        : "Loading volumes\u2026";
-    }
+    var msg = total > 0
+      ? ("Loading " + done + "/" + total + " " + noun + "\u2026")
+      : "Loading volumes\u2026";
     setVolumeViewerJobStatus(msg, true);
   }
 
@@ -2189,10 +2253,10 @@
     var payload = activeVolumePayload() || {};
     var ensureIds = activeAnalyzeVolumeIds();
     var ensureSlots = volumeSlots() || [];
-    // VTK only needs the focused slider blob; any other slot's volume_b64 must
-    // not short-circuit past a focus fetch.
+    // Short-circuit only when every catalog slot already has volume_b64 —
+    // partial hydration must continue fetching the rest.
     if (payloadHasVolumeB64(payload)
-        && (backend !== "vtk" || focusSlotHasVolumeB64(ensureIds, ensureSlots))) {
+        && !catalogIdsNeedingVolumeB64(ensureIds, ensureSlots).length) {
       applyInteractiveCatalogVolumeDisplay(backend, ensureIds, ensureSlots);
       setAnalyzeVolumeLoadStatus(false);
       return true;
@@ -2204,7 +2268,7 @@
       ensureIds = activeAnalyzeVolumeIds();
       ensureSlots = volumeSlots() || [];
       if (payloadHasVolumeB64(payload)
-          && (backend !== "vtk" || focusSlotHasVolumeB64(ensureIds, ensureSlots))) {
+          && !catalogIdsNeedingVolumeB64(ensureIds, ensureSlots).length) {
         applyInteractiveCatalogVolumeDisplay(backend, ensureIds, ensureSlots);
         setAnalyzeVolumeLoadStatus(false);
         return true;
@@ -2237,23 +2301,16 @@
       return false;
     }
     var slots = volumeSlots() || [];
-    var focusIdx = resolveInteractiveFocusIndex(ids);
     var fetchIds = interactiveCatalogFetchIds(backend, ids, slots);
     if (!fetchIds.length) {
-      if (backend === "vtk" && focusSlotHasVolumeB64(ids, slots)) {
-        applyInteractiveCatalogVolumeDisplay(backend, ids, slots);
-      } else if (backend !== "vtk" && loadedManualVolumeCount(slots) > 0) {
+      if (loadedManualVolumeCount(slots) > 0) {
         applyInteractiveCatalogVolumeDisplay(backend, ids, slots);
       }
       setAnalyzeVolumeLoadStatus(false);
-      return backend === "vtk"
-        ? focusSlotHasVolumeB64(ids, slots)
-        : loadedManualVolumeCount(slots) > 0;
+      return loadedManualVolumeCount(slots) > 0;
     }
 
-    if (backend !== "vtk"
-        && slots.length === ids.length
-        && !manualAnalyzeVolumeIdsMismatch()) {
+    if (slots.length === ids.length && !manualAnalyzeVolumeIdsMismatch()) {
       var haveAllCatalog = true;
       for (var ci = 0; ci < ids.length; ci++) {
         if (ids[ci] == null || ids[ci] === "") continue;
@@ -2271,10 +2328,8 @@
     }
 
     var loadSeq = beginInteractiveVolumeLoad();
-    // Slice: prefer endpoints first. VTK: keep the single focused id only.
-    if (backend !== "vtk") {
-      fetchIds = prioritizeCatalogFetchIds(ids, fetchIds);
-    }
+    // Focus, then endpoints, then remaining — paint ASAP while the rest load.
+    fetchIds = prioritizeCatalogFetchIds(ids, fetchIds);
     fetchInteractiveCatalogVolumeChunks(fetchIds, ids, backend, loadSeq);
     return true;
   }
@@ -2639,6 +2694,19 @@
       }
       return;
     }
+    // VTK must not hydrate undecoded interiors on slider move — only slots
+    // already allowed by interactiveCatalogFetchIds (decoded / endpoints).
+    if (backend === "vtk") {
+      var allowedFocus = interactiveCatalogFetchIds("vtk", ids, volumeSlots() || []);
+      var focusKey = String(volId);
+      var focusAllowed = allowedFocus.some(function(id) { return String(id) === focusKey; });
+      if (!focusAllowed) {
+        if (trajVolDisplay && !trajVolDisplay.chimeraxRendering) {
+          clearVolumeViewerJobStatus();
+        }
+        return;
+      }
+    }
     // Mark interactive load in-flight so setVolumeViewerJobStatus does not
     // suppress "Loading volume…" merely because another slot is still painted.
     var focusIdx = idx;
@@ -2750,7 +2818,7 @@
       var focusIds = activeAnalyzeVolumeIds();
       var focusSlots = volumeSlots() || [];
       if (payloadHasVolumeB64(catalogPayload)
-          && (backend !== "vtk" || focusSlotHasVolumeB64(focusIds, focusSlots))) {
+          && !catalogIdsNeedingVolumeB64(focusIds, focusSlots).length) {
         applyInteractiveCatalogVolumeDisplay(backend, focusIds, focusSlots);
         return;
       }

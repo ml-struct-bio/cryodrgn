@@ -66,6 +66,7 @@
     this._pendingApplyViewMatrixToVtk = false;
     this._pendingApplyViewTurnsToVtk = null;
     this.vtkCameraUserAdjusted = false;
+    this._vtkStickyViewTurns = null;
     this.vtkSessionViewMatrix = "";
     this.chimeraxRenderedViewMatrix = "";
     this.chimeraxRenderedViewTurns = [];
@@ -1106,6 +1107,7 @@
   TrajectoryVolumeDisplay.prototype.resetVtkNavigationCamera = function () {
     this.vtkSessionViewMatrix = "";
     this.vtkCameraUserAdjusted = false;
+    this._vtkStickyViewTurns = null;
     this.sharedViewMatrix = "";
     this.lastVtkViewMatrix = "";
     this.raycastVolIndex = null;
@@ -1139,6 +1141,17 @@
     this.getChimeraxViewMatrix();
     var vm = this.getSharedViewMatrix();
     if (vm) this.vtkSessionViewMatrix = vm;
+    // Freeze the orbit once per user gesture. Re-deriving axis-angle turns from
+    // the live camera on every slider hop drifts, so volumes look out of sync.
+    if (this.raycastView
+        && typeof this.raycastView.getChimeraxViewTurns === "function") {
+      var liveTurns = this.raycastView.getChimeraxViewTurns() || [];
+      if (liveTurns.length) {
+        this._vtkStickyViewTurns = liveTurns.map(function (t) {
+          return { axis: t.axis, degrees: t.degrees };
+        });
+      }
+    }
   };
 
   TrajectoryVolumeDisplay.prototype._applyPendingViewTurnsToVtk = function (view) {
@@ -2193,9 +2206,14 @@
       var switchingVolume = prevRaycastIdx !== idx;
       var hadVolume = !!(self.raycastView && self.raycastView.volume);
       var savedTurns = null;
+      // Only reuse a frozen user orbit. Never re-read live turns on switch —
+      // that round-trips axis-angle and desyncs the initial default path and
+      // post-rotate slider hops alike. No sticky → pure default camera.
       if (switchingVolume && hadVolume
-          && typeof self.raycastView.getChimeraxViewTurns === "function") {
-        savedTurns = self.raycastView.getChimeraxViewTurns();
+          && self.vtkCameraUserAdjusted
+          && self._vtkStickyViewTurns
+          && self._vtkStickyViewTurns.length) {
+        savedTurns = self._vtkStickyViewTurns;
       }
       var preserveView = !!(hadVolume
         && !switchingVolume
@@ -2223,9 +2241,20 @@
       } else if (pendingTurns) {
         self._applyPendingViewTurnsToVtk(view);
         self._captureVtkSessionViewMatrix(view);
+        // Freeze ChimeraX→VTK pending orbit so later slider hops stay aligned.
+        if (self.vtkCameraUserAdjusted
+            && typeof view.getChimeraxViewTurns === "function") {
+          var pendingFrozen = view.getChimeraxViewTurns() || [];
+          if (pendingFrozen.length) {
+            self._vtkStickyViewTurns = pendingFrozen.map(function (t) {
+              return { axis: t.axis, degrees: t.degrees };
+            });
+          }
+        }
       } else if (switchingVolume && savedTurns && savedTurns.length
           && typeof view.applyChimeraxViewTurns === "function") {
-        // Re-apply prior orbit after a fresh default frame for the new slot.
+        // Re-apply frozen orbit after this slot's default frame. Full reset
+        // inside apply keeps the turn basis identical for every volume.
         view.applyChimeraxViewTurns(savedTurns);
         self._captureVtkSessionViewMatrix(view);
       } else if (preserveView) {

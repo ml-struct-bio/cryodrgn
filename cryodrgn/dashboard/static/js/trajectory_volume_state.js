@@ -663,6 +663,16 @@
       }
     }
 
+    // Geometry rematch (Pass 3/4) requires durable media: a VTK blob and/or a
+    // ChimeraX frame. Bare {decoded:true} catalog bookkeeping markers rematch
+    // by durable id only (Pass 1) — snapping them onto densified interiors
+    // falsely zeros Decode debt while Render still sees empty ticks.
+    function recordHasRematchableMedia(rec) {
+      if (!rec || rec.used) return false;
+      if (rec.img) return true;
+      return !!(rec.vol && rec.vol.volume_b64);
+    }
+
     // Pass 3: exact latent XY (within server rounding atol).
     for (var nj = 0; nj < n; nj++) {
       if (nextVols[nj] || nextImgs[nj]) continue;
@@ -670,8 +680,7 @@
       var best = -1;
       var bestDist = Infinity;
       for (var rk = 0; rk < records.length; rk++) {
-        if (records[rk].used) continue;
-        if (!records[rk].vol && !records[rk].img) continue;
+        if (!recordHasRematchableMedia(records[rk])) continue;
         if (!records[rk].xy) continue;
         if (!xyMatchesLatent(records[rk].xy, pathXY[nj])) continue;
         var d = xyDist2(records[rk].xy, pathXY[nj]);
@@ -700,8 +709,7 @@
     }
     var snapPairs = [];
     for (var rr = 0; rr < records.length; rr++) {
-      if (records[rr].used) continue;
-      if (!records[rr].vol && !records[rr].img) continue;
+      if (!recordHasRematchableMedia(records[rr])) continue;
       if (!records[rr].xy) continue;
       var snapBest = -1;
       var snapDist = Infinity;
@@ -836,7 +844,9 @@
   TrajectoryVolumeState.prototype.isReady = function (i, backend) {
     backend = String(backend || "chimerax").toLowerCase();
     if (backend === "chimerax") return this.isRendered(i);
-    return this.isDecoded(i);
+    // VTK / 2D slice ticks need a real volume_b64. Bare {decoded:true} catalog
+    // bookkeeping markers zero Decode debt but must not activate empty ticks.
+    return this.isVtkHydrated(i);
   };
 
   TrajectoryVolumeState.prototype.tickReadyAt = function (i, backend) {

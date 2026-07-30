@@ -2855,6 +2855,13 @@
     backend = String(backend || currentVolumeRenderBackend()).toLowerCase();
     if (backend !== "vtk" && backend !== "slice") return false;
     var myCacheFetch = ++volumeCacheFetchGen;
+    // Hold Decode/Render on "Decoding…" while MRC blobs hydrate — otherwise
+    // residual inactive ticks flash as "Decode and render N volumes".
+    trajectoryVolumeFetchInFlight = true;
+    if (typeof syncTrajectoryUiBusy === "function") syncTrajectoryUiBusy();
+    if (typeof updateGenerateVolumesButtonLabel === "function") {
+      updateGenerateVolumesButtonLabel();
+    }
     if (trajVolDisplay) {
       var cacheN = generatedTrajectoryVolumeCount > 0
         ? generatedTrajectoryVolumeCount
@@ -2865,6 +2872,14 @@
           : "Loading volumes from cache\u2026",
         true
       );
+    }
+    function finishCacheFetchBusy() {
+      if (myCacheFetch !== volumeCacheFetchGen) return;
+      trajectoryVolumeFetchInFlight = false;
+      if (typeof syncTrajectoryUiBusy === "function") syncTrajectoryUiBusy();
+      if (typeof updateGenerateVolumesButtonLabel === "function") {
+        updateGenerateVolumesButtonLabel();
+      }
     }
     fetch("{{ url_for('api_trajectory_volumes') }}", {
       method: "POST",
@@ -2882,6 +2897,7 @@
           var errText = (res.j && res.j.error) || "Could not load cached volumes.";
           setTrajStatus(errText, false);
           clearVolumeViewerJobStatus();
+          finishCacheFetchBusy();
           return;
         }
         // Partial-decode caches are dense; remap onto path slots via API
@@ -2924,9 +2940,7 @@
           false
         );
         clearVolumeViewerJobStatus();
-        if (typeof updateGenerateVolumesButtonLabel === "function") {
-          updateGenerateVolumesButtonLabel();
-        }
+        finishCacheFetchBusy();
         if (backend === "vtk"
             && trajVolDisplay
             && Array.isArray(trajVolDisplay.volumes)
@@ -2939,6 +2953,7 @@
         if (myCacheFetch !== volumeCacheFetchGen) return;
         setTrajStatus("Cached volume request failed.", false);
         clearVolumeViewerJobStatus();
+        finishCacheFetchBusy();
       });
     return true;
   }

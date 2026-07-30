@@ -281,17 +281,30 @@
       return typeof trajectorySlotChimeraxReady === "function"
         && trajectorySlotChimeraxReady(index);
     }
-    if (session && session.volumes && session.volumes()
-        && typeof session.volumes().isDecoded === "function"
-        && session.volumes().isDecoded(index)) {
-      return true;
-    }
+    // Real VTK blob always counts.
     if (trajectorySlotHasVolumeB64(index)) return true;
     // Generate with omit_volume_transfer marks slots via the MRC cache token.
     if (trajectorySlotCacheDecoded(index)) return true;
     // Catalog VTK only via path-aligned display/payload ids (see
     // trajectorySlotCatalogVolumeId). Never via compact selection index.
-    return trajectorySlotCatalogVtkAvailable(index);
+    if (trajectorySlotCatalogVtkAvailable(index)) return true;
+    // VolumeState isDecoded includes bare {decoded:true} catalog bookkeeping
+    // markers. After densify→Other those markers can land on custom:* interiors
+    // without blob/cache/catalog VTK and must not zero Decode debt.
+    if (session && session.volumes && session.volumes()
+        && typeof session.volumes().isDecoded === "function"
+        && session.volumes().isDecoded(index)) {
+      if (typeof session.volumes().isVtkHydrated === "function"
+          && session.volumes().isVtkHydrated(index)) {
+        return true;
+      }
+      var cacheId = typeof session.volumes().cacheId === "function"
+        ? String(session.volumes().cacheId() || "")
+        : "";
+      if (cacheId && trajectorySlotCacheDecoded(index)) return true;
+      return false;
+    }
+    return false;
   }
 
   function trajectorySlotChimeraxReady(index) {
@@ -557,7 +570,15 @@
   }
 
   function generateVolumesActionEnabled() {
-    if (catalogDecodedTrajectoryFullyCoversPath()) return false;
+    if (catalogDecodedTrajectoryFullyCoversPath()) {
+      // Compact catalog covers ChimeraX without Generate, but VTK/slice still
+      // owes Decode for inactive ticks that lack volume_b64.
+      var interactiveOwesDecode = typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()
+        && typeof trajectoryVolumesToGenerateCount === "function"
+        && trajectoryVolumesToGenerateCount() > 0;
+      if (!interactiveOwesDecode) return false;
+    }
     if (isManualTraversalMode()) {
       if (trajectoryDecodeJobInFlight()) return false;
       // Other / random waypoints and densified interiors both need decode —
@@ -570,6 +591,11 @@
             || (graphTraversalActive && hasAnchorIndices())
             || (manualActiveCustomPlotRows
               && manualActiveCustomPlotRows.length > 0))) {
+        return trajectoryVolumesToGenerateCount() > 0;
+      }
+      // Compact catalog + VTK/slice with unhydrated interiors.
+      if (typeof isInteractiveVolumeBackend === "function"
+          && isInteractiveVolumeBackend()) {
         return trajectoryVolumesToGenerateCount() > 0;
       }
       return false;
@@ -620,7 +646,7 @@
         && isInteractiveVolumeBackend();
       btnGenerateVolumesEl.title = !genEnabled && !trajectoryVolumeActionBusy()
         ? (interactiveBackend
-          ? "Outstanding volumes are already decoded for VTK / 2D display."
+          ? "Outstanding volumes need Decode for VTK / 2D display."
           : (catalogDecodedTrajectoryFullyCoversPath()
           && trajectoryVolumesOutstandingRenderCount() < 1
           ? "Volumes and ChimeraX images are already available."
@@ -782,16 +808,18 @@
     // densified direct-trace interiors after PC1 → VTK).
     if (typeof isInteractiveVolumeBackend === "function"
         && isInteractiveVolumeBackend()) {
-      var interactiveDecodeN = typeof trajectoryVolumesToGenerateCount === "function"
-        ? trajectoryVolumesToGenerateCount()
-        : 0;
+      var interactiveDebts = typeof trajectoryDecodeRenderDebts === "function"
+        ? trajectoryDecodeRenderDebts()
+        : null;
+      var interactiveDecodeN = interactiveDebts && interactiveDebts.decode != null
+        ? interactiveDebts.decode
+        : (typeof trajectoryVolumesToGenerateCount === "function"
+          ? trajectoryVolumesToGenerateCount()
+          : 0);
       if (interactiveDecodeN == null || !Number.isFinite(interactiveDecodeN)) {
         interactiveDecodeN = 0;
       }
-      var interactiveCanDecode = typeof generateVolumesActionEnabled === "function"
-        && generateVolumesActionEnabled()
-        && interactiveDecodeN > 0;
-      return !!interactiveCanDecode;
+      return interactiveDecodeN > 0;
     }
     if (typeof manualCompactCatalogDebtModeActive === "function"
         && manualCompactCatalogDebtModeActive()) {

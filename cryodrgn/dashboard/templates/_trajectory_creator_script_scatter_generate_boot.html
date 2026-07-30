@@ -235,8 +235,17 @@
       return;
     }
     if (isManualTraversalMode() && !useAnchors && !manualInterpolatedCatalogActive()) {
-      if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
-      return;
+      // Compact catalog (PC1×10) used to skip Generate entirely. VTK / 2D still
+      // need Decode for interiors that lack volume_b64 (endpoints may already
+      // be hydrated).
+      var interactiveNeedsDecode = typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()
+        && typeof trajectoryVolumesToGenerateCount === "function"
+        && trajectoryVolumesToGenerateCount() > 0;
+      if (!interactiveNeedsDecode) {
+        if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+        return;
+      }
     }
     if (isManualTraversalMode() && manualInterpolatedCatalogActive()) {
       forceManualInterpolatedScatterPathIfNeeded();

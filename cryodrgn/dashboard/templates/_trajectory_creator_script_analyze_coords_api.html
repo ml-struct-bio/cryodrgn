@@ -1395,6 +1395,17 @@
           }
         } else if (manualAnalyzeVolumeIdsMismatch()) {
           syncManualVolumeViewerForWaypointSelection();
+        } else if (densifyPromotedToOther) {
+          // promoteDensifiedPathAsOtherWaypoints already rematched Session slots
+          // onto the expanded waypoint path. Re-applying the compact PC1 catalog
+          // here index-stamps {decoded:true} onto new interiors and under-counts
+          // Decode vs Render (e.g. Decode 4 / render 9 after PC1×10 densify).
+          if (typeof syncManualVolumeScatterHighlight === "function") {
+            syncManualVolumeScatterHighlight();
+          }
+          if (typeof updateGenerateVolumesButtonLabel === "function") {
+            updateGenerateVolumesButtonLabel();
+          }
         } else {
           refreshPreservedAnalyzeVolumeDisplay();
         }

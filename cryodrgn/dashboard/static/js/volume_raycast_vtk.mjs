@@ -380,14 +380,20 @@ export class VolumeRaycastView {
     this.syncChimeraxTurnsFromCamera();
   }
 
-  applyChimeraxViewTurns(turns) {
+  applyChimeraxViewTurns(turns, options) {
+    options = options || {};
     if (!this.renderer || !turns || !turns.length) return;
-    this.renderer.resetCamera();
-    var cam = this.renderer.getActiveCamera();
-    if (cam) {
-      this._referenceRot3 = this._rot3FromCamera(cam);
+    // When the caller just applied ``_applyDefaultCamera`` for a new volume,
+    // skip the second ``resetCamera`` — it can change framing after resize and
+    // desync the turn basis across slots.
+    if (!options.skipReset) {
+      this.renderer.resetCamera();
+      var cam = this.renderer.getActiveCamera();
+      if (cam) {
+        this._referenceRot3 = this._rot3FromCamera(cam);
+      }
+      this._chimeraxDelta3 = null;
     }
-    this._chimeraxDelta3 = null;
     for (var i = 0; i < turns.length; i++) {
       var t = turns[i] || {};
       var axis = String(t.axis || "").toLowerCase();

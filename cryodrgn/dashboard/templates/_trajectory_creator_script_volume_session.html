@@ -2136,10 +2136,17 @@
       .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(res) {
         finishTrajectoryVolumeJob(decodeJobId);
-        trajectoryVolumeFetchInFlight = false;
+        // Keep trajectoryVolumeFetchInFlight true on success so Decode/Render
+        // stays on "Decoding…" until onDecodeComplete starts VTK/slice cache
+        // hydrate (or clears the flag). Clearing here flashed residual debt
+        // labels such as "Decode and render 4 volumes" mid-hydrate.
+        if (!res.ok || !res.j || res.j.ok === false) {
+          trajectoryVolumeFetchInFlight = false;
+        }
         syncTrajectoryUiBusy();
         finishActiveTrajectoryVolumeJobUI();
         if (ctx.myGen != null && ctx.myGen !== volumeGeneration) {
+          trajectoryVolumeFetchInFlight = false;
           return { ok: false, reason: "stale" };
         }
         if (!res.ok || !res.j || res.j.ok === false) {
@@ -2638,7 +2645,16 @@
           return true;
         },
         // Decode/Render debts: render ≡ inactive ticks; decode ⊆ inactive ticks.
+        // On VTK / 2D, use the volume slider's volume_b64 readiness — not compact
+        // catalog ChimeraX-missing counts (those zero debt after PNGs land while
+        // interiors still lack VTK blobs).
         renderDebtCount: function() {
+          if (typeof isInteractiveVolumeBackend === "function"
+              && isInteractiveVolumeBackend()) {
+            if (trajVolDisplay && typeof trajVolDisplay.inactiveTickCount === "function") {
+              return trajVolDisplay.inactiveTickCount();
+            }
+          }
           if (typeof manualCompactCatalogDebtModeActive === "function"
               && manualCompactCatalogDebtModeActive()
               && typeof catalogAnchorsMissingChimeraxCount === "function") {
@@ -2654,6 +2670,12 @@
           return null;
         },
         inactiveTickCount: function() {
+          if (typeof isInteractiveVolumeBackend === "function"
+              && isInteractiveVolumeBackend()) {
+            if (trajVolDisplay && typeof trajVolDisplay.inactiveTickCount === "function") {
+              return trajVolDisplay.inactiveTickCount();
+            }
+          }
           if (typeof manualCompactCatalogDebtModeActive === "function"
               && manualCompactCatalogDebtModeActive()
               && typeof catalogAnchorsMissingChimeraxCount === "function") {
@@ -2666,6 +2688,12 @@
           return null;
         },
         inactiveTickIndices: function() {
+          if (typeof isInteractiveVolumeBackend === "function"
+              && isInteractiveVolumeBackend()) {
+            if (trajVolDisplay && typeof trajVolDisplay.inactiveTickIndices === "function") {
+              return trajVolDisplay.inactiveTickIndices();
+            }
+          }
           if (typeof catalogAnchorInactiveTickIndices === "function") {
             var catalogIdx = catalogAnchorInactiveTickIndices();
             if (catalogIdx && catalogIdx.length) return catalogIdx.slice();
@@ -2676,6 +2704,15 @@
           return null;
         },
         isSlotDecoded: function(i) {
+          // VTK / 2D: tick readiness is volume_b64 only. Cache-only / bare
+          // {decoded:true} markers (left after densify rematch) must not zero
+          // Decode while Render still counts inactive ticks — that produced
+          // "Decode 5 and render 9" after PC1×10 densify.
+          if (typeof isInteractiveVolumeBackend === "function"
+              && isInteractiveVolumeBackend()) {
+            return typeof trajectorySlotHasVolumeB64 === "function"
+              && !!trajectorySlotHasVolumeB64(i);
+          }
           return typeof trajectorySlotVtkDecoded === "function"
             ? !!trajectorySlotVtkDecoded(i)
             : false;
@@ -2860,21 +2897,26 @@
               : "."), false);
           updateTrajectoryScatterPlotStatus();
           syncDirectModeVolumePendingOverlay();
-          if (typeof updateGenerateVolumesButtonLabel === "function") {
-            updateGenerateVolumesButtonLabel();
-          }
           // VTK / 2D: keep the loading chrome up and hydrate every decoded slot
           // from the MRC cache (path-aligned), then paint — same role as the
-          // ChimeraX PNG pass after Decode+Render.
+          // ChimeraX PNG pass after Decode+Render. Start hydrate before the
+          // label refresh so residual debt cannot flash (e.g. "… 4 volumes").
           var liveBackend = currentVolumeRenderBackend();
           var hydrateInteractive = (liveBackend === "vtk" || liveBackend === "slice")
             && res && res.cacheId
             && typeof fetchTrajectoryVolumesFromCache === "function";
-          if (!hydrateInteractive && typeof clearVolumeViewerJobStatus === "function") {
-            clearVolumeViewerJobStatus();
-          }
+          var hydrateStarted = false;
           if (hydrateInteractive) {
-            fetchTrajectoryVolumesFromCache(liveBackend);
+            hydrateStarted = !!fetchTrajectoryVolumesFromCache(liveBackend);
+          }
+          if (!hydrateStarted) {
+            trajectoryVolumeFetchInFlight = false;
+            if (typeof clearVolumeViewerJobStatus === "function") {
+              clearVolumeViewerJobStatus();
+            }
+          }
+          if (typeof updateGenerateVolumesButtonLabel === "function") {
+            updateGenerateVolumesButtonLabel();
           }
           // Combined Decode+Render: start ChimeraX immediately after decode so
           // the user never lands on an intermediate "Render 19 volumes" state.
@@ -3546,10 +3588,19 @@
   function trajectoryMissingVolumeIndices(total) {
     total = Math.max(0, Math.floor(Number(total)));
     var missing = [];
+    var interactive = typeof isInteractiveVolumeBackend === "function"
+      && isInteractiveVolumeBackend();
     for (var i = 0; i < total; i++) {
-      // Use path-slot readiness (catalog VTK by id, Session blobs, display).
-      // VolumeState.missingDecodeIndices alone treats rematched-empty PC slots as
-      // undecoded after Add-random, reporting Decode 20 instead of Decode 10.
+      // VTK / 2D: match slider inactivity (no volume_b64). Do not skip slots
+      // that only have cache / {decoded:true} bookkeeping after densify.
+      if (interactive) {
+        if (typeof trajectorySlotHasVolumeB64 === "function"
+            && trajectorySlotHasVolumeB64(i)) {
+          continue;
+        }
+        missing.push(i);
+        continue;
+      }
       if (!trajectorySlotVtkDecoded(i)) missing.push(i);
     }
     return missing;

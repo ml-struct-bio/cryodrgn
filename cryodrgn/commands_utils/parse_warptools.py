@@ -9,6 +9,9 @@ Example usage
 cryodrgn_utils parse_warptools -t tomograms.star -p particles.star \\
     --tilt-dim 5760 4092 -o particles_2d.star
 
+# Separate step necessary to get pose+CTF files needed for cryoDRGN 3D reconstruction
+# cryodrgn parse_star particles_2d.star --pose-file poses.star --ctf-file ctf.star
+
 """
 import argparse
 from ast import literal_eval
@@ -17,6 +20,8 @@ import numpy as np
 import pandas as pd
 import starfile
 from scipy.spatial.transform import Rotation
+
+from cryodrgn import utils
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -94,8 +99,9 @@ def _parse_star_list(value):
 
 
 def _warp_euler_matrix_from_row(row, fields):
+    # Match PR / WarpTools convention: store R_p^{-1} so composition is R_tilt @ R_p^{-1}.
     angles = [float(row.get(field, 0.0)) for field in fields]
-    return Rotation.from_euler("ZYZ", angles, degrees=True).as_matrix()
+    return Rotation.from_euler("ZYZ", angles, degrees=True).inv().as_matrix()
 
 
 def _particle_orientation_matrix(row):
@@ -130,13 +136,13 @@ class Tomogram:
 
         # Pose and coordinate projection use the WarpTools projection matrices
         # directly. Handedness only changes the defocus Z correction below.
-        self.projection_matrices = {
-            i: m.astype(float) for i, m in enumerate(projection_matrices)
-        }
-        self.rotation_matrices = {
-            i: m.astype(float)[:3, :3] for i, m in enumerate(projection_matrices)
-        }
-        self.n_tilts = len(self.projection_matrices)
+        mats = [m.astype(float) for m in projection_matrices]
+        self.projection_matrices = {i: m for i, m in enumerate(mats)}
+        self.rotation_matrices = {i: m[:3, :3] for i, m in enumerate(mats)}
+        self.n_tilts = len(mats)
+        # Stacked views for vectorised projection / pose composition.
+        self._proj_stack = np.stack(mats, axis=0) if mats else np.zeros((0, 4, 4))
+        self._rot_stack = self._proj_stack[:, :3, :3]
 
     def project_point(self, point_3d_px, i_tilt):
         """
@@ -184,83 +190,74 @@ class Tomogram:
         tomo_name,
         group_name,
         base_orientation_matrix=None,
+        extra_columns=None,
     ):
+        n_tilts = self.n_tilts
+        point_3d_px = np.asarray(point_3d_px, dtype=float)
+        pt_homog = np.append(point_3d_px, 1.0)
 
-        coords_2d = []
-        defocusU_list = []
-        defocusV_list = []
-        defocusAngle_list = []
-        final_zyz_list = []
+        # Vectorised 2D projection and local defocus for all tilts.
+        xy = self._proj_stack @ pt_homog
+        coords_2d = xy[:, :2] + np.array(
+            [self.tilt_image_dims[0] / 2.0, self.tilt_image_dims[1] / 2.0]
+        )
+        depth_offset_ang = (
+            (self._rot_stack @ point_3d_px)[:, 2] * self.pixel_size * self.hand
+        )
+        defocusU = self.defocus_u_array + depth_offset_ang
+        defocusV = self.defocus_v_array + depth_offset_ang
+        defocusAngle = self.defocus_angle_array
 
-        for i in range(self.n_tilts):
-            coords_2d.append(self.project_point(point_3d_px, i))
-            lu, lv, la = self.calculate_local_defocus_uv(i, point_3d_px)
-            defocusV_list.append(lv)
-            defocusU_list.append(lu)
-            defocusAngle_list.append(la)
+        if base_orientation_matrix is not None:
+            # R_tilt @ R_p^{-1} for all tilts, then RELION Euler conversion
+            # (same composition as the PR parse_warptools).
+            finals = np.einsum("nij,jk->nik", self._rot_stack, base_orientation_matrix)
+            final_zyz = utils.R_to_relion_scipy(finals)
+        else:
+            final_zyz = np.zeros((n_tilts, 3), dtype=float)
 
-            if base_orientation_matrix is not None:
-                # Match parse_relion / WarpTools expanded GT: R_particle @ R_tilt,
-                # exported as RELION ZYZ (not cryoDRGN-internal R_to_relion_scipy).
-                final_matrix = base_orientation_matrix @ self.rotation_matrices[i]
-                a, b, c = Rotation.from_matrix(final_matrix).as_euler(
-                    "ZYZ", degrees=True
-                )
-                final_zyz_list.append([a, b, c])
-
-        coords_2d = np.array(coords_2d)
-        final_zyz_list = np.array(final_zyz_list)
-
-        # CTF scale factor from tilt_series_df or estimate from tilt angles.
         if "rlnCtfScalefactor" in tilt_series_df.columns:
             ctf_scale = tilt_series_df["rlnCtfScalefactor"].to_numpy()
         elif "rlnTomoYTilt" in tilt_series_df.columns:
             ctf_scale = np.cos(np.deg2rad(tilt_series_df["rlnTomoYTilt"].to_numpy()))
         else:
-            ctf_scale = np.ones(len(tilt_series_df))
+            ctf_scale = np.ones(n_tilts)
 
-        # Make 2D dataframe
-        n_tilts = self.n_tilts
         image_names_2d = [f"{i+1:06d}@{original_image_name}" for i in range(n_tilts)]
-
         if "rlnMicrographName" in tilt_series_df.columns:
-            mic_names = tilt_series_df["rlnMicrographName"].values
+            mic_names = tilt_series_df["rlnMicrographName"].to_numpy()
         else:
             mic_names = np.array(
-                [f"{tomo_name}_tilt_{i+1:06d}" for i in range(self.n_tilts)]
+                [f"{tomo_name}_tilt_{i+1:06d}" for i in range(n_tilts)]
             )
 
-        df_2d = pd.DataFrame(
-            {
-                "rlnMagnification": 10000.0,  # placeholder
-                "rlnDefocusU": defocusU_list,
-                "rlnDefocusV": defocusV_list,
-                "rlnDefocusAngle": defocusAngle_list,
-                "rlnImageName": image_names_2d,
-                "rlnMicrographName": mic_names,
-                "rlnCoordinateX": coords_2d[:, 0],
-                "rlnCoordinateY": coords_2d[:, 1],
-                "rlnCtfBfactor": 0.0,  # placeholder - possibly remove
-                "rlnCtfScalefactor": ctf_scale,
-                "rlnGroupName": group_name,
-                "rlnTiltName": mic_names,
-            }
-        )
+        data = {
+            "rlnMagnification": np.full(n_tilts, 10000.0),
+            "rlnDefocusU": defocusU,
+            "rlnDefocusV": defocusV,
+            "rlnDefocusAngle": defocusAngle,
+            "rlnImageName": image_names_2d,
+            "rlnMicrographName": mic_names,
+            "rlnCoordinateX": coords_2d[:, 0],
+            "rlnCoordinateY": coords_2d[:, 1],
+            "rlnCtfBfactor": np.zeros(n_tilts),
+            "rlnCtfScalefactor": ctf_scale,
+            "rlnGroupName": group_name,
+            "rlnTiltName": mic_names,
+            "rlnAngleRot": final_zyz[:, 0],
+            "rlnAngleTilt": final_zyz[:, 1],
+            "rlnAnglePsi": final_zyz[:, 2],
+        }
         if "rlnMicrographPreExposure" in tilt_series_df.columns:
-            df_2d["rlnMicrographPreExposure"] = tilt_series_df[
+            data["rlnMicrographPreExposure"] = tilt_series_df[
                 "rlnMicrographPreExposure"
-            ].values
+            ].to_numpy()
         if "rlnTomoYTilt" in tilt_series_df.columns:
-            df_2d["rlnTomoYTilt"] = tilt_series_df["rlnTomoYTilt"].values
+            data["rlnTomoYTilt"] = tilt_series_df["rlnTomoYTilt"].to_numpy()
+        if extra_columns:
+            data.update(extra_columns)
 
-        if base_orientation_matrix is not None and len(final_zyz_list) > 0:
-            df_2d["rlnAngleRot"] = final_zyz_list[:, 0]
-            df_2d["rlnAngleTilt"] = final_zyz_list[:, 1]
-            df_2d["rlnAnglePsi"] = final_zyz_list[:, 2]
-        else:
-            df_2d["rlnAngleRot"] = 0.0
-            df_2d["rlnAngleTilt"] = 0.0
-            df_2d["rlnAnglePsi"] = 0.0
+        df_2d = pd.DataFrame(data)
 
         # Sort only this particle's expanded tilt-image rows. The caller appends
         # these per-particle frames in particle order, matching parse_relion.
@@ -281,6 +278,93 @@ def _projection_matrices_from_df(ts_df: pd.DataFrame) -> list[np.ndarray]:
     return [np.vstack([x, y, z, w]) for x, y, z, w in zip(pX, pY, pZ, pW)]
 
 
+def _expand_one_particle(
+    idx,
+    row,
+    *,
+    tomogram_cache,
+    tomo_meta_cache,
+    optics_resolved,
+    has_visible_frames,
+    tilt_dim,
+):
+    """Expand a single particle using cached tomogram geometry."""
+    tomo_name = row["rlnTomoName"]
+    optics_info = optics_resolved[row["rlnOpticsGroup"]]
+    optics_row = optics_info["row"]
+    meta = tomo_meta_cache[tomo_name]
+
+    if has_visible_frames:
+        vis = _parse_star_list(row["rlnTomoVisibleFrames"])
+        visible_indices = tuple(i for i, val in enumerate(vis) if int(val) == 1)
+    else:
+        visible_indices = None
+
+    cache_key = (tomo_name, visible_indices)
+    if cache_key not in tomogram_cache:
+        if visible_indices is None:
+            sub_ts_df = meta["ts_df"]
+            proj_mats = meta["proj_mats"]
+        else:
+            sub_ts_df = meta["ts_df"].iloc[list(visible_indices)]
+            proj_mats = [meta["proj_mats"][i] for i in visible_indices]
+
+        tomogram_cache[cache_key] = (
+            Tomogram(
+                tilt_image_dims=tilt_dim,
+                pixel_size=meta["pixel_size_ang"],
+                defocus_u_array=sub_ts_df["rlnDefocusU"].to_numpy(),
+                defocus_v_array=sub_ts_df["rlnDefocusV"].to_numpy(),
+                defocus_angle_array=sub_ts_df["rlnDefocusAngle"].to_numpy(),
+                hand=meta["hand"],
+                projection_matrices=proj_mats,
+            ),
+            sub_ts_df,
+        )
+
+    tomogram, sub_ts_df = tomogram_cache[cache_key]
+
+    point_px = np.array(
+        [row["rlnCoordinateX"], row["rlnCoordinateY"], row["rlnCoordinateZ"]],
+        dtype=float,
+    )
+    origin_px = (
+        np.array(
+            [
+                row.get("rlnOriginXAngst", 0.0),
+                row.get("rlnOriginYAngst", 0.0),
+                row.get("rlnOriginZAngst", 0.0),
+            ],
+            dtype=float,
+        )
+        / meta["pixel_size_ang"]
+    )
+    point_3d = point_px - meta["tomo_center_px"] - origin_px
+    image_pixel_size = optics_info["image_pixel_size"]
+
+    return tomogram.expand_particle_to_2drows(
+        point_3d_px=point_3d,
+        original_image_name=row["rlnImageName"],
+        tilt_series_df=sub_ts_df,
+        tomo_name=tomo_name,
+        group_name=row["rlnTomoParticleName"],
+        base_orientation_matrix=_particle_orientation_matrix(row),
+        extra_columns={
+            "rlnOriginalParticle": idx + 1,
+            "rlnRandomSubset": row.get("rlnRandomSubset", 1),
+            "rlnImagePixelSize": image_pixel_size,
+            "rlnImageSize": optics_info["image_size"],
+            "rlnDetectorPixelSize": image_pixel_size,
+            "rlnVoltage": optics_row["rlnVoltage"],
+            "rlnSphericalAberration": optics_row["rlnSphericalAberration"],
+            "rlnAmplitudeContrast": optics_row["rlnAmplitudeContrast"],
+            "rlnPhaseShift": 0,
+            "rlnOriginX": 0,
+            "rlnOriginY": 0,
+        },
+    )
+
+
 def main(args: argparse.Namespace) -> None:
 
     # Load star files
@@ -291,8 +375,8 @@ def main(args: argparse.Namespace) -> None:
     particles_df = particles_star["particles"]
     optics_df = particles_star["optics"]
 
-    # Index global / optics rows once; Warp Proj parsing dominates runtime and is
-    # identical for all particles that share a tomogram (+ visible-frame mask).
+    # Index global / optics rows once; Warp Proj parsing is identical for all
+    # particles that share a tomogram (+ visible-frame mask).
     global_by_tomo = {row["rlnTomoName"]: row for _, row in global_df.iterrows()}
     optics_by_group = {row["rlnOpticsGroup"]: row for _, row in optics_df.iterrows()}
     optics_resolved = {}
@@ -321,118 +405,40 @@ def main(args: argparse.Namespace) -> None:
     tomogram_cache = {}
     has_visible_frames = "rlnTomoVisibleFrames" in particles_df.columns
 
-    all_2d_rows = []
-    ps = 0
-
-    for idx, row in particles_df.iterrows():
-        tomo_name = row["rlnTomoName"]
-        optics_group = row["rlnOpticsGroup"]
-        optics_info = optics_resolved[optics_group]
-        optics_row = optics_info["row"]
-
-        if tomo_name not in tomo_meta_cache:
-            global_row = global_by_tomo[tomo_name]
-            ts_df = tomo_star[tomo_name]
-            pixel_size_ang = _get_tomogram_pixel_size(global_row, optics_row)
-            handedness = global_row.get("rlnTomoHand", 1)
-            tomo_meta_cache[tomo_name] = {
-                "global_row": global_row,
-                "ts_df": ts_df,
-                "proj_mats": _projection_matrices_from_df(ts_df),
-                "pixel_size_ang": pixel_size_ang,
-                "hand": -1 if float(handedness) == -1 else 1,
-                "tomo_center_px": np.array(
-                    [
-                        global_row["rlnTomoSizeX"] / 2.0,
-                        global_row["rlnTomoSizeY"] / 2.0,
-                        global_row["rlnTomoSizeZ"] / 2.0,
-                    ],
-                    dtype=float,
-                ),
-            }
-
-        meta = tomo_meta_cache[tomo_name]
-
-        if has_visible_frames:
-            vis = _parse_star_list(row["rlnTomoVisibleFrames"])
-            visible_indices = tuple(i for i, val in enumerate(vis) if int(val) == 1)
-        else:
-            visible_indices = None
-
-        cache_key = (tomo_name, visible_indices)
-        if cache_key not in tomogram_cache:
-            if visible_indices is None:
-                sub_ts_df = meta["ts_df"]
-                proj_mats = meta["proj_mats"]
-            else:
-                sub_ts_df = meta["ts_df"].iloc[list(visible_indices)]
-                proj_mats = [meta["proj_mats"][i] for i in visible_indices]
-
-            tomogram_cache[cache_key] = (
-                Tomogram(
-                    tilt_image_dims=args.tilt_dim,
-                    pixel_size=meta["pixel_size_ang"],
-                    defocus_u_array=sub_ts_df["rlnDefocusU"].to_numpy(),
-                    defocus_v_array=sub_ts_df["rlnDefocusV"].to_numpy(),
-                    defocus_angle_array=sub_ts_df["rlnDefocusAngle"].to_numpy(),
-                    hand=meta["hand"],
-                    projection_matrices=proj_mats,
-                ),
-                sub_ts_df,
-            )
-
-        tomogram, sub_ts_df = tomogram_cache[cache_key]
-
-        particle_orientation = _particle_orientation_matrix(row)
-
-        point_px = np.array(
-            [
-                row["rlnCoordinateX"],
-                row["rlnCoordinateY"],
-                row["rlnCoordinateZ"],
-            ],
-            dtype=float,
-        )
-
-        origin_px = (
-            np.array(
+    # Parse Proj matrices once per tomogram.
+    for tomo_name, global_row in global_by_tomo.items():
+        optics_row = next(iter(optics_resolved.values()))["row"]
+        pixel_size_ang = _get_tomogram_pixel_size(global_row, optics_row)
+        handedness = global_row.get("rlnTomoHand", 1)
+        ts_df = tomo_star[tomo_name]
+        tomo_meta_cache[tomo_name] = {
+            "global_row": global_row,
+            "ts_df": ts_df,
+            "proj_mats": _projection_matrices_from_df(ts_df),
+            "pixel_size_ang": pixel_size_ang,
+            "hand": -1 if float(handedness) == -1 else 1,
+            "tomo_center_px": np.array(
                 [
-                    row.get("rlnOriginXAngst", 0.0),
-                    row.get("rlnOriginYAngst", 0.0),
-                    row.get("rlnOriginZAngst", 0.0),
+                    global_row["rlnTomoSizeX"] / 2.0,
+                    global_row["rlnTomoSizeY"] / 2.0,
+                    global_row["rlnTomoSizeZ"] / 2.0,
                 ],
                 dtype=float,
-            )
-            / meta["pixel_size_ang"]
+            ),
+        }
+
+    all_2d_rows = [
+        _expand_one_particle(
+            idx,
+            row,
+            tomogram_cache=tomogram_cache,
+            tomo_meta_cache=tomo_meta_cache,
+            optics_resolved=optics_resolved,
+            has_visible_frames=has_visible_frames,
+            tilt_dim=args.tilt_dim,
         )
-
-        point_3d = point_px - meta["tomo_center_px"] - origin_px
-
-        df_2d = tomogram.expand_particle_to_2drows(
-            point_3d_px=point_3d,
-            original_image_name=row["rlnImageName"],
-            tilt_series_df=sub_ts_df,
-            tomo_name=tomo_name,
-            group_name=row["rlnTomoParticleName"],
-            base_orientation_matrix=particle_orientation,
-        )
-
-        image_pixel_size = optics_info["image_pixel_size"]
-        image_size = optics_info["image_size"]
-
-        df_2d["rlnOriginalParticle"] = idx + 1
-        df_2d["rlnRandomSubset"] = row.get("rlnRandomSubset", 1)
-        df_2d["rlnImagePixelSize"] = image_pixel_size
-        df_2d["rlnImageSize"] = image_size
-        df_2d["rlnDetectorPixelSize"] = image_pixel_size
-        df_2d["rlnVoltage"] = optics_row["rlnVoltage"]
-        df_2d["rlnSphericalAberration"] = optics_row["rlnSphericalAberration"]
-        df_2d["rlnAmplitudeContrast"] = optics_row["rlnAmplitudeContrast"]
-        df_2d["rlnPhaseShift"] = ps
-        df_2d["rlnOriginX"] = 0
-        df_2d["rlnOriginY"] = 0
-
-        all_2d_rows.append(df_2d)
+        for idx, (_, row) in enumerate(particles_df.iterrows())
+    ]
 
     final_2d_df = pd.concat(all_2d_rows, ignore_index=True)
     print(f"Total 2D rows in output: {len(final_2d_df)}")

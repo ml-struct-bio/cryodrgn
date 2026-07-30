@@ -1,9 +1,13 @@
 """Parse WarpTools subtomogram STAR files into cryoDRGN-compatible 2D rows.
 
+WarpTools/RELION5 2D stacks are often CTF-premultiplied
+(``rlnCtfDataAreCtfPremultiplied``); disable CTF correction in cryoDRGN when
+that flag is set.
+
 Example usage
 -------------
-cryodrgn_utils parse_warptools -t tomograms.star -p particles.star \
-                               --tilt-dim 5760 4092 -o particles_2d.star
+cryodrgn_utils parse_warptools -t tomograms.star -p particles.star \\
+    --tilt-dim 5760 4092 -o particles_2d.star
 
 """
 import argparse
@@ -13,8 +17,6 @@ import numpy as np
 import pandas as pd
 import starfile
 from scipy.spatial.transform import Rotation
-
-from cryodrgn import utils
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -84,9 +86,16 @@ def _get_tomogram_pixel_size(global_row, optics_row):
     return float(pixel_size_ang)
 
 
+def _parse_star_list(value):
+    """Parse a STAR list cell that may already be a list/array or a string."""
+    if isinstance(value, str):
+        return literal_eval(value)
+    return list(value)
+
+
 def _warp_euler_matrix_from_row(row, fields):
     angles = [float(row.get(field, 0.0)) for field in fields]
-    return Rotation.from_euler("ZYZ", angles, degrees=True).inv().as_matrix()
+    return Rotation.from_euler("ZYZ", angles, degrees=True).as_matrix()
 
 
 def _particle_orientation_matrix(row):
@@ -156,9 +165,9 @@ class Tomogram:
         # The depth along the beam is the third row of the same projection
         # rotation used for the 2D coordinates; `hand` flips it for tomograms
         # reconstructed with the opposite handedness (matches parse_relion).
-        depth_offset_px = (
-            self.rotation_matrices[i_tilt] @ point_3d_px.astype(float)
-        )[2]
+        depth_offset_px = (self.rotation_matrices[i_tilt] @ point_3d_px.astype(float))[
+            2
+        ]
         depth_offset_ang = depth_offset_px * self.pixel_size * self.hand
 
         loc_u = self.defocus_u_array[i_tilt] + depth_offset_ang
@@ -191,8 +200,12 @@ class Tomogram:
             defocusAngle_list.append(la)
 
             if base_orientation_matrix is not None:
-                final_matrix = self.rotation_matrices[i] @ base_orientation_matrix
-                a, b, c = utils.R_to_relion_scipy(final_matrix.reshape(1, 3, 3))[0]
+                # Match parse_relion / WarpTools expanded GT: R_particle @ R_tilt,
+                # exported as RELION ZYZ (not cryoDRGN-internal R_to_relion_scipy).
+                final_matrix = base_orientation_matrix @ self.rotation_matrices[i]
+                a, b, c = Rotation.from_matrix(final_matrix).as_euler(
+                    "ZYZ", degrees=True
+                )
                 final_zyz_list.append([a, b, c])
 
         coords_2d = np.array(coords_2d)
@@ -259,6 +272,15 @@ class Tomogram:
         return df_2d
 
 
+def _projection_matrices_from_df(ts_df: pd.DataFrame) -> list[np.ndarray]:
+    """Parse WarpTools ProjX/Y/Z/W list columns into 4x4 matrices (once per table)."""
+    pX = ts_df["rlnTomoProjX"].apply(_parse_star_list)
+    pY = ts_df["rlnTomoProjY"].apply(_parse_star_list)
+    pZ = ts_df["rlnTomoProjZ"].apply(_parse_star_list)
+    pW = ts_df["rlnTomoProjW"].apply(_parse_star_list)
+    return [np.vstack([x, y, z, w]) for x, y, z, w in zip(pX, pY, pZ, pW)]
+
+
 def main(args: argparse.Namespace) -> None:
 
     # Load star files
@@ -269,42 +291,97 @@ def main(args: argparse.Namespace) -> None:
     particles_df = particles_star["particles"]
     optics_df = particles_star["optics"]
 
+    # Index global / optics rows once; Warp Proj parsing dominates runtime and is
+    # identical for all particles that share a tomogram (+ visible-frame mask).
+    global_by_tomo = {row["rlnTomoName"]: row for _, row in global_df.iterrows()}
+    optics_by_group = {row["rlnOpticsGroup"]: row for _, row in optics_df.iterrows()}
+    optics_resolved = {}
+    for group, optics_row in optics_by_group.items():
+        optics_resolved[group] = {
+            "row": optics_row,
+            "image_pixel_size": float(
+                _get_optics_value(
+                    optics_row,
+                    "rlnImagePixelSize",
+                    args.image_pixel_size,
+                    "--image-pixel-size",
+                )
+            ),
+            "image_size": int(
+                _get_optics_value(
+                    optics_row,
+                    "rlnImageSize",
+                    args.image_size,
+                    "--image-size",
+                )
+            ),
+        }
+
+    tomo_meta_cache = {}
+    tomogram_cache = {}
+    has_visible_frames = "rlnTomoVisibleFrames" in particles_df.columns
+
     all_2d_rows = []
     ps = 0
 
     for idx, row in particles_df.iterrows():
         tomo_name = row["rlnTomoName"]
+        optics_group = row["rlnOpticsGroup"]
+        optics_info = optics_resolved[optics_group]
+        optics_row = optics_info["row"]
 
-        ts_df = tomo_star[tomo_name]
-        global_row = global_df[global_df["rlnTomoName"] == tomo_name].iloc[0]
-        optics_row = optics_df[
-            optics_df["rlnOpticsGroup"] == row["rlnOpticsGroup"]
-        ].iloc[0]
+        if tomo_name not in tomo_meta_cache:
+            global_row = global_by_tomo[tomo_name]
+            ts_df = tomo_star[tomo_name]
+            pixel_size_ang = _get_tomogram_pixel_size(global_row, optics_row)
+            handedness = global_row.get("rlnTomoHand", 1)
+            tomo_meta_cache[tomo_name] = {
+                "global_row": global_row,
+                "ts_df": ts_df,
+                "proj_mats": _projection_matrices_from_df(ts_df),
+                "pixel_size_ang": pixel_size_ang,
+                "hand": -1 if float(handedness) == -1 else 1,
+                "tomo_center_px": np.array(
+                    [
+                        global_row["rlnTomoSizeX"] / 2.0,
+                        global_row["rlnTomoSizeY"] / 2.0,
+                        global_row["rlnTomoSizeZ"] / 2.0,
+                    ],
+                    dtype=float,
+                ),
+            }
 
-        frames_list = row["rlnTomoVisibleFrames"]
-        vis_idx = [i for i, v in enumerate(literal_eval(frames_list), 1) if v]
-        sub_ts_df = ts_df.iloc[[i - 1 for i in vis_idx]].copy()
+        meta = tomo_meta_cache[tomo_name]
 
-        # Build 4x4 matrices from the four list-columns.
-        pX = sub_ts_df["rlnTomoProjX"].apply(literal_eval)
-        pY = sub_ts_df["rlnTomoProjY"].apply(literal_eval)
-        pZ = sub_ts_df["rlnTomoProjZ"].apply(literal_eval)
-        pW = sub_ts_df["rlnTomoProjW"].apply(literal_eval)
-        proj_mats = [np.vstack([x, y, z, w]) for x, y, z, w in zip(pX, pY, pZ, pW)]
+        if has_visible_frames:
+            vis = _parse_star_list(row["rlnTomoVisibleFrames"])
+            visible_indices = tuple(i for i, val in enumerate(vis) if int(val) == 1)
+        else:
+            visible_indices = None
 
-        pixel_size_ang = _get_tomogram_pixel_size(global_row, optics_row)
-        handedness = global_row.get("rlnTomoHand", 1)
-        set_hand = -1 if float(handedness) == -1 else 1
+        cache_key = (tomo_name, visible_indices)
+        if cache_key not in tomogram_cache:
+            if visible_indices is None:
+                sub_ts_df = meta["ts_df"]
+                proj_mats = meta["proj_mats"]
+            else:
+                sub_ts_df = meta["ts_df"].iloc[list(visible_indices)]
+                proj_mats = [meta["proj_mats"][i] for i in visible_indices]
 
-        tomogram = Tomogram(
-            tilt_image_dims=args.tilt_dim,
-            pixel_size=pixel_size_ang,
-            defocus_u_array=sub_ts_df["rlnDefocusU"].to_numpy(),
-            defocus_v_array=sub_ts_df["rlnDefocusV"].to_numpy(),
-            defocus_angle_array=sub_ts_df["rlnDefocusAngle"].to_numpy(),
-            hand=set_hand,
-            projection_matrices=proj_mats,
-        )
+            tomogram_cache[cache_key] = (
+                Tomogram(
+                    tilt_image_dims=args.tilt_dim,
+                    pixel_size=meta["pixel_size_ang"],
+                    defocus_u_array=sub_ts_df["rlnDefocusU"].to_numpy(),
+                    defocus_v_array=sub_ts_df["rlnDefocusV"].to_numpy(),
+                    defocus_angle_array=sub_ts_df["rlnDefocusAngle"].to_numpy(),
+                    hand=meta["hand"],
+                    projection_matrices=proj_mats,
+                ),
+                sub_ts_df,
+            )
+
+        tomogram, sub_ts_df = tomogram_cache[cache_key]
 
         particle_orientation = _particle_orientation_matrix(row)
 
@@ -317,17 +394,6 @@ def main(args: argparse.Namespace) -> None:
             dtype=float,
         )
 
-        tomo_center_px = np.array(
-            [
-                global_row["rlnTomoSizeX"] / 2.0,
-                global_row["rlnTomoSizeY"] / 2.0,
-                global_row["rlnTomoSizeZ"] / 2.0,
-            ],
-            dtype=float,
-        )
-
-        point_3d = point_px - tomo_center_px
-
         origin_px = (
             np.array(
                 [
@@ -337,40 +403,22 @@ def main(args: argparse.Namespace) -> None:
                 ],
                 dtype=float,
             )
-            / pixel_size_ang
+            / meta["pixel_size_ang"]
         )
 
-        point_3d = point_3d - origin_px
+        point_3d = point_px - meta["tomo_center_px"] - origin_px
 
-        original_img = row["rlnImageName"]
-
-        # Expand into 2D rows
         df_2d = tomogram.expand_particle_to_2drows(
             point_3d_px=point_3d,
-            original_image_name=original_img,
+            original_image_name=row["rlnImageName"],
             tilt_series_df=sub_ts_df,
             tomo_name=tomo_name,
             group_name=row["rlnTomoParticleName"],
             base_orientation_matrix=particle_orientation,
         )
 
-        # Add extra columns
-        image_pixel_size = float(
-            _get_optics_value(
-                optics_row,
-                "rlnImagePixelSize",
-                args.image_pixel_size,
-                "--image-pixel-size",
-            )
-        )
-        image_size = int(
-            _get_optics_value(
-                optics_row,
-                "rlnImageSize",
-                args.image_size,
-                "--image-size",
-            )
-        )
+        image_pixel_size = optics_info["image_pixel_size"]
+        image_size = optics_info["image_size"]
 
         df_2d["rlnOriginalParticle"] = idx + 1
         df_2d["rlnRandomSubset"] = row.get("rlnRandomSubset", 1)

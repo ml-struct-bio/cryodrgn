@@ -170,28 +170,6 @@ class TestTrajectoryEligibilityError:
 class TestDashboardTrajectoryCoords:
     """Flask tests for trajectory JSON APIs (gated by ``explorer_volumes_eligible`` in the app)."""
 
-    def test_direct_interpolation(
-        self, flask_client, dashboard_experiment: DashboardExperiment
-    ) -> None:
-        r = flask_client.post(
-            "/api/trajectory_coords",
-            json={
-                "mode": "direct",
-                "x": "z0",
-                "y": "z1",
-                "start": [0.0, 0.0],
-                "end": [1.0, 1.0],
-                "n_points": 3,
-            },
-        )
-        if not _traj_flask_200_or_ineligible(r, dashboard_experiment):
-            return
-        js = r.get_json()
-        # 3 interpolation pts + 2 endpoints = 5 (matches live-server observation).
-        assert len(js["z_traj"]) >= 2
-        assert all(len(z) == 4 for z in js["z_traj"])
-        assert js["mode"] == "direct"
-
     def test_nearest_mode(
         self, flask_client, dashboard_experiment: DashboardExperiment
     ) -> None:
@@ -1402,17 +1380,14 @@ class TestTrajectoryVolumeApis:
 class TestTrajectoryPageWithMockEligibility:
     """Trajectory shell renders without CUDA when eligibility is mocked."""
 
-    def test_trajectory_page_renders_scatter(
+    def test_eligible_workdir_gets_the_creator_rather_than_the_gpu_notice(
         self, flask_client_volumes_eligible
     ) -> None:
-        r = flask_client_volumes_eligible.get("/trajectory")
-        assert r.status_code == 200
-        body = r.get_data(as_text=True)
+        """The page's own contents are asserted in ``test_dashboard_volume_slice_viewer``;
+        what matters here is that eligibility routes to the real UI at all."""
+        body = flask_client_volumes_eligible.get("/trajectory").get_data(as_text=True)
         assert 'id="scatter"' in body
         assert "CUDA GPU" not in body
-        assert 'id="traj-z-panel"' in body
-        assert body.index('id="traj-z-panel"') < body.index('id="traj-volume-actions"')
-        assert "refreshTrajectoryZPanel" in body
 
     def test_trajectory_coords_direct_mode(self, flask_client_volumes_eligible) -> None:
         r = flask_client_volumes_eligible.post(
@@ -1428,6 +1403,8 @@ class TestTrajectoryPageWithMockEligibility:
         )
         assert r.status_code == 200, r.get_data(as_text=True)[:500]
         js = r.get_json()
+        assert js["mode"] == "direct"
+        # 3 interpolation points plus the two endpoints.
         assert len(js["z_traj"]) >= 2
         assert all(len(z) == 4 for z in js["z_traj"])
         assert js["mode"] == "direct"
@@ -2250,22 +2227,21 @@ class TestTrajectorySessionDebts:
 
 @pytest.mark.jsunit
 class TestTrajectorySessionSelftest:
-    """Run ``scripts/trajectory_session_selftest.js`` as a real test.
+    """Run ``tests/js/trajectory_session_selftest.js`` as a real test.
 
-    The script builds a Node ``vm`` sandbox and asserts across the whole trajectory
-    module set, but nothing invoked it, so none of its assertions ran in CI. Shimming
-    ``require``/``fs``/``vm`` lets it run in Chromium instead, with no Node dependency.
+    The script builds a Node ``vm`` sandbox and asserts broadly across the trajectory
+    module set. Shimming ``require``/``fs``/``vm`` lets it run in Chromium instead, so
+    it needs no Node installation.
+
+    It is a backstop rather than the primary coverage: it halts at the first failed
+    assertion, whereas the ``jsunit`` classes above name the behaviour that broke.
     """
 
     def test_selftest_script_passes(self, dashboard_js_page):
         script = (
-            Path(__file__).resolve().parents[1]
-            / "scripts"
-            / "trajectory_session_selftest.js"
+            Path(__file__).resolve().parent / "js" / "trajectory_session_selftest.js"
         )
-        if not script.is_file():
-            # ``scripts/`` is currently untracked, so a fresh clone has no selftest.
-            pytest.skip(f"{script} is not present in this checkout")
+        assert script.is_file(), f"missing test asset: {script}"
         result = run_dashboard_js_node_selftest(
             dashboard_js_page, script, TRAJECTORY_JS_MODULES
         )

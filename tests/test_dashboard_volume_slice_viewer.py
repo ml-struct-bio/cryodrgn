@@ -20,9 +20,6 @@ from cryodrgn.dashboard.volume_slice_viewer import (
     vtk_transfer_volume_payload,
 )
 
-
-from tests.conftest import read_dashboard_static_js
-
 pytestmark = pytest.mark.dashboard
 
 _VTK_BUNDLE = (
@@ -240,133 +237,150 @@ class TestVolumeSliceViewerRoutes:
         assert r.status_code == 400
         assert "ids" in r.get_json().get("error", "").lower()
 
-    def test_trajectory_page_integrates_volume_display(
-        self, flask_client_volumes_eligible
-    ) -> None:
+    # The volume viewer's behaviour is covered by the browser tests in
+    # ``TestTrajectoryVolumeBrowserSmoke``, by ``TestTrajectoryVolumeSliderAccounting``
+    # in ``test_dashboard_trajectory.py``, and by the ``jsunit`` module tests. What is
+    # left here is what those cannot see: that the page ships the right elements, in
+    # the right order, with the right copy. Assertions that merely grepped the served
+    # JavaScript for function names were removed with that coverage in place.
+
+    VOLUME_VIEWER_ELEMENT_IDS = (
+        "vslice-canvas",
+        "vslice-vtk-container",
+        "vslice-volume-picker-rows",
+        "btn-vslice-pan-up",
+        "vslice-iso-controls",
+        "vslice-chimerax-view-controls",
+        "traj-chimerax-view-rotate-row",
+        "traj-vol-backend-vtk",
+        "traj-vol-backend-chimerax",
+        "traj-vol-backend-slice",
+        "traj-vol-backend-hint",
+        "btn-traj-vol-dock-below",
+        "traj-vol-volume-nav",
+        "traj-vol-volume-slider",
+        "traj-vol-expanded-host",
+        "traj-vol-popout-modal",
+        "btn-generate-volumes",
+        "btn-traj-manual-volume",
+        "traj-z-panel",
+        "traj-mode-manual",
+        "traj-scatter-interp-nearest",
+        "traj-scatter-interp-direct",
+        "btn-traj-manual-graph",
+        "manual-snap-n-points",
+        "manual-graph-n-points",
+        "traj-manual-interp-stack",
+    )
+
+    # Controls that were removed or renamed; their return would be a regression.
+    RETIRED_ELEMENT_IDS = (
+        "vslice-view-mode-3d",
+        "traj-manual-interp-graph",
+        "btn-traj-graph",
+        "traj-mode-alt",
+    )
+
+    @pytest.fixture
+    def trajectory_body(self, flask_client_volumes_eligible) -> str:
         r = flask_client_volumes_eligible.get("/trajectory")
         assert r.status_code == 200
-        body = r.get_data(as_text=True)
-        assert "Trajectory creator" in body
-        assert "vslice-canvas" in body
-        assert "vslice-volume-picker-rows" in body
-        assert "btn-vslice-pan-up" in body
-        assert "vslice-vtk-container" in body
-        assert "vslice-view-mode-3d" not in body
-        assert "traj-vol-backend-vtk" in body
-        assert "traj-vol-backend-chimerax" in body
-        assert "traj-vol-backend-slice" in body
-        assert "traj-vol-backend-hint" in body
+        return r.get_data(as_text=True)
+
+    def test_trajectory_page_ships_the_volume_viewer_controls(
+        self, trajectory_body: str
+    ) -> None:
+        missing = [
+            i for i in self.VOLUME_VIEWER_ELEMENT_IDS if i not in trajectory_body
+        ]
         assert (
-            'id="traj-vol-backend-chimerax"' in body
-            and "checked" in body.split("traj-vol-backend-chimerax")[1].split(">")[0]
-        )
-        assert (
-            'id="traj-vol-backend-chimerax"' in body
-            and "disabled" in body.split("traj-vol-backend-chimerax")[1].split(">")[0]
-        )
-        assert "btn-traj-vol-dock-below" in body
-        assert "traj-vol-volume-nav" in body
-        assert "traj-vol-volume-slider" in body
-        assert "traj-vol-expanded-host" in body
-        assert "traj-vol-popout-modal" in body
-        assert "traj-mode-manual" in body
-        assert 'id="traj-mode-manual" value="manual" checked' in body.replace(
-            " ", ""
-        ) or (
-            'id="traj-mode-manual"' in body
-            and "checked" in body.split("traj-mode-manual")[1].split(">")[0]
-        )
-        assert "Choosing trajectory waypoints" in body
-        assert "using particles and particle sets" in body
-        assert "Tracing trajectory path directly" in body
-        assert "traj-scatter-interp-nearest" in body
-        assert "traj-scatter-interp-direct" in body
-        assert "directTraversalAllowedForAxes" in body
-        assert "snap-to-nearest is mandatory" in body
-        assert "trajModeDirectRadio.disabled = false" in body
-        assert "trajModeDirectRadio.disabled = !allowDirect" not in body
-        assert "btn-traj-manual-volume" in body
-        assert "btn-generate-volumes" in body
-        assert "buildDecodeRenderVolumesButtonLabel" in body
-        assert "deferManualWaypointVolumeRerender" in body
-        assert "finishManualVolumeDeselection" in body
-        assert "scheduleManualParticleSetPickerRefresh" in body
-        assert "registerDirectTraceSnappedPathAsOtherWaypoints" in body
-        assert "directTraceMixedWaypointPathActive" in body
-        assert "ensureWaypointPathXYForOverlay" in body
-        assert "plotRowsForManualVolIds" in body
-        assert "syncManualVolumeViewerForWaypointSelection" in body
-        assert "manualSnappedDecodePathActive" in body
-        assert "preserveManualSnappedDecodeVolumeCatalog" in body
-        assert "reverseTrajectoryVolumeStaleAt" in body
-        assert "reverseTrajectory" in body
-        assert "syncManualAnchorIndicesToVolIdOrder" in body
-        assert "compactManualAnchorVolumesFromSnapshot" in body
-        assert "manualInterpolatedVolumeReversePending" in body
-        assert "Decode and render volumes" in body
-        assert 'id="traj-z-panel"' in body
-        assert "Latent <code>z</code> for each trajectory point" in body
-        assert "function refreshTrajectoryZPanel" in body
-        assert "function applyTrajectoryZPanelFromPayload" in body
-        assert "function buildCatalogTrajectoryZPayload" in body
-        assert "scrubNonParticleIdentityInZPayload" in body
-        assert "revealTrajectoryZPanelChrome" in body
-        # PC volumes are latent samples — never label them as dataset particles.
-        assert "PC analyze volumes are latent-space samples" in body
-        assert 'idHeader = "volume"' in body
-        assert 'lines.push("pt  particle  ("' not in body
-        # Particle-sets menu → latent-z dropdown → Decode/Render/Save row.
-        assert body.index('id="traj-anchor-wrap"') < body.index('id="traj-z-panel"')
-        assert body.index('id="traj-z-panel"') < body.index('id="traj-volume-actions"')
-        assert body.index('id="traj-volume-actions"') < body.index(
-            'id="traj-vol-panel-root"'
-        )
-        assert "btn-traj-manual-graph" in body
-        assert "manual-snap-n-points" in body
-        assert "manual-graph-n-points" in body
-        assert "Add points along" in body
-        assert "direct line" in body
-        assert "Add points using" in body
-        assert "graph traversal" in body
-        assert "Add trajectory points" in body
-        assert "through interpolation" in body
-        assert "traj-manual-interp-stack" in body
-        assert "cryo-traj-manual-mode-fields" in body
-        assert "traj-manual-interp-graph" not in body
-        assert "lastDisplayedVolumeFocusIndex" in body
-        assert "rememberDisplayedVolumeFocusIndex" in body
-        assert "restoreRememberedVolumeFocusIndex" in body
-        assert "snapVolumeFocusToActiveTick" in body
-        assert "trajectoryAddPointsBusy" in body
-        assert "snapFocusToReadyTick" in body
-        assert "trajectoryPathPointCountForHighlight" in body
-        assert "btn-traj-graph" not in body
-        assert "traj-mode-alt" not in body
-        assert "volume_slice_canvas.js" in body
-        assert "trajectory_volume_display.js" in body
-        assert "stableBackendChrome: true" in body
-        assert "cryo-traj-vol-backend-panel--inactive" in body
-        vol_display_js = read_dashboard_static_js("trajectory_volume_display.js")
-        assert "cryo-traj-vol-backend-panel--reserved" in vol_display_js
-        assert "_sliceFixedGridN" in vol_display_js
-        assert "_syncSliceFixedGrid" in vol_display_js
-        assert "cryo-plot-rendering-overlay--nonblocking" in vol_display_js
-        slice_canvas_js = read_dashboard_static_js("volume_slice_canvas.js")
-        assert "setFixedGridN" in slice_canvas_js
-        assert "this.fixedGridN <= 0" in slice_canvas_js
-        traj_css = (
-            Path(__file__).resolve().parents[1]
-            / "cryodrgn/dashboard/static/css/trajectory_creator.css"
-        ).read_text(encoding="utf-8")
-        assert "lower-right corner badge" in traj_css
-        assert "bottom: calc(0.45rem * 1.35)" in traj_css
-        assert "#traj-z-panel:not([hidden]) + #traj-volume-actions" in traj_css
-        assert "#traj-volume-actions + .cryo-traj-vol-panel-host" in traj_css
-        assert 'id="vslice-chimerax-view-controls"' in body
-        assert "vslice-iso-controls" in body
-        assert "traj-chimerax-view-rotate-row" in body
-        assert "volume_3d_utils.js" in body
-        assert "/api/volume_viewer/analyze_volumes" in body
+            not missing
+        ), f"volume viewer controls missing from /trajectory: {missing}"
+
+    def test_trajectory_page_loads_the_volume_viewer_modules(
+        self, trajectory_body: str
+    ) -> None:
+        """Without these script tags and this endpoint the viewer cannot boot."""
+        for asset in (
+            "volume_slice_canvas.js",
+            "trajectory_volume_display.js",
+            "volume_3d_utils.js",
+            "/api/volume_viewer/analyze_volumes",
+        ):
+            assert asset in trajectory_body, f"/trajectory does not reference {asset}"
+
+    def test_retired_volume_controls_stay_retired(self, trajectory_body: str) -> None:
+        present = [i for i in self.RETIRED_ELEMENT_IDS if i in trajectory_body]
+        assert not present, f"retired controls reappeared on /trajectory: {present}"
+
+    def test_chimerax_starts_selected_but_disabled_until_volumes_exist(
+        self, trajectory_body: str
+    ) -> None:
+        attrs = trajectory_body.split("traj-vol-backend-chimerax")[1].split(">")[0]
+        assert "checked" in attrs, "ChimeraX should be the default backend"
+        assert "disabled" in attrs, "no volumes yet, so the backend cannot be chosen"
+
+    def test_manual_waypoint_mode_is_the_default(self, trajectory_body: str) -> None:
+        attrs = trajectory_body.split("traj-mode-manual")[1].split(">")[0]
+        assert "checked" in attrs
+
+    def test_panels_follow_the_order_of_the_workflow(
+        self, trajectory_body: str
+    ) -> None:
+        """Particle sets, then the latent-z listing, then Decode/Render, then volumes."""
+        order = [
+            'id="traj-anchor-wrap"',
+            'id="traj-z-panel"',
+            'id="traj-volume-actions"',
+            'id="traj-vol-panel-root"',
+        ]
+        positions = [trajectory_body.index(marker) for marker in order]
+        assert positions == sorted(positions), f"panels out of order: {order}"
+
+    @pytest.mark.parametrize(
+        "copy",
+        [
+            "Trajectory creator",
+            "Choosing trajectory waypoints",
+            "using particles and particle sets",
+            "Tracing trajectory path directly",
+            "snap-to-nearest is mandatory",
+            "Decode and render volumes",
+            "Latent <code>z</code> for each trajectory point",
+            "Add points along",
+            "direct line",
+            "Add points using",
+            "graph traversal",
+            "Add trajectory points",
+            "through interpolation",
+        ],
+    )
+    def test_trajectory_page_explains_its_controls(
+        self, trajectory_body: str, copy: str
+    ) -> None:
+        assert copy in trajectory_body
+
+    def test_latent_z_listing_labels_pc_volumes_as_samples_not_particles(
+        self, trajectory_body: str
+    ) -> None:
+        """PC analyse volumes are latent-space samples, not dataset particles.
+
+        Labelling them as particles put meaningless identities in the latent-z
+        drop-down. The check stays at the source level because the panel is only
+        populated after a decode, which the browser tier cannot reach here.
+        """
+        assert "PC analyze volumes are latent-space samples" in trajectory_body
+        assert 'idHeader = "volume"' in trajectory_body
+        assert 'lines.push("pt  particle  ("' not in trajectory_body
+
+    def test_direct_tracing_is_not_gated_behind_an_axis_check(
+        self, trajectory_body: str
+    ) -> None:
+        """Direct traversal was once disabled by a client-side axis test that
+        disagreed with the server's own axis rules; the server is the authority
+        (see ``TestTrajectoryAxisConsistency``)."""
+        assert "trajModeDirectRadio.disabled = false" in trajectory_body
+        assert "trajModeDirectRadio.disabled = !allowDirect" not in trajectory_body
 
     def test_decode_api_requires_row(self, flask_client_volumes_eligible) -> None:
         r = flask_client_volumes_eligible.post(
@@ -813,7 +827,8 @@ class TestTrajectoryVolumeBrowserSmoke:
             timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
         )
         if not synced:
-            pytest.skip(
-                "VTK drag did not produce ChimeraX view sync "
-                "(WebGL/raycast may be unavailable in this environment)"
+            from tests.conftest import skip_or_fail_without_vtk_render
+
+            skip_or_fail_without_vtk_render(
+                playwright_page, "VTK drag did not produce a ChimeraX view sync"
             )

@@ -956,22 +956,6 @@ def read_dashboard_static_js(rel: str) -> str:
     return _read_dashboard_static(rel, "js")
 
 
-@lru_cache(maxsize=None)
-def read_dashboard_static_css(rel: str) -> str:
-    """Cached read of ``cryodrgn/dashboard/static/css/<rel>``."""
-    return _read_dashboard_static(rel, "css")
-
-
-def read_latent_3d_html() -> str:
-    """Cached read of ``latent_3d.html``."""
-    return read_dashboard_template("latent_3d.html")
-
-
-def js_function_body(source: str, fn_marker: str, until_marker: str) -> str:
-    """Slice a JS source string from ``fn_marker`` up to (but not including) ``until_marker``."""
-    return source.split(fn_marker, 1)[1].split(until_marker, 1)[0]
-
-
 # ---------------------------------------------------------------------------
 # Dashboard JavaScript module sandbox (no server, no page, no WebGL)
 # ---------------------------------------------------------------------------
@@ -980,10 +964,6 @@ def js_function_body(source: str, fn_marker: str, until_marker: str) -> str:
 # publishes one ``Cryo*`` global. That makes each one loadable into a blank page and
 # drivable as a plain state machine, which is how the pure logic (decode/render debt,
 # path mutations, Plotly array decoding) gets covered without a live dashboard.
-
-
-def dashboard_static_js_dir() -> Path:
-    return dashboard_repo_root() / "cryodrgn" / "dashboard" / "static" / "js"
 
 
 class DashboardJsSandbox:
@@ -1015,12 +995,6 @@ class DashboardJsSandbox:
 
     def evaluate(self, expression: str, arg=None):
         return self.page.evaluate(expression, arg)
-
-    def globals_present(self, *names: str) -> dict:
-        return self.page.evaluate(
-            "(names) => Object.fromEntries(names.map(n => [n, typeof window[n]]))",
-            list(names),
-        )
 
 
 # Shims ``require("fs"|"path"|"vm")`` so a Node-style selftest script can run inside
@@ -1080,7 +1054,7 @@ _JS_NODE_SELFTEST_SHIM = r"""
       "require", "__dirname", "console", "module", "exports", "global",
       payload.script + "\n//# sourceURL=cryo-selftest.js"
     );
-    runner(requireShim, "/repo/scripts", shimConsole, { exports: {} }, {}, realm);
+    runner(requireShim, "/tests/js", shimConsole, { exports: {} }, {}, realm);
   } catch (err) {
     return { ok: false, error: String((err && err.stack) || err), logs: logs };
   }
@@ -1262,49 +1236,6 @@ def playwright_route_volume_viewer_render_stub(page) -> None:
 
     def _handler(route):
         if not fulfill_volume_viewer_render_route(route):
-            route.continue_()
-
-    page.route("**/api/volume_viewer/**", _handler)
-
-
-def fulfill_volume_viewer_route(route) -> bool:
-    """Fulfill a Playwright route with volume-viewer stubs; return True if handled."""
-    if fulfill_volume_viewer_render_route(route):
-        return True
-
-    payloads = _volume_viewer_stub_payloads()
-    url = route.request.url
-    method = route.request.method
-    if "analyze_volumes" in url and method == "GET":
-        body = (
-            payloads["catalog_only"]
-            if "include_markers=0" in url
-            else payloads["catalog_with_markers"]
-        )
-        route.fulfill(status=200, content_type="application/json", body=body)
-        return True
-    if "analyze_markers" in url and method == "GET":
-        route.fulfill(
-            status=200,
-            content_type="application/json",
-            body=payloads["markers_only"],
-        )
-        return True
-    if "analyze_volume" in url and method == "GET":
-        route.fulfill(
-            status=200,
-            content_type="application/json",
-            body=payloads["single_volume"],
-        )
-        return True
-    return False
-
-
-def playwright_route_volume_viewer_stub(page) -> None:
-    """Intercept ``/api/volume_viewer/*`` with fast JSON stubs for Playwright tests."""
-
-    def _handler(route):
-        if not fulfill_volume_viewer_route(route):
             route.continue_()
 
     page.route("**/api/volume_viewer/**", _handler)
@@ -2231,25 +2162,6 @@ def dashboard_smoke_index(
     }
 
 
-def dashboard_smoke_index_no_landscape(
-    page,
-    base_url: str,
-    *,
-    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-) -> dict:
-    out = dashboard_smoke_index(page, base_url, timeout_ms=timeout_ms)
-    if out["has_landscape_volpca"]:
-        raise RuntimeError(
-            "expected inactive landscape card without analyze_landscape outputs"
-        )
-    body_text = page.inner_text("body")
-    if "Volume sketched landscape explorer" not in body_text:
-        raise RuntimeError("missing inactive landscape card title")
-    if "analyze_landscape" not in body_text:
-        raise RuntimeError("missing analyze_landscape hint on inactive landscape card")
-    return out
-
-
 def dashboard_smoke_latent_3d_camera_on_covariate_change(
     page,
     base_url: str,
@@ -2586,74 +2498,6 @@ def dashboard_smoke_volume_viewer(
 ) -> dict | None:
     """Trajectory creator: manual k-means/PC picker and slice canvas."""
     return _dashboard_smoke_volume_viewer_ready(page, base_url, timeout_ms=timeout_ms)
-
-
-def dashboard_smoke_volume_viewer_picker_switch(
-    page,
-    base_url: str,
-    *,
-    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-) -> dict | None:
-    """Trajectory creator: switch active volume via manual picker buttons."""
-    ready = _dashboard_smoke_volume_viewer_ready(page, base_url, timeout_ms=timeout_ms)
-    if ready is None:
-        return None
-    if ready["volume_picker_buttons"] < 2:
-        return {**ready, "switched": False, "reason": "fewer_than_two_volumes"}
-
-    pick_state = page.evaluate(
-        """() => {
-          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          if (buttons.length < 2) return { ok: false };
-          buttons[0].click();
-          return {
-            ok: true,
-            fromLabel: buttons[0].textContent.trim(),
-            targetIdx: 1
-          };
-        }"""
-    )
-    if not pick_state.get("ok"):
-        return {**ready, "switched": False, "reason": "fewer_than_two_volumes"}
-    page.wait_for_function(
-        """() => {
-          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          return buttons.length >= 2
-            && buttons[0].classList.contains('cryo-vslice-vol-btn--active');
-        }""",
-        timeout=timeout_ms,
-    )
-    page.evaluate(
-        """() => {
-          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          if (buttons.length < 2) return;
-          if (buttons[0].classList.contains('cryo-vslice-vol-btn--active')) {
-            buttons[0].click();
-          }
-          buttons[1].click();
-        }"""
-    )
-    page.wait_for_function(
-        """() => {
-          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          if (buttons.length < 2) return false;
-          return !buttons[0].classList.contains('cryo-vslice-vol-btn--active')
-            && buttons[1].classList.contains('cryo-vslice-vol-btn--active');
-        }""",
-        timeout=timeout_ms,
-    )
-    second_label = page.evaluate(
-        """() => {
-          var buttons = document.querySelectorAll('.cryo-vslice-vol-btn');
-          return buttons.length >= 2 ? buttons[1].textContent.trim() : '';
-        }"""
-    )
-    return {
-        **ready,
-        "switched": True,
-        "from_label": pick_state.get("fromLabel", ""),
-        "to_label": second_label,
-    }
 
 
 def dashboard_smoke_particle_explorer_panels(

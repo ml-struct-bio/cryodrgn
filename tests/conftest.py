@@ -908,6 +908,16 @@ def plotly_trace_array(trace: dict[str, Any], key: str) -> Any:
     return decode_plotly_value(trace[key])
 
 
+def explorer_scatter_rows(client, **params) -> list[int]:
+    """Plot rows behind ``/api/scatter``, read the way the explorer reads them."""
+    query = {"x": "UMAP1", "y": "UMAP2", "explorer_scatter": "1", **params}
+    r = client.get("/api/scatter", query_string=query)
+    assert r.status_code == 200, r.get_data(as_text=True)[:400]
+    fig = decode_plotly_figure(r.get_json())
+    customdata = fig["data"][0].get("customdata") or []
+    return [int(row[1]) for row in customdata if len(row) > 1]
+
+
 def dashboard_repo_root() -> "Path":
     from pathlib import Path
 
@@ -963,6 +973,135 @@ def js_function_body(source: str, fn_marker: str, until_marker: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Dashboard JavaScript module sandbox (no server, no page, no WebGL)
+# ---------------------------------------------------------------------------
+
+# Every module under ``static/js`` is a ``(function (global) {...})(window)`` IIFE that
+# publishes one ``Cryo*`` global. That makes each one loadable into a blank page and
+# drivable as a plain state machine, which is how the pure logic (decode/render debt,
+# path mutations, Plotly array decoding) gets covered without a live dashboard.
+
+
+def dashboard_static_js_dir() -> Path:
+    return dashboard_repo_root() / "cryodrgn" / "dashboard" / "static" / "js"
+
+
+class DashboardJsSandbox:
+    """Load dashboard IIFE modules into a blank page and evaluate against their globals.
+
+    ``load()`` re-injects on every call so each test starts from freshly constructed
+    ``Cryo*`` globals rather than inheriting mutations from a previous test.
+    """
+
+    def __init__(self, page) -> None:
+        self.page = page
+
+    def load(self, *module_names: str) -> "DashboardJsSandbox":
+        for name in module_names:
+            source = read_dashboard_static_js(name)
+            self.page.add_script_tag(content=f"{source}\n//# sourceURL=cryo/{name}")
+        return self
+
+    def define(self, source: str) -> "DashboardJsSandbox":
+        """Publish test-side helper functions as page globals.
+
+        ``page.evaluate`` takes a single expression, so helpers cannot be prepended to
+        an arrow function; injecting them as a script tag makes them callable instead.
+        """
+        self.page.add_script_tag(
+            content=f"{source}\n//# sourceURL=cryo/test-helpers.js"
+        )
+        return self
+
+    def evaluate(self, expression: str, arg=None):
+        return self.page.evaluate(expression, arg)
+
+    def globals_present(self, *names: str) -> dict:
+        return self.page.evaluate(
+            "(names) => Object.fromEntries(names.map(n => [n, typeof window[n]]))",
+            list(names),
+        )
+
+
+# Shims ``require("fs"|"path"|"vm")`` so a Node-style selftest script can run inside
+# Chromium. ``vm.runInContext`` evaluates each module in a hidden iframe rather than
+# against a plain object: the dashboard modules assume their globals live on a real
+# global object (``trajectory_session.js`` reads a bare ``CryoTrajectoryPath``), which
+# holds in a browser but not in a synthetic sandbox. Whatever the modules publish is
+# copied back onto the caller's sandbox so the script reads it as it would under Node.
+_JS_NODE_SELFTEST_SHIM = r"""
+(payload) => {
+  var files = payload.files;
+  var logs = [];
+  function record(args) {
+    logs.push(Array.prototype.map.call(args, String).join(" "));
+  }
+  var shimConsole = {
+    log: function () { record(arguments); },
+    warn: function () { record(arguments); },
+    error: function () { record(arguments); }
+  };
+  var realmFrame = document.createElement("iframe");
+  realmFrame.style.display = "none";
+  document.body.appendChild(realmFrame);
+  var realm = realmFrame.contentWindow;
+  var vmShim = {
+    createContext: function (sandbox) { return sandbox; },
+    runInContext: function (src, sandbox, opts) {
+      var name = (opts && opts.filename) || "module.js";
+      realm.eval(src + "\n//# sourceURL=cryo-vm/" + name);
+      Object.getOwnPropertyNames(realm).forEach(function (key) {
+        if (key.indexOf("Cryo") === 0) sandbox[key] = realm[key];
+      });
+    }
+  };
+  var fsShim = {
+    readFileSync: function (p) {
+      var base = String(p).split("/").pop();
+      if (!Object.prototype.hasOwnProperty.call(files, base)) {
+        throw new Error("ENOENT: no shimmed file " + p);
+      }
+      return files[base];
+    }
+  };
+  var pathShim = {
+    join: function () { return Array.prototype.join.call(arguments, "/"); }
+  };
+  function requireShim(name) {
+    if (name === "fs") return fsShim;
+    if (name === "path") return pathShim;
+    if (name === "vm") return vmShim;
+    throw new Error("selftest requires un-shimmed module: " + name);
+  }
+  try {
+    // ``global`` is bound to the module realm: the script reads optional modules off
+    // it, which under Node resolved to the process global and silently skipped them.
+    var runner = new Function(
+      "require", "__dirname", "console", "module", "exports", "global",
+      payload.script + "\n//# sourceURL=cryo-selftest.js"
+    );
+    runner(requireShim, "/repo/scripts", shimConsole, { exports: {} }, {}, realm);
+  } catch (err) {
+    return { ok: false, error: String((err && err.stack) || err), logs: logs };
+  }
+  return { ok: true, logs: logs };
+}
+"""
+
+
+def run_dashboard_js_node_selftest(page, script_path: Path, module_names) -> dict:
+    """Run a Node ``vm``-style JS selftest script inside Chromium; return its result."""
+    files = {name: read_dashboard_static_js(name) for name in module_names}
+    return page.evaluate(
+        _JS_NODE_SELFTEST_SHIM,
+        {
+            "files": files,
+            "script": script_path.read_text(encoding="utf-8"),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Dashboard live servers, Playwright fixtures, volume-viewer route stubs
 # ---------------------------------------------------------------------------
 
@@ -987,6 +1126,26 @@ def make_fake_trajectory_volume_pngs(cache_token: str = "cache-tok"):
         return blobs, cache_token
 
     return _fake
+
+
+@lru_cache(maxsize=None)
+def volume_stub_b64(d: int = 16) -> str:
+    """Base64 float32 ``d``³ volume in the wire format ``volume_array_b64`` produces.
+
+    Stubbed volume responses must not reuse a PNG: the VTK raycaster reads
+    ``volume_b64`` straight into a ``Float32Array``, so a PNG aborts the whole VTK
+    initialisation with a byte-length error and the backend silently never starts.
+    A centred blob gives the isosurface something to find.
+    """
+    import base64
+
+    axis = np.linspace(-1.0, 1.0, d, dtype=np.float32)
+    zz, yy, xx = np.meshgrid(axis, axis, axis, indexing="ij")
+    vol = np.exp(-4.0 * (xx * xx + yy * yy + zz * zz)).astype(np.float32)
+    return base64.standard_b64encode(vol.tobytes()).decode("ascii")
+
+
+VOLUME_STUB_D = 16
 
 
 def _volume_viewer_stub_payloads():
@@ -1045,7 +1204,12 @@ def _volume_viewer_stub_payloads():
         ),
         "markers_only": json.dumps({"ok": True, "markers": markers}),
         "single_volume": json.dumps(
-            {"ok": True, "id": "kmeans:0", "volume_b64": tiny, "D": 32}
+            {
+                "ok": True,
+                "id": "kmeans:0",
+                "volume_b64": volume_stub_b64(VOLUME_STUB_D),
+                "D": VOLUME_STUB_D,
+            }
         ),
     }
 
@@ -1077,7 +1241,11 @@ def fulfill_volume_viewer_render_route(route) -> bool:
             req = {}
         ids = req.get("ids") or ["kmeans:0"]
         volumes = {
-            str(vol_id): {"volume_b64": tiny, "D": 32, "id": str(vol_id)}
+            str(vol_id): {
+                "volume_b64": volume_stub_b64(VOLUME_STUB_D),
+                "D": VOLUME_STUB_D,
+                "id": str(vol_id),
+            }
             for vol_id in ids
         }
         route.fulfill(
@@ -1171,14 +1339,20 @@ def dashboard_plain_live_url(dashboard_workdir_plain_copy: str):
 
 
 @pytest.fixture(scope="module")
-def playwright_browser():
+def playwright_instance():
+    """One Playwright driver per module; the sync API cannot be nested."""
     pytest.importorskip("playwright")
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = _launch_playwright_chromium(p)
-        yield browser
-        browser.close()
+        yield p
+
+
+@pytest.fixture(scope="module")
+def playwright_browser(playwright_instance):
+    browser = _launch_playwright_chromium(playwright_instance)
+    yield browser
+    browser.close()
 
 
 @pytest.fixture(scope="module")
@@ -1187,6 +1361,34 @@ def playwright_page(playwright_browser):
     page = context.new_page()
     yield page
     context.close()
+
+
+@pytest.fixture(scope="class")
+def playwright_isolated_browser(playwright_instance):
+    """A browser process of one test class's own.
+
+    WebGL scenes hold GPU resources that outlive their page, so after a handful of 3D
+    plots the shared browser reaches a state where dragging no longer orbits. Tests
+    that need genuine 3D interaction start from a clean process instead.
+    """
+    browser = _launch_playwright_chromium(playwright_instance)
+    yield browser
+    browser.close()
+
+
+@pytest.fixture(scope="module")
+def dashboard_js_page(playwright_browser):
+    """Blank page for JS module tests: no dashboard server, no trained fixture."""
+    context = playwright_browser.new_context()
+    page = context.new_page()
+    page.goto("about:blank")
+    yield page
+    context.close()
+
+
+@pytest.fixture
+def dashboard_js(dashboard_js_page) -> DashboardJsSandbox:
+    return DashboardJsSandbox(dashboard_js_page)
 
 
 def _playwright_chromium_launch_kwargs() -> dict:
@@ -1199,6 +1401,113 @@ def _playwright_chromium_launch_kwargs() -> dict:
             "--max-active-webgl-contexts=32",
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# WebGL capability probing
+# ---------------------------------------------------------------------------
+
+# The VTK volume raycaster needs working WebGL. When it is missing, browser tests
+# degrade to skips and CI stays green while covering nothing, so set
+# ``CRYODRGN_REQUIRE_WEBGL=1`` (as CI does) to turn those skips into failures.
+WEBGL_REQUIRED_ENV = "CRYODRGN_REQUIRE_WEBGL"
+
+
+def webgl_is_required() -> bool:
+    return os.environ.get(WEBGL_REQUIRED_ENV, "").strip().lower() not in {
+        "",
+        "0",
+        "false",
+        "no",
+    }
+
+
+def skip_or_fail_without_webgl(reason: str) -> None:
+    """Skip locally, but fail where WebGL is declared a requirement."""
+    if webgl_is_required():
+        raise AssertionError(
+            f"{reason} — {WEBGL_REQUIRED_ENV} is set, so this must not be skipped."
+        )
+    pytest.skip(reason)
+
+
+# Creating a context is not enough: SwiftShader can hand back a context that never
+# rasterises. This clears to a known colour and reads the pixel back, so a silently
+# non-drawing GL stack is reported as broken rather than available.
+_WEBGL_PROBE_JS = """
+() => {
+  var out = {
+    webgl2: false, webgl1: false, rasterised: false,
+    renderer: "", vendor: "", version: "", unmaskedRenderer: "", unmaskedVendor: "",
+    pixel: null, error: ""
+  };
+  try {
+    var canvas = document.createElement("canvas");
+    canvas.width = 8;
+    canvas.height = 8;
+    var gl = canvas.getContext("webgl2");
+    out.webgl2 = !!gl;
+    if (!gl) {
+      gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+      out.webgl1 = !!gl;
+    } else {
+      out.webgl1 = true;
+    }
+    if (!gl) {
+      out.error = "no WebGL context from canvas";
+      return out;
+    }
+    out.renderer = String(gl.getParameter(gl.RENDERER) || "");
+    out.vendor = String(gl.getParameter(gl.VENDOR) || "");
+    out.version = String(gl.getParameter(gl.VERSION) || "");
+    var dbg = gl.getExtension("WEBGL_debug_renderer_info");
+    if (dbg) {
+      out.unmaskedRenderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || "");
+      out.unmaskedVendor = String(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) || "");
+    }
+    gl.clearColor(0.0, 1.0, 0.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    var px = new Uint8Array(4);
+    gl.readPixels(4, 4, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    out.pixel = [px[0], px[1], px[2], px[3]];
+    out.rasterised = px[0] === 0 && px[1] === 255 && px[2] === 0 && px[3] === 255;
+    if (gl.getError() !== gl.NO_ERROR) out.error = "GL error after clear/readPixels";
+  } catch (err) {
+    out.error = String((err && err.message) || err);
+  }
+  return out;
+}
+"""
+
+
+def dashboard_webgl_report(page) -> dict:
+    """Probe the page's WebGL stack: contexts, renderer strings, and real drawing."""
+    return page.evaluate(_WEBGL_PROBE_JS)
+
+
+def skip_or_fail_without_vtk_render(page, reason: str) -> None:
+    """Skip a VTK-dependent assertion, recording *why* the raycaster produced nothing.
+
+    Whether the browser supports WebGL at all is asserted separately, on a clean page,
+    by ``tests/test_dashboard_webgl.py``; probing this page would instead measure how
+    much WebGL the loaded dashboard has already consumed. So this always skips, but
+    states which condition it saw, because the previous blanket
+    "WebGL may be unavailable" hid a real volume-viewer defect for months.
+    """
+    report = dashboard_webgl_report(page)
+    renderer = report.get("unmaskedRenderer") or report.get("renderer") or "unknown"
+    if not report.get("rasterised"):
+        pytest.skip(
+            f"{reason}; this document can no longer obtain a WebGL context "
+            f"(renderer={renderer!r}, error={report.get('error')!r}). The browser "
+            "supports WebGL, but loading /trajectory segfaults the SwiftShader GPU "
+            "process — see TestDashboardPagesKeepWebgl in test_dashboard_webgl.py."
+        )
+    pytest.skip(
+        f"{reason}, although this page still rasterises WebGL (renderer={renderer!r}). "
+        "The VTK raycaster did not initialise: a volume-viewer defect, not a missing "
+        "GL stack."
+    )
 
 
 def _launch_playwright_chromium(playwright):
@@ -1376,6 +1685,292 @@ def _dashboard_smoke_ensure_panel_open(page, toggle_id: str) -> None:
     )
     if not expanded:
         page.click(f"#{toggle_id}")
+
+
+# ---------------------------------------------------------------------------
+# Explorer scatter region selection (multi-region lasso / box)
+# ---------------------------------------------------------------------------
+
+# Committing a region needs geometry in ``layout.selections`` *and* a
+# ``plotly_selected`` event, because the handler snapshots the shapes synchronously
+# and derives rows from ``ev.points``. Driving the mouse cannot target a chosen data
+# range reliably at an arbitrary viewport size, so the drag is emitted directly.
+# The geometry is assigned rather than pushed through ``Plotly.relayout``: relayout of
+# ``selections`` re-enters the scattergl reselect path, which the highlight trace
+# cannot service. The dashboard's own commit handler relayouts the shapes afterwards.
+_EXPLORER_COMMIT_REGION_JS = """
+(spec) => {
+  var gd = document.getElementById('scatter');
+  if (!gd || !gd._fullLayout) throw new Error('scatter not initialised');
+  var P = window.CryoPlotlyArrays;
+  if (!P) throw new Error('CryoPlotlyArrays missing');
+  var xr = gd._fullLayout.xaxis.range;
+  var yr = gd._fullLayout.yaxis.range;
+  function lerp(range, f) { return range[0] + (range[1] - range[0]) * f; }
+  var x0 = lerp(xr, spec.x0), x1 = lerp(xr, spec.x1);
+  var y0 = lerp(yr, spec.y0), y1 = lerp(yr, spec.y1);
+  var xlo = Math.min(x0, x1), xhi = Math.max(x0, x1);
+  var ylo = Math.min(y0, y1), yhi = Math.max(y0, y1);
+
+  gd.layout.dragmode = 'select';
+  if (!Array.isArray(gd.layout.selections)) gd.layout.selections = [];
+  gd.layout.selections.push({
+    type: 'rect', xref: 'x', yref: 'y', x0: x0, x1: x1, y0: y0, y1: y1
+  });
+
+  var tr = gd.data[0];
+  var n = P.length(tr.x);
+  var points = [];
+  for (var i = 0; i < n; i++) {
+    var x = P.valueAt(tr.x, i);
+    var y = P.valueAt(tr.y, i);
+    if (x >= xlo && x <= xhi && y >= ylo && y <= yhi) {
+      points.push({
+        curveNumber: 0,
+        pointIndex: i,
+        x: x,
+        y: y,
+        customdata: P.rowAt(tr.customdata, i)
+      });
+    }
+  }
+  gd.emit('plotly_selected', {
+    points: points,
+    range: { x: [xlo, xhi], y: [ylo, yhi] }
+  });
+  return { emitted: points.length, total: n };
+}
+"""
+
+_EXPLORER_REGION_STATE_JS = """
+() => {
+  var gd = document.getElementById('scatter');
+  var shapes = (gd && gd.layout && gd.layout.shapes) || [];
+  var regionShapes = shapes.filter(function (s) {
+    return String(s.name || '').indexOf('cdrgn_commit_shape') === 0;
+  });
+  var chips = Array.prototype.map.call(
+    document.querySelectorAll('.cryo-explorer-scatter-region-chip'),
+    function (chip) {
+      var count = chip.querySelector('.cryo-cc-discrete-switch-count');
+      return {
+        idx: chip.getAttribute('data-region-idx'),
+        count: count ? (count.textContent || '').trim() : '',
+        solo: !!chip.querySelector('.cryo-cc-discrete-solo-btn'),
+        wheel: !!chip.querySelector('.cryo-cc-discrete-colorwheel-btn'),
+        remove: !!chip.querySelector('.cryo-explorer-scatter-region-chip__remove')
+      };
+    }
+  );
+  var selCount = document.getElementById('sel-count');
+  var clearBtn = document.getElementById('clear-explorer-selection');
+  var fieldset = document.getElementById('particle-sel-fieldset');
+  var trace0 = gd && gd.data && gd.data[0];
+  var selectedPoints = trace0 && trace0.selectedpoints ? trace0.selectedpoints : null;
+  return {
+    regionShapes: regionShapes.length,
+    shapeNames: regionShapes.map(function (s) { return s.name; }),
+    shapeLayers: regionShapes.map(function (s) { return s.layer; }),
+    shapeLineColors: regionShapes.map(function (s) {
+      return (s.line && s.line.color) || null;
+    }),
+    pendingSelections: ((gd && gd.layout && gd.layout.selections) || []).length,
+    chips: chips,
+    selCountText: selCount ? (selCount.textContent || '').trim() : '',
+    clearDisabled: clearBtn ? !!clearBtn.disabled : null,
+    fieldsetDisabled: fieldset ? !!fieldset.disabled : null,
+    selectedPointCount: selectedPoints ? selectedPoints.length : null
+  };
+}
+"""
+
+
+def explorer_commit_scatter_region(
+    page,
+    *,
+    x0: float,
+    x1: float,
+    y0: float,
+    y1: float,
+    expect_regions: int,
+    timeout_ms: int = DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+) -> dict:
+    """Commit one box region on ``/explorer`` and wait out the selection debounce.
+
+    Bounds are fractions of the current axis ranges. ``expect_regions`` is the region
+    count the commit should settle on, which is what the wait keys off.
+    """
+    emitted = page.evaluate(
+        _EXPLORER_COMMIT_REGION_JS, {"x0": x0, "x1": x1, "y0": y0, "y1": y1}
+    )
+    page.wait_for_function(
+        """(want) => {
+          var gd = document.getElementById('scatter');
+          var shapes = (gd && gd.layout && gd.layout.shapes) || [];
+          return shapes.filter(function (s) {
+            return String(s.name || '').indexOf('cdrgn_commit_shape') === 0;
+          }).length === want;
+        }""",
+        arg=expect_regions,
+        timeout=timeout_ms,
+    )
+    return emitted
+
+
+def explorer_scatter_region_state(page) -> dict:
+    """Observable multi-region selection state: shapes, chips, counters, dimming."""
+    return page.evaluate(_EXPLORER_REGION_STATE_JS)
+
+
+# ---------------------------------------------------------------------------
+# 3D scene camera helpers
+# ---------------------------------------------------------------------------
+
+
+def dashboard_wait_scene_camera_settled(
+    page,
+    plot_id: str,
+    *,
+    timeout_ms: int = DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+    quiet_ms: int = 400,
+) -> dict:
+    """Wait until two consecutive camera reads agree.
+
+    A drawn plot is not yet an interactive one: the page applies its own scene layout
+    (including the up vector) after the first paint, and dragging before that lands on
+    a scene that is about to be replaced.
+    """
+    deadline = time.time() + timeout_ms / 1000.0
+    previous = _dashboard_smoke_wait_scene_camera(page, plot_id, timeout_ms=timeout_ms)
+    while time.time() < deadline:
+        page.wait_for_timeout(quiet_ms)
+        current = _dashboard_smoke_scene_camera(page, plot_id)
+        if current and _dashboard_smoke_cameras_match(previous, current, tol=1e-9):
+            return current
+        previous = current or previous
+    raise RuntimeError(f"scene camera for #{plot_id} never settled: {previous!r}")
+
+
+def dashboard_open_latent_3d(
+    page, base_url: str, *, timeout_ms: int = DASHBOARD_BROWSER_FAST_TIMEOUT_MS
+) -> None:
+    """Load ``/latent-3d`` and wait for the scene and its render overlay to settle."""
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/latent-3d", wait_until="domcontentloaded", timeout=timeout_ms)
+    _dashboard_smoke_wait_plot_ready(page, "latent3d", timeout_ms=timeout_ms)
+    _dashboard_smoke_wait_latent3d_overlay_hidden(page, timeout_ms=timeout_ms)
+    dashboard_wait_scene_camera_settled(page, "latent3d", timeout_ms=timeout_ms)
+
+
+def dashboard_scene_camera(page, plot_id: str) -> dict | None:
+    """Current ``scene.camera`` for a 3D plot, as ``{eye, center, up}`` vectors."""
+    return _dashboard_smoke_scene_camera(page, plot_id)
+
+
+def dashboard_orbit_scene_camera(
+    page,
+    plot_id: str,
+    *,
+    dx: int = 140,
+    dy: int = 90,
+    settle_ms: int = 900,
+) -> dict:
+    """Orbit a 3D scene with a real drag and return the resulting camera.
+
+    ``Plotly.relayout`` on ``scene.camera`` is not a substitute: the live WebGL camera
+    is held outside ``_fullLayout``, and the page re-applies its pinned pose, so a
+    synthetic relayout silently leaves the scene where it was.
+    """
+    before = dashboard_scene_camera(page, plot_id)
+    box = page.locator(f"#{plot_id}").bounding_box()
+    if not box or box["width"] < 20 or box["height"] < 20:
+        raise RuntimeError(f"plot #{plot_id} has no usable box: {box!r}")
+    cx = box["x"] + box["width"] * 0.5
+    cy = box["y"] + box["height"] * 0.5
+
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    page.mouse.move(cx + dx, cy + dy, steps=18)
+    page.mouse.up()
+    page.wait_for_timeout(settle_ms)
+
+    after = dashboard_scene_camera(page, plot_id)
+    if _dashboard_smoke_cameras_match(before, after):
+        raise RuntimeError(
+            f"drag on #{plot_id} did not orbit the scene (camera still {after!r})"
+        )
+    return after
+
+
+def dashboard_cameras_match(a: dict | None, b: dict | None, *, tol: float = 1e-4):
+    return _dashboard_smoke_cameras_match(a, b, tol=tol)
+
+
+_TRAJECTORY_VOLUME_SLIDER_STATE_JS = """
+() => {
+  var btn = document.getElementById('btn-generate-volumes');
+  var slider = document.getElementById('traj-vol-volume-slider');
+  var host = document.getElementById('traj-vol-volume-slider-ticks');
+  var ticks = host ? Array.from(host.querySelectorAll('[data-vol-index]')) : [];
+  function inactive(t) {
+    return !!t.disabled
+      || t.classList.contains('cryo-vslice-volume-slider-tick--inactive');
+  }
+  return {
+    buttonLabel: btn ? btn.textContent.replace(/\\s+/g, ' ').trim() : null,
+    buttonDisabled: btn ? !!btn.disabled : null,
+    sliderMax: slider ? Number(slider.max) : null,
+    tickCount: ticks.length,
+    inactiveTicks: ticks.filter(inactive).length,
+    inactiveIndices: ticks
+      .map(function (t, i) { return inactive(t) ? i : -1; })
+      .filter(function (i) { return i >= 0; })
+  };
+}
+"""
+
+
+def trajectory_volume_slider_state(page) -> dict:
+    """Decode/Render button state alongside the volume slider's tick activity.
+
+    These are the two ends of the readiness accounting that ``TrajectoryVolumeState``
+    computes: the button offers outstanding work, and each inactive tick is a slot the
+    slider must not stop on. They are meant to agree exactly.
+    """
+    return page.evaluate(_TRAJECTORY_VOLUME_SLIDER_STATE_JS)
+
+
+def dashboard_page_webgl_alive(page) -> bool:
+    """Whether this document can still obtain a WebGL context."""
+    return bool(
+        page.evaluate(
+            """() => {
+              var c = document.createElement('canvas');
+              c.width = 64;
+              c.height = 64;
+              return !!(c.getContext('webgl2') || c.getContext('webgl'));
+            }"""
+        )
+    )
+
+
+def explorer_open_scatter_ready(
+    page, base_url: str, *, timeout_ms: int = DASHBOARD_BROWSER_FAST_TIMEOUT_MS
+) -> dict:
+    """Load ``/explorer`` and wait until the scatter is drawn and its events wired."""
+    base = base_url.rstrip("/")
+    page.goto(f"{base}/explorer", wait_until="domcontentloaded", timeout=timeout_ms)
+    info = _dashboard_smoke_wait_plot_ready(page, "scatter", timeout_ms=timeout_ms)
+    # ``wireUpPlotlyEvents`` runs with the highlight trace, so its presence means the
+    # ``plotly_selected`` handler is attached and a synthetic commit will be seen.
+    page.wait_for_function(
+        """() => {
+          var gd = document.getElementById('scatter');
+          return !!(gd && gd.data && gd.data.length >= 2);
+        }""",
+        timeout=timeout_ms,
+    )
+    return info
 
 
 # ---------------------------------------------------------------------------

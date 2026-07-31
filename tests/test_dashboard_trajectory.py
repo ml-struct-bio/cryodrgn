@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import io
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -53,7 +54,11 @@ from cryodrgn.dashboard.trajectory import (
     validate_trajectory_plot_axes,
     z_traj_to_savetxt_str,
 )
-from tests.conftest import _monkeypatch_explorer_volumes_eligible
+from tests.conftest import (
+    _monkeypatch_explorer_volumes_eligible,
+    make_fake_trajectory_volume_pngs,
+    run_dashboard_js_node_selftest,
+)
 
 pytestmark = pytest.mark.dashboard
 
@@ -1546,3 +1551,1031 @@ class TestManualTrajectoryParticleSnap:
         assert js.get("traj_rows")
         assert not js.get("analyze_volume_ids")
         assert len(js["traj_rows"]) == 3
+
+
+class TestTrajectoryVolumeSliderAccounting:
+    """The Decode/Render button and the volume slider must agree on what is ready.
+
+    ``TrajectoryVolumeState`` defines render debt as the count of inactive ChimeraX
+    slider ticks, and the unit tests in ``test_dashboard_js_modules.py`` hold it to
+    that. This checks the same invariant end to end in the rendered page, where the
+    counter has previously drifted from the ticks the slider actually offers.
+    """
+
+    pytestmark = pytest.mark.browser
+
+    @pytest.fixture
+    def volume_panel(self, playwright_page, dashboard_volumes_eligible_live_url):
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_volume_viewer_ready,
+            playwright_route_volume_viewer_render_stub,
+        )
+
+        playwright_route_volume_viewer_render_stub(playwright_page)
+        ready = _dashboard_smoke_volume_viewer_ready(
+            playwright_page,
+            dashboard_volumes_eligible_live_url,
+            timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        if ready is None:
+            pytest.skip("volume viewer did not become ready on this runner")
+        return playwright_page
+
+    def test_every_tick_starts_inactive_and_the_button_offers_the_work(
+        self, volume_panel
+    ):
+        from tests.conftest import trajectory_volume_slider_state
+
+        state = trajectory_volume_slider_state(volume_panel)
+        assert state["tickCount"] > 1, "expected a multi-point trajectory"
+        assert state["inactiveTicks"] == state["tickCount"]
+        assert (
+            state["buttonDisabled"] is False
+        ), "every slot still needs rendering, so Decode/Render must be offered"
+
+    def test_slider_span_matches_the_tick_count(self, volume_panel):
+        """An off-by-one here lets the slider land on a slot that has no volume."""
+        from tests.conftest import trajectory_volume_slider_state
+
+        state = trajectory_volume_slider_state(volume_panel)
+        assert state["sliderMax"] == state["tickCount"] - 1
+
+    def test_rendering_activates_every_tick_and_retires_the_button(self, volume_panel):
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            dashboard_smoke_rerender_manual_volumes,
+            trajectory_volume_slider_state,
+        )
+
+        before = trajectory_volume_slider_state(volume_panel)
+        dashboard_smoke_rerender_manual_volumes(
+            volume_panel, timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS
+        )
+        volume_panel.wait_for_function(
+            """() => {
+              var host = document.getElementById('traj-vol-volume-slider-ticks');
+              if (!host) return false;
+              var ticks = Array.from(host.querySelectorAll('[data-vol-index]'));
+              return ticks.length > 0 && ticks.every(function (t) {
+                return !t.disabled
+                  && !t.classList.contains('cryo-vslice-volume-slider-tick--inactive');
+              });
+            }""",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+
+        after = trajectory_volume_slider_state(volume_panel)
+        assert after["tickCount"] == before["tickCount"]
+        assert after["inactiveTicks"] == 0
+        assert (
+            after["buttonDisabled"] is True
+        ), "with no inactive ticks left there is no outstanding decode or render work"
+
+    def test_button_availability_tracks_outstanding_ticks(self, volume_panel):
+        """The button and the ticks are two views of one debt, before and after."""
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            dashboard_smoke_rerender_manual_volumes,
+            trajectory_volume_slider_state,
+        )
+
+        observations = [trajectory_volume_slider_state(volume_panel)]
+        dashboard_smoke_rerender_manual_volumes(
+            volume_panel, timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS
+        )
+        volume_panel.wait_for_timeout(800)
+        observations.append(trajectory_volume_slider_state(volume_panel))
+
+        for state in observations:
+            has_debt = state["inactiveTicks"] > 0
+            assert state["buttonDisabled"] is not has_debt, (
+                f"button disabled={state['buttonDisabled']} with "
+                f"{state['inactiveTicks']} inactive ticks: {state!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Trajectory JavaScript state machines (headless module tests)
+# ---------------------------------------------------------------------------
+
+
+TRAJECTORY_JS_MODULES = (
+    "trajectory_volume_state.js",
+    "trajectory_volume_display.js",
+    "trajectory_path.js",
+    "trajectory_path_mutations.js",
+    "trajectory_volume_pipeline.js",
+    "trajectory_session.js",
+    "trajectory_direct_trace_ui.js",
+)
+
+
+_BUILD_STATE_JS = """
+function buildState(spec) {
+  var st = new window.CryoTrajectoryVolumeState();
+  var ids = spec.map(function (s, i) { return s.id === undefined ? "v" + i : s.id; });
+  var vols = spec.map(function (s) {
+    if (s.vtk) return { volume_b64: "BLOB" };
+    if (s.marker) return { decoded: true };
+    return null;
+  });
+  var imgs = spec.map(function (s) { return s.img ? "PNG" : null; });
+  st.replaceSlots(ids, vols, imgs);
+  spec.forEach(function (s, i) { if (s.stale) st.markStale(i); });
+  return st;
+}
+function debtSummary(st) {
+  var d = st.decodeRenderDebts();
+  return {
+    slots: st.slotCount(),
+    decode: d.decode,
+    render: d.render,
+    decodeIndices: d.decodeIndices,
+    renderIndices: d.renderIndices,
+    renderDebtCount: st.renderDebtCount(),
+    inactiveChimerax: st.inactiveTickIndices("chimerax"),
+    inactiveVtk: st.inactiveTickIndices("vtk"),
+    decodeDebtIndices: st.decodeDebtIndices(),
+    decodedCount: st.decodedCount(),
+    renderedCount: st.renderedCount()
+  };
+}
+"""
+
+
+# Slot mixtures spanning the states the volume slider actually reaches: freshly
+# generated, partially decoded, ChimeraX-rendered, cache-marker-only, and stale.
+
+
+DEBT_SCENARIOS = {
+    "empty": [],
+    "all_undecoded": [{}, {}, {}, {}],
+    "all_vtk_no_render": [{"vtk": True}] * 4,
+    "all_rendered": [{"vtk": True, "img": True}] * 4,
+    "partial_decode": [{"vtk": True}, {}, {"vtk": True}, {}],
+    "partial_render": [
+        {"vtk": True, "img": True},
+        {"vtk": True},
+        {},
+        {"vtk": True, "img": True},
+    ],
+    "cache_markers_only": [{"marker": True}] * 4,
+    "markers_plus_endpoints": [
+        {"vtk": True, "img": True},
+        {"marker": True},
+        {"marker": True},
+        {"vtk": True, "img": True},
+    ],
+    "stale_rendered": [
+        {"vtk": True, "img": True, "stale": True},
+        {"vtk": True, "img": True},
+        {"vtk": True},
+        {},
+    ],
+    "densified_interior": [
+        {"id": "pc1:0", "vtk": True, "img": True},
+        {"id": None},
+        {"id": None},
+        {"id": None},
+        {"id": "pc1:9", "vtk": True, "img": True},
+    ],
+}
+
+
+@pytest.mark.jsunit
+class TestTrajectoryVolumeStateInvariants:
+    """``trajectory_volume_state.js`` decode/render accounting.
+
+    The class docstring states two invariants that the Decode/Render button label and
+    the volume slider both depend on. Mismatches between them have been fixed at least
+    three separate times (a stack overflow in the counter, dense re-render results that
+    could not be re-aligned, and cache markers zeroing decode debt while slider ticks
+    stayed empty), so they are asserted directly here rather than inferred.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("trajectory_volume_state.js").define(
+            _BUILD_STATE_JS
+        )
+
+    def _debts(self, spec):
+        return self.js.evaluate("(spec) => debtSummary(buildState(spec))", spec)
+
+    @pytest.mark.parametrize("name", sorted(DEBT_SCENARIOS))
+    def test_render_debt_equals_inactive_chimerax_ticks(self, name):
+        got = self._debts(DEBT_SCENARIOS[name])
+        assert got["renderDebtCount"] == len(got["inactiveChimerax"])
+        assert got["render"] == len(got["renderIndices"])
+        assert got["renderIndices"] == got["inactiveChimerax"]
+
+    @pytest.mark.parametrize("name", sorted(DEBT_SCENARIOS))
+    def test_decode_debt_is_subset_of_inactive_ticks(self, name):
+        got = self._debts(DEBT_SCENARIOS[name])
+        assert set(got["decodeDebtIndices"]) <= set(got["inactiveChimerax"])
+        assert got["decode"] <= got["render"], "Decode n / render m must never invert"
+
+    @pytest.mark.parametrize("name", sorted(DEBT_SCENARIOS))
+    def test_debts_never_exceed_slot_count(self, name):
+        got = self._debts(DEBT_SCENARIOS[name])
+        assert 0 <= got["decode"] <= got["slots"]
+        assert 0 <= got["render"] <= got["slots"]
+
+    def test_cache_marker_counts_as_decoded_but_leaves_vtk_tick_inactive(self):
+        """Regression: bare ``{decoded: true}`` zeroed decode debt on empty ticks."""
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              return {
+                decoded: st.isDecoded(0),
+                vtkHydrated: st.isVtkHydrated(0),
+                readyVtk: st.isReady(0, "vtk"),
+                readySlice: st.isReady(0, "slice"),
+                readyChimerax: st.isReady(0, "chimerax"),
+                inactiveVtk: st.inactiveTickIndices("vtk")
+              };
+            }""",
+            [{"marker": True}, {"vtk": True}],
+        )
+        assert got["decoded"] is True
+        assert got["vtkHydrated"] is False
+        assert got["readyVtk"] is False, "marker must not activate an empty VTK tick"
+        assert got["readySlice"] is False
+        assert got["readyChimerax"] is False
+        assert got["inactiveVtk"] == [0]
+
+    def test_rendered_chimerax_slot_still_owes_a_vtk_tick_without_a_blob(self):
+        """The three backends disagree by design; each must report its own debt."""
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              return {
+                chimerax: st.inactiveTickIndices("chimerax"),
+                vtk: st.inactiveTickIndices("vtk")
+              };
+            }""",
+            [{"marker": True, "img": True}, {"vtk": True, "img": True}],
+        )
+        assert got["chimerax"] == [], "both slots have a PNG"
+        assert got["vtk"] == [0], "slot 0 has no volume_b64 to raycast"
+
+    def test_marking_stale_returns_a_slot_to_render_debt(self):
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              var before = debtSummary(st);
+              st.markStale(1);
+              return { before: before, after: debtSummary(st) };
+            }""",
+            [{"vtk": True, "img": True}] * 3,
+        )
+        assert got["before"]["render"] == 0
+        assert got["after"]["render"] == 1
+        assert got["after"]["renderIndices"] == [1]
+
+    def test_decoding_a_stale_slot_does_not_clear_its_render_debt(self):
+        """A moved direct-trace slot stays in render debt until a frame lands at its new XY."""
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              st.setDecoded(0, { volume_b64: "FRESH" });
+              var afterDecode = debtSummary(st);
+              st.setRendered(0, "NEWPNG");
+              return { afterDecode: afterDecode, afterRender: debtSummary(st) };
+            }""",
+            [{"vtk": True, "img": True, "stale": True}, {"vtk": True, "img": True}],
+        )
+        assert got["afterDecode"]["renderIndices"] == [0]
+        assert got["afterRender"]["renderIndices"] == []
+
+    def test_align_to_ids_carries_media_with_durable_ids_not_positions(self):
+        got = self.js.evaluate(
+            """() => {
+              var st = new window.CryoTrajectoryVolumeState();
+              st.replaceSlots(
+                ["a", "b", "c"],
+                [{ volume_b64: "A" }, null, { volume_b64: "C" }],
+                ["ia", null, "ic"]
+              );
+              st.alignToIds(["c", "a", "d"]);
+              return {
+                ids: [0, 1, 2].map(i => st.slotIdAt(i)),
+                decoded: [0, 1, 2].map(i => st.isDecoded(i)),
+                rendered: [0, 1, 2].map(i => st.isRendered(i))
+              };
+            }"""
+        )
+        assert got["ids"] == ["c", "a", "d"]
+        assert got["decoded"] == [True, True, False]
+        assert got["rendered"] == [True, True, False]
+
+    def test_reverse_is_a_pure_permutation_of_readiness(self):
+        """Reverse must not re-derive ids: that shifted Decode/Render counts."""
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              var before = debtSummary(st);
+              st.reverse();
+              var after = debtSummary(st);
+              return {
+                before: before,
+                after: after,
+                ids: [0, 1, 2, 3].map(i => st.slotIdAt(i)),
+                ready: [0, 1, 2, 3].map(i => st.isReady(i, "chimerax"))
+              };
+            }""",
+            [
+                {"id": "a", "vtk": True, "img": True},
+                {"id": "b", "vtk": True},
+                {"id": "c"},
+                {"id": "d", "vtk": True, "img": True},
+            ],
+        )
+        assert got["ids"] == ["d", "c", "b", "a"]
+        assert got["ready"] == [True, False, False, True]
+        assert got["after"]["render"] == got["before"]["render"]
+        assert got["after"]["decode"] == got["before"]["decode"]
+
+    def test_reverse_twice_restores_the_original_slot_order(self):
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              st.reverse();
+              st.reverse();
+              return {
+                ids: [0, 1, 2, 3].map(i => st.slotIdAt(i)),
+                debts: debtSummary(st)
+              };
+            }""",
+            [
+                {"id": "a", "vtk": True, "img": True},
+                {"id": "b", "vtk": True},
+                {"id": "c"},
+                {"id": "d", "vtk": True, "img": True},
+            ],
+        )
+        assert got["ids"] == ["a", "b", "c", "d"]
+        assert got["debts"]["renderIndices"] == [1, 2]
+
+
+@pytest.mark.jsunit
+class TestTrajectoryVolumeStatePartialResults:
+    """Partial decode/render merges — the source of the sparse-vs-compact array bugs.
+
+    ChimeraX renders arrive either as a dense full-path list or as a compact list
+    paired with ``slot_indices``. Treating one as the other lost already-rendered
+    frames or copied one PNG onto an adjacent tick.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("trajectory_volume_state.js").define(
+            _BUILD_STATE_JS
+        )
+
+    def test_compact_images_land_on_their_slot_indices(self):
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              st.applyRenderResult({ images: ["P1", "P3"], slot_indices: [1, 3] });
+              return {
+                rendered: [0, 1, 2, 3].map(i => st.isRendered(i)),
+                images: st.images()
+              };
+            }""",
+            [{"vtk": True}] * 4,
+        )
+        assert got["rendered"] == [False, True, False, True]
+        assert got["images"][1] == "P1" and got["images"][3] == "P3"
+
+    def test_full_length_images_stay_positional_despite_stale_slot_indices(self):
+        """A leftover subset ``slot_indices`` must not remap a dense array."""
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              st.setSubsetSlotIndices([1, 3]);
+              st.applyRenderResult({ images: ["A", "B", "C", "D"] });
+              return st.images();
+            }""",
+            [{"vtk": True}] * 4,
+        )
+        assert got == ["A", "B", "C", "D"]
+
+    def test_render_results_do_not_grow_past_the_current_path(self):
+        """A stale 10-point batch finishing after a shrink to 4 must be dropped."""
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              st.applyRenderResult({
+                images: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
+              });
+              return { slots: st.slotCount(), images: st.images() };
+            }""",
+            [{"vtk": True}] * 4,
+        )
+        assert got["slots"] == 4
+        assert got["images"] == ["A", "B", "C", "D"]
+
+    def test_partial_render_preserves_frames_already_on_other_slots(self):
+        """Regression: merges dropped already-rendered tail frames."""
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              st.applyRenderResult({ images: ["NEW"], slot_indices: [1] });
+              return st.images();
+            }""",
+            [
+                {"vtk": True, "img": True},
+                {"vtk": True},
+                {"vtk": True},
+                {"vtk": True, "img": True},
+            ],
+        )
+        assert got[0] == "PNG" and got[3] == "PNG", "existing frames must survive"
+        assert got[1] == "NEW"
+
+    def test_decode_result_marks_generated_and_records_the_cache_token(self):
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              st.applyDecodeResult({
+                volume_cache_id: "tok-42",
+                volumes: [{ volume_b64: "A" }, { volume_b64: "B" }]
+              });
+              return {
+                cacheId: st.cacheId(),
+                generated: st.hasGeneratedTrajectory(),
+                decoded: st.decodedCount()
+              };
+            }""",
+            [{}, {}],
+        )
+        assert got["cacheId"] == "tok-42"
+        assert got["generated"] is True
+        assert got["decoded"] == 2
+
+
+@pytest.mark.jsunit
+class TestTrajectoryPathMutations:
+    """``trajectory_path_mutations.js`` command objects, driven against a stub session."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load(
+            "trajectory_volume_state.js", "trajectory_path_mutations.js"
+        ).define(self._STUB)
+
+    # Minimal stand-ins for TrajectoryPath / TrajectorySession: the mutations only
+    # touch this surface, so a stub keeps the test on the command semantics.
+    _STUB = """
+    function stubSession(opts) {
+      opts = opts || {};
+      var rows = (opts.rows || [1, 2, 3]).slice();
+      var path = {
+        kind: opts.kind || "waypoint",
+        reversed: false,
+        cleared: false,
+        sampleCount: function () { return rows.length; },
+        getAnchorRows: function () { return rows.slice(); },
+        reverse: function () { rows.reverse(); this.reversed = true; },
+        setAnchorsFromOrderedRows: function (r) { rows = r.slice(); },
+        clearGeometry: function () { rows = []; this.cleared = true; },
+        rows: function () { return rows.slice(); }
+      };
+      var volumes = opts.volumes || new window.CryoTrajectoryVolumeState();
+      var session = {
+        hooks: opts.hooks || {},
+        path: function () { return path; },
+        volumes: function () { return volumes; }
+      };
+      return { session: session, path: path, volumes: volumes };
+    }
+    """
+
+    def test_reverse_mutation_reverses_path_and_volume_view(self):
+        got = self.js.evaluate(
+            """() => {
+              var vs = new window.CryoTrajectoryVolumeState();
+              vs.replaceSlots(["a", "b", "c"], [{ volume_b64: "A" }, null, null], []);
+              var s = stubSession({ rows: [1, 2, 3], volumes: vs });
+              var res = window.CryoTrajectoryPathMutations.reverse().apply(s.session);
+              return {
+                res: res,
+                rows: s.path.rows(),
+                ids: [0, 1, 2].map(i => vs.slotIdAt(i))
+              };
+            }"""
+        )
+        assert got["res"]["ok"] is True
+        assert got["rows"] == [3, 2, 1]
+        assert got["ids"] == ["c", "b", "a"]
+
+    def test_reverse_mutation_refuses_a_path_shorter_than_two_points(self):
+        got = self.js.evaluate(
+            """() => window.CryoTrajectoryPathMutations.reverse()
+                 .apply(stubSession({ rows: [7] }).session)"""
+        )
+        assert got == {"ok": False, "reason": "too-short"}
+
+    def test_reverse_mutation_reports_no_path_when_the_session_has_none(self):
+        got = self.js.evaluate(
+            """() => window.CryoTrajectoryPathMutations.reverse().apply({
+              hooks: {}, path: function () { return null; },
+              volumes: function () { return null; }
+            })"""
+        )
+        assert got == {"ok": False, "reason": "no-path"}
+
+    def test_reverse_mutation_prefers_the_compact_catalog_hook_when_offered(self):
+        """Compact catalogue reversal must win over the plain volume permutation."""
+        got = self.js.evaluate(
+            """() => {
+              var calls = [];
+              var vs = new window.CryoTrajectoryVolumeState();
+              vs.replaceSlots(["a", "b", "c"], [], []);
+              var s = stubSession({
+                rows: [1, 2, 3],
+                volumes: vs,
+                hooks: {
+                  shouldReverseCompactCatalog: function () {
+                    calls.push("should"); return true;
+                  },
+                  reverseCompactCatalogVolumes: function () {
+                    calls.push("compact"); return true;
+                  }
+                }
+              });
+              window.CryoTrajectoryPathMutations.reverse().apply(s.session);
+              return { calls: calls, ids: [0, 1, 2].map(i => vs.slotIdAt(i)) };
+            }"""
+        )
+        assert got["calls"] == ["should", "compact"]
+        assert got["ids"] == ["a", "b", "c"], "compact hook owns the reordering"
+
+    def test_visit_order_mutation_is_a_noop_below_two_rows(self):
+        got = self.js.evaluate(
+            """() => window.CryoTrajectoryPathMutations.visitOrder("exact", [5])
+                 .apply(stubSession({}).session)"""
+        )
+        assert got["ok"] is True and got["noop"] is True
+
+    def test_visit_order_mutation_applies_ordered_rows_and_records_the_mode(self):
+        got = self.js.evaluate(
+            """() => {
+              var seen = {};
+              var s = stubSession({
+                rows: [1, 2, 3],
+                hooks: {
+                  reorderSelectionFromRows: function (r) { seen.reorder = r; },
+                  setVisitOrderMode: function (m) { seen.mode = m; }
+                }
+              });
+              var res = window.CryoTrajectoryPathMutations
+                .visitOrder("exact", [3, 1, 2]).apply(s.session);
+              return { res: res, rows: s.path.rows(), seen: seen };
+            }"""
+        )
+        assert got["res"]["ok"] is True and got["res"]["order"] == "exact"
+        assert got["rows"] == [3, 1, 2]
+        assert got["seen"] == {"reorder": [3, 1, 2], "mode": "exact"}
+
+    def test_append_plot_rows_rejects_an_empty_row_list(self):
+        got = self.js.evaluate(
+            """() => window.CryoTrajectoryPathMutations.appendPlotRows([])
+                 .apply(stubSession({}).session)"""
+        )
+        assert got == {"ok": False, "reason": "empty"}
+
+    def test_append_plot_rows_reports_failure_from_the_append_hook(self):
+        got = self.js.evaluate(
+            """() => window.CryoTrajectoryPathMutations.appendPlotRows([4, 5])
+                 .apply(stubSession({
+                   hooks: { appendPlotRows: function () { return false; } }
+                 }).session)"""
+        )
+        assert got == {"ok": False, "reason": "append-failed"}
+
+    def test_clear_mutation_empties_both_geometry_and_volumes(self):
+        got = self.js.evaluate(
+            """() => {
+              var vs = new window.CryoTrajectoryVolumeState();
+              vs.replaceSlots(["a", "b"], [{ volume_b64: "A" }, null], []);
+              var s = stubSession({ volumes: vs });
+              var res = window.CryoTrajectoryPathMutations.clear().apply(s.session);
+              return { res: res, cleared: s.path.cleared, slots: vs.slotCount() };
+            }"""
+        )
+        assert got["res"]["ok"] is True
+        assert got["cleared"] is True
+        assert got["slots"] == 0
+
+    def test_align_volumes_clears_when_fewer_than_two_ids_remain(self):
+        got = self.js.evaluate(
+            """() => {
+              var vs = new window.CryoTrajectoryVolumeState();
+              vs.replaceSlots(["a", "b"], [{ volume_b64: "A" }, null], []);
+              var s = stubSession({ volumes: vs });
+              var res = window.CryoTrajectoryPathMutations.alignVolumes(["only"])
+                .apply(s.session);
+              return { res: res, slots: vs.slotCount() };
+            }"""
+        )
+        assert got["res"]["cleared"] is True
+        assert got["slots"] == 0
+
+    def test_align_volumes_reorders_slots_by_id(self):
+        got = self.js.evaluate(
+            """() => {
+              var vs = new window.CryoTrajectoryVolumeState();
+              vs.replaceSlots(["a", "b", "c"], [null, { volume_b64: "B" }, null], []);
+              var s = stubSession({ volumes: vs });
+              var res = window.CryoTrajectoryPathMutations
+                .alignVolumes(["c", "b", "a"]).apply(s.session);
+              return {
+                res: res,
+                ids: [0, 1, 2].map(i => vs.slotIdAt(i)),
+                decoded: [0, 1, 2].map(i => vs.isDecoded(i))
+              };
+            }"""
+        )
+        assert got["res"]["ok"] is True and got["res"]["count"] == 3
+        assert got["ids"] == ["c", "b", "a"]
+        assert got["decoded"] == [False, True, False]
+
+
+@pytest.mark.jsunit
+class TestTrajectorySessionDebts:
+    """``trajectory_session.js`` must report the same debts as the state it wraps."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load(*TRAJECTORY_JS_MODULES).define(_BUILD_STATE_JS)
+
+    @pytest.mark.parametrize("name", sorted(DEBT_SCENARIOS))
+    def test_session_debts_match_the_underlying_volume_state(self, name):
+        got = self.js.evaluate(
+            """(spec) => {
+              var st = buildState(spec);
+              var session = new window.CryoTrajectorySession({ volumes: st });
+              return {
+                state: debtSummary(st),
+                sessionDecode: session.decodeDebtCount(),
+                sessionRender: session.renderDebtCount(),
+                sessionJoint: session.decodeRenderDebts()
+              };
+            }""",
+            DEBT_SCENARIOS[name],
+        )
+        assert got["sessionRender"] == got["state"]["render"]
+        assert got["sessionDecode"] == got["state"]["decode"]
+        assert got["sessionJoint"]["decode"] <= got["sessionJoint"]["render"]
+
+    def test_session_forwards_volume_state_change_notifications(self):
+        got = self.js.evaluate(
+            """() => {
+              var st = new window.CryoTrajectoryVolumeState();
+              var session = new window.CryoTrajectorySession({ volumes: st });
+              var seen = [];
+              session.on(function (type, detail) {
+                if (type === "volumes") seen.push(detail.reason);
+              });
+              st.replaceSlots(["a", "b"], [], []);
+              st.setDecoded(0, { volume_b64: "A" });
+              return seen;
+            }"""
+        )
+        assert "replace" in got and "decode" in got
+
+
+@pytest.mark.jsunit
+class TestTrajectorySessionSelftest:
+    """Run ``scripts/trajectory_session_selftest.js`` as a real test.
+
+    The script builds a Node ``vm`` sandbox and asserts across the whole trajectory
+    module set, but nothing invoked it, so none of its assertions ran in CI. Shimming
+    ``require``/``fs``/``vm`` lets it run in Chromium instead, with no Node dependency.
+    """
+
+    def test_selftest_script_passes(self, dashboard_js_page):
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "trajectory_session_selftest.js"
+        )
+        if not script.is_file():
+            # ``scripts/`` is currently untracked, so a fresh clone has no selftest.
+            pytest.skip(f"{script} is not present in this checkout")
+        result = run_dashboard_js_node_selftest(
+            dashboard_js_page, script, TRAJECTORY_JS_MODULES
+        )
+        assert result["ok"], "\n".join(
+            result.get("logs", []) + [result.get("error", "")]
+        )
+        assert any(
+            "trajectory_session_selftest: ok" in line for line in result["logs"]
+        ), f"selftest did not reach its success line: {result['logs']}"
+
+
+# ---------------------------------------------------------------------------
+# Trajectory multi-request workflows
+# ---------------------------------------------------------------------------
+
+
+class TestTrajectoryWorkflow:
+    """Endpoints → coords → saved z-path, then the cached-volume token handoff."""
+
+    @staticmethod
+    def _coords_body(rows: list[int]) -> dict:
+        return {
+            "anchor_indices": rows,
+            "mode": "direct",
+            "x": "z0",
+            "y": "z1",
+            "n_points": 4,
+            "anchor_path_order": "preserve",
+        }
+
+    def test_default_endpoints_feed_a_coords_request(
+        self, flask_client_volumes_eligible, dashboard_experiment: DashboardExperiment
+    ):
+        r = flask_client_volumes_eligible.get(
+            "/api/default_trajectory_endpoints", query_string={"x": "z0", "y": "z1"}
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:400]
+        endpoints = r.get_json()
+        assert endpoints.get("ok") is True
+        assert len(endpoints["start"]) == 2 and len(endpoints["end"]) == 2
+
+        rows = [0, min(5, len(dashboard_experiment.z) - 1)]
+        coords = flask_client_volumes_eligible.post(
+            "/api/trajectory_coords", json=self._coords_body(rows)
+        )
+        assert coords.status_code == 200, coords.get_data(as_text=True)[:400]
+        payload = coords.get_json()
+        assert len(payload["z_traj"]) == len(payload["traj_xy"])
+
+    def test_coords_z_path_round_trips_to_a_file_on_disk(
+        self, flask_client_volumes_eligible, dashboard_experiment, tmp_path
+    ):
+        rows = [0, min(5, len(dashboard_experiment.z) - 1)]
+        coords = flask_client_volumes_eligible.post(
+            "/api/trajectory_coords", json=self._coords_body(rows)
+        )
+        assert coords.status_code == 200, coords.get_data(as_text=True)[:400]
+        payload = coords.get_json()
+
+        out_path = str(tmp_path / "z-path.txt")
+        saved = flask_client_volumes_eligible.post(
+            "/api/trajectory_save_zpath",
+            json={"z_path_txt": payload["z_path_txt"], "out_path": out_path},
+        )
+        assert saved.status_code == 200, saved.get_data(as_text=True)[:400]
+        assert os.path.isfile(out_path)
+
+        written = np.loadtxt(out_path, ndmin=2)
+        assert written.shape[0] == len(
+            payload["z_traj"]
+        ), "saved z-path has a different number of points than the trajectory"
+        np.testing.assert_allclose(
+            written, np.asarray(payload["z_traj"], dtype=np.float64), rtol=1e-4
+        )
+
+    def test_volume_cache_token_from_a_render_is_redeemable_for_saving(
+        self,
+        flask_client_volumes_eligible,
+        dashboard_experiment: DashboardExperiment,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ):
+        """The token is opaque to the client, so only a full sequence proves it works."""
+        z_traj = dashboard_experiment.z[:3]
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_analysis.compute_trajectory_latent_path",
+            lambda exp, params: (z_traj, None, np.zeros((3, 2), dtype=np.float64)),
+        )
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.routes_analysis.generate_trajectory_volume_pngs",
+            make_fake_trajectory_volume_pngs("workflow-token"),
+        )
+
+        rows = [0, min(5, len(dashboard_experiment.z) - 1)]
+        rendered = flask_client_volumes_eligible.post(
+            "/api/trajectory_volumes",
+            json={**self._coords_body(rows), "render_backend": "chimerax"},
+        )
+        assert rendered.status_code == 200, rendered.get_data(as_text=True)[:400]
+        token = rendered.get_json()["volume_cache_id"]
+        assert token == "workflow-token"
+
+        saved = flask_client_volumes_eligible.post(
+            "/api/trajectory_save_volumes",
+            json={"volume_cache_id": token, "out_dir": str(tmp_path / "vols")},
+        )
+        # The stub caches no ``.mrc`` files, so saving reports a clean 400 rather
+        # than a traceback; either way the token must be understood, not rejected
+        # as missing.
+        assert saved.status_code in (200, 400)
+        body = saved.get_json()
+        assert "Missing volume_cache_id" not in (body.get("error") or "")
+
+    def test_an_unknown_cache_token_fails_cleanly_rather_than_erroring(
+        self, flask_client_volumes_eligible, tmp_path
+    ):
+        r = flask_client_volumes_eligible.post(
+            "/api/trajectory_save_volumes",
+            json={"volume_cache_id": "expired-token", "out_dir": str(tmp_path)},
+        )
+        assert r.status_code == 400, "an expired token must not surface as a 500"
+        assert r.get_json().get("error")
+
+
+class TestTrajectoryAxisConsistency:
+    """All three axis-taking endpoints must accept and refuse the same pairs.
+
+    The page builds its axis menu from ``trajectory_plot_axis_columns``. Endpoint
+    defaults, coords, and random waypoints each re-validate, so a pair that one
+    accepts and another rejects strands the user mid-workflow.
+    """
+
+    @staticmethod
+    def _allowed(experiment: DashboardExperiment) -> list[str]:
+        return list(trajectory_plot_axis_columns(experiment))
+
+    @staticmethod
+    def _requests(client, xcol: str, ycol: str):
+        """The two endpoints that validate axes. Random waypoints treat them as
+        optional hints, which is checked separately below."""
+        yield "default_endpoints", client.get(
+            "/api/default_trajectory_endpoints", query_string={"x": xcol, "y": ycol}
+        )
+        yield "coords", client.post(
+            "/api/trajectory_coords",
+            json={
+                "anchor_indices": [0, 1],
+                "mode": "direct",
+                "x": xcol,
+                "y": ycol,
+                "n_points": 3,
+                "anchor_path_order": "preserve",
+            },
+        )
+
+    def test_every_advertised_axis_pair_is_accepted_everywhere(
+        self, flask_client_volumes_eligible, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        axes = self._allowed(dashboard_experiment)
+        assert len(axes) >= 2, "trajectory creator advertised too few axes"
+
+        for axis in axes:
+            partner = next(other for other in axes if other != axis)
+            for name, r in self._requests(flask_client_volumes_eligible, axis, partner):
+                assert r.status_code == 200, (
+                    f"{name} rejects advertised axis pair ({axis!r}, {partner!r}): "
+                    f"{r.get_data(as_text=True)[:200]}"
+                )
+
+    def test_columns_left_out_of_the_menu_are_refused_everywhere(
+        self, flask_client_volumes_eligible, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        allowed = set(self._allowed(dashboard_experiment))
+        excluded = [
+            str(c)
+            for c in dashboard_experiment.plot_df.columns
+            if str(c) not in allowed
+        ]
+        if not excluded:
+            pytest.skip("every plot column is a valid trajectory axis here")
+
+        axes = self._allowed(dashboard_experiment)
+        for name, r in self._requests(
+            flask_client_volumes_eligible, excluded[0], axes[0]
+        ):
+            assert (
+                r.status_code == 400
+            ), f"{name} accepted {excluded[0]!r}, which the axis menu does not offer"
+
+    def test_an_unknown_column_is_refused_everywhere(
+        self, flask_client_volumes_eligible, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        axes = self._allowed(dashboard_experiment)
+        for name, r in self._requests(
+            flask_client_volumes_eligible, "not_a_column", axes[0]
+        ):
+            assert r.status_code == 400, f"{name} accepted a nonexistent column"
+
+    def test_random_waypoints_return_coordinates_only_for_real_axes(
+        self, flask_client_volumes_eligible, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """``x``/``y`` are optional hints here: valid ones add ``xy``, junk is ignored.
+
+        Silently returning coordinates read from the wrong column would place random
+        waypoints somewhere the user never clicked.
+        """
+        axes = self._allowed(dashboard_experiment)
+        good = flask_client_volumes_eligible.post(
+            "/api/trajectory_random_indices",
+            json={"count": 3, "x": axes[0], "y": axes[1]},
+        )
+        assert good.status_code == 200
+        payload = good.get_json()
+        assert payload["indices"]
+        assert len(payload.get("xy") or []) == len(payload["indices"])
+
+        unknown = flask_client_volumes_eligible.post(
+            "/api/trajectory_random_indices",
+            json={"count": 3, "x": "not_a_column", "y": axes[1]},
+        )
+        assert unknown.status_code == 200
+        assert not unknown.get_json().get(
+            "xy"
+        ), "coordinates were returned for a column that does not exist"
+
+
+class TestTrajectoryVolumeJobPolling:
+    """The browser polls these two endpoints throughout every volume generation.
+
+    Both were entirely untested. They deliberately answer 200 with ``ok: false`` for
+    an unknown token so that polling either side of a job's lifetime does not fill the
+    console with errors, which is a contract worth pinning down.
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/trajectory_volumes_decode_progress",
+            "/api/trajectory_volumes_partial",
+        ],
+    )
+    def test_missing_job_id_is_a_client_error(
+        self, flask_client_volumes_eligible, path: str
+    ) -> None:
+        r = flask_client_volumes_eligible.get(path)
+        assert r.status_code == 400
+        assert "job_id" in (r.get_json().get("error") or "").lower()
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/trajectory_volumes_decode_progress",
+            "/api/trajectory_volumes_partial",
+        ],
+    )
+    def test_unknown_job_answers_ok_false_rather_than_an_error_status(
+        self, flask_client_volumes_eligible, path: str
+    ) -> None:
+        r = flask_client_volumes_eligible.get(path, query_string={"job_id": "expired"})
+        assert r.status_code == 200, "polling must not surface as an HTTP error"
+        payload = r.get_json()
+        assert payload["ok"] is False
+        assert payload.get("error")
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/trajectory_volumes_decode_progress",
+            "/api/trajectory_volumes_partial",
+        ],
+    )
+    def test_blank_job_id_is_treated_as_missing(
+        self, flask_client_volumes_eligible, path: str
+    ) -> None:
+        r = flask_client_volumes_eligible.get(path, query_string={"job_id": "   "})
+        assert r.status_code == 400
+
+    def test_a_registered_job_reports_progress_until_it_is_unregistered(
+        self, flask_client_volumes_eligible
+    ) -> None:
+        """Register a job the way a decode does, then poll it as the browser would."""
+        from cryodrgn.dashboard.particle_explorer import (
+            volume_job_progress_register,
+            volume_job_progress_set_done,
+            volume_job_progress_unregister,
+        )
+
+        token = "test-decode-job"
+        volume_job_progress_register(token, 4, 2, "decode")
+        try:
+            first = flask_client_volumes_eligible.get(
+                "/api/trajectory_volumes_decode_progress",
+                query_string={"job_id": token},
+            ).get_json()
+            assert first["ok"] is True
+            assert first.get("total") == 4
+
+            volume_job_progress_set_done(token, 3)
+            second = flask_client_volumes_eligible.get(
+                "/api/trajectory_volumes_decode_progress",
+                query_string={"job_id": token},
+            ).get_json()
+            assert second["ok"] is True
+            assert second.get("decode_done", second.get("done")) >= first.get(
+                "decode_done", first.get("done", 0)
+            ), "progress must not go backwards while a job runs"
+        finally:
+            volume_job_progress_unregister(token)
+
+        after = flask_client_volumes_eligible.get(
+            "/api/trajectory_volumes_decode_progress", query_string={"job_id": token}
+        ).get_json()
+        assert after["ok"] is False, "an unregistered job must stop reporting progress"

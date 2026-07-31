@@ -10,18 +10,18 @@ cryodrgn_utils parse_warptools -t tomograms.star -p particles.star \\
     --tilt-dim 5760 4092 -o particles_2d.star
 
 # Separate step necessary to get pose+CTF files needed for cryoDRGN 3D reconstruction
-# cryodrgn parse_star particles_2d.star --pose-file poses.star --ctf-file ctf.star
+# cryodrgn parse_star particles_2d.star --poses pose.pkl --ctf ctf.pkl --Apix 2 -D 128
 
 """
 import argparse
-from ast import literal_eval
-
+import logging
 import numpy as np
 import pandas as pd
 import starfile
 from scipy.spatial.transform import Rotation
-
 from cryodrgn import utils
+
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -37,6 +37,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         required=True,
         help="Path to main particles.star file.",
     )
+
     parser.add_argument(
         "-o",
         "--output",
@@ -92,14 +93,48 @@ def _get_tomogram_pixel_size(global_row, optics_row):
 
 
 def _parse_star_list(value):
-    """Parse a STAR list cell that may already be a list/array or a string."""
-    if isinstance(value, str):
-        return literal_eval(value)
-    return list(value)
+    """Parse a STAR list cell that may already be a list/array or a string.
+
+    String cells must be a bracketed comma-separated list of numbers (the format
+    WarpTools/RELION write for ``rlnTomoVisibleFrames`` and ``rlnTomoProj*``).
+    Avoids ``ast.literal_eval``, which can execute arbitrary Python literals.
+
+    """
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if not isinstance(value, str):
+        return list(value)
+
+    s = value.strip()
+    if not (s.startswith("[") and s.endswith("]")):
+        raise ValueError(f"Expected a bracketed numeric STAR list, got: {value!r}")
+    inner = s[1:-1].strip()
+    if not inner:
+        return []
+    try:
+        return [float(part.strip()) for part in inner.split(",")]
+    except ValueError as exc:
+        raise ValueError(f"Could not parse numeric STAR list: {value!r}") from exc
+
+
+def _optics_groups_are_ctf_premultiplied(optics_df: pd.DataFrame) -> list:
+    """Return optics-group ids with ``rlnCtfDataAreCtfPremultiplied`` set."""
+    col = "rlnCtfDataAreCtfPremultiplied"
+    if col not in optics_df.columns:
+        return []
+
+    flagged = []
+    for _, row in optics_df.iterrows():
+        val = row.get(col, 0)
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            continue
+        if int(val) == 1:
+            flagged.append(row["rlnOpticsGroup"])
+
+    return flagged
 
 
 def _warp_euler_matrix_from_row(row, fields):
-    # Match PR / WarpTools convention: store R_p^{-1} so composition is R_tilt @ R_p^{-1}.
     angles = [float(row.get(field, 0.0)) for field in fields]
     return Rotation.from_euler("ZYZ", angles, degrees=True).inv().as_matrix()
 
@@ -375,6 +410,16 @@ def main(args: argparse.Namespace) -> None:
     particles_df = particles_star["particles"]
     optics_df = particles_star["optics"]
 
+    premult_groups = _optics_groups_are_ctf_premultiplied(optics_df)
+    if premult_groups:
+        logger.warning(
+            "Optics group(s) %s have rlnCtfDataAreCtfPremultiplied=1. "
+            "Particle images are already CTF-premultiplied; disable CTF "
+            "correction in cryoDRGN (e.g. omit --ctf / use no-CTF workflows) "
+            "to avoid double-correcting.",
+            premult_groups,
+        )
+
     # Index global / optics rows once; Warp Proj parsing is identical for all
     # particles that share a tomogram (+ visible-frame mask).
     global_by_tomo = {row["rlnTomoName"]: row for _, row in global_df.iterrows()}
@@ -442,13 +487,6 @@ def main(args: argparse.Namespace) -> None:
 
     final_2d_df = pd.concat(all_2d_rows, ignore_index=True)
     print(f"Total 2D rows in output: {len(final_2d_df)}")
-
     out_star_dict = {"": final_2d_df}
     starfile.write(out_star_dict, args.output, overwrite=True)
     print(f"Wrote {args.output}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_args(parser)
-    main(parser.parse_args())

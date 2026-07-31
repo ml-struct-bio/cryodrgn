@@ -1183,6 +1183,22 @@
   var highlightTraceAdded = false;
   var suppressPlotGridHighlights = false;
   var suppressSelectionEvents = false;
+  /* Test/debug readiness: true while programmatic restyles must ignore plotly_selected. */
+  Object.defineProperty(window, "__cryodrgnSelectionEventsSuppressed", {
+    configurable: true,
+    enumerable: false,
+    get: function() { return !!suppressSelectionEvents; }
+  });
+  /* True only when a new synthetic/user selection may be committed safely. */
+  Object.defineProperty(window, "__cryodrgnSelectionEventsReady", {
+    configurable: true,
+    enumerable: false,
+    get: function() {
+      return !suppressSelectionEvents
+        && (typeof lassoSelectionDebounceTimer === "undefined"
+            || !lassoSelectionDebounceTimer);
+    }
+  });
 
   var selFileBrowserPanel = document.getElementById("sel-file-browser-panel");
   var selFbList = document.getElementById("sel-fb-list");

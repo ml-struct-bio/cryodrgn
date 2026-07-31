@@ -1783,7 +1783,9 @@ def explorer_commit_scatter_region(
     """Commit one box region on ``/explorer`` and wait out the selection debounce.
 
     Bounds are fractions of the current axis ranges. ``expect_regions`` is the region
-    count the commit should settle on, which is what the wait keys off.
+    count the commit should settle on. The wait also requires
+    ``window.__cryodrgnSelectionEventsReady`` so a follow-up commit is not emitted
+    while ``suppressSelectionEvents`` is set or a lasso debounce is still armed.
     """
     emitted = page.evaluate(
         _EXPLORER_COMMIT_REGION_JS, {"x0": x0, "x1": x1, "y0": y0, "y1": y1}
@@ -1792,9 +1794,14 @@ def explorer_commit_scatter_region(
         """(want) => {
           var gd = document.getElementById('scatter');
           var shapes = (gd && gd.layout && gd.layout.shapes) || [];
-          return shapes.filter(function (s) {
+          var n = shapes.filter(function (s) {
             return String(s.name || '').indexOf('cdrgn_commit_shape') === 0;
-          }).length === want;
+          }).length;
+          if (n !== want) return false;
+          if (typeof window.__cryodrgnSelectionEventsReady === 'boolean') {
+            return window.__cryodrgnSelectionEventsReady;
+          }
+          return !window.__cryodrgnSelectionEventsSuppressed;
         }""",
         arg=expect_regions,
         timeout=timeout_ms,

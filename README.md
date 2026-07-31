@@ -25,7 +25,8 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
         launched with `cryodrgn dashboard`
 * [NEW] [command builder page](https://ml-struct-bio.github.io/cryodrgn/) for assembling
         cryoDRGN commands in your browser
-* `cryodrgn parse_pose_csparc` can automatically detect `-D` resolution from a `.cs` file if available
+* [NEW] `cryodrgn_utils parse_warptools` command to parse WarpTools `.star` files into
+        cryoDRGN-compatible inputs
 * support for `cryodrgn eval_vol` with `abinit` ab-initio reconstruction outputs
 
 A full list of cryoDRGN version updates can be found at our
@@ -35,11 +36,11 @@ A full list of cryoDRGN version updates can be found at our
 ## Installation
 
 `cryodrgn` may be installed via `pip`, and we recommend installing `cryodrgn` in a clean conda environment.
-Our package is compatible with Python versions 3.10 through 3.13;
+Our package is compatible with Python versions 3.10 through 3.14;
 we recommend using the latest available Python version:
 
     # Create and activate conda environment
-    (base) $ conda create --name cryodrgn python=3.13
+    (base) $ conda create --name cryodrgn python=3.14
     (cryodrgn) $ conda activate cryodrgn
 
     # install cryodrgn

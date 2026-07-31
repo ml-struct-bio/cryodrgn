@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from io import BytesIO
 from typing import Any
 
@@ -428,6 +429,45 @@ class TestScatter3dPlotJson:
         assert int(row0[-1]) in (1, 2, 3)
         assert int(row0[-2]) in (0, 1)
 
+    def test_scatter3d_vol_landscape_centroid_cd_before_nearest_with_color(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """Colour covariates must not displace the centroid flag from length-2.
+
+        ``latent3d_landscape_vol_animations.js`` circles montage letters using
+        ``customdata[length-2] === 1``. Packing the colour column after the
+        centroid flag made circling depend on colour values.
+        """
+        e = dashboard_experiment
+        sub = e.plot_df.iloc[:40].copy()
+        sub[VOL_LANDSCAPE_3D_PLOT_DF_ROW] = np.arange(40, dtype=np.int64)
+        sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL] = (
+            np.arange(len(sub), dtype=np.int64) % 3 + 1
+        )
+        cent = (np.arange(len(sub), dtype=np.int64) % 5 == 0).astype(np.int64)
+        sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID] = cent
+        # Distinct from 0/1 so a misplaced colour column cannot look like a flag.
+        sub["umap1"] = np.linspace(10.0, 20.0, len(sub), dtype=np.float64)
+        allow = frozenset(list(LATENT_Z_AXES) + ["umap1"])
+        fig = _scatter3d_figure(
+            e,
+            "z0",
+            "z1",
+            "z2",
+            "umap1",
+            plot_df=sub,
+            xyz_axes_allowed=allow,
+            volume_landscape_3d_style=True,
+        )
+        cd = np.asarray(fig["data"][0]["customdata"])
+        assert cd.shape[1] == 4
+        # [plot_row, colour, centroid_flag, nearest_vol] — colour must not sit at length-2.
+        assert np.all((cd[:, 1] >= 10.0) & (cd[:, 1] <= 20.0))
+        assert set(cd[:, -2].astype(np.int64).tolist()) <= {0, 1}
+        assert int(cd[:, -2].sum()) == int(cent.sum())
+        assert set(cd[:, -1].astype(np.int64).tolist()) <= {1, 2, 3}
+        assert not np.allclose(cd[:, -2], cd[:, 1])
+
     def test_subsample_preserving_sketch_centroids_keeps_centroid_rows(self) -> None:
         n = 200
         cent = np.zeros(n, dtype=np.int64)
@@ -832,3 +872,207 @@ class TestScatter3dBrowserSmoke:
             assert out[key] is min_val
         else:
             assert out[key] >= min_val
+
+
+@pytest.fixture(scope="class")
+def oriented_page(playwright_isolated_browser, dashboard_live_url):
+    """One orbited latent-3D page shared by ``TestLatent3dCameraPreservation``."""
+    from tests.conftest import (
+        dashboard_open_latent_3d,
+        dashboard_orbit_scene_camera,
+        dashboard_scene_camera,
+    )
+
+    context = playwright_isolated_browser.new_context(
+        viewport={"width": 1400, "height": 900}
+    )
+    page = context.new_page()
+    dashboard_open_latent_3d(page, dashboard_live_url)
+    default_camera = dashboard_scene_camera(page, "latent3d")
+    orbited = dashboard_orbit_scene_camera(page, "latent3d")
+    yield page, default_camera, orbited
+    context.close()
+
+
+class TestLatent3dCameraPreservation:
+    """A user's orbit must survive every control that redraws the 3D scene.
+
+    Losing the camera on redraw has been fixed repeatedly: a selection restyled the
+    trace ``mode`` and reset orbit and zoom, axis ranges read back as ``undefined``,
+    and Plotly's own reset fired before the pose could be captured. Comparing cameras
+    from the default pose cannot detect a reset *back* to that default, so the scene
+    is dragged somewhere distinctive first and every check also asserts the pose has
+    not fallen back.
+
+    One page serves the whole class: each 3D scene holds WebGL resources that are not
+    released between contexts, and after a few of them a drag no longer orbits at all
+    under SwiftShader.
+    """
+
+    pytestmark = pytest.mark.browser
+
+    @staticmethod
+    def _settled_camera(page):
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_wait_latent3d_overlay_hidden,
+            dashboard_scene_camera,
+        )
+
+        _dashboard_smoke_wait_latent3d_overlay_hidden(
+            page, timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS
+        )
+        return dashboard_scene_camera(page, "latent3d")
+
+    def _assert_camera_held(self, oriented_page, before, after):
+        """The pose must be unchanged, and must not have fallen back to the default."""
+        from tests.conftest import dashboard_cameras_match
+
+        _, default_camera, _ = oriented_page
+        assert dashboard_cameras_match(before, after), f"{before!r} -> {after!r}"
+        assert not dashboard_cameras_match(
+            default_camera, after
+        ), "camera reset to the default pose"
+
+    def _to_discrete_colour(self, page):
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_set_select_value,
+        )
+
+        _dashboard_smoke_set_select_value(page, "sc", "labels")
+        page.wait_for_function(
+            """() => {
+              var s = document.getElementById('latent3d-color-discrete-switches');
+              return s && s.querySelectorAll('button, label, input').length > 0;
+            }""",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        return self._settled_camera(page)
+
+    def test_dragging_the_scene_orbits_the_camera(self, oriented_page):
+        """Guards the rest of the class: a no-op orbit would make it vacuous."""
+        from tests.conftest import dashboard_cameras_match
+
+        _, default_camera, orbited = oriented_page
+        assert orbited["eye"] and orbited["up"]
+        assert not dashboard_cameras_match(default_camera, orbited)
+
+    def test_orbit_survives_a_discrete_covariate_change(self, oriented_page):
+        page, _, _ = oriented_page
+        before = self._settled_camera(page)
+        after = self._to_discrete_colour(page)
+        self._assert_camera_held(oriented_page, before, after)
+
+    def test_orbit_survives_toggling_a_discrete_level(self, oriented_page):
+        page, _, _ = oriented_page
+        before = self._to_discrete_colour(page)
+
+        page.locator("#latent3d-color-discrete-switches input").first.click()
+        page.wait_for_timeout(600)
+        self._assert_camera_held(oriented_page, before, self._settled_camera(page))
+
+    def test_orbit_survives_inverting_the_discrete_selection(self, oriented_page):
+        page, _, _ = oriented_page
+        before = self._to_discrete_colour(page)
+
+        invert = page.locator("#latent3d-btn-discrete-invert")
+        if invert.count() == 0 or not invert.is_visible():
+            pytest.skip("discrete invert control not offered on this dataset")
+        invert.click()
+        page.wait_for_timeout(600)
+        self._assert_camera_held(oriented_page, before, self._settled_camera(page))
+
+    def test_orbit_survives_clearing_the_colour_column(self, oriented_page):
+        from tests.conftest import _dashboard_smoke_set_select_value
+
+        page, _, _ = oriented_page
+        before = self._to_discrete_colour(page)
+
+        _dashboard_smoke_set_select_value(page, "sc", "none")
+        page.wait_for_timeout(600)
+        self._assert_camera_held(oriented_page, before, self._settled_camera(page))
+
+    def test_scene_still_holds_points_after_the_redraws(self, oriented_page):
+        """A preserved camera pointing at an empty scene would still be a regression."""
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_wait_plot_ready,
+        )
+
+        page, _, _ = oriented_page
+        self._to_discrete_colour(page)
+        info = _dashboard_smoke_wait_plot_ready(
+            page, "latent3d", timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS
+        )
+        assert info["n"] > 0
+        assert info["type"] == "scatter3d"
+
+
+class TestLandscapeFull3dColumnConsistency:
+    """The 3D volume-landscape page must not offer columns its API rejects.
+
+    The page injects ``axis_cols`` and ``numeric_cols`` into the same
+    ``latent_3d.html`` menus that ``/api/scatter3d_z_landscape_full`` validates
+    separately. This is the sibling of the landscape vol-PCA colour menu, where the
+    two lists had drifted apart and every mixed-case column was refused.
+    """
+
+    @staticmethod
+    def _page_columns(client):
+        """The axis and colour lists the page actually hands to its menus."""
+        body = client.get("/landscape-full-3d").get_data(as_text=True)
+        axes = re.search(r"var axisCols = (\[.*?\]);", body, re.S)
+        colours = re.search(r"var cols = (\[.*?\]);", body, re.S)
+        assert axes and colours, "landscape-full-3D page did not embed its menus"
+        return json.loads(axes.group(1)), json.loads(colours.group(1))
+
+    @staticmethod
+    def _scatter(client, axes, color):
+        return client.get(
+            "/api/scatter3d_z_landscape_full",
+            query_string={"x": axes[0], "y": axes[1], "z": axes[2], "color": color},
+        )
+
+    def test_every_advertised_axis_can_be_plotted(
+        self, flask_client_landscape_full
+    ) -> None:
+        axes, _ = self._page_columns(flask_client_landscape_full)
+        assert len(axes) >= 3, "the 3D landscape page needs three axes"
+
+        for axis in axes:
+            others = [a for a in axes if a != axis][:2]
+            r = self._scatter(flask_client_landscape_full, [axis, *others], "none")
+            assert r.status_code == 200, (
+                f"page offers axis {axis!r} but the scatter rejects it: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
+
+    def test_every_advertised_colour_column_is_accepted(
+        self, flask_client_landscape_full
+    ) -> None:
+        axes, colours = self._page_columns(flask_client_landscape_full)
+        assert colours, "the 3D landscape page offered no colour columns"
+
+        for column in ["none", *colours]:
+            r = self._scatter(flask_client_landscape_full, axes, column)
+            assert r.status_code == 200, (
+                f"page offers colour {column!r} but the scatter rejects it: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
+
+    def test_advertised_colours_actually_colour_the_points(
+        self, flask_client_landscape_full
+    ) -> None:
+        """Accepting a colour and then ignoring it is the quieter half of this bug."""
+        from tests.conftest import decode_plotly_figure
+
+        axes, colours = self._page_columns(flask_client_landscape_full)
+        for column in colours:
+            fig = decode_plotly_figure(
+                self._scatter(flask_client_landscape_full, axes, column).get_json()
+            )
+            marker = fig["data"][0].get("marker") or {}
+            assert isinstance(
+                marker.get("color"), list
+            ), f"colour {column!r} was accepted but left a single flat marker colour"

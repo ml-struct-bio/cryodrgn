@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import pickle
+import re
 import tempfile
 from pathlib import Path
 
@@ -40,6 +42,7 @@ from cryodrgn.dashboard.particle_explorer import (
     volume_cell_gif_from_cache,
 )
 from tests.conftest import (
+    explorer_scatter_rows,
     _monkeypatch_explorer_volumes_eligible,
 )
 from cryodrgn.dashboard.preload import (
@@ -1679,3 +1682,496 @@ class TestParticleExplorerBrowserSmoke:
             playwright_page, dashboard_volumes_ineligible_live_url
         )
         assert out["volumes_panel"] is False
+
+
+class TestParticleExplorerMultiRegionSelection:
+    """Multi-region lasso/box selection on the explorer scatter.
+
+    Selections accumulate into ``committedScatterRegions``, each drawn as its own
+    ``cdrgn_commit_shape_*`` overlay with a chip, and the union drives the montage
+    pool. The state lives in a closure, so these drive the real handlers and read
+    the DOM and Plotly graph state back rather than inspecting variables.
+    """
+
+    pytestmark = pytest.mark.browser
+
+    # Two disjoint boxes on the left and right of the plot, plus a third that
+    # overlaps the first, expressed as fractions of the axis ranges.
+    LEFT_BOX = dict(x0=0.05, x1=0.35, y0=0.05, y1=0.95)
+    RIGHT_BOX = dict(x0=0.65, x1=0.95, y0=0.05, y1=0.95)
+    OVERLAPS_LEFT_BOX = dict(x0=0.20, x1=0.50, y0=0.05, y1=0.95)
+
+    @pytest.fixture
+    def explorer(self, playwright_page, dashboard_live_url):
+        from tests.conftest import explorer_open_scatter_ready
+
+        explorer_open_scatter_ready(playwright_page, dashboard_live_url)
+        return playwright_page
+
+    @staticmethod
+    def _commit(page, box, *, expect_regions):
+        from tests.conftest import explorer_commit_scatter_region
+
+        return explorer_commit_scatter_region(
+            page, expect_regions=expect_regions, **box
+        )
+
+    @staticmethod
+    def _state(page):
+        from tests.conftest import explorer_scatter_region_state
+
+        return explorer_scatter_region_state(page)
+
+    def test_single_region_commits_one_overlay_and_enables_the_selection_controls(
+        self, explorer
+    ):
+        emitted = self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        assert emitted["emitted"] > 0, "box must cover some plotted particles"
+
+        state = self._state(explorer)
+        assert state["regionShapes"] == 1
+        assert state["shapeNames"] == ["cdrgn_commit_shape_0"]
+        assert state["fieldsetDisabled"] is False
+        assert state["clearDisabled"] is False
+        assert "Selected:" in state["selCountText"]
+
+    def test_committed_region_draws_between_grid_and_traces(self, explorer):
+        """``layer: "between"`` keeps grid-letter markers visible above the fill."""
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        assert self._state(explorer)["shapeLayers"] == ["between"]
+
+    def test_commit_clears_the_transient_selection_geometry(self, explorer):
+        """Committed regions move to ``layout.shapes``; leftover selections repaint."""
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        assert self._state(explorer)["pendingSelections"] == 0
+
+    def test_second_disjoint_region_accumulates_rather_than_replacing(self, explorer):
+        first = self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        after_first = self._state(explorer)
+
+        second = self._commit(explorer, self.RIGHT_BOX, expect_regions=2)
+        after_second = self._state(explorer)
+
+        assert after_first["regionShapes"] == 1
+        assert after_second["regionShapes"] == 2
+        assert after_second["shapeNames"] == [
+            "cdrgn_commit_shape_0",
+            "cdrgn_commit_shape_1",
+        ]
+        assert (
+            after_second["selectedPointCount"] >= first["emitted"] + second["emitted"]
+        )
+
+    def test_each_region_gets_its_own_overlay_colour(self, explorer):
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        self._commit(explorer, self.RIGHT_BOX, expect_regions=2)
+
+        colours = self._state(explorer)["shapeLineColors"]
+        assert len(colours) == 2
+        assert colours[0] and colours[1]
+        assert colours[0] != colours[1], "regions must be distinguishable on the plot"
+
+    def test_chips_appear_only_once_a_second_region_exists(self, explorer):
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        assert self._state(explorer)["chips"] == [], "one region needs no chip legend"
+
+        self._commit(explorer, self.RIGHT_BOX, expect_regions=2)
+        chips = self._state(explorer)["chips"]
+        assert len(chips) == 2
+        assert [c["idx"] for c in chips] == ["0", "1"]
+        for chip in chips:
+            assert chip["solo"] and chip["wheel"] and chip["remove"]
+            assert chip["count"], "chip must report its particle count"
+
+    def test_overlapping_region_preserves_the_earlier_region(self, explorer):
+        """Overlapping lassos keep every particle inside their own geometry."""
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        self._commit(explorer, self.OVERLAPS_LEFT_BOX, expect_regions=2)
+
+        state = self._state(explorer)
+        assert state["regionShapes"] == 2, "overlap must not merge or clip regions"
+        assert len(state["chips"]) == 2
+        assert state["selectedPointCount"] >= 1
+
+    def test_removing_a_region_drops_its_overlay_and_shrinks_the_selection(
+        self, explorer
+    ):
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        self._commit(explorer, self.RIGHT_BOX, expect_regions=2)
+        before = self._state(explorer)
+
+        explorer.click(
+            ".cryo-explorer-scatter-region-chip[data-region-idx='1'] "
+            ".cryo-explorer-scatter-region-chip__remove"
+        )
+        explorer.wait_for_function(
+            """() => {
+              var gd = document.getElementById('scatter');
+              return ((gd.layout && gd.layout.shapes) || []).filter(function (s) {
+                return String(s.name || '').indexOf('cdrgn_commit_shape') === 0;
+              }).length === 1;
+            }""",
+            timeout=30_000,
+        )
+
+        after = self._state(explorer)
+        assert after["regionShapes"] == 1
+        assert after["selectedPointCount"] < before["selectedPointCount"]
+
+    def test_solo_keeps_only_the_chosen_region(self, explorer):
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        self._commit(explorer, self.RIGHT_BOX, expect_regions=2)
+
+        explorer.click(
+            ".cryo-explorer-scatter-region-chip[data-region-idx='0'] "
+            ".cryo-cc-discrete-solo-btn"
+        )
+        explorer.wait_for_function(
+            """() => {
+              var gd = document.getElementById('scatter');
+              return ((gd.layout && gd.layout.shapes) || []).filter(function (s) {
+                return String(s.name || '').indexOf('cdrgn_commit_shape') === 0;
+              }).length === 1;
+            }""",
+            timeout=30_000,
+        )
+        assert self._state(explorer)["regionShapes"] == 1
+
+    def test_clear_selection_removes_every_region(self, explorer):
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        self._commit(explorer, self.RIGHT_BOX, expect_regions=2)
+
+        explorer.click("#clear-explorer-selection")
+        explorer.wait_for_function(
+            """() => {
+              var gd = document.getElementById('scatter');
+              var shapes = ((gd.layout && gd.layout.shapes) || []).filter(function (s) {
+                return String(s.name || '').indexOf('cdrgn_commit_shape') === 0;
+              });
+              var fs = document.getElementById('particle-sel-fieldset');
+              return shapes.length === 0 && (!fs || fs.disabled);
+            }""",
+            timeout=30_000,
+        )
+
+        state = self._state(explorer)
+        assert state["regionShapes"] == 0
+        assert state["chips"] == []
+        assert state["fieldsetDisabled"] is True
+
+    def test_regions_survive_a_plotly_deselect(self, explorer):
+        """Only an explicit clear drops regions; a bare deselect must not."""
+        self._commit(explorer, self.LEFT_BOX, expect_regions=1)
+        self._commit(explorer, self.RIGHT_BOX, expect_regions=2)
+
+        explorer.evaluate(
+            "() => document.getElementById('scatter').emit('plotly_deselect', {})"
+        )
+        explorer.wait_for_timeout(400)
+
+        state = self._state(explorer)
+        assert state["regionShapes"] == 2
+        assert state["fieldsetDisabled"] is False
+
+
+# ---------------------------------------------------------------------------
+# Multi-request explorer workflows
+# ---------------------------------------------------------------------------
+
+
+class TestSelectionPersistenceWorkflow:
+    """Scatter → selection → ``save_selection`` → the file another command reads.
+
+    The saved pickle holds *dataset* indices while the client works in *plot* rows, a
+    distinction that has produced index-space bugs elsewhere in the dashboard.
+    """
+
+    def test_saved_selection_holds_dataset_indices_for_the_chosen_rows(
+        self, flask_client, dashboard_experiment: DashboardExperiment, tmp_path
+    ):
+        rows = explorer_scatter_rows(flask_client)[:8]
+        assert rows, "scatter returned no plot rows"
+
+        r = flask_client.post(
+            "/api/save_selection",
+            json={
+                "rows": rows,
+                "basename": "workflow_sel",
+                "sel_dir": str(tmp_path),
+                "save_inverse": False,
+            },
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:400]
+        payload = r.get_json()
+        assert payload["n_selected"] == len(set(rows))
+
+        with open(payload["path"], "rb") as handle:
+            saved = np.asarray(pickle.load(handle))
+        expected = np.asarray(dashboard_experiment.all_indices[sorted(set(rows))])
+        np.testing.assert_array_equal(np.sort(saved), np.sort(expected))
+
+    def test_inverse_selection_is_the_exact_complement(
+        self, flask_client, dashboard_experiment: DashboardExperiment, tmp_path
+    ):
+        rows = explorer_scatter_rows(flask_client)[:10]
+        r = flask_client.post(
+            "/api/save_selection",
+            json={
+                "rows": rows,
+                "basename": "workflow_pair",
+                "sel_dir": str(tmp_path),
+                "save_inverse": True,
+            },
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:400]
+        payload = r.get_json()
+        assert payload.get("inverse_path"), "inverse file was requested but not written"
+
+        with open(payload["path"], "rb") as handle:
+            selected = set(np.asarray(pickle.load(handle)).tolist())
+        with open(payload["inverse_path"], "rb") as handle:
+            inverse = set(np.asarray(pickle.load(handle)).tolist())
+
+        assert not (selected & inverse), "a particle appears in both halves"
+        assert selected | inverse == set(
+            np.asarray(dashboard_experiment.all_indices).tolist()
+        )
+
+    def test_rows_beyond_the_plot_are_refused_before_anything_is_written(
+        self, flask_client, dashboard_experiment: DashboardExperiment, tmp_path
+    ):
+        out_of_range = len(dashboard_experiment.plot_df) + 5
+        r = flask_client.post(
+            "/api/save_selection",
+            json={
+                "rows": [0, out_of_range],
+                "basename": "workflow_bad",
+                "sel_dir": str(tmp_path),
+            },
+        )
+        assert r.status_code == 400
+        assert not list(tmp_path.glob("workflow_bad*")), "wrote a file despite failing"
+
+
+class TestPreloadCacheLifecycleWorkflow:
+    """Warm the montage cache, then confirm each control resets it as advertised."""
+
+    @staticmethod
+    def _delta(client, cache_size: int = 12) -> dict:
+        r = client.post(
+            "/api/preload_images",
+            json={
+                "x": "UMAP1",
+                "y": "UMAP2",
+                "cache_size": cache_size,
+                "response_mode": "delta",
+            },
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:400]
+        return r.get_json()
+
+    def test_second_request_serves_the_warm_cache_instead_of_re_encoding(
+        self, flask_client
+    ):
+        first = self._delta(flask_client)
+        assert first.get("total_cached", 0) > 0
+
+        second = self._delta(flask_client)
+        assert second.get("total_cached") == first.get("total_cached")
+        assert (
+            len(second.get("images") or []) == 0
+        ), "an already-cached request must not re-send images"
+
+    def test_invalidating_the_cache_makes_the_next_request_rebuild_it(
+        self, flask_client
+    ):
+        warmed = self._delta(flask_client)
+        assert warmed.get("total_cached", 0) > 0
+
+        r = flask_client.post("/api/preload_images", json={"invalidate_cache": True})
+        assert r.status_code == 200, r.get_data(as_text=True)[:400]
+
+        rebuilt = self._delta(flask_client)
+        assert (
+            len(rebuilt.get("images") or []) > 0
+        ), "after invalidation the server must send images again"
+
+    def test_switching_epoch_does_not_leave_the_previous_cache_in_place(
+        self, flask_client, dashboard_experiment: DashboardExperiment
+    ):
+        """Epoch is part of the cache key, so a switch must not serve stale montages."""
+        self._delta(flask_client)
+
+        r = flask_client.post(
+            "/api/set_epoch", json={"epoch": int(dashboard_experiment.epoch)}
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:400]
+
+        after = self._delta(flask_client)
+        assert after.get("total_cached", 0) > 0
+        assert after.get("rows") is not None
+
+
+class TestCovariateFilterWorkflow:
+    """Legend context → threshold rows → the row set a filtered view would draw."""
+
+    @staticmethod
+    def _continuous_column(client) -> tuple[str, list[float]] | None:
+        for column in ("znorm", "index"):
+            r = client.post("/api/covariate_legend_context", json={"column": column})
+            if r.status_code != 200:
+                continue
+            payload = r.get_json()
+            if payload.get("mode") == "continuous" and payload.get("values"):
+                return column, [float(v) for v in payload["values"]]
+        return None
+
+    def test_legend_context_and_threshold_rows_describe_the_same_particles(
+        self, flask_client
+    ):
+        found = self._continuous_column(flask_client)
+        if not found:
+            pytest.skip("no continuous covariate available on this fixture")
+        column, values = found
+        midpoint = float(np.median(values))
+
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={"column": column, "level": midpoint, "use_max": True},
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:400]
+        payload = r.get_json()
+        expected = sum(1 for v in values if v <= midpoint)
+        assert payload["n"] == len(payload["rows"])
+        assert (
+            payload["n"] == expected
+        ), "threshold endpoint disagrees with the values the legend advertised"
+
+    def test_raising_the_threshold_only_ever_adds_particles(self, flask_client):
+        """Monotonicity: the two endpoints must agree on ordering, not just counts."""
+        found = self._continuous_column(flask_client)
+        if not found:
+            pytest.skip("no continuous covariate available on this fixture")
+        column, values = found
+        low, high = float(np.percentile(values, 25)), float(np.percentile(values, 75))
+
+        row_sets = []
+        for level in (low, high):
+            r = flask_client.post(
+                "/api/covariate_threshold_rows",
+                json={"column": column, "level": level, "use_max": True},
+            )
+            assert r.status_code == 200, r.get_data(as_text=True)[:400]
+            row_sets.append(set(r.get_json()["rows"]))
+
+        assert row_sets[0] <= row_sets[1], "a higher maximum dropped particles"
+
+    def test_threshold_rows_stay_within_the_plotted_rows(self, flask_client):
+        found = self._continuous_column(flask_client)
+        if not found:
+            pytest.skip("no continuous covariate available on this fixture")
+        column, values = found
+
+        r = flask_client.post(
+            "/api/covariate_threshold_rows",
+            json={"column": column, "level": float(max(values)), "use_max": True},
+        )
+        assert r.status_code == 200
+        rows = set(r.get_json()["rows"])
+        assert rows <= set(
+            explorer_scatter_rows(flask_client, color=column)
+        ), "threshold returned rows the scatter does not plot"
+
+
+class TestExplorerColumnConsistency:
+    """Every column the explorer page offers must be usable by the APIs behind it.
+
+    ``explorer()`` injects ``numeric_cols`` and ``color_cols`` straight into the
+    template's axis and colour menus, and ``/api/scatter`` validates them again
+    independently. When the two lists drift apart the menu grows entries that only
+    produce errors, which is exactly how the landscape colour menu broke.
+
+    The lists are read back from the rendered page rather than from the experiment
+    object, both because that is what the user's menus actually contain and because
+    loading an external covariate pickle elsewhere in the suite adds columns to the
+    server's experiment that a separately loaded copy would not have.
+    """
+
+    @staticmethod
+    def _page_columns(client) -> tuple[list[str], list[str]]:
+        body = client.get("/explorer").get_data(as_text=True)
+        axes = re.search(r"var cols = (\[.*?\]);", body, re.S)
+        colours = re.search(r"var colorCols = (\[.*?\]);", body, re.S)
+        assert axes and colours, "explorer page did not embed its column menus"
+        return json.loads(axes.group(1)), json.loads(colours.group(1))
+
+    @staticmethod
+    def _scatter(client, **params):
+        query = {"explorer_scatter": "1", **params}
+        return client.get("/api/scatter", query_string=query)
+
+    def test_every_advertised_axis_is_plottable(self, flask_client) -> None:
+        axes, _ = self._page_columns(flask_client)
+        assert len(axes) >= 2, "explorer needs at least two axis columns"
+
+        for axis in axes:
+            partner = next(other for other in axes if other != axis)
+            r = self._scatter(flask_client, x=axis, y=partner, color="none")
+            assert r.status_code == 200, (
+                f"page offers axis {axis!r} but scatter rejects it: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
+
+    def test_every_advertised_colour_column_is_accepted(self, flask_client) -> None:
+        axes, colours = self._page_columns(flask_client)
+        for column in ["none", *colours]:
+            r = self._scatter(flask_client, x=axes[0], y=axes[1], color=column)
+            assert r.status_code == 200, (
+                f"page offers colour {column!r} but scatter rejects it: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
+
+    def test_every_colour_column_has_legend_context(self, flask_client) -> None:
+        """The colour panel asks for this on every change; a gap leaves it blank."""
+        _, colours = self._page_columns(flask_client)
+        for column in colours:
+            r = flask_client.post(
+                "/api/covariate_legend_context", json={"column": column}
+            )
+            assert r.status_code == 200, (
+                f"no legend context for advertised colour {column!r}: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
+            assert r.get_json().get("mode") in ("discrete", "continuous")
+
+    def test_every_colour_column_is_either_thresholdable_or_discrete(
+        self, flask_client
+    ) -> None:
+        """Continuous columns drive the histogram slider; discrete ones drive chips.
+
+        A column that is neither leaves the colour panel with no usable control.
+        """
+        _, colours = self._page_columns(flask_client)
+        for column in colours:
+            payload = flask_client.post(
+                "/api/covariate_legend_context", json={"column": column}
+            ).get_json()
+            if payload.get("mode") == "discrete":
+                assert payload.get(
+                    "categories"
+                ), f"discrete colour {column!r} offered no categories to toggle"
+                continue
+            values = payload.get("values")
+            assert values, f"continuous colour {column!r} offered no values"
+            r = flask_client.post(
+                "/api/covariate_threshold_rows",
+                json={
+                    "column": column,
+                    "level": float(np.median(values)),
+                    "use_max": True,
+                },
+            )
+            assert r.status_code == 200, (
+                f"continuous colour {column!r} cannot be thresholded: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )

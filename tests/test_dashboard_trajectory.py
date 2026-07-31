@@ -56,8 +56,9 @@ from cryodrgn.dashboard.trajectory import (
 )
 from tests.conftest import (
     _monkeypatch_explorer_volumes_eligible,
+    dashboard_js_scenario_scripts,
     make_fake_trajectory_volume_pngs,
-    run_dashboard_js_node_selftest,
+    run_dashboard_js_scenario_script,
 )
 
 pytestmark = pytest.mark.dashboard
@@ -1534,8 +1535,7 @@ class TestTrajectoryVolumeSliderAccounting:
     """The Decode/Render button and the volume slider must agree on what is ready.
 
     ``TrajectoryVolumeState`` defines render debt as the count of inactive ChimeraX
-    slider ticks, and the unit tests in ``test_dashboard_js_modules.py`` hold it to
-    that. This checks the same invariant end to end in the rendered page, where the
+    slider ticks, and the ``jsunit`` tests in this module hold it to that. This checks the same invariant end to end in the rendered page, where the
     counter has previously drifted from the ticks the slider actually offers.
     """
 
@@ -2226,31 +2226,618 @@ class TestTrajectorySessionDebts:
 
 
 @pytest.mark.jsunit
-class TestTrajectorySessionSelftest:
-    """Run ``tests/js/trajectory_session_selftest.js`` as a real test.
+class TestTrajectoryScenarioScripts:
+    """Run each scenario script in ``tests/js/`` as its own test.
 
-    The script builds a Node ``vm`` sandbox and asserts broadly across the trajectory
-    module set. Shimming ``require``/``fs``/``vm`` lets it run in Chromium instead, so
-    it needs no Node installation.
+    These cover behaviour whose fixtures are JavaScript rather than data — display
+    hooks, raycast view objects, path stores — which is why they stay as ``.js``
+    instead of being folded into the parametrized classes above. Splitting them by
+    theme means a failure names the area that broke rather than the whole stack.
 
-    It is a backstop rather than the primary coverage: it halts at the first failed
-    assertion, whereas the ``jsunit`` classes above name the behaviour that broke.
+    Shimming ``require``/``fs``/``vm`` runs them in Chromium, so no Node is needed.
     """
 
-    def test_selftest_script_passes(self, dashboard_js_page):
-        script = (
-            Path(__file__).resolve().parent / "js" / "trajectory_session_selftest.js"
-        )
-        assert script.is_file(), f"missing test asset: {script}"
-        result = run_dashboard_js_node_selftest(
+    @pytest.mark.parametrize(
+        "script", dashboard_js_scenario_scripts(), ids=lambda p: p.stem
+    )
+    def test_scenario_script_passes(self, dashboard_js_page, script: Path) -> None:
+        result = run_dashboard_js_scenario_script(
             dashboard_js_page, script, TRAJECTORY_JS_MODULES
         )
         assert result["ok"], "\n".join(
             result.get("logs", []) + [result.get("error", "")]
         )
         assert any(
-            "trajectory_session_selftest: ok" in line for line in result["logs"]
-        ), f"selftest did not reach its success line: {result['logs']}"
+            f"{script.stem}: ok" in line for line in result["logs"]
+        ), f"{script.name} did not reach its success line: {result['logs']}"
+
+
+# ---------------------------------------------------------------------------
+# Volume-state path realignment (headless JS module tests)
+# ---------------------------------------------------------------------------
+
+# These scenarios are pure data — slots in, slots out — so they live here as
+# parametrize tables rather than in ``tests/js/``: each case is named, runs on its
+# own, and reports which resampling behaviour broke.
+_VOLUME_STATE_DRIVER_JS = """
+function cryoBuildState(spec) {
+  var st = new window.CryoTrajectoryVolumeState();
+  if (spec.seed) {
+    st.seedCompactCatalog(spec.seed.ids, spec.seed.vols || [],
+                          spec.seed.imgs || [], spec.seed.layout || {});
+  } else {
+    st.replaceSlots(spec.ids || [], spec.vols || [], spec.imgs || [], spec.xy || []);
+  }
+  (spec.ops || []).forEach(function (op) {
+    var a = op.args || {};
+    if (op.name === "alignToIds") st.alignToIds(a.ids);
+    else if (op.name === "alignToPath") st.alignToPath(a.samples || null, a.opts || {});
+    else if (op.name === "realignToPathXy") st.realignToPathXy(a.xy, a.opts || {});
+    else if (op.name === "rematchToPath") st.rematchToPath(a.samples, a.opts || {});
+    else if (op.name === "applyDecodeResult") st.applyDecodeResult(a);
+    else if (op.name === "applyRenderResult") st.applyRenderResult(a);
+    else if (op.name === "applyOwnPayloadAsRender") st.applyRenderResult(st.toPayload());
+    else if (op.name === "setSubsetSlotIndices") st.setSubsetSlotIndices(a.indices);
+    else if (op.name === "forgetIdsExcept") st.forgetIdsExcept(a.ids);
+    else if (op.name === "setDecoded") st.setDecoded(a.index, a.vol);
+    else if (op.name === "markStale") st.markStale(a.index);
+    else if (op.name === "reverse") st.reverse();
+    else throw new Error("unknown op " + op.name);
+  });
+  return st;
+}
+
+function cryoRunState(spec) {
+  var st = cryoBuildState(spec);
+  var n = st.slotCount();
+  var range = [];
+  for (var i = 0; i < n; i++) range.push(i);
+  return {
+    n: n,
+    ids: range.map(function (i) { return st.slotIdAt(i); }),
+    decoded: range.map(function (i) { return st.isDecoded(i); }),
+    rendered: range.map(function (i) { return st.isRendered(i); }),
+    blobs: st.volumes().map(function (v) { return (v && v.volume_b64) || null; }),
+    images: st.images(),
+    labels: range.map(function (i) { return st.tickLabelAt(i); }),
+    tickReady: range.map(function (i) { return st.tickReadyAt(i, "chimerax"); }),
+    pathT: st.volumes().map(function (v) {
+      return v && v.path_t != null ? Number(Number(v.path_t).toFixed(3)) : null;
+    }),
+    missingDecode: st.missingDecodeIndices(),
+    missingRender: st.missingRenderIndices(),
+    undecoded: st.undecodedIndices(),
+    decodeDebtIndices: st.decodeDebtIndices(),
+    decodeDebt: st.decodeDebtCount(),
+    renderDebt: st.renderDebtCount(),
+    inactiveChimerax: st.inactiveTickIndices("chimerax"),
+    renderedCount: st.renderedCount(),
+    payloadSlotIndices: (st.toPayload() || {}).slot_indices || null
+  };
+}
+"""
+
+
+def _even_path(n: int, span: float = 3.0) -> list[list[float]]:
+    """``n`` evenly spaced samples along the x axis, as the resampler emits them."""
+    return [[(i * span) / (n - 1), 0.0] for i in range(n)]
+
+
+# A four-point path whose interiors carry decoded volumes and ChimeraX frames.
+_DENSIFY_SOURCE = {
+    "ids": ["pc1:0", None, None, "pc1:9"],
+    "vols": [
+        {"volume_b64": "E0", "decoded": True},
+        {"volume_b64": "I1", "decoded": True},
+        {"volume_b64": "I2", "decoded": True},
+        {"volume_b64": "E1", "decoded": True},
+    ],
+    "imgs": ["png0", "png1", "png2", "png3"],
+    "xy": [[0, 0], [1, 0], [2, 0], [3, 0]],
+}
+
+_SHRINK_SOURCE = {
+    "ids": [f"pc1:{i}" if i in (0, 9) else None for i in range(10)],
+    "vols": [{"volume_b64": f"V{i}"} if i in (0, 9) else None for i in range(10)],
+}
+
+_SHRINK_TO_FOUR = {
+    "name": "alignToPath",
+    "args": {
+        "opts": {
+            "pathN": 4,
+            "nAnchors": 2,
+            "nInterp": 2,
+            "compactIds": ["pc1:0", "pc1:9"],
+        }
+    },
+}
+
+
+@pytest.mark.jsunit
+class TestTrajectoryVolumeStatePathRealignment:
+    """Resampling a path must carry media by latent position, not by slot index.
+
+    Densifying or thinning a trajectory renumbers every interior slot. Matching on
+    ``path_t`` proximity instead of latent XY stamped stale volumes onto new samples,
+    and reading the layout off a leftover dense catalogue produced decode counts that
+    changed as soon as they were recomputed.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("trajectory_volume_state.js").define(
+            _VOLUME_STATE_DRIVER_JS
+        )
+
+    def _run(self, spec) -> dict:
+        return self.js.evaluate("(spec) => cryoRunState(spec)", spec)
+
+    def test_media_follows_durable_ids_when_slots_are_reordered(self):
+        got = self._run(
+            {
+                "ids": ["a", "b", "c"],
+                "vols": [{"volume_b64": "A"}, None, {"volume_b64": "C"}],
+                "imgs": ["ia", None, "ic"],
+                "ops": [{"name": "alignToIds", "args": {"ids": ["c", "a", "d"]}}],
+            }
+        )
+        assert got["ids"] == ["c", "a", "d"]
+        assert got["decoded"] == [True, True, False]
+
+    def test_reverse_carries_readiness_along_with_the_ids(self):
+        got = self._run(
+            {
+                "ids": ["a", "b", "c"],
+                "vols": [{"volume_b64": "A"}, None, {"volume_b64": "C"}],
+                "imgs": ["ia", None, "ic"],
+                "ops": [
+                    {"name": "alignToIds", "args": {"ids": ["c", "a", "d"]}},
+                    {"name": "reverse"},
+                ],
+            }
+        )
+        assert got["ids"] == ["d", "a", "c"]
+        assert got["decoded"] == [False, True, True]
+
+    def test_shared_permute_helper_pads_and_reorders(self):
+        got = self.js.evaluate(
+            """() => window.CryoTrajectoryVolumeStateUtils
+                 .permuteArray(['x', 'y'], [1, 0, 2]).join(',')"""
+        )
+        assert got == "y,x,"
+
+    def test_an_explicit_path_length_shrinks_the_slot_array(self):
+        """Trajectory-controls 10 → 4: the endpoints keep their media by id."""
+        got = self._run({**_SHRINK_SOURCE, "ops": [_SHRINK_TO_FOUR]})
+        assert got["n"] == 4
+        assert got["ids"][0] == "pc1:0" and got["ids"][3] == "pc1:9"
+        assert got["decoded"][0] and got["decoded"][3]
+
+    def test_a_late_render_for_a_longer_path_cannot_regrow_it(self):
+        """A stale ten-frame batch arriving after a shrink must not reinflate."""
+        got = self._run(
+            {
+                **_SHRINK_SOURCE,
+                "ops": [
+                    _SHRINK_TO_FOUR,
+                    {
+                        "name": "applyRenderResult",
+                        "args": {"images": [f"png{i}" for i in range(10)]},
+                    },
+                ],
+            }
+        )
+        assert got["n"] == 4
+        assert got["rendered"][0] and got["rendered"][1]
+
+    def test_each_slot_is_stamped_with_its_normalised_position(self):
+        got = self._run(dict(_DENSIFY_SOURCE))
+        assert got["n"] == 4
+        assert got["pathT"][1] == 0.333
+
+    @pytest.mark.parametrize(
+        "new_path,expected_blobs,expected_decode_debt",
+        [
+            # Exact resample: the old interior positions land on samples 1 and 2.
+            (
+                [[float(i), 0.0] for i in range(10)],
+                {1: "I1", 2: "I2"},
+                [3, 4, 5, 6, 7, 8],
+            ),
+            # Arc-length resample of the same segment: they reappear at 3 and 6.
+            (_even_path(10), {3: "I1", 6: "I2"}, [1, 2, 4, 5, 7, 8]),
+            # Thinner resample: interiors snap to the nearest new sample.
+            (_even_path(6), {2: "I1", 3: "I2"}, [1, 4]),
+        ],
+        ids=["exact_4_to_10", "arclength_4_to_10", "snap_4_to_6"],
+    )
+    def test_densify_keeps_media_whose_latent_position_reappears(
+        self, new_path, expected_blobs, expected_decode_debt
+    ):
+        got = self._run(
+            {
+                **_DENSIFY_SOURCE,
+                "ops": [
+                    {
+                        "name": "realignToPathXy",
+                        "args": {
+                            "xy": new_path,
+                            "opts": {"compactIds": ["pc1:0", "pc1:9"]},
+                        },
+                    }
+                ],
+            }
+        )
+        assert got["n"] == len(new_path)
+        assert got["ids"][0] == "pc1:0" and got["ids"][-1] == "pc1:9"
+        for slot, blob in expected_blobs.items():
+            assert got["blobs"][slot] == blob, f"slot {slot} lost its volume"
+            assert got["rendered"][slot], f"slot {slot} lost its ChimeraX frame"
+            assert got["tickReady"][slot], f"slot {slot} should be an active tick"
+        assert got["missingDecode"] == expected_decode_debt
+
+    def test_a_much_denser_resample_still_keeps_every_prior_frame(self):
+        got = self._densified_to_twelve()
+        assert got["n"] == 12
+        assert got["renderedCount"] == 4, "all four prior renders should survive"
+        assert got["rendered"][0] and got["rendered"][11]
+        assert sum(got["tickReady"][1:11]) == 2, "both prior interiors stay active"
+        assert len(got["missingDecode"]) == 8
+
+    def test_densified_interiors_do_not_inherit_catalogue_labels(self):
+        """Only the endpoints are catalogue volumes; interiors are path samples."""
+        got = self._densified_to_twelve()
+        assert got["labels"][0] == "pc1:0"
+        assert got["labels"][11] == "pc1:9"
+        assert all(label is None for label in got["labels"][1:11])
+
+    def test_debt_invariants_hold_after_a_densify(self):
+        got = self._densified_to_twelve()
+        assert got["decodeDebt"] == len(got["missingDecode"])
+        assert got["renderDebt"] == len(got["inactiveChimerax"]) == 8
+        assert got["renderDebt"] == len(got["missingRender"])
+        assert got["decodeDebt"] <= got["renderDebt"]
+
+    def _densified_to_twelve(self) -> dict:
+        return self._run(
+            {
+                **_DENSIFY_SOURCE,
+                "ops": [
+                    {
+                        "name": "realignToPathXy",
+                        "args": {
+                            "xy": _even_path(12),
+                            "opts": {"compactIds": ["pc1:0", "pc1:9"]},
+                        },
+                    }
+                ],
+            }
+        )
+
+    def test_a_rendered_slot_without_a_blob_does_not_inflate_decode_debt(self):
+        """Decode debt is inactive ticks that still need decoding, not every gap."""
+        got = self._run(
+            {
+                "ids": ["a", "b", "c"],
+                "vols": [None, None, {"volume_b64": "C", "decoded": True}],
+                "imgs": ["pngA", None, "pngC"],
+            }
+        )
+        assert got["undecoded"] == [0, 1], "slot 0 genuinely has no volume"
+        assert got["decodeDebtIndices"] == [1], "slot 0 is active, so it owes nothing"
+        assert got["decodeDebt"] <= len(got["inactiveChimerax"])
+
+    def test_a_sparse_path_layout_is_not_read_off_leftover_catalogue_ids(self):
+        """Taking the layout from a dense catalogue reported decode 6, then 2."""
+        sparse = ["pc1:0"] + [None] * 10 + ["pc1:9"]
+        got = self._run(
+            {
+                **_DENSIFY_SOURCE,
+                "ops": [
+                    {
+                        "name": "rematchToPath",
+                        "args": {
+                            "samples": [
+                                {"xy": xy, "membership": sparse[i]}
+                                for i, xy in enumerate(_even_path(12))
+                            ],
+                            "opts": {"ids": sparse, "compactIds": ["pc1:0", "pc1:9"]},
+                        },
+                    }
+                ],
+            }
+        )
+        assert got["n"] == 12
+        assert len(got["missingDecode"]) == 8
+        assert [i for i in got["ids"] if i] == ["pc1:0", "pc1:9"]
+
+
+@pytest.mark.jsunit
+class TestTrajectoryVolumeStateSeedingAndPayloads:
+    """Seeding a compact catalogue onto a path, and the slot map sent back to it."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("trajectory_volume_state.js").define(
+            _VOLUME_STATE_DRIVER_JS
+        )
+
+    def _run(self, spec) -> dict:
+        return self.js.evaluate("(spec) => cryoRunState(spec)", spec)
+
+    def test_catalogue_endpoints_seed_onto_the_ends_of_the_path(self):
+        """A fully rendered PC1×10 handoff has ends at 0 and 9, not a packed prefix."""
+        got = self._run(
+            {
+                "seed": {
+                    "ids": [f"pc1:{i}" for i in range(10)],
+                    "vols": [
+                        {"volume_b64": f"V{i}", "decoded": True} for i in range(10)
+                    ],
+                    "imgs": [f"img{i}" for i in range(10)],
+                    "layout": {"pathN": 10, "nAnchors": 2, "nInterp": 8},
+                }
+            }
+        )
+        assert got["ids"][0] == "pc1:0" and got["ids"][9] == "pc1:9"
+        assert got["rendered"][0] and got["images"][9] == "img9"
+        assert not got["rendered"][1], "the second frame is not an endpoint"
+        assert got["labels"][0] == "pc1:0" and got["labels"][9] == "pc1:9"
+
+    def test_anchor_slots_are_spaced_by_the_interpolation_count(self):
+        got = self.js.evaluate(
+            """() => window.CryoTrajectoryVolumeStateUtils
+                 .anchorSlotIndices(10, 1, 19).join(',')"""
+        )
+        assert got == "0,2,4,6,8,10,12,14,16,18"
+
+    def test_catalogue_frames_land_on_anchor_ticks_and_interiors_fill_in(self):
+        interior = [1, 3, 5, 7, 9, 11, 13, 15, 17]
+        got = self._run(
+            {
+                "seed": {
+                    "ids": [f"pc1:{i}" for i in range(10)],
+                    "imgs": [f"img{i}" for i in range(10)],
+                    "layout": {"pathN": 19, "nAnchors": 10, "nInterp": 1},
+                },
+                "ops": [
+                    {
+                        "name": "applyDecodeResult",
+                        "args": {
+                            "cacheId": "cache-1",
+                            "slot_indices": interior,
+                            "volumes": [
+                                {"index": i, "decoded": True} for i in interior
+                            ],
+                        },
+                    },
+                    {
+                        "name": "applyRenderResult",
+                        "args": {
+                            "slot_indices": interior,
+                            "images": [f"render{i}" for i in interior],
+                        },
+                    },
+                ],
+            }
+        )
+        assert got["renderedCount"] == 19
+        assert all(got["rendered"][i] for i in (10, 12, 14, 16, 18))
+
+    def test_a_rendered_batch_activates_exactly_the_slots_it_names(self):
+        base = {
+            "ids": [f"pc1:{i}" if i in (0, 9) else None for i in range(10)],
+            "vols": [
+                {"volume_b64": f"V{i}", "decoded": True} if i in (0, 9) else None
+                for i in range(10)
+            ],
+            "imgs": [f"img{i}" if i in (0, 9) else None for i in range(10)],
+            "xy": [[i, 0] for i in range(10)],
+        }
+        path4 = [[0, 0], [3, 0], [6, 0], [9, 0]]
+        shrink = {
+            "name": "alignToPath",
+            "args": {
+                "opts": {
+                    "pathN": 4,
+                    "nAnchors": 2,
+                    "nInterp": 2,
+                    "compactIds": ["pc1:0", "pc1:9"],
+                    "pathXY": path4,
+                    "pathSamples": [
+                        {
+                            "xy": xy,
+                            "membership": (
+                                "pc1:0" if i == 0 else ("pc1:9" if i == 3 else None)
+                            ),
+                        }
+                        for i, xy in enumerate(path4)
+                    ],
+                }
+            },
+        }
+
+        after_shrink = self._run({**base, "ops": [shrink]})
+        assert after_shrink["tickReady"] == [True, False, False, True]
+
+        after_render = self._run(
+            {
+                **base,
+                "ops": [
+                    shrink,
+                    {
+                        "name": "applyRenderResult",
+                        "args": {"slot_indices": [1, 2], "images": ["new-1", "new-2"]},
+                    },
+                ],
+            }
+        )
+        assert after_render["tickReady"] == [True, True, True, True]
+        assert after_render["labels"][1] is None and after_render["labels"][2] is None
+
+    def test_a_moved_slot_stays_inactive_until_a_frame_lands_at_its_new_position(self):
+        base = {
+            "ids": [f"pc1:{i}" if i in (0, 3) else None for i in range(4)],
+            "vols": [
+                {"volume_b64": "V", "decoded": True} if i in (0, 3) else None
+                for i in range(4)
+            ],
+            "imgs": ["img0", "img1", "img2", "img9"],
+        }
+        stale = {"name": "markStale", "args": {"index": 1}}
+        cache_marker = {
+            "name": "setDecoded",
+            "args": {"index": 1, "vol": {"index": 1, "decoded": True}},
+        }
+        rerender = {
+            "name": "applyRenderResult",
+            "args": {"slot_indices": [1], "images": ["rerendered-1"]},
+        }
+
+        assert not self._run({**base, "ops": [stale]})["tickReady"][1]
+        assert not self._run({**base, "ops": [stale, cache_marker]})["tickReady"][
+            1
+        ], "a cache-only decode marker must not clear stale before a render"
+        assert self._run({**base, "ops": [stale, cache_marker, rerender]})["tickReady"][
+            1
+        ]
+
+    def test_a_full_length_image_array_ignores_a_leftover_subset_map(self):
+        """Otherwise adjacent direct-trace ticks show the same ChimeraX frame."""
+        base = {
+            "ids": ["pc1:0", None, None, "pc1:9"],
+            "vols": [
+                {"volume_b64": "V0", "decoded": True},
+                {"index": 1, "decoded": True},
+                {"index": 2, "decoded": True},
+                {"volume_b64": "V9", "decoded": True},
+            ],
+            "imgs": ["img0", "img1", "img2", "img9"],
+            "xy": [[0, 0], [1, 0], [2, 0], [3, 0]],
+            "ops": [{"name": "setSubsetSlotIndices", "args": {"indices": [1, 2]}}],
+        }
+        carried = self._run(base)
+        assert carried["payloadSlotIndices"] == [1, 2]
+
+        replayed = self._run(
+            {**base, "ops": base["ops"] + [{"name": "applyOwnPayloadAsRender"}]}
+        )
+        assert replayed["images"] == ["img0", "img1", "img2", "img9"]
+
+        compact = self._run(
+            {
+                **base,
+                "ops": base["ops"]
+                + [
+                    {
+                        "name": "applyRenderResult",
+                        "args": {"slot_indices": [1, 2], "images": ["new1", "new2"]},
+                    }
+                ],
+            }
+        )
+        assert compact["images"] == ["img0", "new1", "new2", "img9"]
+
+    def test_forgotten_ids_cannot_rematerialise_onto_a_later_path(self):
+        got = self._run(
+            {
+                "ids": ["pc1:0", None, None, "pc1:9"],
+                "vols": [
+                    {"volume_b64": "V0", "decoded": True},
+                    None,
+                    None,
+                    {"volume_b64": "V9", "decoded": True},
+                ],
+                "imgs": ["img0", None, None, "img9"],
+                "ops": [
+                    {"name": "forgetIdsExcept", "args": {"ids": ["pc1:0", "pc1:9"]}},
+                    {
+                        "name": "alignToIds",
+                        "args": {"ids": ["pc1:0", "pc1:1", "pc1:2", "pc1:9"]},
+                    },
+                ],
+            }
+        )
+        assert got["rendered"][0] and got["rendered"][3]
+        assert not got["decoded"][1] and not got["decoded"][2]
+
+
+@pytest.mark.jsunit
+class TestDirectTraceUiIndexRemapping:
+    """``trajectory_direct_trace_ui.js`` index bookkeeping.
+
+    Reversing a direct trace has to carry per-slot flags — which ticks are stale,
+    which are selected — across the permutation. Dropping or misplacing one leaves
+    the slider marking the wrong volume.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("trajectory_direct_trace_ui.js")
+
+    @pytest.mark.parametrize(
+        "n,expected",
+        [(0, []), (1, [0]), (2, [1, 0]), (5, [4, 3, 2, 1, 0])],
+    )
+    def test_reverse_permutation_maps_each_slot_to_its_mirror(self, n, expected):
+        got = self.js.evaluate(
+            "(n) => window.CryoDirectTraceUiState.reversePermutation(n)", n
+        )
+        assert got == expected
+
+    def test_a_negative_length_yields_an_empty_permutation(self):
+        got = self.js.evaluate(
+            "() => window.CryoDirectTraceUiState.reversePermutation(-3)"
+        )
+        assert got == []
+
+    def test_flags_move_with_the_permutation(self):
+        got = self.js.evaluate(
+            """() => {
+              var U = window.CryoDirectTraceUiState;
+              return U.remapIndexFlags({0: true, 3: true}, U.reversePermutation(4));
+            }"""
+        )
+        assert got == {"0": True, "3": True}, "ends mirror onto each other"
+
+    def test_an_interior_flag_lands_on_its_mirrored_slot(self):
+        got = self.js.evaluate(
+            """() => {
+              var U = window.CryoDirectTraceUiState;
+              return U.remapIndexFlags({1: true}, U.reversePermutation(5));
+            }"""
+        )
+        assert got == {"3": True}
+
+    def test_false_and_out_of_range_flags_are_dropped(self):
+        got = self.js.evaluate(
+            """() => {
+              var U = window.CryoDirectTraceUiState;
+              return U.remapIndexFlags(
+                {0: false, 2: true, 9: true, "-1": true}, U.reversePermutation(4)
+              );
+            }"""
+        )
+        assert got == {"1": True}, "only the in-range truthy flag survives"
+
+    @pytest.mark.parametrize("perm", [[], [0]])
+    def test_a_permutation_too_short_to_reorder_clears_the_flags(self, perm):
+        """A one-slot path has no ordering, so stale flags should not be carried."""
+        got = self.js.evaluate(
+            "(p) => window.CryoDirectTraceUiState.remapIndexFlags({0: true}, p)", perm
+        )
+        assert got == {}
+
+    def test_remapping_twice_returns_the_flags_to_where_they_started(self):
+        got = self.js.evaluate(
+            """() => {
+              var U = window.CryoDirectTraceUiState;
+              var perm = U.reversePermutation(6);
+              return U.remapIndexFlags(U.remapIndexFlags({2: true}, perm), perm);
+            }"""
+        )
+        assert got == {"2": True}
 
 
 # ---------------------------------------------------------------------------

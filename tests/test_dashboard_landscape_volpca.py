@@ -855,63 +855,63 @@ class TestLandscapeVolpcaFlaskRoutes:
         assert '<div class="volsketch-grid">' not in body
         assert 'id="volsketch"' not in body
 
-    def test_scatter_requires_both_axis_params(self, flask_client_landscape) -> None:
-        r = flask_client_landscape.get(
-            "/api/landscape_volpca/scatter",
-            query_string={"axis_x": "pc:0", "color": "none"},
-        )
-        assert r.status_code == 400
-        assert "axis_y" in (r.get_json() or {}).get("error", "")
-
-    def test_scatter_state_color_unavailable_is_400(
-        self, flask_client_landscape
+    # ``state`` colouring is covered end to end by
+    # ``TestLandscapeVolpcaWorkflow.test_state_colour_is_offered_and_refused_by_the_same_flag``,
+    # which checks both branches of ``has_state_color`` rather than just the refusal.
+    @pytest.mark.parametrize(
+        "method,path,payload,expected_error",
+        [
+            (
+                "GET",
+                "/api/landscape_volpca/scatter",
+                {"axis_x": "pc:0", "color": "none"},
+                "axis_y",
+            ),
+            (
+                "POST",
+                "/api/landscape_volpca/generate_animations",
+                {},
+                None,
+            ),
+            (
+                "POST",
+                "/api/landscape_volpca/generate_animations",
+                {"vol_indices": [1], "view_rotations": [1, 2, 3]},
+                None,
+            ),
+            (
+                "POST",
+                "/api/landscape_volpca/generate_animations",
+                {"vol_indices": [1], "view_matrix": "camera 1,2"},
+                "12 numbers",
+            ),
+            ("POST", "/api/landscape_volpca/save_animations", {}, None),
+            (
+                "POST",
+                "/api/landscape_volpca/save_animations",
+                {"token": "nope", "out_dir": 123},
+                None,
+            ),
+        ],
+        ids=[
+            "scatter_missing_axis_y",
+            "animations_without_volumes",
+            "animations_bad_view_rotations",
+            "animations_bad_view_matrix",
+            "save_without_token",
+            "save_bad_out_dir",
+        ],
+    )
+    def test_malformed_requests_are_refused(
+        self, flask_client_landscape, method, path, payload, expected_error
     ) -> None:
-        r = flask_client_landscape.get(
-            "/api/landscape_volpca/scatter",
-            query_string={"axis_x": "pc:0", "axis_y": "pc:1", "color": "state"},
-        )
-        assert r.status_code == 400
-        assert "state" in (r.get_json() or {}).get("error", "").lower()
-
-    def test_generate_animations_requires_volumes(self, flask_client_landscape) -> None:
-        r = flask_client_landscape.post(
-            "/api/landscape_volpca/generate_animations",
-            json={},
-        )
-        assert r.status_code == 400
-
-    def test_generate_animations_rejects_bad_view_rotations(
-        self, flask_client_landscape
-    ) -> None:
-        r = flask_client_landscape.post(
-            "/api/landscape_volpca/generate_animations",
-            json={"vol_indices": [1], "view_rotations": [1, 2, 3]},
-        )
-        assert r.status_code == 400
-
-    def test_generate_animations_rejects_bad_view_matrix(
-        self, flask_client_landscape
-    ) -> None:
-        r = flask_client_landscape.post(
-            "/api/landscape_volpca/generate_animations",
-            json={"vol_indices": [1], "view_matrix": "camera 1,2"},
-        )
-        assert r.status_code == 400
-        assert "12 numbers" in (r.get_json() or {}).get("error", "")
-
-    def test_save_animations_requires_token(self, flask_client_landscape) -> None:
-        r = flask_client_landscape.post(
-            "/api/landscape_volpca/save_animations",
-            json={},
-        )
-        assert r.status_code == 400
-
-    def test_save_animations_rejects_bad_out_dir(self, flask_client_landscape) -> None:
-        r = flask_client_landscape.post(
-            "/api/landscape_volpca/save_animations",
-            json={"token": "nope", "out_dir": 123},
-        )
-        assert r.status_code == 400
+        if method == "GET":
+            r = flask_client_landscape.get(path, query_string=payload)
+        else:
+            r = flask_client_landscape.post(path, json=payload)
+        assert r.status_code == 400, r.get_data(as_text=True)[:200]
+        if expected_error:
+            assert expected_error in (r.get_json() or {}).get("error", "")
 
     def test_generate_animations_cycle_happy_path(
         self,
@@ -980,3 +980,114 @@ class TestLandscapeVolpcaPlotlyBrowserSmoke:
             assert out[key] is expect
         else:
             assert out[key] >= expect
+
+
+# ---------------------------------------------------------------------------
+# Landscape metadata / endpoint consistency workflow
+# ---------------------------------------------------------------------------
+
+
+class TestLandscapeVolpcaWorkflow:
+    """Everything ``meta`` advertises must be usable by the endpoints that follow it.
+
+    The landscape page builds its axis and colour menus purely from ``meta``, so an
+    option listed there but rejected later is a dead control in the UI.
+    """
+
+    @staticmethod
+    def _meta(client) -> dict:
+        r = client.get("/api/landscape_volpca/meta")
+        assert r.status_code == 200, r.get_data(as_text=True)[:400]
+        return r.get_json()
+
+    @staticmethod
+    def _scatter(client, **params):
+        return client.get("/api/landscape_volpca/scatter", query_string=params)
+
+    def test_every_axis_meta_advertises_is_accepted_by_the_scatter_endpoint(
+        self, flask_client_landscape
+    ):
+        meta = self._meta(flask_client_landscape)
+        axes = [f"pc:{i}" for i in range(int(meta.get("n_pc") or 0))]
+        axes += [f"umap:{i}" for i in range(int(meta.get("n_umap") or 0))]
+        assert len(axes) >= 2, "landscape fixture advertised too few axes"
+
+        for axis in axes:
+            partner = next(other for other in axes if other != axis)
+            assert (
+                self._scatter(
+                    flask_client_landscape, axis_x=axis, axis_y=partner
+                ).status_code
+                == 200
+            ), f"meta offers axis {axis!r} but scatter rejects it"
+
+    def test_every_colour_option_meta_advertises_is_accepted(
+        self, flask_client_landscape
+    ):
+        meta = self._meta(flask_client_landscape)
+        options = [opt.get("value") for opt in (meta.get("color_options") or []) if opt]
+        assert options, "landscape fixture advertised no colour options"
+        if not meta.get("has_state_color"):
+            # The page disables this entry from the same flag; see the test below.
+            options = [value for value in options if value != "state"]
+
+        for value in options:
+            r = self._scatter(
+                flask_client_landscape, axis_x="pc:0", axis_y="pc:1", color=value
+            )
+            assert r.status_code == 200, (
+                f"meta offers colour {value!r} but scatter rejects it: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
+            if value == "none":
+                continue
+            marker = decode_plotly_figure(r.get_json())["data"][0].get("marker") or {}
+            assert isinstance(marker.get("color"), list), (
+                f"colour {value!r} was accepted but produced a single flat marker "
+                "colour, so the choice had no effect on the plot"
+            )
+
+    def test_state_colour_is_offered_and_refused_by_the_same_flag(
+        self, flask_client_landscape
+    ):
+        """``color_options`` always lists agglomerative state; ``has_state_color``
+        decides whether it works, and the page disables the entry from that flag. If
+        the two ever disagree the menu grows an option that only produces an error."""
+        meta = self._meta(flask_client_landscape)
+        values = [opt.get("value") for opt in (meta.get("color_options") or [])]
+        assert "state" in values
+
+        r = self._scatter(
+            flask_client_landscape, axis_x="pc:0", axis_y="pc:1", color="state"
+        )
+        if meta.get("has_state_color"):
+            assert r.status_code == 200
+        else:
+            assert r.status_code == 400
+            assert "state" in (r.get_json().get("error") or "").lower()
+
+    def test_scatter_plots_exactly_the_advertised_number_of_volumes(
+        self, flask_client_landscape
+    ):
+        meta = self._meta(flask_client_landscape)
+        n_volumes = int(meta.get("n_volumes") or 0)
+        if n_volumes <= 0:
+            pytest.skip("landscape fixture reports no volumes")
+
+        fig = decode_plotly_figure(
+            self._scatter(
+                flask_client_landscape, axis_x="pc:0", axis_y="pc:1"
+            ).get_json()
+        )
+        plotted = sum(len(trace.get("x") or []) for trace in fig["data"])
+        assert (
+            plotted == n_volumes
+        ), f"meta advertises {n_volumes} volumes but the scatter plots {plotted}"
+
+    def test_an_axis_beyond_the_advertised_range_is_refused(
+        self, flask_client_landscape
+    ):
+        meta = self._meta(flask_client_landscape)
+        beyond = f"pc:{int(meta.get('n_pc') or 0) + 5}"
+        r = self._scatter(flask_client_landscape, axis_x=beyond, axis_y="pc:0")
+        assert r.status_code == 400, "an out-of-range component should not render"

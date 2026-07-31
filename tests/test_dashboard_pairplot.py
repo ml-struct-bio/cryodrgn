@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -223,3 +225,58 @@ class TestPairplotBrowserSmoke:
 
         out = dashboard_smoke_pairplot(playwright_page, dashboard_live_url)
         assert out["src_changed"]
+
+
+class TestPairplotColourChoiceConsistency:
+    """Every entry in the pair-grid colour menu must render and describe itself.
+
+    ``pairplot_page`` builds ``color_choices`` by filtering ``color_covariate_columns``,
+    while ``/api/pairplot`` and the legend endpoint validate colours independently.
+    The existing coverage spot-checks three columns, which cannot detect a menu entry
+    that no longer renders.
+
+    The menu is read back from the rendered radio group rather than recomputed, so it
+    reflects whatever covariates the running server actually has loaded.
+    """
+
+    @staticmethod
+    def _menu(client) -> tuple[list[str], list[str]]:
+        body = client.get("/pairplot").get_data(as_text=True)
+        choices = [
+            c
+            for c in re.findall(r'name="color_cov" value="([^"]+)"', body)
+            if c != "none"
+        ]
+        assert choices, "pair grid offered no colour choices"
+        discrete = re.search(r"var discreteColorCols = (\[.*?\]);", body, re.S)
+        return choices, json.loads(discrete.group(1)) if discrete else []
+
+    def test_every_colour_choice_renders_a_grid(self, flask_client) -> None:
+        choices, _ = self._menu(flask_client)
+        for column in choices:
+            r = flask_client.post("/api/pairplot", json={"color_col": column})
+            assert r.status_code == 200, (
+                f"menu offers colour {column!r} but the grid will not render it: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
+            assert r.get_json().get("png_b64")
+
+    def test_menu_and_legend_agree_on_which_choices_are_discrete(
+        self, flask_client
+    ) -> None:
+        """The page picks swatches from one list; the legend answers from another."""
+        choices, discrete = self._menu(flask_client)
+        for column in choices:
+            payload = flask_client.post(
+                "/api/covariate_legend_context", json={"column": column}
+            ).get_json()
+            expected = "discrete" if column in discrete else "continuous"
+            assert payload.get("mode") == expected, (
+                f"pair grid treats {column!r} as {expected} but the legend endpoint "
+                f"reports {payload.get('mode')!r}"
+            )
+
+    def test_latent_axes_are_kept_out_of_the_colour_menu(self, flask_client) -> None:
+        """``z*`` are the grid's own axes, so offering them as colours is meaningless."""
+        choices, _ = self._menu(flask_client)
+        assert not [c for c in choices if re.fullmatch(r"z\d+", c)]

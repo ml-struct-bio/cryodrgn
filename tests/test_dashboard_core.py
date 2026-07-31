@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import pickle
 import re
@@ -35,14 +36,17 @@ from cryodrgn.dashboard.context import (
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs, load_experiment
 from cryodrgn.dashboard.trajectory import _TRAJ_GRAPH_NEIGHBOR_CACHE
 from tests.conftest import (
+    WEBGL_REQUIRED_ENV,
     _DASHBOARD_DEFAULT_TEST_CACHE,
     _DASHBOARD_FIXTURE_SUBDIR,
     _dashboard_is_usable_workdir,
     _dashboard_resolve_fixture_workdir,
+    dashboard_webgl_report,
     decode_plotly_figure,
     decode_plotly_value,
     read_dashboard_template,
-    torch_cuda_reports_available_but_broken,
+    skip_or_fail_without_webgl,
+    webgl_is_required,
 )
 
 pytestmark = pytest.mark.dashboard
@@ -66,9 +70,6 @@ class TestDashboardFixtureCache:
         else:
             assert shared is False
             assert workdir != default
-
-    def test_torch_cuda_broken_gpu_probe_returns_bool(self) -> None:
-        assert isinstance(torch_cuda_reports_available_but_broken(), bool)
 
 
 class TestDashboardExperiment:
@@ -1573,3 +1574,547 @@ class TestDashboardIndexBrowserSmoke:
         url = request.getfixturevalue(fixture_url)
         out = dashboard_smoke_index(playwright_page, url)
         assert out[expect_key]
+
+
+# ---------------------------------------------------------------------------
+# Plotly 5/6 array compatibility (headless JS module tests)
+# ---------------------------------------------------------------------------
+
+
+def plotly_binary(values, dtype: str = "f8", *, with_shape: bool = False) -> dict:
+    """Build the ``{dtype, bdata[, shape]}`` payload Plotly 6 emits for numpy arrays."""
+    arr = np.asarray(values, dtype=dtype)
+    payload = {
+        "dtype": dtype,
+        "bdata": base64.b64encode(arr.tobytes()).decode("ascii"),
+    }
+    if with_shape and arr.ndim > 1:
+        payload["shape"] = ", ".join(str(d) for d in arr.shape)
+    return payload
+
+
+@pytest.mark.jsunit
+class TestPlotlyArrayUtils:
+    """``plotly_array_utils.js`` — the Plotly 5 → 6 typed-array compatibility layer.
+
+    Plotly 6 binary-encodes numpy-backed traces, so ``Array.isArray`` and ``.length``
+    silently return the wrong answer. One consequence was a user-entered image cache
+    size of 5000 being clamped to a single chunk because a trace length read as 0.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("plotly_array_utils.js")
+
+    def test_length_of_plain_list_matches_python(self):
+        n = self.js.evaluate(
+            "(a) => window.CryoPlotlyArrays.length(a)", [1.0, 2.0, 3.0]
+        )
+        assert n == 3
+
+    def test_length_of_binary_array_without_shape_decodes_payload(self):
+        payload = plotly_binary(np.arange(37.0))
+        n = self.js.evaluate("(a) => window.CryoPlotlyArrays.length(a)", payload)
+        assert n == 37
+
+    @pytest.mark.parametrize("as_string", [True, False])
+    def test_length_of_2d_binary_array_is_row_count(self, as_string):
+        payload = plotly_binary(np.arange(20.0).reshape(10, 2), with_shape=True)
+        if not as_string:
+            payload["shape"] = [10, 2]
+        n = self.js.evaluate("(a) => window.CryoPlotlyArrays.length(a)", payload)
+        assert n == 10, "2-D customdata must report rows, not total elements"
+
+    def test_length_of_typed_array_matches_element_count(self):
+        n = self.js.evaluate(
+            "() => window.CryoPlotlyArrays.length(new Float64Array([1, 2, 3, 4]))"
+        )
+        assert n == 4
+
+    def test_length_of_string_is_zero_so_labels_are_never_treated_as_traces(self):
+        assert self.js.evaluate("() => window.CryoPlotlyArrays.length('UMAP1')") == 0
+
+    def test_is_array_accepts_binary_payload_and_rejects_string(self):
+        got = self.js.evaluate(
+            """(a) => ({
+              binary: window.CryoPlotlyArrays.isArray(a),
+              string: window.CryoPlotlyArrays.isArray('nope'),
+              plain: window.CryoPlotlyArrays.isArray([1, 2])
+            })""",
+            plotly_binary([1.0, 2.0, 3.0]),
+        )
+        assert got == {"binary": True, "string": False, "plain": True}
+
+    @pytest.mark.parametrize("dtype", ["f8", "f4", "i4", "i2", "u1"])
+    def test_value_at_decodes_every_dtype_the_server_emits(self, dtype):
+        payload = plotly_binary([10, 20, 30], dtype=dtype)
+        got = self.js.evaluate(
+            "(a) => [0, 1, 2].map(i => window.CryoPlotlyArrays.valueAt(a, i))", payload
+        )
+        assert got == [10, 20, 30]
+
+    def test_row_at_returns_customdata_columns_for_binary_matrix(self):
+        """``snapshotRowsFromPoints`` reads ``customdata[1]`` as the plot row."""
+        payload = plotly_binary(
+            np.array([[7.0, 101.0], [8.0, 202.0], [9.0, 303.0]]), with_shape=True
+        )
+        got = self.js.evaluate("(a) => window.CryoPlotlyArrays.rowAt(a, 1)", payload)
+        assert got == [8.0, 202.0]
+
+    def test_slice_of_binary_array_round_trips_to_plain_numbers(self):
+        payload = plotly_binary([1.5, 2.5, 3.5])
+        got = self.js.evaluate("(a) => window.CryoPlotlyArrays.slice(a)", payload)
+        assert got == [1.5, 2.5, 3.5]
+
+    def test_length_agrees_between_encodings_of_the_same_data(self):
+        """The cache-size regression: binary and plain encodings must not disagree."""
+        values = list(np.arange(5000.0))
+        got = self.js.evaluate(
+            """(p) => ({
+              plain: window.CryoPlotlyArrays.length(p.plain),
+              binary: window.CryoPlotlyArrays.length(p.binary)
+            })""",
+            {"plain": values, "binary": plotly_binary(values)},
+        )
+        assert got["plain"] == got["binary"] == 5000
+
+
+# Shared JS helper: build a TrajectoryVolumeState from a compact per-slot spec.
+# ``vtk`` gives a real ``volume_b64`` blob; ``marker`` is the bare ``{decoded: true}``
+# cache bookkeeping entry; ``img`` attaches a ChimeraX PNG; ``stale`` invalidates.
+
+
+# ---------------------------------------------------------------------------
+# Headless browser WebGL capability
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def webgl_report(dashboard_js_page) -> dict:
+    return dashboard_webgl_report(dashboard_js_page)
+
+
+def _describe(report: dict) -> str:
+    return (
+        f"renderer={report.get('renderer')!r} "
+        f"unmasked={report.get('unmaskedRenderer')!r} "
+        f"version={report.get('version')!r} "
+        f"pixel={report.get('pixel')} "
+        f"error={report.get('error')!r}"
+    )
+
+
+@pytest.mark.browser
+@pytest.mark.webgl
+class TestHeadlessWebglCapability:
+    def test_a_webgl_context_can_be_created(self, webgl_report):
+        if not webgl_report["webgl1"]:
+            skip_or_fail_without_webgl(
+                f"headless Chromium provided no WebGL context ({_describe(webgl_report)})"
+            )
+        assert webgl_report["webgl1"]
+
+    def test_webgl2_is_available_for_the_volume_raycaster(self, webgl_report):
+        if not webgl_report["webgl2"]:
+            skip_or_fail_without_webgl(
+                f"no WebGL2 context; VTK raycast tests cannot run "
+                f"({_describe(webgl_report)})"
+            )
+        assert webgl_report["webgl2"]
+
+    def test_webgl_actually_rasterises_a_frame(self, webgl_report):
+        """A context that never draws is worse than none: it skips silently."""
+        if not webgl_report["webgl1"]:
+            skip_or_fail_without_webgl(
+                f"no WebGL context to rasterise with ({_describe(webgl_report)})"
+            )
+        assert webgl_report["rasterised"], (
+            "cleared a canvas to opaque green and read a different pixel back; "
+            f"the GL stack is present but not drawing: {_describe(webgl_report)}"
+        )
+
+    def test_renderer_identifies_itself(self, webgl_report):
+        if not webgl_report["webgl1"]:
+            skip_or_fail_without_webgl(
+                f"no WebGL context to query ({_describe(webgl_report)})"
+            )
+        assert webgl_report["renderer"], "WebGL reported an empty RENDERER string"
+
+    @pytest.mark.skipif(
+        not webgl_is_required(),
+        reason=f"{WEBGL_REQUIRED_ENV} not set; software fallback is acceptable locally",
+    )
+    def test_software_fallback_is_a_known_rasteriser(self, webgl_report):
+        """On a GPU-less runner the renderer should be SwiftShader, not a stub.
+
+        A blocklisted or stubbed renderer still creates contexts but behaves
+        inconsistently, which is how a browser tier turns into silent skips.
+        """
+        name = (
+            f"{webgl_report.get('unmaskedRenderer') or webgl_report.get('renderer')}"
+        ).lower()
+        known = ("swiftshader", "llvmpipe", "angle", "mesa", "metal", "apple", "nvidia")
+        assert any(k in name for k in known), (
+            f"unrecognised WebGL renderer {name!r}; expected SwiftShader or a real GPU "
+            f"({_describe(webgl_report)})"
+        )
+
+
+@pytest.mark.browser
+@pytest.mark.webgl
+class TestDashboardPagesKeepWebgl:
+    """Pages must not cost the document its WebGL support.
+
+    Loading ``/trajectory`` segfaults Chromium's GPU process under SwiftShader
+    (``GPU process exited unexpectedly: exit_code=139``). Chromium then refuses every
+    further context in that document, so the VTK raycaster never starts and every VTK
+    assertion skips. The crash needs no interaction: loading the page and waiting is
+    enough.
+
+    The core dumps put the faulting instruction inside the ``/memfd:swiftshader_jit``
+    mapping, so this is SwiftShader crashing in its own JIT-compiled shader code
+    rather than anything the dashboard controls. It does not happen on ``/explorer``
+    or ``/latent-3d``, which draw comparable Plotly WebGL canvases, and it survives
+    ``--disable-gpu-compositing``, ``--disable-accelerated-2d-canvas``,
+    ``--use-angle=swiftshader``, ``--disable-gpu-rasterization``, a smaller viewport,
+    and the full Chromium build in new headless mode. A GPU-backed runner, or a
+    Chromium carrying a SwiftShader fix, is what would restore VTK coverage.
+
+    Marked ``xfail`` rather than skipped so it reports XPASS the moment that happens.
+    """
+
+    @staticmethod
+    def _webgl_alive_after_load(page, base_url: str, path: str) -> bool:
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            dashboard_page_webgl_alive,
+        )
+
+        page.goto(
+            f"{base_url.rstrip('/')}{path}",
+            wait_until="domcontentloaded",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        page.wait_for_timeout(4000)
+        return dashboard_page_webgl_alive(page)
+
+    @pytest.mark.parametrize("path", ["/explorer", "/latent-3d"])
+    def test_plotly_pages_keep_webgl_alive(
+        self, playwright_page, dashboard_live_url, path
+    ):
+        assert self._webgl_alive_after_load(playwright_page, dashboard_live_url, path)
+
+    @pytest.mark.xfail(
+        reason="SwiftShader GPU process segfaults on the trajectory page, "
+        "disabling WebGL for the document and blocking all VTK coverage",
+        strict=False,
+    )
+    def test_trajectory_page_keeps_webgl_alive(
+        self, playwright_page, dashboard_volumes_eligible_live_url
+    ):
+        assert self._webgl_alive_after_load(
+            playwright_page, dashboard_volumes_eligible_live_url, "/trajectory"
+        )
+
+
+@pytest.mark.browser
+@pytest.mark.webgl
+class TestBrowserTierIsRunning:
+    """Guard against the browser tier quietly disappearing from CI."""
+
+    @pytest.mark.skipif(
+        not webgl_is_required(),
+        reason=f"{WEBGL_REQUIRED_ENV} not set; browser tier is optional locally",
+    )
+    def test_chromium_launched_and_can_run_javascript(self, dashboard_js_page):
+        assert dashboard_js_page.evaluate("() => 6 * 7") == 42
+
+
+# ---------------------------------------------------------------------------
+# Command-builder-only mode workflow
+# ---------------------------------------------------------------------------
+
+
+class TestCommandBuilderOnlyModeWorkflow:
+    """With no workdir the app must still serve the builder and refuse the rest."""
+
+    @pytest.fixture
+    def builder_client(self):
+        app = dash_app.create_app(workdir=None)
+        with app.test_client() as client:
+            yield client
+
+    def test_command_builder_is_served_without_an_experiment(self, builder_client):
+        r = builder_client.get("/command-builder")
+        assert r.status_code == 200
+        assert "cmd-type" in r.get_data(as_text=True)
+
+    @pytest.mark.parametrize("path", ["/explorer", "/pairplot", "/trajectory"])
+    def test_experiment_pages_redirect_home_instead_of_erroring(
+        self, builder_client, path
+    ):
+        r = builder_client.get(path)
+        assert r.status_code in (302, 303), f"{path} returned {r.status_code}"
+        assert r.headers["Location"].endswith("/")
+
+    def test_landing_page_still_renders(self, builder_client):
+        r = builder_client.get("/")
+        assert r.status_code == 200
+
+
+@pytest.mark.jsunit
+class TestColourLegendPrimitives:
+    """``cryo_cc_legend_primitives.js`` — the numbers and swatches the legend shows.
+
+    Threshold captions, quantile positions, and hex normalisation feed both the
+    colour panel and the plot markers, so a rounding or parsing change silently
+    desynchronises the legend from the points it claims to describe.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("cryo_cc_legend_primitives.js")
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (1.23456, "1.235"),
+            (0.0, "0"),
+            (-2.5, "-2.5"),
+            (12345.0, "1.235e+4"),
+            (0.00001, "1.000e-5"),
+        ],
+    )
+    def test_threshold_values_are_formatted_for_the_caption(self, value, expected):
+        got = self.js.evaluate(
+            "(v) => window.CryoCcLegendPrimitives.formatThresholdValue(v)", value
+        )
+        assert got == expected
+
+    def test_non_numeric_thresholds_render_as_empty_rather_than_nan(self):
+        got = self.js.evaluate(
+            """() => [NaN, Infinity, null, "x"].map(
+                 v => window.CryoCcLegendPrimitives.formatThresholdValue(v)
+               )"""
+        )
+        assert got == ["", "", "", ""]
+
+    def test_range_phrase_orders_its_bounds(self):
+        """The panel passes the two handles in whichever order they were dragged."""
+        got = self.js.evaluate(
+            """() => [
+                 window.CryoCcLegendPrimitives.rangeInequalityPhrase(1, 5, "znorm"),
+                 window.CryoCcLegendPrimitives.rangeInequalityPhrase(5, 1, "znorm")
+               ]"""
+        )
+        assert got[0] == got[1] == "1 <= znorm <= 5"
+
+    @pytest.mark.parametrize(
+        "q,expected", [(0.0, 0.0), (0.5, 2.0), (1.0, 4.0), (0.25, 1.0)]
+    )
+    def test_quantiles_interpolate_between_sorted_samples(self, q, expected):
+        got = self.js.evaluate(
+            "(q) => window.CryoCcLegendPrimitives.quantileSorted([0, 1, 2, 3, 4], q)", q
+        )
+        assert got == pytest.approx(expected)
+
+    def test_quantile_of_an_empty_sample_is_not_a_number(self):
+        got = self.js.evaluate(
+            "() => Number.isNaN(window.CryoCcLegendPrimitives.quantileSorted([], 0.5))"
+        )
+        assert got is True
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("#AABBCC", "#aabbcc"),
+            ("AABBCC", "#aabbcc"),
+            ("  #aabbcc ", "#aabbcc"),
+            ("#abc", ""),
+            ("not a colour", ""),
+            (None, ""),
+        ],
+    )
+    def test_discrete_swatch_hex_is_normalised_or_rejected(self, raw, expected):
+        got = self.js.evaluate(
+            "(h) => window.CryoCcLegendPrimitives.normalizeDiscreteLegendHex(h)", raw
+        )
+        assert got == expected
+
+    def test_marker_hex_round_trips_through_rgb(self):
+        """Legend swatches and Plotly marker colours must agree byte for byte."""
+        got = self.js.evaluate(
+            """() => {
+              var P = window.CryoCcLegendPrimitives;
+              var rgb = P.parseMarkerHexRgb('#1d4ed8');
+              return { rgb: rgb, back: P.rgbToHex6(rgb.r, rgb.g, rgb.b) };
+            }"""
+        )
+        assert got["rgb"] == {"r": 29, "g": 78, "b": 216}
+        assert got["back"] == "#1d4ed8"
+
+    def test_short_hex_is_expanded_the_way_css_does(self):
+        got = self.js.evaluate(
+            "() => window.CryoCcLegendPrimitives.parseMarkerHexRgb('#abc')"
+        )
+        assert got == {"r": 170, "g": 187, "b": 204}
+
+    def test_colours_without_a_hash_are_refused(self):
+        got = self.js.evaluate(
+            """() => ['1d4ed8', '', 'rgb(1,2,3)'].map(
+                 h => window.CryoCcLegendPrimitives.parseMarkerHexRgb(h)
+               )"""
+        )
+        assert got == [None, None, None]
+
+
+@pytest.mark.jsunit
+class TestVolume3dUtils:
+    """``volume_3d_utils.js`` — volume decoding and the isosurface slider mapping."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("volume_3d_utils.js")
+
+    def test_decoded_volume_matches_the_bytes_the_server_sent(self):
+        """This is the wire format ``volume_array_b64`` produces for the raycaster."""
+        vol = np.arange(27, dtype=np.float32).reshape(3, 3, 3)
+        payload = base64.standard_b64encode(vol.tobytes()).decode("ascii")
+        got = self.js.evaluate(
+            """(p) => {
+              var out = window.CryoVolume3dUtils.decodeFloat32Volume(p.b64, p.d);
+              return { length: out.length, first: out[0], last: out[out.length - 1] };
+            }""",
+            {"b64": payload, "d": 3},
+        )
+        assert got["length"] == 27
+        assert got["first"] == 0.0
+        assert got["last"] == 26.0
+
+    def test_iso_slider_position_round_trips_to_a_data_value(self):
+        got = self.js.evaluate(
+            """() => {
+              var U = window.CryoVolume3dUtils;
+              var out = [];
+              [0, 25, 50, 75, 100].forEach(function (pos) {
+                var v = U.isoSliderToDataValue(pos, 0, 10);
+                out.push([pos, Math.round(U.isoDataValueToSlider(v, 0, 10))]);
+              });
+              return out;
+            }"""
+        )
+        assert got == [[0, 0], [25, 25], [50, 50], [75, 75], [100, 100]]
+
+    def test_box_average_downsampling_halves_each_dimension(self):
+        vol = np.ones((4, 4, 4), dtype=np.float32)
+        payload = base64.standard_b64encode(vol.tobytes()).decode("ascii")
+        got = self.js.evaluate(
+            """(p) => {
+              var U = window.CryoVolume3dUtils;
+              var vals = U.decodeFloat32Volume(p.b64, 4);
+              var out = U.downsampleVolumeBoxAverage(vals, 4, 2);
+              return { length: out.length, allOnes: Array.prototype.every.call(
+                out, function (v) { return Math.abs(v - 1) < 1e-6; }) };
+            }""",
+            {"b64": payload},
+        )
+        assert got["length"] == 8, "a 4³ volume must box-average down to 2³"
+        assert got["allOnes"] is True, "averaging a constant volume must preserve it"
+
+
+@pytest.mark.jsunit
+class TestTrajectoryRenderingHeap:
+    """``trajectory_rendering_heap.js`` — the LRU that avoids re-rendering frames.
+
+    Frames leaving the live slider are parked here so returning to the same volume
+    and view skips a ChimeraX round-trip. Serving a stale frame, or evicting one that
+    is still valid, both show up as wrong images on the slider.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _load(self, dashboard_js):
+        self.js = dashboard_js.load("trajectory_rendering_heap.js")
+
+    def test_a_stored_frame_comes_back_unchanged(self):
+        got = self.js.evaluate(
+            """() => {
+              var h = new window.CryoTrajectoryRenderingHeap({});
+              var stored = h.put('vol1|viewA', 'QUJD');
+              return { stored: stored, has: h.has('vol1|viewA'),
+                       value: h.get('vol1|viewA'), size: h.size() };
+            }"""
+        )
+        assert got == {"stored": True, "has": True, "value": "QUJD", "size": 1}
+
+    def test_data_url_prefixes_are_stripped_before_storing(self):
+        """Callers pass either a bare payload or a full data URL; one key, one value."""
+        got = self.js.evaluate(
+            """() => {
+              var h = new window.CryoTrajectoryRenderingHeap({});
+              h.put('k', 'data:image/png;base64,QUJD');
+              return h.get('k');
+            }"""
+        )
+        assert got == "QUJD"
+
+    def test_empty_keys_and_frames_are_refused(self):
+        got = self.js.evaluate(
+            """() => {
+              var h = new window.CryoTrajectoryRenderingHeap({});
+              return [h.put('', 'QUJD'), h.put('k', ''), h.size()];
+            }"""
+        )
+        assert got == [False, False, 0]
+
+    def test_a_frame_larger_than_the_whole_budget_is_not_stored(self):
+        got = self.js.evaluate(
+            """() => {
+              var h = new window.CryoTrajectoryRenderingHeap({ maxBytes: 1 });
+              var big = new Array(4 * 1024 * 1024).join('A');
+              return { stored: h.put('k', big), size: h.size() };
+            }"""
+        )
+        assert got == {"stored": False, "size": 0}
+
+    def test_the_least_recently_used_frame_is_evicted_first(self):
+        got = self.js.evaluate(
+            """() => {
+              var h = new window.CryoTrajectoryRenderingHeap({ maxBytes: 1 });
+              var chunk = new Array(500 * 1024).join('A');  // ~366 KB decoded
+              h.put('a', chunk);
+              h.put('b', chunk);
+              h.get('a');            // 'a' is now the most recently used
+              h.put('c', chunk);     // budget forces one eviction
+              return { a: h.has('a'), b: h.has('b'), c: h.has('c') };
+            }"""
+        )
+        assert got["c"] is True
+        assert got["a"] is True, "the recently read frame must survive"
+        assert got["b"] is False, "the least recently used frame should have gone"
+
+    def test_used_bytes_track_what_is_stored(self):
+        got = self.js.evaluate(
+            """() => {
+              var h = new window.CryoTrajectoryRenderingHeap({});
+              var before = h.usedBytes();
+              h.put('k', 'QUJDRA==');
+              var after = h.usedBytes();
+              h.remove('k');
+              return { before: before, after: after, cleared: h.usedBytes() };
+            }"""
+        )
+        assert got["before"] == 0
+        assert got["after"] > 0
+        assert got["cleared"] == 0
+
+    def test_clearing_drops_every_frame(self):
+        got = self.js.evaluate(
+            """() => {
+              var h = new window.CryoTrajectoryRenderingHeap({});
+              h.put('a', 'QUJD');
+              h.put('b', 'QUJD');
+              h.clear();
+              return { size: h.size(), used: h.usedBytes() };
+            }"""
+        )
+        assert got == {"size": 0, "used": 0}

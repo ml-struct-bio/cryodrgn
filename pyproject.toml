@@ -84,6 +84,8 @@ testpaths = [
 ]
 markers = [
     "browser: needs Playwright and Chromium (``playwright install chromium``)",
+    "jsunit: dashboard JS module test; needs Chromium but no server, fixture, or WebGL",
+    "webgl: asserts the headless browser's WebGL stack itself (see CRYODRGN_REQUIRE_WEBGL)",
     "slow: typically more than 10s wall time",
     "dashboard: cryodrgn dashboard test module",
 ]

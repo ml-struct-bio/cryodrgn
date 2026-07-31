@@ -1041,11 +1041,30 @@ _JS_NODE_SELFTEST_SHIM = r"""
   var pathShim = {
     join: function () { return Array.prototype.join.call(arguments, "/"); }
   };
+  // Relative requires resolve against the same file map and are evaluated as
+  // CommonJS modules, so scenario scripts can share ``_harness.js``.
+  var moduleCache = {};
   function requireShim(name) {
     if (name === "fs") return fsShim;
     if (name === "path") return pathShim;
     if (name === "vm") return vmShim;
-    throw new Error("selftest requires un-shimmed module: " + name);
+    if (String(name).charAt(0) === ".") {
+      var base = String(name).split("/").pop();
+      if (Object.prototype.hasOwnProperty.call(moduleCache, base)) {
+        return moduleCache[base].exports;
+      }
+      if (!Object.prototype.hasOwnProperty.call(files, base)) {
+        throw new Error("ENOENT: no shimmed module " + name);
+      }
+      var mod = { exports: {} };
+      moduleCache[base] = mod;
+      new Function(
+        "require", "__dirname", "console", "module", "exports",
+        files[base] + "\n//# sourceURL=cryo-js/" + base
+      )(requireShim, "/tests/js", shimConsole, mod, mod.exports);
+      return mod.exports;
+    }
+    throw new Error("scenario requires un-shimmed module: " + name);
   }
   try {
     // ``global`` is bound to the module realm: the script reads optional modules off
@@ -1054,7 +1073,22 @@ _JS_NODE_SELFTEST_SHIM = r"""
       "require", "__dirname", "console", "module", "exports", "global",
       payload.script + "\n//# sourceURL=cryo-selftest.js"
     );
-    runner(requireShim, "/tests/js", shimConsole, { exports: {} }, {}, realm);
+    var mod = { exports: {} };
+    runner(requireShim, "/tests/js", shimConsole, mod, mod.exports, realm);
+    // A scenario with asynchronous assertions exports its promise, so failures
+    // inside ``then`` are reported rather than lost after this call returns.
+    if (mod.exports && typeof mod.exports.then === "function") {
+      return mod.exports.then(
+        function () { return { ok: true, logs: logs }; },
+        function (err) {
+          return {
+            ok: false,
+            error: String((err && err.stack) || err),
+            logs: logs
+          };
+        }
+      );
+    }
   } catch (err) {
     return { ok: false, error: String((err && err.stack) || err), logs: logs };
   }
@@ -1063,9 +1097,29 @@ _JS_NODE_SELFTEST_SHIM = r"""
 """
 
 
-def run_dashboard_js_node_selftest(page, script_path: Path, module_names) -> dict:
-    """Run a Node ``vm``-style JS selftest script inside Chromium; return its result."""
+def dashboard_js_scenario_dir() -> Path:
+    return dashboard_repo_root() / "tests" / "js"
+
+
+def dashboard_js_scenario_scripts() -> list[Path]:
+    """Scenario scripts under ``tests/js/``; leading-underscore files are helpers."""
+    return sorted(
+        p
+        for p in dashboard_js_scenario_dir().glob("*.js")
+        if not p.name.startswith("_")
+    )
+
+
+def run_dashboard_js_scenario_script(page, script_path: Path, module_names) -> dict:
+    """Run a Node-style JS scenario script inside Chromium; return its result.
+
+    Every ``.js`` file in ``tests/js/`` is made available to the script's ``require``
+    so scenarios can share ``_harness.js``, and the dashboard modules named in
+    ``module_names`` are provided to the harness's own ``fs``/``vm`` loading.
+    """
     files = {name: read_dashboard_static_js(name) for name in module_names}
+    for helper in dashboard_js_scenario_dir().glob("*.js"):
+        files[helper.name] = helper.read_text(encoding="utf-8")
     return page.evaluate(
         _JS_NODE_SELFTEST_SHIM,
         {
@@ -1420,7 +1474,7 @@ def skip_or_fail_without_vtk_render(page, reason: str) -> None:
     """Skip a VTK-dependent assertion, recording *why* the raycaster produced nothing.
 
     Whether the browser supports WebGL at all is asserted separately, on a clean page,
-    by ``tests/test_dashboard_webgl.py``; probing this page would instead measure how
+    by ``tests/test_dashboard_core.py``; probing this page would instead measure how
     much WebGL the loaded dashboard has already consumed. So this always skips, but
     states which condition it saw, because the previous blanket
     "WebGL may be unavailable" hid a real volume-viewer defect for months.
@@ -1432,7 +1486,7 @@ def skip_or_fail_without_vtk_render(page, reason: str) -> None:
             f"{reason}; this document can no longer obtain a WebGL context "
             f"(renderer={renderer!r}, error={report.get('error')!r}). The browser "
             "supports WebGL, but loading /trajectory segfaults the SwiftShader GPU "
-            "process — see TestDashboardPagesKeepWebgl in test_dashboard_webgl.py."
+            "process — see TestDashboardPagesKeepWebgl in test_dashboard_core.py."
         )
     pytest.skip(
         f"{reason}, although this page still rasterises WebGL (renderer={renderer!r}). "
@@ -2825,122 +2879,3 @@ def dashboard_smoke_landscape_full_3d_clear_selection(
         timeout=timeout_ms,
     )
     return {"annotations_cleared": True}
-
-
-def run_dashboard_plotly_smoke(
-    base_url: str,
-    *,
-    timeout_ms: int = DASHBOARD_BROWSER_SMOKE_TIMEOUT_MS,
-    cache_size: int | None = None,
-) -> int:
-    """Run all dashboard browser smoke steps (for ``scripts/dashboard_plotly_smoke.py``)."""
-    import json
-    import sys
-
-    pytest.importorskip("playwright")
-    from playwright.sync_api import Error as PlaywrightError
-    from playwright.sync_api import TimeoutError as PlaywrightTimeout
-    from playwright.sync_api import sync_playwright
-
-    results: dict[str, object] = {}
-    errors: list[str] = []
-    skipped: list[str] = []
-
-    with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch(**_playwright_chromium_launch_kwargs())
-        except PlaywrightError as exc:
-            print(
-                f"Playwright Chromium not installed ({exc}). "
-                "Run: playwright install chromium",
-                file=sys.stderr,
-            )
-            return 1
-        context = browser.new_context(viewport={"width": 1400, "height": 900})
-        page = context.new_page()
-
-        steps = [
-            (
-                "index",
-                lambda: dashboard_smoke_index(page, base_url, timeout_ms=timeout_ms),
-            ),
-            (
-                "command_builder",
-                lambda: dashboard_smoke_command_builder(
-                    page, base_url, timeout_ms=timeout_ms
-                ),
-            ),
-            (
-                "latent_3d",
-                lambda: dashboard_smoke_latent_3d(
-                    page, base_url, timeout_ms=timeout_ms
-                ),
-            ),
-            (
-                "pairplot",
-                lambda: dashboard_smoke_pairplot(page, base_url, timeout_ms=timeout_ms),
-            ),
-            (
-                "trajectory",
-                lambda: dashboard_smoke_trajectory(
-                    page, base_url, timeout_ms=timeout_ms
-                ),
-            ),
-            (
-                "particle_explorer",
-                lambda: dashboard_smoke_particle_explorer(
-                    page, base_url, timeout_ms=timeout_ms, cache_size=cache_size
-                ),
-            ),
-            (
-                "landscape_volpca",
-                lambda: dashboard_smoke_landscape_volpca(
-                    page, base_url, timeout_ms=timeout_ms
-                ),
-            ),
-        ]
-        page.goto(
-            f"{base_url.rstrip('/')}/landscape-full-3d",
-            wait_until="domcontentloaded",
-            timeout=60_000,
-        )
-        if page.locator("#latent3d").count():
-            steps.append(
-                (
-                    "landscape_full_3d",
-                    lambda: dashboard_smoke_landscape_full_3d(
-                        page, base_url, timeout_ms=timeout_ms
-                    ),
-                )
-            )
-        else:
-            skipped.append("landscape_full_3d (no analyze_landscape_full outputs)")
-
-        skip_labels = {
-            "trajectory": "trajectory (no CUDA GPU / weights)",
-            "landscape_volpca": "landscape_volpca (no analyze_landscape outputs)",
-            "landscape_full_3d": "landscape_full_3d (no analyze_landscape_full outputs)",
-        }
-
-        for name, fn in steps:
-            try:
-                result = fn()
-                if result is None:
-                    skipped.append(skip_labels.get(name, f"{name} (skipped)"))
-                    continue
-                results[name] = result
-                print(f"PASS {name}: {json.dumps(results[name], sort_keys=True)}")
-            except (RuntimeError, PlaywrightTimeout) as exc:
-                errors.append(f"{name}: {exc}")
-                print(f"FAIL {name}: {exc}", file=sys.stderr)
-            page.wait_for_timeout(500)
-
-        browser.close()
-
-    for s in skipped:
-        print(f"SKIP {s}")
-    if errors:
-        print("\nSmoke test FAILED:", "; ".join(errors), file=sys.stderr)
-        return 1
-    print("\nSmoke test PASSED (dashboard browser smoke)")
-    return 0

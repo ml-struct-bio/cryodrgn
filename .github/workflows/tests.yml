@@ -21,6 +21,10 @@ jobs:
       MKL_THREADING_LAYER: GNU
       OPENBLAS_NUM_THREADS: 1
       NUMEXPR_NUM_THREADS: 1
+      # Browser tests that need WebGL fall back to pytest.skip when it is missing,
+      # which would keep CI green while covering nothing. Require it here so a
+      # runner image losing SwiftShader is reported as a failure.
+      CRYODRGN_REQUIRE_WEBGL: 1
     strategy:
       matrix:
         python: [ '3.10', '3.11' , '3.12' , '3.13' , '3.14' ]
@@ -63,6 +67,12 @@ jobs:
           python3 -m pip install --no-cache-dir ".[dev]" \
             -c "${{ runner.temp }}/numpy-constraint.txt"
           python -m playwright install chromium
+
+      # Fails fast with the renderer strings in the log, rather than letting the
+      # browser tier degrade into skips later in the run.
+      - name: Verify headless WebGL
+        run: |
+          pytest -m webgl -v --show-capture=stderr
 
       - name: Pytest
         run: |

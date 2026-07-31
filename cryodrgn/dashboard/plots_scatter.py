@@ -617,11 +617,12 @@ def scatter3d_z_json(
     hover_kwargs_3d: dict[str, Any]
     # L3-E7: slim customdata; L3-E7fix: hovertemplate only (no per-point hovertext bloat)
     if volume_landscape_3d_style:
+        # Column order must keep the sketch-centroid flag immediately before the
+        # nearest-volume id (second-last when both are present). The landscape
+        # vol-animation JS reads ``customdata[length-2]`` as the centroid flag;
+        # inserting the colour covariate *after* the centroid column broke that
+        # contract and made circling depend on colour values.
         parts: list[np.ndarray] = [row_cd]
-        if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
-            parts.append(
-                np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
-            )
         cov_cd_idx: int | None = None
         if has_cov_color:
             if discrete_trace:
@@ -633,6 +634,10 @@ def scatter3d_z_json(
                     )
                 )
             cov_cd_idx = len(parts) - 1
+        if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
+            parts.append(
+                np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
+            )
         nv_cd_idx: int | None = None
         if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
             parts.append(

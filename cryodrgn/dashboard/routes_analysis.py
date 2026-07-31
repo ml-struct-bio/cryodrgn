@@ -1016,10 +1016,15 @@ def api_landscape_volpca_scatter():
     else:
         axis_x = f"pc:{int(request.args.get('pc_x', '0'))}"
         axis_y = f"pc:{int(request.args.get('pc_y', '1'))}"
-    color = (request.args.get("color") or "none").strip().lower()
+    # Only the two sentinels are case-insensitive: covariate columns keep the exact
+    # names ``landscape_color_options`` advertises, so lower-casing them here would
+    # reject every mixed-case column (UMAP1, PC1, ...) the colour menu offers.
+    color = (request.args.get("color") or "none").strip()
+    if color.lower() in ("none", "state"):
+        color = color.lower()
     landscape_dir = landscape_dir_for_epoch(e.workdir, le)
     if color not in ("none", "state") and color not in e.numeric_columns:
-        return jsonify(error="bad color column"), 400
+        return jsonify(error=f"bad color column: {color!r}"), 400
     if color == "state":
         if load_sketch_state_labels(landscape_dir) is None:
             return (

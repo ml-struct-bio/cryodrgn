@@ -67,6 +67,8 @@
 
     // Meta flag isn't present; infer from a small customdata sample that the
     // second-last column is behaving like a 0/1 centroid flag.
+    // (Backend packs: [plot_row, colour?, centroid, nearest_vol] so centroid is
+    // always immediately before nearest_vol — i.e. customdata[length-2].)
     if (sketchCentroidCdInferred == null) {
       var maxJ = Math.min(cdLen, 100);
       var ok = true;

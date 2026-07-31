@@ -147,6 +147,17 @@
   function slice(arr) {
     if (!arr) return [];
     if (Array.isArray(arr)) return arr.slice();
+    // Binary payloads are plain objects with no indices, so the generic paths below
+    // would silently yield an empty list rather than the decoded values.
+    if (isPlotlyBinary(arr)) {
+      var input = arr._inputArray;
+      if (input && typeof input.length === "number" && input.length > 1) {
+        return Array.prototype.slice.call(input);
+      }
+      var binFlat = decodedBinaryFlat(arr);
+      if (binFlat) return Array.prototype.map.call(binFlat, numericFromTyped);
+      return [];
+    }
     if (isArray(arr)) {
       try {
         return Array.prototype.slice.call(arr);

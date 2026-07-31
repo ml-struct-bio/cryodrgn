@@ -822,7 +822,12 @@ def landscape_volpca_scatter_figure(
     )
 
     plotly_cs = normalize_continuous_palette(continuous_palette)
-    color_mode = (color_mode or "none").strip().lower()
+    # Covariate names are case-sensitive: lower-casing them here made every
+    # mixed-case column (UMAP1, PC1, ...) miss the branch below and render
+    # uncoloured, without any error to show for it.
+    color_mode = (color_mode or "none").strip()
+    if color_mode.lower() in ("none", "state"):
+        color_mode = color_mode.lower()
     df = exp.plot_df
 
     if color_mode == "state" and states is not None:

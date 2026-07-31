@@ -294,11 +294,29 @@
     resize: vertical;
     min-height: 3.2rem;
   }
-  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-view-matrix-apply {
-    align-self: flex-start;
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-matrix-action-row {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 14%;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .l3dva-view-matrix-action-row > .btn {
+    flex: 0 0 43%;
+    width: 43%;
+    max-width: 43%;
+    box-sizing: border-box;
     font-size: 0.72rem;
     padding: 0.22rem 0.5rem;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card .volsketch-view-matrix-apply {
     white-space: nowrap;
+  }
+  .cryo-dash-page--latent3d .latent3d-volanim-card #l3dva-save-gif {
+    white-space: normal;
   }
   /* Preview sizing: landscape_volpca.css; margins only when previews are visible. */
   .cryo-dash-page--latent3d #l3dva-preview-wrap:not([hidden]) {

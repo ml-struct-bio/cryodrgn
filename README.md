@@ -25,8 +25,7 @@ For any feedback, questions, or bugs, please file a Github issue or start a Gith
         launched with `cryodrgn dashboard`
 * [NEW] [command builder page](https://ml-struct-bio.github.io/cryodrgn/) for assembling
         cryoDRGN commands in your browser
-* [NEW] `cryodrgn_utils parse_warptools` command to parse WarpTools `.star` files into
-        cryoDRGN-compatible inputs
+* [NEW] `cryodrgn_utils parse_warptools` command to help process WarpTools `.star` files into cryoDRGN-compatible inputs
 * support for `cryodrgn eval_vol` with `abinit` ab-initio reconstruction outputs
 
 A full list of cryoDRGN version updates can be found at our

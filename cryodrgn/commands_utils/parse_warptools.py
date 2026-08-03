@@ -10,7 +10,7 @@ cryodrgn_utils parse_warptools -t tomograms.star -p particles.star \\
     --tilt-dim 5760 4092 -o particles_2d.star
 
 # Separate step necessary to get pose+CTF files needed for cryoDRGN 3D reconstruction
-# cryodrgn parse_star particles_2d.star --poses pose.pkl --ctf ctf.pkl --Apix 2 -D 128
+# cryodrgn parse_star particles_2d.star --poses pose.pkl --ctf ctf.pkl --Apix 2.1 -D 128
 
 """
 import argparse
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    """The command-line arguments for use with `cryodrgn_utils parse_warptools`."""
+
     parser.add_argument(
         "-t",
         "--tomograms",
@@ -175,6 +177,7 @@ class Tomogram:
         self.projection_matrices = {i: m for i, m in enumerate(mats)}
         self.rotation_matrices = {i: m[:3, :3] for i, m in enumerate(mats)}
         self.n_tilts = len(mats)
+
         # Stacked views for vectorised projection / pose composition.
         self._proj_stack = np.stack(mats, axis=0) if mats else np.zeros((0, 4, 4))
         self._rot_stack = self._proj_stack[:, :3, :3]
@@ -245,7 +248,6 @@ class Tomogram:
 
         if base_orientation_matrix is not None:
             # R_tilt @ R_p^{-1} for all tilts, then RELION Euler conversion
-            # (same composition as the PR parse_warptools).
             finals = np.einsum("nij,jk->nik", self._rot_stack, base_orientation_matrix)
             final_zyz = utils.R_to_relion_scipy(finals)
         else:
@@ -407,8 +409,7 @@ def main(args: argparse.Namespace) -> None:
     particles_star = starfile.read(args.particles, always_dict=True)
 
     global_df = tomo_star["global"]
-    particles_df = particles_star["particles"]
-    optics_df = particles_star["optics"]
+    particles_df, optics_df = particles_star["particles"], particles_star["optics"]
 
     premult_groups = _optics_groups_are_ctf_premultiplied(optics_df)
     if premult_groups:

@@ -1047,6 +1047,56 @@ class TestChimeraxAnimation:
         render_rotating_gif("/tmp/x.mrc", "/tmp/out.gif", gif_frames=8, ncpus=4)
         assert called == ["session"]
 
+    def test_landscape_cycle_reuses_seed_camera_for_batch(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Without a pinned camera, later volumes reuse the first view matrix."""
+        from cryodrgn.dashboard.chimerax_animation import (
+            LandscapeStaticView,
+            render_landscape_cycle_static_views,
+        )
+
+        calls: list[dict] = []
+        seed_matrix = "camera 1,0,0,0,0,1,0,0,0,0,1,100"
+
+        def _fake_render(mrc_path, out_png, **kwargs):
+            from PIL import Image
+
+            calls.append(
+                {
+                    "mrc": mrc_path,
+                    "view_matrix_camera": kwargs.get("view_matrix_camera"),
+                    "view_turns": kwargs.get("view_turns"),
+                    "report_view_matrix": kwargs.get("report_view_matrix"),
+                }
+            )
+            Image.new("RGB", (8, 8), color=(200, 200, 255)).save(out_png)
+            return seed_matrix if kwargs.get("report_view_matrix") else None
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.chimerax_animation.render_static_png",
+            _fake_render,
+        )
+        views = [
+            LandscapeStaticView(
+                mrc_path=str(tmp_path / f"v{i}.mrc"),
+                out_png=str(tmp_path / f"v{i}.png"),
+                view_turns=[("y", 15.0)],
+                report_view_matrix=(i == 0),
+            )
+            for i in range(3)
+        ]
+        paths, vm = render_landscape_cycle_static_views(views, chimerax_cpus=2)
+        assert len(paths) == 3
+        assert vm == seed_matrix
+        assert calls[0]["report_view_matrix"] is True
+        assert calls[0]["view_matrix_camera"] is None
+        assert calls[0]["view_turns"] == [("y", 15.0)]
+        for later in calls[1:]:
+            assert later["view_matrix_camera"] == "1,0,0,0,0,1,0,0,0,0,1,100"
+            assert later["view_turns"] is None
+            assert later["report_view_matrix"] is False
+
     def test_use_chimerax_xvfb_defaults_and_env(self, monkeypatch) -> None:
         from cryodrgn.dashboard import chimerax_animation as cx
 

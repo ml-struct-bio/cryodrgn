@@ -2744,7 +2744,9 @@
   function trajectoryVolumeActionBusy() {
     return trajectoryVolumeJobInFlight()
       || !!(typeof pendingCombinedRenderAfterDecode !== "undefined"
-        && pendingCombinedRenderAfterDecode);
+        && pendingCombinedRenderAfterDecode)
+      || (typeof trajectoryInteractiveVolumeLoadInFlight === "function"
+        && trajectoryInteractiveVolumeLoadInFlight());
   }
 
   /** Drop orphaned ``chimeraxRendering`` when no backing job exists. */

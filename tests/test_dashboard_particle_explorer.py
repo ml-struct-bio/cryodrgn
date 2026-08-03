@@ -855,7 +855,9 @@ class TestParticleExplorerVolumeGeneration:
             from PIL import Image
 
             Image.new("RGB", (4, 4)).save(out_png)
-            return "camera matrix" if kwargs.get("report_view_matrix") else None
+            if kwargs.get("report_view_matrix"):
+                return "camera 1,0,0,0,0,1,0,0,0,0,1,0"
+            return None
 
         monkeypatch.setattr(
             "cryodrgn.dashboard.particle_explorer._decode_z_values_parallel_impl",
@@ -1058,6 +1060,29 @@ class TestMplRetrimPng:
         after = p.read_bytes()
         assert after[:8] == b"\x89PNG\r\n\x1a\n"
         assert after != before
+
+    def test_fills_figure_edge_to_edge(self, tmp_path) -> None:
+        """Retrim must not reintroduce subplot margins that shift framing."""
+        from PIL import Image
+
+        p = tmp_path / "vol.png"
+        # Near-full-frame content on a white canvas (ChimeraX-like).
+        arr = np.ones((100, 100, 3), dtype=np.uint8) * 255
+        arr[5:95, 5:95] = (40, 80, 200)
+        Image.fromarray(arr).save(p)
+        _mpl_retrim_png(str(p), dpi=80)
+        out = np.asarray(Image.open(p).convert("RGB"))
+        h, w = out.shape[:2]
+        # Content pixels (not near-white).
+        ys, xs = np.where(out.mean(axis=2) < 250)
+        assert ys.size > 0
+        # Edge-to-edge axes: content should reach near the border, not sit in a
+        # large matplotlib subplot letterbox (~10% gutter on each side).
+        assert ys.min() <= int(0.08 * h)
+        assert ys.max() >= int(0.92 * h)
+        assert xs.min() <= int(0.08 * w)
+        assert xs.max() >= int(0.92 * w)
+        assert out[0, 0].mean() > 250  # outer rim remains white
 
 
 class TestSaveSelectionRoundTrip:

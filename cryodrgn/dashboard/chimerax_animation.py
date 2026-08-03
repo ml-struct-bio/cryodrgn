@@ -429,11 +429,22 @@ def _extract_chimerax_view_matrix_text(
     return None
 
 
+def _view_matrix_camera_from_report(text: str | None) -> str | None:
+    """Parse ChimeraX ``view matrix`` report text into a camera argument."""
+    if not text:
+        return None
+    try:
+        return chimerax_view_matrix_camera_arg(text)
+    except ValueError:
+        return None
+
+
 def _mpl_retrim_png(out_png: str, dpi: int, *, corner_label: str | None = None) -> None:
     """Re-save ``out_png`` with matplotlib for uniform framing.
 
-    Pads to a centered square and uses a fixed figure bbox so GIF frames stay
-    aligned across rotation angles and across volumes of different extents.
+    Pads to a centered square and fills the figure edge-to-edge (no subplot
+    margins) so GIF and volume-viewer frames stay aligned across rotation
+    angles and across volumes that share a camera matrix.
     """
     import matplotlib.pyplot as plt
     import numpy as np
@@ -462,6 +473,9 @@ def _mpl_retrim_png(out_png: str, dpi: int, *, corner_label: str | None = None) 
     canvas[pad_y : pad_y + h, pad_x : pad_x + w] = img
 
     fig, ax = plt.subplots(figsize=(5, 5))
+    # Avoid default subplot margins so whitespace is not re-cut differently
+    # from frame to frame when the PNG is shown with object-fit: contain.
+    ax.set_position([0.0, 0.0, 1.0, 1.0])
     ax.imshow(canvas, interpolation="nearest", aspect="equal")
     ax.set_xticks([])
     ax.set_yticks([])
@@ -709,39 +723,77 @@ def render_static_pngs_parallel(
     Each task is ``(sort_index, mrc_path, out_png_path, dpi)`` or with optional
     ``volume_color`` and/or ``corner_label`` (hex or ChimeraX color name).
     Returns ``out_png`` paths sorted by ``sort_index``.
+
+    The first task establishes a shared ChimeraX camera matrix so later cells
+    keep the same centering instead of each volume auto-fitting independently.
     """
-    n = len(tasks)
+    ordered = sorted(tasks, key=lambda t: int(t[0]))
+    n = len(ordered)
     if n == 0:
         return []
-    n_jobs = parallel_jobs(chimerax_cpus, n)
 
-    def _one(task: ChimeraxPngTask) -> tuple[int, str]:
+    def _render_task(
+        task: ChimeraxPngTask,
+        *,
+        view_matrix_camera: str | None = None,
+        report_view_matrix: bool = False,
+    ) -> tuple[int, str, str | None]:
         if len(task) == 6:
             idx, mrc_path, out_png, dpi, vcol, clab = task
-            render_static_png(
+            vm = render_static_png(
                 mrc_path,
                 out_png,
                 dpi=dpi,
                 volume_color=vcol,
                 corner_label=clab,
+                view_matrix_camera=view_matrix_camera,
+                report_view_matrix=report_view_matrix,
             )
         elif len(task) == 5:
             idx, mrc_path, out_png, dpi, vcol = task
-            render_static_png(mrc_path, out_png, dpi=dpi, volume_color=vcol)
+            vm = render_static_png(
+                mrc_path,
+                out_png,
+                dpi=dpi,
+                volume_color=vcol,
+                view_matrix_camera=view_matrix_camera,
+                report_view_matrix=report_view_matrix,
+            )
         else:
             idx, mrc_path, out_png, dpi = task
-            render_static_png(mrc_path, out_png, dpi=dpi)
+            vm = render_static_png(
+                mrc_path,
+                out_png,
+                dpi=dpi,
+                view_matrix_camera=view_matrix_camera,
+                report_view_matrix=report_view_matrix,
+            )
+        return int(idx), out_png, vm
+
+    seed_idx, seed_png, seed_vm = _render_task(ordered[0], report_view_matrix=True)
+    shared_camera = _view_matrix_camera_from_report(seed_vm)
+    pairs: list[tuple[int, str]] = [(seed_idx, seed_png)]
+    rest = ordered[1:]
+    if not rest:
+        return [seed_png]
+
+    n_jobs = parallel_jobs(chimerax_cpus, len(rest))
+
+    def _one(task: ChimeraxPngTask) -> tuple[int, str]:
+        idx, out_png, _vm = _render_task(
+            task, view_matrix_camera=shared_camera, report_view_matrix=False
+        )
         return idx, out_png
 
     if n_jobs <= 1:
-        pairs = [_one(t) for t in tasks]
+        pairs.extend(_one(t) for t in rest)
     else:
         try:
             from joblib import Parallel, delayed
 
-            pairs = Parallel(n_jobs=n_jobs)(delayed(_one)(t) for t in tasks)
+            pairs.extend(Parallel(n_jobs=n_jobs)(delayed(_one)(t) for t in rest))
         except ImportError:
-            pairs = [_one(t) for t in tasks]
+            pairs.extend(_one(t) for t in rest)
     pairs.sort(key=lambda x: x[0])
     return [p for _, p in pairs]
 
@@ -1219,38 +1271,79 @@ def render_landscape_cycle_static_views(
     *,
     chimerax_cpus: int,
 ) -> tuple[list[str], str | None]:
-    """Render cycle-mode static PNGs in parallel (one ChimeraX process per volume)."""
+    """Render cycle-mode static PNGs in parallel (one ChimeraX process per volume).
+
+    When the client has not pinned a camera matrix, the first volume is rendered
+    with ``view orient`` and its matrix is reused for the rest of the batch so
+    every frame shares the same centering in the volume viewer (instead of
+    each volume auto-fitting with different whitespace margins).
+    """
+    views = list(views)
     if not views:
         return [], None
-    n_jobs = parallel_jobs(chimerax_cpus, len(views))
+
+    explicit_camera = next(
+        (v.view_matrix_camera for v in views if v.view_matrix_camera), None
+    )
+    view_matrix_text: str | None = None
+    shared_camera = explicit_camera
+    start_i = 0
+
+    if shared_camera is None:
+        seed = views[0]
+        view_matrix_text = render_static_png(
+            seed.mrc_path,
+            seed.out_png,
+            dpi=100,
+            volume_color=seed.volume_color,
+            volume_level=seed.volume_level,
+            view_turns=seed.view_turns,
+            view_matrix_camera=None,
+            report_view_matrix=True,
+        )
+        shared_camera = _view_matrix_camera_from_report(view_matrix_text)
+        start_i = 1
+
+    rest = views[start_i:]
+    if not rest:
+        return [views[0].out_png], view_matrix_text
+
+    n_jobs = parallel_jobs(chimerax_cpus, len(rest))
 
     def _one(i: int, view: LandscapeStaticView) -> tuple[int, str, str | None]:
+        # Once a shared camera is known, skip per-volume orient/turns so framing
+        # stays locked; turns from the seed are already baked into the matrix.
+        use_camera = view.view_matrix_camera or shared_camera
+        use_turns = None if use_camera else view.view_turns
+        report = bool(view.report_view_matrix and view_matrix_text is None)
         vm = render_static_png(
             view.mrc_path,
             view.out_png,
             dpi=100,
             volume_color=view.volume_color,
             volume_level=view.volume_level,
-            view_turns=view.view_turns,
-            view_matrix_camera=view.view_matrix_camera,
-            report_view_matrix=view.report_view_matrix,
+            view_turns=use_turns,
+            view_matrix_camera=use_camera,
+            report_view_matrix=report,
         )
         return i, view.out_png, vm
 
     if n_jobs <= 1:
-        pairs = [_one(i, v) for i, v in enumerate(views)]
+        pairs = [_one(start_i + j, v) for j, v in enumerate(rest)]
     else:
         try:
             from joblib import Parallel, delayed
 
             pairs = Parallel(n_jobs=n_jobs)(
-                delayed(_one)(i, v) for i, v in enumerate(views)
+                delayed(_one)(start_i + j, v) for j, v in enumerate(rest)
             )
         except ImportError:
-            pairs = [_one(i, v) for i, v in enumerate(views)]
+            pairs = [_one(start_i + j, v) for j, v in enumerate(rest)]
     pairs.sort(key=lambda x: x[0])
-    view_matrix = next((m for _, _, m in pairs if m), None)
-    return [p for _, p, _ in pairs], view_matrix
+    if view_matrix_text is None:
+        view_matrix_text = next((m for _, _, m in pairs if m), None)
+    paths = ([views[0].out_png] if start_i == 1 else []) + [p for _, p, _ in pairs]
+    return paths, view_matrix_text
 
 
 def render_rotating_gif(

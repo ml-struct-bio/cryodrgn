@@ -336,16 +336,22 @@
     if (!placement || !placement.scale) {
       return gifDataUrlToBareB64(canvas.toDataURL("image/png"));
     }
-    // Prefer the locked union crop so every frame shares the same whitespace
-    // box; fall back to per-frame bounds only when no union was computed.
-    var crop = placement.unionBounds || bounds;
-    if (!crop) {
-      return gifDataUrlToBareB64(canvas.toDataURL("image/png"));
+    // Only crop when a shared union window was locked for the batch. Per-frame
+    // content trims produce different whitespace margins and break centering
+    // across ChimeraX trajectory frames in the volume viewer / GIF.
+    var crop = placement.unionBounds || null;
+    var minX, minY, cropW, cropH;
+    if (crop) {
+      minX = Math.max(0, crop.minX);
+      minY = Math.max(0, crop.minY);
+      cropW = Math.max(1, Math.min(crop.maxX - crop.minX + 1, img.width - minX));
+      cropH = Math.max(1, Math.min(crop.maxY - crop.minY + 1, img.height - minY));
+    } else {
+      minX = 0;
+      minY = 0;
+      cropW = img.width;
+      cropH = img.height;
     }
-    var minX = Math.max(0, crop.minX);
-    var minY = Math.max(0, crop.minY);
-    var cropW = Math.max(1, Math.min(crop.maxX - crop.minX + 1, img.width - minX));
-    var cropH = Math.max(1, Math.min(crop.maxY - crop.minY + 1, img.height - minY));
     var dw = cropW * placement.scale;
     var dh = cropH * placement.scale;
     var dx = (panelW - dw) / 2;

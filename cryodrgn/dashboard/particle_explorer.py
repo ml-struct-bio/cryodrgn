@@ -954,17 +954,64 @@ def _pipelined_decode_and_chimerax_pngs(
     view_matrix: str | None = None
     iso_level: float | None = None
     render_lock = threading.Lock()
+    # Lock framing across the batch: one volume bootstraps ``view orient`` and
+    # the resulting camera matrix is reused so every frame shares centering.
+    framing_lock = threading.Lock()
+    shared_view_matrix_camera: str | None = view_matrix_camera
+    framing_bootstrap_claimed = view_matrix_camera is not None
+    framing_ready = threading.Event()
+    if view_matrix_camera is not None:
+        framing_ready.set()
 
     def _render_one(idx: int, mrc_path: str) -> tuple[int, bytes, str | None]:
+        nonlocal shared_view_matrix_camera, view_matrix, framing_bootstrap_claimed
         out_png = os.path.join(png_dir, f"cell_{idx}.png")
+        is_bootstrap = False
+        if shared_view_matrix_camera is None:
+            with framing_lock:
+                if not framing_bootstrap_claimed:
+                    framing_bootstrap_claimed = True
+                    is_bootstrap = True
+        if is_bootstrap:
+            vm = render_static_png(
+                mrc_path,
+                out_png,
+                dpi=100,
+                volume_level=iso_level,
+                view_turns=view_turns,
+                view_matrix_camera=None,
+                report_view_matrix=True,
+            )
+            cam = None
+            if vm:
+                try:
+                    cam = chimerax_view_matrix_camera_arg(vm)
+                except ValueError:
+                    cam = None
+            with framing_lock:
+                shared_view_matrix_camera = cam
+                framing_ready.set()
+            with open(out_png, "rb") as fh:
+                data = fh.read()
+            return idx, data, vm
+
+        if not framing_ready.wait(timeout=600):
+            # Timed out waiting for the seed camera; fall back to independent orient.
+            use_camera = None
+            use_turns = view_turns
+        else:
+            use_camera = shared_view_matrix_camera
+            # Shared camera already includes any seed turns.
+            use_turns = None if use_camera is not None else view_turns
+
         vm = render_static_png(
             mrc_path,
             out_png,
             dpi=100,
             volume_level=iso_level,
-            view_turns=view_turns,
-            view_matrix_camera=view_matrix_camera,
-            report_view_matrix=(idx == 0),
+            view_turns=use_turns,
+            view_matrix_camera=use_camera,
+            report_view_matrix=False,
         )
         with open(out_png, "rb") as fh:
             data = fh.read()

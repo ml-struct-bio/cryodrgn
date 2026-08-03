@@ -2017,8 +2017,9 @@
   }
 
   /**
-   * Path-endpoint catalog ids missing ``volume_b64`` (PC1 vol1 / vol10). Without
-   * manual Decode these on-disk analyze MRCs are the only VTK slots to hydrate.
+   * Path-endpoint catalog ids missing ``volume_b64`` (PC1 vol1 / vol10).
+   * Used by densified direct-trace paths that only pin catalog anchors at the
+   * ends; pure analyze-catalog selections hydrate every selected id instead.
    */
   function catalogEndpointIdsNeedingVolumeB64(ids, slots) {
     var out = [];
@@ -2046,10 +2047,43 @@
   }
 
   /**
+   * True when the selected id list is a densified path with catalog anchors
+   * only at the endpoints (interiors null / non-catalog). Those interiors
+   * still owe Decode and must not be mass-fetched for VTK.
+   */
+  function catalogIdsAreEndpointAnchorsOnly(ids) {
+    ids = ids || [];
+    if (ids.length < 2) return false;
+    var catalogCount = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i];
+      if (id == null || id === "") continue;
+      var key = String(id);
+      if (key === "null" || key === "undefined") continue;
+      catalogCount++;
+    }
+    if (catalogCount < 2) return false;
+    // Dense PC1×N (every slot is a catalog id) → not endpoint-anchored.
+    if (catalogCount >= ids.length) return false;
+    var first = ids[0];
+    var last = ids[ids.length - 1];
+    if (first == null || first === "" || last == null || last === "") return false;
+    for (var j = 1; j < ids.length - 1; j++) {
+      var mid = ids[j];
+      if (mid != null && mid !== "" && String(mid) !== "null" && String(mid) !== "undefined") {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Catalog ids to fetch for interactive backends.
    * Slice: every missing montage layer.
-   * VTK: only already-decoded slots (all at once); if none, catalog endpoints
-   * only — never mass-fetch undecoded interiors without Decode.
+   * VTK: already-decoded Generate/cache slots; else every selected on-disk
+   * analyze catalog MRC (e.g. PC1×10). Densified endpoint-only paths still
+   * hydrate just the anchors — never mass-fetch undecoded interiors without
+   * Decode. Generated trajectories skip catalog mass-fetch entirely.
    */
   function interactiveCatalogFetchIds(backend, ids, slots) {
     if (String(backend || "").toLowerCase() !== "vtk") {
@@ -2061,7 +2095,10 @@
         && hasGeneratedTrajectoryVolumes()) {
       return [];
     }
-    return catalogEndpointIdsNeedingVolumeB64(ids, slots);
+    if (catalogIdsAreEndpointAnchorsOnly(ids)) {
+      return catalogEndpointIdsNeedingVolumeB64(ids, slots);
+    }
+    return catalogIdsNeedingVolumeB64(ids, slots);
   }
 
   var interactiveVolumeLoadSeq = 0;
@@ -2075,6 +2112,11 @@
     var seq = ++interactiveVolumeLoadSeq;
     interactiveVolumeLoadInFlight = true;
     setAnalyzeVolumeLoadStatus(true);
+    if (typeof syncGenerateVolumesButtonVisibility === "function") {
+      syncGenerateVolumesButtonVisibility();
+    } else if (typeof updateGenerateVolumesButtonLabel === "function") {
+      updateGenerateVolumesButtonLabel();
+    }
     return seq;
   }
 
@@ -2082,6 +2124,11 @@
     if (seq !== interactiveVolumeLoadSeq) return;
     interactiveVolumeLoadInFlight = false;
     setAnalyzeVolumeLoadStatus(false);
+    if (typeof syncGenerateVolumesButtonVisibility === "function") {
+      syncGenerateVolumesButtonVisibility();
+    } else if (typeof updateGenerateVolumesButtonLabel === "function") {
+      updateGenerateVolumesButtonLabel();
+    }
   }
 
   function applyInteractiveCatalogVolumeDisplay(backend, ids, volumes) {
@@ -2213,7 +2260,9 @@
             if (!res.ok || !res.j || !res.j.ok) {
               throw new Error((res.j && res.j.error) || "Could not load analyze volumes.");
             }
-            merged = mergeBatchIntoVolumeSlots(ids, merged, res.j.volumes || {});
+            // Mutate the shared ``merged`` array in place — reassigning from a
+            // sliced copy raced concurrent replies and dropped volume slots.
+            mergeBatchIntoVolumeSlots(ids, merged, res.j.volumes || {});
             applyLoaded();
           }).catch(function(err) {
             if (!fatalError) fatalError = err;
@@ -2335,9 +2384,19 @@
   }
 
   function mergeBatchIntoVolumeSlots(ids, slots, batchVolumes) {
-    var out = slots && slots.length === ids.length
-      ? slots.slice()
-      : ids.map(function() { return null; });
+    // Prefer in-place mutation of the caller's array so concurrent chunk
+    // replies cannot clobber each other via sliced reassignment races.
+    var out;
+    if (slots && slots.length === ids.length) {
+      out = slots;
+    } else {
+      out = ids.map(function() { return null; });
+      if (slots && slots.length) {
+        for (var j = 0; j < Math.min(slots.length, out.length); j++) {
+          if (slots[j]) out[j] = slots[j];
+        }
+      }
+    }
     for (var i = 0; i < ids.length; i++) {
       var id = ids[i];
       if (id == null || id === "") continue;
@@ -2695,7 +2754,7 @@
       return;
     }
     // VTK must not hydrate undecoded interiors on slider move — only slots
-    // already allowed by interactiveCatalogFetchIds (decoded / endpoints).
+    // already allowed by interactiveCatalogFetchIds (decoded / catalog / endpoints).
     if (backend === "vtk") {
       var allowedFocus = interactiveCatalogFetchIds("vtk", ids, volumeSlots() || []);
       var focusKey = String(volId);
@@ -2706,6 +2765,12 @@
         }
         return;
       }
+    }
+    // A catalog-wide VTK/slice hydrate is already pumping these ids — do not
+    // bump interactiveVolumeLoadSeq (that aborts remaining concurrent fetches).
+    if (trajectoryInteractiveVolumeLoadInFlight()) {
+      setVolumeViewerJobStatus("Loading volume\u2026", true);
+      return;
     }
     // Mark interactive load in-flight so setVolumeViewerJobStatus does not
     // suppress "Loading volume…" merely because another slot is still painted.

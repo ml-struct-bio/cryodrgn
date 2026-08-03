@@ -1,0 +1,995 @@
+(function() {
+  var CMD_SCHEMA = {{ command_builder_schema | tojson }};
+  {% if command_builder_page_mode %}
+  var CMD_COMMAND_DOCS = {{ command_builder_command_docs | tojson }};
+  var CMD_MANUSCRIPT_URLS = {{ command_builder_manuscript_urls | tojson }};
+  var CMD_MANUSCRIPT_LABELS = {{ command_builder_manuscript_labels | tojson }};
+  {% endif %}
+
+  function shquote(s) {
+    if (!s || !String(s).trim()) return "";
+    s = String(s).trim();
+    if (/^[-\w@%+=:,./]+$/.test(s)) return s;
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+  }
+
+  function val(id) {
+    var el = document.getElementById(id);
+    return el ? String(el.value || "").trim() : "";
+  }
+
+  var G_REQUIRED = "Required";
+  var G_DATASET = "Dataset loading";
+
+  function pushSeg(segments, group, text) {
+    if (text == null || text === "") return;
+    segments.push({ g: group, t: String(text) });
+  }
+
+  function appendOptSeg(segments, group, flag, value) {
+    if (!value) return;
+    pushSeg(segments, group, flag);
+    pushSeg(segments, group, shquote(value));
+  }
+
+  function pushPrefix(segments, cmdName) {
+    pushSeg(segments, "_prefix", "cryodrgn");
+    pushSeg(segments, "_prefix", cmdName);
+  }
+
+  function cliFlag(a) {
+    return a.cli && a.cli.length ? a.cli[0] : "";
+  }
+
+  function collectSchemaSegments(cmdKey, segments) {
+    var groups = CMD_SCHEMA[cmdKey];
+    if (!groups) return;
+    for (var gi = 0; gi < groups.length; gi++) {
+      var g = groups[gi];
+      var groupTitle = g.title;
+      for (var ai = 0; ai < g.args.length; ai++) {
+        var a = g.args[ai];
+        var w = a.w;
+        if (w === "no_amp") {
+          var ampEl = document.getElementById(a.id);
+          if (ampEl && !ampEl.checked) pushSeg(segments, groupTitle, "--no-amp");
+          continue;
+        }
+        if (w === "flag_true") {
+          var ft = document.getElementById(a.id);
+          if (ft && ft.checked) pushSeg(segments, groupTitle, cliFlag(a));
+          continue;
+        }
+        if (w === "flag_false") {
+          var ff = document.getElementById(a.id);
+          if (ff && !ff.checked) pushSeg(segments, groupTitle, cliFlag(a));
+          continue;
+        }
+        if (w === "norm2") {
+          var n0 = val(a.id + "_a");
+          var n1 = val(a.id + "_b");
+          if (n0 !== "" && n1 !== "") {
+            pushSeg(segments, groupTitle, cliFlag(a));
+            pushSeg(segments, groupTitle, shquote(n0));
+            pushSeg(segments, groupTitle, shquote(n1));
+          }
+          continue;
+        }
+        if (w === "text" || w === "number") {
+          var tv = val(a.id);
+          if (tv !== "") {
+            pushSeg(segments, groupTitle, cliFlag(a));
+            pushSeg(segments, groupTitle, shquote(tv));
+          }
+          continue;
+        }
+        if (w === "select") {
+          var sel = document.querySelector('input[name="' + a.id + '"]:checked');
+          if (!sel) continue;
+          var sv = String(sel.value || "");
+          var defaultChoice = "";
+          if (Object.prototype.hasOwnProperty.call(a, "default")) {
+            defaultChoice = String(a.default == null ? "" : a.default);
+          } else if (a.choices && a.choices.length) {
+            defaultChoice = String(a.choices[0]);
+          }
+          if (sv !== "" && sv !== defaultChoice) {
+            pushSeg(segments, groupTitle, cliFlag(a));
+            pushSeg(segments, groupTitle, shquote(sv));
+          }
+          continue;
+        }
+      }
+    }
+  }
+
+  function segmentsToText(segments) {
+    var out = [];
+    for (var i = 0; i < segments.length; i++) out.push(segments[i].t);
+    return out.join(" ");
+  }
+
+  var lastBashCommandText = "";
+  var CMD_WRAP_MIN_CHARS = 80;
+  var CMD_LINE_MAX_CHARS = 100;
+  var CMD_LINE_HANG_SPACES = "  ";
+
+  function canBreakAfterCmdToken(token) {
+    if (!token) return false;
+    if (token.indexOf("=") >= 0) return true;
+    return token.charAt(0) !== "-";
+  }
+
+  function lineGroupCharLen(idxs, segments) {
+    if (!idxs.length) return 0;
+    var len = segments[idxs[0]].t.length;
+    for (var i = 1; i < idxs.length; i++) {
+      len += 1 + segments[idxs[i]].t.length;
+    }
+    return len;
+  }
+
+  function layoutBodyLineGroupsEvenly(bodyIdxs, segments, maxCols) {
+    if (!bodyIdxs.length) return [];
+    if (bodyIdxs.length === 1) return [bodyIdxs];
+
+    var totalLen = lineGroupCharLen(bodyIdxs, segments);
+    var numLines = Math.max(1, Math.ceil(totalLen / maxCols));
+    var target = totalLen / numLines;
+
+    var groups = [];
+    var cur = [];
+    var curLen = 0;
+
+    for (var bi = 0; bi < bodyIdxs.length; bi++) {
+      var idx = bodyIdxs[bi];
+      var tok = segments[idx].t;
+      var tokLen = tok.length;
+      var addLen = cur.length ? 1 + tokLen : tokLen;
+      var newLen = curLen + addLen;
+
+      var mustBreak = cur.length && newLen > maxCols;
+      var shouldBreak = false;
+      if (cur.length && !mustBreak) {
+        var linesRemaining = numLines - groups.length - 1;
+        var tokensRemaining = bodyIdxs.length - bi;
+        if (linesRemaining > 0 && tokensRemaining > linesRemaining) {
+          shouldBreak =
+            curLen >= target ||
+            (newLen > target && curLen >= target * 0.45);
+        }
+      }
+
+      if (cur.length && (mustBreak || shouldBreak)) {
+        var prevTok = segments[cur[cur.length - 1]].t;
+        if (canBreakAfterCmdToken(prevTok)) {
+          groups.push(cur);
+          cur = [idx];
+          curLen = tokLen;
+          continue;
+        }
+      }
+
+      if (!cur.length) {
+        cur = [idx];
+        curLen = tokLen;
+      } else {
+        cur.push(idx);
+        curLen = newLen;
+      }
+    }
+    if (cur.length) groups.push(cur);
+    return groups;
+  }
+
+  function layoutCommandLineGroups(segments) {
+    if (segmentsToText(segments).length <= CMD_WRAP_MIN_CHARS) {
+      var all = [];
+      for (var i = 0; i < segments.length; i++) all.push(i);
+      return all.length ? [all] : [];
+    }
+
+    var headIdxs = [];
+    var bodyIdxs = [];
+    for (var i = 0; i < segments.length; i++) {
+      if (segments[i].g === "_prefix") headIdxs.push(i);
+      else bodyIdxs.push(i);
+    }
+
+    var groups = [];
+    if (headIdxs.length) groups.push(headIdxs);
+    if (bodyIdxs.length) {
+      var bodyGroups = layoutBodyLineGroupsEvenly(
+        bodyIdxs,
+        segments,
+        CMD_LINE_MAX_CHARS
+      );
+      for (var j = 0; j < bodyGroups.length; j++) groups.push(bodyGroups[j]);
+    }
+    return groups;
+  }
+
+  function formatBashLineGroups(segments, lineGroups) {
+    var lines = lineGroups.map(function(idxs) {
+      return idxs.map(function(i) { return segments[i].t; }).join(" ");
+    });
+    return lines.map(function(line, i) {
+      var body = (i > 0 ? CMD_LINE_HANG_SPACES : "") + line;
+      return i < lines.length - 1 ? body + " \\" : body;
+    }).join("\n");
+  }
+
+  function segmentsToBashText(segments) {
+    if (!segments.length) return "";
+    return formatBashLineGroups(segments, layoutCommandLineGroups(segments));
+  }
+
+  function cmdDisplayFits() {
+    return (
+      out.clientHeight > 0 &&
+      out.scrollHeight <= out.clientHeight + 2 &&
+      out.scrollWidth <= out.clientWidth + 2
+    );
+  }
+
+  function renderCommandDisplay(segments, px) {
+    out.style.fontSize = px + "px";
+    var lineGroups = layoutCommandLineGroups(segments);
+    var bashText = formatBashLineGroups(segments, lineGroups);
+    if (cmdColorize) {
+      out.innerHTML = renderColoredCommandWrapped(segments, lineGroups);
+    } else {
+      out.textContent = bashText;
+    }
+    return bashText;
+  }
+
+  function renderColoredCommandWrapped(segments, lineGroups) {
+    var shadeIdx = {};
+    var html = [];
+    for (var li = 0; li < lineGroups.length; li++) {
+      if (li > 0) {
+        html.push('<span class="cmd-line-cont"> \\</span>\n<span class="cmd-line-hang">');
+      }
+      var idxs = lineGroups[li];
+      for (var ii = 0; ii < idxs.length; ii++) {
+        if (ii > 0) html.push(" ");
+        var seg = segments[idxs[ii]];
+        if (seg.g === "_prefix") {
+          html.push('<span class="cmd-seg cmd-seg--prefix">');
+          html.push(escCmdHtml(seg.t));
+          html.push("</span>");
+          continue;
+        }
+        var shade = shadeIdx[seg.g] || 0;
+        shadeIdx[seg.g] = shade + 1;
+        var hue = hueForCmdGroup(seg.g);
+        var light = 86 - (shade % 4) * 9;
+        var sat = 56 + (shade % 3) * 11;
+        html.push('<span class="cmd-seg" style="color:hsl(' + hue + "," + sat + "%," + light + '%)">');
+        html.push(escCmdHtml(seg.t));
+        html.push("</span>");
+      }
+      if (li > 0) html.push("</span>");
+    }
+    return html.join("");
+  }
+
+  function updateCommandDisplay() {
+    var segments = buildSegments();
+    out.style.fontSize = "";
+    var maxPx = parseFloat(getComputedStyle(out).fontSize) || 12;
+    var minPx = Math.max(7, maxPx * 0.52);
+    var bashText = "";
+    for (var px = maxPx; px >= minPx; px -= 0.5) {
+      bashText = renderCommandDisplay(segments, px);
+      void out.offsetHeight;
+      if (cmdDisplayFits()) break;
+    }
+    lastBashCommandText = bashText;
+  }
+
+  function buildAbinitHetOldSegments() {
+    var segments = [];
+    pushPrefix(segments, "abinit_het_old");
+    var particles = val("ahet_particles");
+    if (particles) pushSeg(segments, G_REQUIRED, shquote(particles));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("ahet_out"));
+    var zdim = val("ahet_zdim");
+    if (zdim !== "") {
+      pushSeg(segments, G_REQUIRED, "--zdim");
+      pushSeg(segments, G_REQUIRED, shquote(zdim));
+    }
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("ahet_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("ahet_datadir"));
+    collectSchemaSegments("abinit_het_old", segments);
+    return segments;
+  }
+
+  function buildAbinitHomoOldSegments() {
+    var segments = [];
+    pushPrefix(segments, "abinit_homo_old");
+    var particles = val("ahom_particles");
+    if (particles) pushSeg(segments, G_REQUIRED, shquote(particles));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("ahom_out"));
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("ahom_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("ahom_datadir"));
+    collectSchemaSegments("abinit_homo_old", segments);
+    return segments;
+  }
+
+  function buildAbinitSegments() {
+    var segments = [];
+    pushPrefix(segments, "abinit");
+    var particles = val("ab_particles");
+    if (particles) pushSeg(segments, G_REQUIRED, shquote(particles));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("ab_out"));
+    var zdim = val("ab_zdim");
+    if (zdim !== "") {
+      pushSeg(segments, G_REQUIRED, "--zdim");
+      pushSeg(segments, G_REQUIRED, shquote(zdim));
+    }
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("ab_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("ab_datadir"));
+    collectSchemaSegments("abinit", segments);
+    return segments;
+  }
+
+  function buildTrainVaeSegments() {
+    var segments = [];
+    pushPrefix(segments, "train_vae");
+    var p = val("vae_particles");
+    if (p) pushSeg(segments, G_REQUIRED, shquote(p));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("vae_out"));
+    appendOptSeg(segments, G_REQUIRED, "--poses", val("vae_poses"));
+    var zd = val("vae_zdim");
+    if (zd !== "") {
+      pushSeg(segments, G_REQUIRED, "--zdim");
+      pushSeg(segments, G_REQUIRED, shquote(zd));
+    }
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("vae_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("vae_datadir"));
+    collectSchemaSegments("train_vae", segments);
+    return segments;
+  }
+
+  function buildTrainNnSegments() {
+    var segments = [];
+    pushPrefix(segments, "train_nn");
+    var p = val("nn_particles");
+    if (p) pushSeg(segments, G_REQUIRED, shquote(p));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("nn_out"));
+    appendOptSeg(segments, G_REQUIRED, "--poses", val("nn_poses"));
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("nn_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("nn_datadir"));
+    collectSchemaSegments("train_nn", segments);
+    return segments;
+  }
+
+  function buildBackprojectVoxelSegments() {
+    var segments = [];
+    pushPrefix(segments, "backproject_voxel");
+    var p = val("bpv_particles");
+    if (p) pushSeg(segments, G_REQUIRED, shquote(p));
+    appendOptSeg(segments, G_REQUIRED, "--poses", val("bpv_poses"));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("bpv_out"));
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("bpv_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("bpv_datadir"));
+    collectSchemaSegments("backproject_voxel", segments);
+    return segments;
+  }
+
+  function buildTrainDecSegments() {
+    var segments = [];
+    pushPrefix(segments, "train_dec");
+    var p = val("dec_particles");
+    if (p) pushSeg(segments, G_REQUIRED, shquote(p));
+    appendOptSeg(segments, G_REQUIRED, "-o", val("dec_out"));
+    appendOptSeg(segments, G_REQUIRED, "--poses", val("dec_poses"));
+    var zd = val("dec_zdim");
+    if (zd !== "") {
+      pushSeg(segments, G_REQUIRED, "--zdim");
+      pushSeg(segments, G_REQUIRED, shquote(zd));
+    }
+    appendOptSeg(segments, G_REQUIRED, "--ctf", val("dec_ctf"));
+    appendOptSeg(segments, G_DATASET, "--datadir", val("dec_datadir"));
+    collectSchemaSegments("train_dec", segments);
+    return segments;
+  }
+
+  function buildAnalyzeStyleSegments(cmdName, prefix) {
+    var segments = [];
+    pushPrefix(segments, cmdName);
+    var workdir = val(prefix + "_workdir");
+    var epoch = val(prefix + "_epoch");
+    if (workdir) pushSeg(segments, G_REQUIRED, shquote(workdir));
+    if (epoch !== "") pushSeg(segments, G_REQUIRED, shquote(epoch));
+    appendOptSeg(segments, G_REQUIRED, "-o", val(prefix + "_out"));
+    collectSchemaSegments(cmdName, segments);
+    return segments;
+  }
+
+  function buildSegments() {
+    var t = document.getElementById("cmd-type").value;
+    if (t === "abinit") return buildAbinitSegments();
+    if (t === "abinit_het_old") return buildAbinitHetOldSegments();
+    if (t === "abinit_homo_old") return buildAbinitHomoOldSegments();
+    if (t === "train_vae") return buildTrainVaeSegments();
+    if (t === "train_nn") return buildTrainNnSegments();
+    if (t === "train_dec") return buildTrainDecSegments();
+    if (t === "backproject_voxel") return buildBackprojectVoxelSegments();
+    if (t === "analyze") return buildAnalyzeStyleSegments("analyze", "ana");
+    if (t === "analyze_landscape") {
+      return buildAnalyzeStyleSegments("analyze_landscape", "alsc");
+    }
+    if (t === "analyze_landscape_full") {
+      return buildAnalyzeStyleSegments("analyze_landscape_full", "alfull");
+    }
+    return [];
+  }
+
+  function build() {
+    if (lastBashCommandText) return lastBashCommandText;
+    return segmentsToBashText(buildSegments());
+  }
+
+  function parseOutdirValue(raw, fallbackSuffix) {
+    var s = String(raw || "").trim();
+    if (!s) return { n: 1, suffix: fallbackSuffix, prefix: "" };
+    var sep = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+    var prefix = sep >= 0 ? s.slice(0, sep + 1) : "";
+    var base = sep >= 0 ? s.slice(sep + 1) : s;
+    var m = base.match(/^(\d{1,3})_(.+)$/);
+    if (m) {
+      return { n: parseInt(m[1], 10) || 1, suffix: m[2], prefix: prefix };
+    }
+    return { n: 1, suffix: fallbackSuffix, prefix: prefix };
+  }
+
+  function formatOutdir(parsed) {
+    var n = Math.max(1, Math.min(999, Math.floor(parsed.n)));
+    var num = String(n);
+    while (num.length < 3) num = "0" + num;
+    return parsed.prefix + num + "_" + parsed.suffix;
+  }
+
+  function syncOutdirInputSuffix(input) {
+    if (!input) return;
+    var fieldWrap = input.closest(".cmd-outdir-input-wrap");
+    if (!fieldWrap) return;
+    fieldWrap.classList.toggle(
+      "cmd-outdir-input-wrap--empty",
+      !String(input.value || "").trim()
+    );
+  }
+
+  function bindOutdirInputSuffix(input) {
+    if (!input || input.dataset.outdirSuffixBound === "1") return;
+    input.dataset.outdirSuffixBound = "1";
+    syncOutdirInputSuffix(input);
+    input.addEventListener("input", function() {
+      syncOutdirInputSuffix(input);
+    });
+  }
+
+  function initOutdirSteppers() {
+    if (!form) return;
+    var outdirInputs = form.querySelectorAll(".cmd-outdir-input-wrap .cmd-outdir-input");
+    for (var k = 0; k < outdirInputs.length; k++) {
+      bindOutdirInputSuffix(outdirInputs[k]);
+    }
+    var steppers = form.querySelectorAll(".cmd-outdir-stepper");
+    for (var i = 0; i < steppers.length; i++) {
+      (function(wrap) {
+        if (wrap.dataset.outdirBound === "1") return;
+        wrap.dataset.outdirBound = "1";
+        var cmdName = wrap.getAttribute("data-cmd-name") || "";
+        var input = wrap.querySelector(".cmd-outdir-input");
+        if (!input) return;
+        var steps = wrap.querySelectorAll(".cmd-outdir-step");
+        for (var j = 0; j < steps.length; j++) {
+          steps[j].addEventListener("click", function() {
+            var dir = parseInt(this.getAttribute("data-dir"), 10);
+            if (!input || !cmdName) return;
+            var parsed = parseOutdirValue(input.value, cmdName);
+            parsed.n = Math.max(1, Math.min(999, parsed.n + dir));
+            input.value = formatOutdir(parsed);
+            syncOutdirInputSuffix(input);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          });
+        }
+      })(steppers[i]);
+    }
+  }
+
+  function scaleBatchSizeInput(input, factor) {
+    if (!input || !factor) return false;
+    var raw = String(input.value || "").trim();
+    if (!raw) raw = String(input.placeholder || "").trim();
+    if (!raw) return false;
+    var n = parseFloat(raw);
+    if (!isFinite(n) || n <= 0) return false;
+    n = Math.max(1, Math.round(n * factor));
+    input.value = String(n);
+    return true;
+  }
+
+  function initBatchSizeScalers() {
+    if (!form) return;
+    var bars = form.querySelectorAll(".cmd-batch-size-scale");
+    for (var i = 0; i < bars.length; i++) {
+      (function(bar) {
+        if (bar.dataset.batchScaleBound === "1") return;
+        bar.dataset.batchScaleBound = "1";
+        var panel = bar.closest(".cmd-panel");
+        var steps = bar.querySelectorAll(".cmd-batch-size-step");
+        for (var j = 0; j < steps.length; j++) {
+          steps[j].addEventListener("click", function() {
+            var factor = parseFloat(this.getAttribute("data-factor"));
+            if (!panel || !isFinite(factor) || factor <= 0) return;
+            var inputs = panel.querySelectorAll(
+              'input[type="number"][data-cmd-batch-size="1"]'
+            );
+            var changed = false;
+            for (var k = 0; k < inputs.length; k++) {
+              if (scaleBatchSizeInput(inputs[k], factor)) changed = true;
+            }
+            if (changed && inputs.length) {
+              inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+            }
+          });
+        }
+      })(bars[i]);
+    }
+  }
+
+  var out = document.getElementById("cmd-out");
+  var form = document.getElementById("cmd-form");
+  var cmdType = document.getElementById("cmd-type");
+
+  function syncCmdDocText() {
+    var el = document.getElementById("nav-cmd-doc-text");
+    if (!el || typeof CMD_COMMAND_DOCS === "undefined" || !cmdType) return;
+    el.textContent = CMD_COMMAND_DOCS[cmdType.value] || "";
+  }
+
+  function syncManuscriptLink() {
+    var link = document.getElementById("nav-manuscript-link");
+    var item = document.getElementById("nav-manuscript-icon-item");
+    var label = document.getElementById("nav-manuscript-label");
+    if (!link || !cmdType || typeof CMD_MANUSCRIPT_URLS === "undefined") return;
+    var url = CMD_MANUSCRIPT_URLS[cmdType.value] || "";
+    if (url) {
+      link.href = url;
+      link.hidden = false;
+      if (item) item.hidden = false;
+      link.title = "Read manuscript for cryodrgn " + cmdType.value;
+      link.setAttribute("aria-label", link.title);
+      if (label && typeof CMD_MANUSCRIPT_LABELS !== "undefined") {
+        label.textContent = CMD_MANUSCRIPT_LABELS[cmdType.value] || "paper";
+      }
+    } else {
+      link.hidden = true;
+      if (item) item.hidden = true;
+      link.removeAttribute("href");
+    }
+  }
+
+  function syncPanels() {
+    var t = cmdType.value;
+    var panels = document.querySelectorAll(".cmd-panel");
+    for (var i = 0; i < panels.length; i++) {
+      panels[i].classList.toggle("cmd-panel--active", panels[i].getAttribute("data-cmd") === t);
+    }
+    syncCmdDocText();
+    {% if command_builder_page_mode %}syncManuscriptLink();{% endif %}
+    refresh();
+  }
+
+  var cmdColorize = false;
+  var CMD_GROUP_HUES = {
+    "Required": 28,
+    "Dataset loading": 214,
+    "Training parameters": 207,
+    "Backprojection parameters": 200,
+    "Run options": 142,
+    "Volumes to generate": 88,
+    "Extra arguments for volume generation": 95,
+    "Volume generation arguments": 102,
+    "Volume mapping arguments": 168,
+  };
+  var cmdGroupHueCache = {};
+
+  function hueForCmdGroup(group) {
+    if (group === "_prefix") return null;
+    if (Object.prototype.hasOwnProperty.call(CMD_GROUP_HUES, group)) {
+      return CMD_GROUP_HUES[group];
+    }
+    if (!cmdGroupHueCache[group]) {
+      var h = 0;
+      for (var i = 0; i < group.length; i++) {
+        h = (h * 31 + group.charCodeAt(i)) % 360;
+      }
+      cmdGroupHueCache[group] = Math.round((47 + h * 137.508) % 360);
+    }
+    return cmdGroupHueCache[group];
+  }
+
+  function escCmdHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function refresh() {
+    updateCommandDisplay();
+    {% if command_builder_page_mode %}
+    scheduleFitPrimaryRegionFields();
+    {% endif %}
+  }
+
+  cmdType.addEventListener("change", syncPanels);
+  form.addEventListener("input", refresh);
+  form.addEventListener("change", refresh);
+
+  var colorizeBtn = document.getElementById("cmd-colorize");
+  if (colorizeBtn) {
+    colorizeBtn.addEventListener("click", function() {
+      cmdColorize = !cmdColorize;
+      colorizeBtn.setAttribute("aria-pressed", cmdColorize ? "true" : "false");
+      refresh();
+    });
+  }
+
+  document.getElementById("cmd-copy").addEventListener("click", function() {
+    var text = build();
+    var st = document.getElementById("cmd-copy-status");
+    function ok() {
+      st.textContent = "Copied.";
+      setTimeout(function() { st.textContent = ""; }, 2000);
+    }
+    function fail() {
+      st.textContent = "Copy failed — select the command manually.";
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(fail);
+    } else {
+      fail();
+    }
+  });
+
+  initOutdirSteppers();
+  initBatchSizeScalers();
+  syncPanels();
+
+  (function initCommandDisplayResize() {
+    if (!out || !out.parentElement) return;
+    var pending = false;
+    function schedule() {
+      if (pending) return;
+      pending = true;
+      window.requestAnimationFrame(function() {
+        pending = false;
+        updateCommandDisplay();
+      });
+    }
+    if (window.CryoResizeObserverUtils) {
+      window.CryoResizeObserverUtils.observeResize(out.parentElement, schedule);
+    }
+    window.addEventListener("resize", schedule);
+  })();
+
+  {% if command_builder_page_mode %}
+  var fitPrimaryFieldsPending = false;
+
+  function containerOverflowIgnoringBatchControls(container) {
+    if (!container) return false;
+    var slots = container.querySelectorAll(".cmd-batch-size-controls-slot");
+    if (!slots.length) {
+      return container.scrollWidth > container.clientWidth + 2;
+    }
+    var saved = [];
+    for (var i = 0; i < slots.length; i++) {
+      saved.push([slots[i], slots[i].style.display]);
+      slots[i].style.display = "none";
+    }
+    var overflow = container.scrollWidth > container.clientWidth + 2;
+    for (var j = 0; j < saved.length; j++) {
+      saved[j][0].style.display = saved[j][1];
+    }
+    return overflow;
+  }
+
+  function primaryFieldsOverflow(container) {
+    if (!container || container.offsetParent === null) return false;
+    var cells = container.querySelectorAll(".cmd-builder-primary-arg-cell");
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i];
+      if (cell.classList.contains("cmd-batch-size-anchor-cell")) {
+        var batchLabel = cell.querySelector(
+          ".cmd-batch-size-field-stack .cryo-select-line"
+        );
+        var batchInp = cell.querySelector(
+          ".cmd-batch-size-field-stack input, select"
+        );
+        if (batchLabel && batchLabel.scrollWidth > batchLabel.clientWidth + 1) {
+          return true;
+        }
+        if (batchInp && batchInp.scrollWidth > batchInp.clientWidth + 1) {
+          return true;
+        }
+        continue;
+      }
+      if (cell.scrollWidth > cell.clientWidth + 1) return true;
+      var label = cell.querySelector(".cryo-select-line, .choice-line");
+      if (label && label.scrollWidth > label.clientWidth + 1) return true;
+      var inp = cell.querySelector("input, select");
+      if (inp && inp.scrollWidth > inp.clientWidth + 1) return true;
+    }
+    return containerOverflowIgnoringBatchControls(container);
+  }
+
+  function fitPrimaryFieldsContainer(container) {
+    if (!container) return;
+    container.style.setProperty("--gp-primary-field-scale", "1");
+    var scale = 1;
+    var minScale = 0.4;
+    while (scale > minScale && primaryFieldsOverflow(container)) {
+      scale = Math.max(minScale, scale - 0.025);
+      container.style.setProperty("--gp-primary-field-scale", String(scale));
+      void container.offsetWidth;
+    }
+  }
+
+  function primaryChecksOverflow(container) {
+    if (!container || container.offsetParent === null) return false;
+    var box = container.querySelector(".cmd-builder-primary-checkboxes");
+    if (!box) return false;
+    var lines = box.querySelectorAll(".check-line");
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].scrollWidth > lines[i].clientWidth + 1) return true;
+    }
+    return box.scrollWidth > box.clientWidth + 2;
+  }
+
+  function fitPrimaryChecksContainer(container) {
+    if (!container) return;
+    container.style.setProperty("--gp-primary-checks-scale", "1");
+    var scale = 1;
+    var minScale = 0.4;
+    while (scale > minScale && primaryChecksOverflow(container)) {
+      scale = Math.max(minScale, scale - 0.025);
+      container.style.setProperty("--gp-primary-checks-scale", String(scale));
+      void container.offsetWidth;
+    }
+  }
+
+  function fitActivePrimaryRegionFields() {
+    var panel = document.querySelector(".cmd-panel.cmd-panel--active");
+    if (!panel) return;
+    fitPrimaryChecksContainer(
+      panel.querySelector(".cmd-builder-primary-checks-grid--2.cmd-builder-primary-checks-fit")
+    );
+    fitPrimaryFieldsContainer(
+      panel.querySelector(
+        ".cmd-builder-primary-region--dataset .cmd-builder-dataset-rest-fields.cmd-builder-primary-fields-fit"
+      )
+    );
+    fitPrimaryFieldsContainer(
+      panel.querySelector(
+        ".cmd-builder-primary-region--dataset .cmd-builder-dataset-core"
+      )
+    );
+    fitPrimaryFieldsContainer(
+      panel.querySelector(
+        ".cmd-builder-primary-region--training .cmd-builder-primary-fields-grid--5.cmd-builder-primary-fields-fit"
+      )
+    );
+  }
+
+  function scheduleFitPrimaryRegionFields() {
+    if (fitPrimaryFieldsPending) return;
+    fitPrimaryFieldsPending = true;
+    window.requestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
+        fitPrimaryFieldsPending = false;
+        fitActivePrimaryRegionFields();
+      });
+    });
+  }
+
+  (function initPrimaryRegionFieldsResize() {
+    var page = document.querySelector(".cmd-builder-page--dock");
+    if (!page) return;
+    var pending = false;
+    function schedule() {
+      if (pending) return;
+      pending = true;
+      window.requestAnimationFrame(function() {
+        pending = false;
+        scheduleFitPrimaryRegionFields();
+      });
+    }
+    if (window.CryoResizeObserverUtils) {
+      window.CryoResizeObserverUtils.observeResize(page, schedule);
+    }
+    window.addEventListener("resize", schedule);
+  })();
+
+  (function initCommandBuilderPageGroupCards() {
+    function cardsInActivePanel() {
+      var panel = document.querySelector(".cmd-panel.cmd-panel--active");
+      return panel ? panel.querySelectorAll(".cmd-group-card") : [];
+    }
+    var cardOrderByGroup =
+      typeof WeakMap === "undefined" ? null : new WeakMap();
+    function rememberCardOrder(groupCards) {
+      if (!cardOrderByGroup || cardOrderByGroup.has(groupCards)) return;
+      var roots = [];
+      var ch = groupCards.children;
+      for (var i = 0; i < ch.length; i++) {
+        if (ch[i].classList && ch[i].classList.contains("cmd-group-card")) {
+          roots.push(ch[i]);
+        }
+      }
+      cardOrderByGroup.set(groupCards, roots);
+    }
+    function restoreCardOrder(groupCards) {
+      if (!cardOrderByGroup) return;
+      var rail = groupCards.querySelector(".cmd-builder-advanced-nav-rail");
+      if (rail) {
+        while (rail.firstChild) {
+          groupCards.appendChild(rail.firstChild);
+        }
+        rail.remove();
+      }
+      var list = cardOrderByGroup.get(groupCards);
+      if (!list) return;
+      for (var i = 0; i < list.length; i++) {
+        groupCards.appendChild(list[i]);
+      }
+    }
+    function stripSplitMarkers(nodeList) {
+      for (var i = 0; i < nodeList.length; i++) {
+        nodeList[i].classList.remove("cmd-group-card--split-main");
+        nodeList[i].classList.remove("cmd-group-card--split-nav");
+      }
+    }
+    function syncAdvancedSplit(advancedRegion) {
+      if (!advancedRegion) return;
+      var groupCards = advancedRegion.querySelector(".cmd-builder-group-cards");
+      if (!groupCards) return;
+      var openCard = groupCards.querySelector(".cmd-group-card--open");
+      if (!openCard) {
+        advancedRegion.classList.remove("cmd-builder-advanced-region--split");
+        groupCards.classList.remove("cmd-builder-group-cards--split");
+        stripSplitMarkers(groupCards.querySelectorAll(".cmd-group-card"));
+        restoreCardOrder(groupCards);
+        return;
+      }
+      rememberCardOrder(groupCards);
+      advancedRegion.classList.add("cmd-builder-advanced-region--split");
+      groupCards.classList.add("cmd-builder-group-cards--split");
+      groupCards.insertBefore(openCard, groupCards.firstChild);
+      var rail = groupCards.querySelector(".cmd-builder-advanced-nav-rail");
+      if (!rail) {
+        rail = document.createElement("div");
+        rail.className = "cmd-builder-advanced-nav-rail";
+        rail.setAttribute("role", "navigation");
+        rail.setAttribute("aria-label", "Other parameter groups");
+      }
+      groupCards.insertBefore(rail, openCard.nextSibling);
+      var allCards = Array.prototype.slice.call(
+        groupCards.querySelectorAll(".cmd-group-card")
+      );
+      stripSplitMarkers(allCards);
+      openCard.classList.add("cmd-group-card--split-main");
+      for (var i = 0; i < allCards.length; i++) {
+        var c = allCards[i];
+        if (c === openCard) continue;
+        rail.appendChild(c);
+        c.classList.add("cmd-group-card--split-nav");
+      }
+    }
+    function bindWheelScroll(body) {
+      if (body.dataset.cmdScrollBound === "1") return;
+      body.dataset.cmdScrollBound = "1";
+      body.addEventListener(
+        "wheel",
+        function(e) {
+          if (body.scrollHeight <= body.clientHeight + 1) return;
+          var dy = e.deltaY;
+          var atTop = body.scrollTop <= 0;
+          var atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+          if ((dy < 0 && atTop) || (dy > 0 && atBottom)) return;
+          e.stopPropagation();
+        },
+        { passive: true }
+      );
+    }
+    function setCardOpen(card, open) {
+      var curOpen = card.classList.contains("cmd-group-card--open");
+      if (!open && !curOpen) return;
+      if (open && curOpen) return;
+      if (open) {
+        var peers = cardsInActivePanel();
+        for (var i = 0; i < peers.length; i++) {
+          if (peers[i] === card) continue;
+          if (!peers[i].classList.contains("cmd-group-card--open")) continue;
+          peers[i].classList.remove("cmd-group-card--open");
+          var tr = peers[i].querySelector(".cmd-group-card-trigger");
+          var bd = peers[i].querySelector(".cmd-group-card-body");
+          if (tr) tr.setAttribute("aria-expanded", "false");
+          if (bd) {
+            bd.hidden = true;
+            bd.style.maxHeight = "";
+          }
+        }
+      }
+      card.classList.toggle("cmd-group-card--open", open);
+      var trigger = card.querySelector(".cmd-group-card-trigger");
+      var body = card.querySelector(".cmd-group-card-body");
+      if (trigger) trigger.setAttribute("aria-expanded", open ? "true" : "false");
+      if (body) {
+        body.hidden = !open;
+        body.style.maxHeight = "";
+        if (open) body.scrollTop = 0;
+      }
+      syncAdvancedSplit(card.closest(".cmd-builder-advanced-region"));
+    }
+    var form = document.getElementById("cmd-form");
+    if (!form) return;
+    var groupCardsLists = form.querySelectorAll(".cmd-builder-group-cards");
+    for (var gc = 0; gc < groupCardsLists.length; gc++) {
+      rememberCardOrder(groupCardsLists[gc]);
+    }
+    var cards = form.querySelectorAll(".cmd-group-card");
+    for (var j = 0; j < cards.length; j++) {
+      var card = cards[j];
+      var body = card.querySelector(".cmd-group-card-body");
+      if (body) bindWheelScroll(body);
+    }
+    form.addEventListener("click", function(e) {
+      if (e.target.closest && e.target.closest(".cmd-group-card-split-dismiss")) {
+        e.preventDefault();
+        e.stopPropagation();
+        var dc = e.target.closest(".cmd-group-card");
+        if (!dc || !form.contains(dc)) return;
+        setCardOpen(dc, false);
+        return;
+      }
+      var card = e.target.closest(".cmd-group-card");
+      if (!card || !form.contains(card)) return;
+      var panel = card.closest(".cmd-panel");
+      if (!panel || !panel.classList.contains("cmd-panel--active")) return;
+      var trigger = card.querySelector(".cmd-group-card-trigger");
+      var body = card.querySelector(".cmd-group-card-body");
+      if (!trigger || !body) return;
+
+      if (card.classList.contains("cmd-group-card--open")) {
+        if (trigger.contains(e.target)) {
+          setCardOpen(card, false);
+          return;
+        }
+        var interactive = e.target.closest(
+          "input, select, textarea, button, a, label, option"
+        );
+        if (interactive && body.contains(interactive) && interactive !== trigger) {
+          return;
+        }
+        return;
+      }
+      setCardOpen(card, true);
+    });
+    var cmdTypeEl = document.getElementById("cmd-type");
+    if (cmdTypeEl) {
+      cmdTypeEl.addEventListener("change", function() {
+        var panelCards = cardsInActivePanel();
+        for (var k = 0; k < panelCards.length; k++) setCardOpen(panelCards[k], false);
+      });
+    }
+  })();
+  {% endif %}
+})();

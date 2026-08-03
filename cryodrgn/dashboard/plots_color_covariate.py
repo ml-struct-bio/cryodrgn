@@ -32,20 +32,6 @@ def plotly_color_to_hex(color: str) -> str:
     return s
 
 
-def plotly_color_to_rgba(color: str, alpha: float) -> str:
-    """``scatter3d`` marker colours with per-point alpha (``marker.opacity`` must stay scalar)."""
-    a = float(max(0.0, min(1.0, alpha)))
-    hex_c = plotly_color_to_hex(color)
-    if hex_c.startswith("#") and len(hex_c) >= 7:
-        return "rgba({:d}, {:d}, {:d}, {})".format(
-            int(hex_c[1:3], 16),
-            int(hex_c[3:5], 16),
-            int(hex_c[5:7], 16),
-            a,
-        )
-    return str(color).strip()
-
-
 def _lower_color_series_is_discrete(s: pd.Series) -> bool:
     """Treat integer / categorical / few whole-valued floats as discrete coloring."""
     s = s.dropna()
@@ -57,7 +43,7 @@ def _lower_color_series_is_discrete(s: pd.Series) -> bool:
         return True
     if pd.api.types.is_integer_dtype(s) and not pd.api.types.is_float_dtype(s):
         return True
-    if s.dtype == object:
+    if pd.api.types.is_string_dtype(s) or s.dtype == object:
         return True
     if pd.api.types.is_float_dtype(s):
         u = np.unique(s.to_numpy())
@@ -135,6 +121,7 @@ def _lower_legend_entry_label(lower_color_col: str, u: Any) -> str:
             if np.isfinite(fu) and fu == int(fu):
                 return str(int(fu) + 1)
         except (TypeError, ValueError):
+            # Non-numeric label value; fall back to str(u) below.
             pass
     return str(u)
 

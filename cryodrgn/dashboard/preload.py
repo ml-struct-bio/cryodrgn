@@ -62,12 +62,17 @@ def encode_particle_batch(
     datadir: str | None,
     global_indices: Iterable[int],
     max_px: int,
+    *,
+    src: object | None = None,
 ) -> list[str]:
     """Load and encode raw particles as base64 JPEGs for thumbnail preloading.
 
     Use :class:`ImageSource` directly instead of :class:`ImageDataset`; dashboard
     thumbnails do their own percentile scaling and do not need ImageDataset's
     costly normalization estimates.
+
+    Pass a pre-opened ``src`` (e.g. from :meth:`DashboardExperiment.particle_image_source`)
+    when encoding many batches in one process so multi-file stacks are not re-indexed.
     """
     import base64 as _b64
     import io as _io
@@ -77,7 +82,8 @@ def encode_particle_batch(
 
     from cryodrgn.source import ImageSource
 
-    src = ImageSource.from_file(mrcfile, lazy=True, datadir=datadir or "")
+    if src is None:
+        src = ImageSource.from_file(mrcfile, lazy=True, datadir=datadir or "")
     out: list[str] = []
     for gidx in global_indices:
         raw = src.images(gidx, as_numpy=True)
@@ -85,7 +91,8 @@ def encode_particle_batch(
             raw = raw[0]
         arr = _np.asarray(raw, dtype=_np.float32)
         lo, hi = _np.percentile(arr, (2, 98))
-        u8 = (_np.clip((arr - lo) / (hi - lo + 1e-9), 0, 1) * 255).astype(_np.uint8)
+        u = _np.clip((arr - lo) / (hi - lo + 1e-9), 0, 1)
+        u8 = (u * 255).astype(_np.uint8)
         pil = PILImage.fromarray(u8, mode="L")
         if max(pil.size) > max_px:
             pil = pil.resize((max_px, max_px), PILImage.LANCZOS)
@@ -212,6 +219,7 @@ def _grid_spaced_outlier_pick(
     ny = (coords[:, 1] - y0) / ry
 
     picked: list[int] = []
+    picked_set: set[int] = set()
     used_cells: set[tuple[int, int]] = set()
     nb = max(2, int(n_bins))
 
@@ -228,15 +236,17 @@ def _grid_spaced_outlier_pick(
             continue
         used_cells.add(cell)
         picked.append(i)
+        picked_set.add(i)
 
     if len(picked) < want:
         for li in order_by_score_desc:
             if len(picked) >= want:
                 break
             i = int(li)
-            if i in exclude or i in picked:
+            if i in exclude or i in picked_set:
                 continue
             picked.append(i)
+            picked_set.add(i)
     return picked[:want]
 
 
@@ -300,17 +310,16 @@ def sample_plot_df_rows_for_preload(
     """
     max_images = max(1, int(max_images))
     n = len(exp.plot_df)
-    coords_full = exp.plot_df[[xcol, ycol]].values.astype(np.float64)
     rng = np.random.default_rng(42)
 
     if restrict_to_rows is not None:
         sub_idx = sorted({int(r) for r in restrict_to_rows if 0 <= int(r) < n})
         if not sub_idx:
             return [], []
-        coords = coords_full[np.array(sub_idx, dtype=int)]
+        coords = exp.plot_df.iloc[sub_idx][[xcol, ycol]].to_numpy(dtype=np.float64)
         inv_map = sub_idx
     else:
-        coords = coords_full
+        coords = exp.plot_df[[xcol, ycol]].to_numpy(dtype=np.float64)
         inv_map = list(range(n))
 
     if exclude_rows:

@@ -1,0 +1,2712 @@
+{# Trajectory analyze: preserve display on refresh, custom plot-row selection UI #}
+  function shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh() {
+    if (hasGeneratedTrajectoryVolumes()) return false;
+    if (directEndpointCatalogDisplayActive()) return true;
+    return analyzeVolumeCatalogSelectionActive()
+      && analyzeVolumeCatalogDisplayReady();
+  }
+
+  function refreshPreservedAnalyzeVolumeDisplay() {
+    if (!shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()) return false;
+    syncTrajVolBackendChrome();
+    syncGenerateVolumesButtonVisibility();
+    resetVolumeDisplayFocusEngaged();
+    syncManualVolumeScatterHighlight();
+    syncTrajGlyphOverlay();
+    if (typeof directTraceBlocksCatalogAutoRender === "function"
+        && directTraceBlocksCatalogAutoRender()
+        && typeof isScatterDirectOrNearestMode === "function"
+        && isScatterDirectOrNearestMode()) {
+      if (typeof syncDirectTraceEndpointCatalogFromPath === "function") {
+        syncDirectTraceEndpointCatalogFromPath({ handoffOrReset: true });
+      }
+      if (typeof directTraceHasInvalidatedVolumeSlots === "function"
+          && directTraceHasInvalidatedVolumeSlots()
+          && typeof syncDirectTraceEndpointVolumesInViewer === "function") {
+        syncDirectTraceEndpointVolumesInViewer();
+      } else if (typeof trajectoryHasDisplayableVolumes === "function"
+          && trajectoryHasDisplayableVolumes()
+          && typeof syncDirectTraceEndpointVolumesInViewer === "function") {
+        syncDirectTraceEndpointVolumesInViewer();
+      } else if (typeof applyDirectTraceCatalogChromePreservingDisplay === "function") {
+        applyDirectTraceCatalogChromePreservingDisplay();
+      } else if (typeof applyDirectTraceCatalogChromeWithoutAutoRender === "function") {
+        applyDirectTraceCatalogChromeWithoutAutoRender();
+      }
+    } else {
+      applyManualAnalyzeVolumeDisplay(preferredAnalyzeVolumeBackend());
+    }
+    if (typeof snapVolumeFocusToActiveTick === "function") {
+      snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
+    }
+    if (trajVolDisplay && typeof trajVolDisplay._syncVolumeNavChrome === "function") {
+      trajVolDisplay._syncVolumeNavChrome();
+    }
+    syncDirectModeVolumePendingOverlay();
+    return true;
+  }
+
+  function hasStaleTrajectoryVolumes() {
+    if (directTraceUi && typeof directTraceUi.hasAnyStale === "function") {
+      return directTraceUi.hasAnyStale();
+    }
+    for (var key in trajVolumeStaleAt) {
+      if (trajVolumeStaleAt[key]) return true;
+    }
+    return false;
+  }
+
+  function trajectorySlotCatalogVolumeId(index) {
+    index = Math.floor(Number(index));
+    if (index < 0) return null;
+    if (directEndpointPathConfigured() || directTraceEndpointCatalogDeferActive()
+        || (typeof directTraceCatalogCacheRenderBridgeActive === "function"
+          && directTraceCatalogCacheRenderBridgeActive())) {
+      var endpointTotal = Math.max(
+        typeof trajectoryVolumeExpectedCount === "function" ? trajectoryVolumeExpectedCount() : 0,
+        typeof latentTrajectoryPointCount === "function" ? latentTrajectoryPointCount() : 0,
+        currentVolumeCount() || 0
+      );
+      if (endpointTotal >= 2 && directEndpointVolumeIds.length >= 2) {
+        if (index === 0) return String(directEndpointVolumeIds[0]);
+        if (index === endpointTotal - 1) return String(directEndpointVolumeIds[1]);
+      }
+    }
+    var pathN = (typeof latentTrajectoryPointCount === "function")
+      ? latentTrajectoryPointCount()
+      : 0;
+    // After PC1→PC2 (etc.) the slider may still show the prior group's ids until
+    // invalidateManualVolumeDisplayForSelectionChange repaints — never debt-count
+    // against stale display ids.
+    if (isManualTraversalMode()
+        && typeof manualAnalyzeVolumeIdsMismatch === "function"
+        && manualAnalyzeVolumeIdsMismatch()
+        && index < manualSelectedVolIds.length) {
+      return String(manualSelectedVolIds[index]);
+    }
+    var interpPath = isManualTraversalMode() && (
+      (typeof manualInterpolatedCatalogActive === "function" && manualInterpolatedCatalogActive())
+      || (typeof manualInterpolationArmed === "function" && manualInterpolationArmed())
+      || (typeof manualTrajectoryHasInteriorSamples === "function" && manualTrajectoryHasInteriorSamples())
+    );
+    // Only trust index→volId maps that are aligned to the live path. Compact
+    // catalog selection fallbacks (manualSelectedVolIds[i]) mis-label interior
+    // slots as anchors after interpolation and under-count Generate.
+    if (volumeDisplayIds() && index < volumeDisplayIds().length && volumeDisplayIds()[index]) {
+      if (!interpPath || !pathN || volumeDisplayIds().length === pathN) {
+        return String(volumeDisplayIds()[index]);
+      }
+    }
+    if (volumePayload() && volumeDisplayIds()
+        && index < volumeDisplayIds().length && volumeDisplayIds()[index]) {
+      var payloadIds = volumeDisplayIds();
+      if (!interpPath || !pathN || payloadIds.length === pathN) {
+        return String(payloadIds[index]);
+      }
+    }
+    if (interpPath) return null;
+    var activeIds = activeAnalyzeVolumeIds();
+    if (index < activeIds.length && activeIds[index]) return String(activeIds[index]);
+    if (isManualTraversalMode() && index < manualSelectedVolIds.length
+        && !(typeof manualPathEndpointsDisplacedFromDefaults === "function"
+          && manualPathEndpointsDisplacedFromDefaults())) {
+      return String(manualSelectedVolIds[index]);
+    }
+    return null;
+  }
+
+  function trajectorySlotCatalogVtkAvailable(index) {
+    var volId = trajectorySlotCatalogVolumeId(index);
+    return !!(volId && manualCatalogById && manualCatalogById[volId]);
+  }
+
+  function catalogDecodedTrajectoryFullyCoversPath() {
+    if (hasStaleTrajectoryVolumes()) return false;
+    if (hasGeneratedTrajectoryVolumes()) return false;
+    if (!analyzeVolumeCatalogSelectionActive()) return false;
+    if (isManualTraversalMode()) {
+      // Other / random waypoints need decode even when every PC catalog slot
+      // already has analyze VTK — never treat that as a fully covered path.
+      if (typeof manualWaypointDecodePathActive === "function"
+          && manualWaypointDecodePathActive()) {
+        return false;
+      }
+      if (manualActiveCustomPlotRows && manualActiveCustomPlotRows.length > 0) {
+        return false;
+      }
+      if (manualInterpolatedCatalogActive()) return false;
+      if (manualTrajectoryHasInteriorSamples()) return false;
+      if (graphTraversalActive && hasAnchorIndices()) return false;
+      if (typeof manualPathEndpointsDisplacedFromDefaults === "function"
+          && manualPathEndpointsDisplacedFromDefaults()) {
+        return false;
+      }
+    } else if (directTraceCatalogHasInteriorSamples()) {
+      return false;
+    }
+    var total = trajectoryVolumeExpectedCount();
+    if (total < 2) return false;
+    var catalogN = manualSelectedVolIds && manualSelectedVolIds.length >= 2
+      ? manualSelectedVolIds.length
+      : 0;
+    if (catalogN >= 2 && total > catalogN) return false;
+    for (var i = 0; i < total; i++) {
+      if (!trajectorySlotCatalogVtkAvailable(i)) return false;
+    }
+    return true;
+  }
+
+  function trajectorySlotCacheDecoded(index) {
+    index = Math.floor(Number(index));
+    if (index < 0 || !lastTrajectoryVolumeCacheId) return false;
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    if (session && session.volumes && session.volumes()) {
+      var vs = session.volumes();
+      if (vs.cacheId && String(vs.cacheId() || "") === String(lastTrajectoryVolumeCacheId)) {
+        var subset = typeof vs.subsetSlotIndices === "function" ? vs.subsetSlotIndices() : null;
+        if (subset && subset.length) return subset.indexOf(index) >= 0;
+        if (typeof vs.isDecoded === "function" && vs.isDecoded(index)) return true;
+      }
+    }
+    if (Array.isArray(lastTrajectoryVolumeCacheSlotIndices)
+        && lastTrajectoryVolumeCacheSlotIndices.length) {
+      return lastTrajectoryVolumeCacheSlotIndices.indexOf(index) >= 0;
+    }
+    // Dense full-path Generate cache (no explicit slot list).
+    return generatedTrajectoryVolumeCount > index;
+  }
+
+  function directTraceInteriorSlotIndex(index) {
+    index = Math.floor(Number(index));
+    if (!Number.isFinite(index) || index < 0) return false;
+    if (typeof isScatterDirectOrNearestMode !== "function"
+        || !isScatterDirectOrNearestMode()) {
+      return false;
+    }
+    if (typeof hasAnchorIndices === "function" && hasAnchorIndices()) return false;
+    var total = typeof latentTrajectoryPointCount === "function"
+      ? latentTrajectoryPointCount()
+      : 0;
+    if (total < 2) total = currentVolumeCount();
+    if (total < 3) return false;
+    return index > 0 && index < total - 1;
+  }
+
+  function trajectorySlotHasVolumeB64(index) {
+    index = Math.floor(Number(index));
+    if (!Number.isFinite(index) || index < 0) return false;
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    if (session && session.volumes && session.volumes()) {
+      var vs = session.volumes();
+      if (typeof vs.isVtkHydrated === "function" && vs.isVtkHydrated(index)) return true;
+      if (typeof vs.volumes === "function") {
+        var sessVols = vs.volumes() || [];
+        if (index < sessVols.length && sessVols[index] && sessVols[index].volume_b64) {
+          return true;
+        }
+      }
+    }
+    if (volumeSlots() && index < volumeSlots().length) {
+      var manualSlot = volumeSlots()[index];
+      if (manualSlot && manualSlot.volume_b64) return true;
+    }
+    if (volumePayload()) {
+      var payloadSlots = volumeSlots() || volumeSlots() || [];
+      if (index < payloadSlots.length && payloadSlots[index] && payloadSlots[index].volume_b64) {
+        return true;
+      }
+    }
+    if (lastVolumePayload && lastVolumePayload.volumes && index < lastVolumePayload.volumes.length) {
+      var cachedVol = lastVolumePayload.volumes[index];
+      if (cachedVol && cachedVol.volume_b64) return true;
+    }
+    if (trajVolDisplay && trajVolDisplay.volumes && index < trajVolDisplay.volumes.length) {
+      var displayVol = trajVolDisplay.volumes[index];
+      if (displayVol && displayVol.volume_b64) return true;
+    }
+    return false;
+  }
+
+  /**
+   * True when this path slot owes a fresh decode/render (dragged off its prior
+   * latent sample, nearest-snap move, or Session markStale). Heap / catalog
+   * leftovers must not satisfy debt while this is set.
+   *
+   * ``trajectoryTickIsDetachedFromParticle`` is label-only (traj-vol vs catalog);
+   * it must not block tick readiness after a successful Decode+Render.
+   */
+  function trajectorySlotVolumeInvalidated(index) {
+    index = Math.floor(Number(index));
+    if (!Number.isFinite(index) || index < 0) return false;
+    if (trajVolumeStaleAt[index]) return true;
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    var vols = session && session.volumes ? session.volumes() : null;
+    if (vols && typeof vols.isStale === "function" && vols.isStale(index)) {
+      return true;
+    }
+    if (vols && typeof vols.matchAt === "function"
+        && vols.slotCount && vols.slotCount() > index
+        && vols.matchAt(index).matched === false) {
+      return true;
+    }
+    return false;
+  }
+
+  function trajectorySlotVtkDecoded(index) {
+    index = Math.floor(Number(index));
+    if (index < 0) return false;
+    // Freely moved / displaced direct-trace points need a fresh decode at the
+    // new latent coordinate — prior catalog VTK, cache markers, or heap frames
+    // no longer apply.
+    if (trajectorySlotVolumeInvalidated(index)) return false;
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    // Direct-trace interiors, and freely dragged endpoints (detached from their
+    // catalog particle), need path-local ChimeraX media. Catalog VTK leftovers
+    // at the old particle must not zero Decode/Render debt after an endpoint move.
+    var directDetachedEndpoint = typeof isScatterDirectOrNearestMode === "function"
+      && isScatterDirectOrNearestMode()
+      && !(typeof hasAnchorIndices === "function" && hasAnchorIndices())
+      && typeof trajectoryTickIsDetachedFromParticle === "function"
+      && trajectoryTickIsDetachedFromParticle(index)
+      && !directTraceInteriorSlotIndex(index);
+    if (directTraceInteriorSlotIndex(index) || directDetachedEndpoint) {
+      return typeof trajectorySlotChimeraxReady === "function"
+        && trajectorySlotChimeraxReady(index);
+    }
+    // Real VTK blob always counts.
+    if (trajectorySlotHasVolumeB64(index)) return true;
+    // Generate with omit_volume_transfer marks slots via the MRC cache token.
+    if (trajectorySlotCacheDecoded(index)) return true;
+    // Catalog VTK only via path-aligned display/payload ids (see
+    // trajectorySlotCatalogVolumeId). Never via compact selection index.
+    if (trajectorySlotCatalogVtkAvailable(index)) return true;
+    // VolumeState isDecoded includes bare {decoded:true} catalog bookkeeping
+    // markers. After densify→Other those markers can land on custom:* interiors
+    // without blob/cache/catalog VTK and must not zero Decode debt.
+    if (session && session.volumes && session.volumes()
+        && typeof session.volumes().isDecoded === "function"
+        && session.volumes().isDecoded(index)) {
+      if (typeof session.volumes().isVtkHydrated === "function"
+          && session.volumes().isVtkHydrated(index)) {
+        return true;
+      }
+      var cacheId = typeof session.volumes().cacheId === "function"
+        ? String(session.volumes().cacheId() || "")
+        : "";
+      if (cacheId && trajectorySlotCacheDecoded(index)) return true;
+      return false;
+    }
+    return false;
+  }
+
+  function trajectorySlotChimeraxReady(index) {
+    index = Math.floor(Number(index));
+    if (index < 0) return false;
+    if (trajectorySlotVolumeInvalidated(index)) return false;
+    if (!catalogSlotVolumeIdMatchesSelection(index)) return false;
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    var vols = session && session.volumes ? session.volumes() : null;
+    // When Session owns this path index, tick readiness is Session render state
+    // only — same source as volume-slider inactive ticks. Heap / display
+    // leftovers must not under-count Decode/Render after densify.
+    if (vols && vols.slotCount && vols.slotCount() > index) {
+      if (typeof vols.tickReadyAt === "function") {
+        return vols.tickReadyAt(index, "chimerax");
+      }
+      if (typeof vols.isRendered === "function") {
+        return vols.isRendered(index);
+      }
+    }
+    if (trajVolDisplay && trajVolDisplay._chimeraxImageReadyAt
+        && trajVolDisplay._chimeraxImageReadyAt(index)) {
+      return true;
+    }
+    // Identity-stable heap frames survive reverse / visit-order when Session
+    // does not yet own the slot. Never use the heap for invalidated slots.
+    if (trajRenderingHeap && typeof chimeraxRenderingHeapKeyForSlot === "function") {
+      var key = chimeraxRenderingHeapKeyForSlot(index);
+      var volId = typeof chimeraxRenderingHeapVolumeIdAt === "function"
+        ? chimeraxRenderingHeapVolumeIdAt(index)
+        : (typeof trajectorySlotCatalogVolumeId === "function"
+          ? trajectorySlotCatalogVolumeId(index)
+          : null);
+      var hit = null;
+      if (volId && trajRenderingHeap.getForVolume) {
+        hit = trajRenderingHeap.getForVolume(volId, key);
+      } else if (key && trajRenderingHeap.get) {
+        hit = trajRenderingHeap.get(key);
+      }
+      if (hit) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Compact catalog (PC1×10 / PC2×10): a slot is ready only when display and
+   * Session agree on the selected volume id at that index. Stops PC1 ChimeraX
+   * frames from zeroing render debt after switching to another catalog group.
+   */
+  function catalogSlotVolumeIdMatchesSelection(index) {
+    index = Math.floor(Number(index));
+    if (!Number.isFinite(index) || index < 0) return true;
+    if (!isManualTraversalMode()
+        || !manualSelectedVolIds
+        || index >= manualSelectedVolIds.length) {
+      return true;
+    }
+    var compactDebt = typeof manualCompactCatalogDebtModeActive === "function"
+      && manualCompactCatalogDebtModeActive();
+    if (!compactDebt) return true;
+    var wantId = String(manualSelectedVolIds[index]);
+    var dispIds = typeof volumeDisplayIds === "function" ? volumeDisplayIds() : [];
+    if (dispIds && index < dispIds.length && dispIds[index]
+        && String(dispIds[index]) !== wantId) {
+      return false;
+    }
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    var vols = session && session.volumes ? session.volumes() : null;
+    if (vols && typeof vols.ids === "function" && vols.slotCount && vols.slotCount() > index) {
+      var sessId = (vols.ids() || [])[index];
+      if (sessId && String(sessId) !== wantId) return false;
+    }
+    return true;
+  }
+
+  function allTrajectorySlotsVtkDecoded() {
+    var total = trajectoryVolumeExpectedCount();
+    if (total < 1) return false;
+    for (var i = 0; i < total; i++) {
+      if (!trajectorySlotVtkDecoded(i)) return false;
+    }
+    return true;
+  }
+
+  function someTrajectorySlotsMissingChimerax() {
+    var total = trajectoryVolumeExpectedCount();
+    if (total < 1) return false;
+    for (var i = 0; i < total; i++) {
+      if (!trajectorySlotChimeraxReady(i)) return true;
+    }
+    return false;
+  }
+
+  function trajectoryVolumeReadyAt(index) {
+    if (!trajVolDisplay) return false;
+    index = Math.floor(Number(index));
+    if (!Number.isFinite(index) || index < 0) return false;
+    if (typeof trajectorySlotVolumeInvalidated === "function"
+        ? trajectorySlotVolumeInvalidated(index)
+        : trajVolumeStaleAt[index]) {
+      return false;
+    }
+    if (trajVolDisplay.backend === "chimerax") {
+      return !!(trajVolDisplay._chimeraxImageReadyAt
+        && trajVolDisplay._chimeraxImageReadyAt(index));
+    }
+    return !!(trajVolDisplay._volumeReadyAt && trajVolDisplay._volumeReadyAt(index));
+  }
+
+  function hasNonStaleDecodedTrajectoryVolumes() {
+    if (!isScatterDirectOrNearestMode() || hasAnchorIndices()) return false;
+    var total = currentVolumeCount();
+    for (var i = 0; i < total; i++) {
+      if (trajectoryVolumeReadyAt(i)) return true;
+    }
+    return false;
+  }
+
+  function clearTrajectoryVolumePayloadSlot(index) {
+    index = Math.floor(Number(index));
+    if (!Number.isFinite(index) || index < 0) return;
+    var curImgs = (typeof volumeImages === "function" ? volumeImages() : null) || [];
+    if (curImgs[index] && typeof stashChimeraxImageToHeap === "function") {
+      stashChimeraxImageToHeap(index, curImgs[index]);
+    }
+    if (lastVolumePayload) {
+      if (lastVolumePayload.volumes && index < lastVolumePayload.volumes.length) {
+        lastVolumePayload.volumes[index] = null;
+      }
+      if (lastVolumePayload.images && index < lastVolumePayload.images.length) {
+        lastVolumePayload.images[index] = null;
+      }
+    }
+    var vols = (typeof volumeSlots === "function" ? volumeSlots() : null) || [];
+    var imgs = curImgs.slice();
+    var n = Math.max(
+      vols.length,
+      imgs.length,
+      index + 1,
+      (typeof volumeExpectedCount === "function" ? Number(volumeExpectedCount()) : 0) || 0,
+      (typeof currentVolumeCount === "function" ? currentVolumeCount() : 0) || 0
+    );
+    vols = vols.slice();
+    while (vols.length < n) vols.push(null);
+    while (imgs.length < n) imgs.push(null);
+    vols[index] = null;
+    imgs[index] = null;
+    if (typeof patchVolumePayload === "function") {
+      patchVolumePayload({
+        volumes: vols,
+        images: imgs,
+        expectedVolumeCount: n >= 2 ? n : undefined
+      });
+    }
+    if (Array.isArray(lastTrajectoryVolumeCacheSlotIndices)
+        && lastTrajectoryVolumeCacheSlotIndices.length) {
+      lastTrajectoryVolumeCacheSlotIndices = lastTrajectoryVolumeCacheSlotIndices.filter(function(si) {
+        return Math.floor(Number(si)) !== index;
+      });
+    }
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : null;
+    if (session && session.volumes && session.volumes()) {
+      var sessionVols = session.volumes();
+      if (typeof sessionVols.setDecoded === "function") sessionVols.setDecoded(index, null);
+      if (typeof sessionVols.setRendered === "function") sessionVols.setRendered(index, null);
+      if (typeof sessionVols.markStale === "function") sessionVols.markStale(index);
+    }
+  }
+
+  function invalidateTrajectoryVolumeAtIndex(index, opts) {
+    opts = opts || {};
+    index = Math.floor(Number(index));
+    if (!Number.isFinite(index) || index < 0) return;
+    // Free-drag off a latent sample: drop heap frames for this identity so a
+    // later Decode/Render cannot treat the old PNG as already rendered.
+    // Nearest-snap (markDetached:false) may keep particle-keyed heap frames.
+    if (opts.markDetached === false) {
+      if (typeof stashChimeraxImageToHeap === "function"
+          && trajVolDisplay && Array.isArray(trajVolDisplay.chimeraxImages)) {
+        stashChimeraxImageToHeap(index, trajVolDisplay.chimeraxImages[index]);
+      }
+    } else if (typeof forgetChimeraxHeapForSlot === "function") {
+      forgetChimeraxHeapForSlot(index);
+    }
+    if (directTraceUi) {
+      directTraceUi.markStale(index);
+      bindDirectTraceInvalidationAliases();
+    } else {
+      trajVolumeStaleAt[index] = true;
+    }
+    if (!opts.preserveGenerateToken) {
+      lastTrajectoryVolumeCacheId = "";
+      generatedTrajectoryVolumeCount = 0;
+      // Drop Session cache identity too — otherwise the next patchVolumePayload
+      // / syncVolumeCacheFromSession restores lastTrajectoryVolumeCacheId and
+      // Generate treats freely moved endpoints as already covered.
+      var clearSession = typeof activeTrajectorySession === "function"
+        ? activeTrajectorySession()
+        : null;
+      if (clearSession && clearSession.volumes && clearSession.volumes()
+          && typeof clearSession.volumes().setGenerated === "function") {
+        clearSession.volumes().setGenerated(false, "");
+      }
+    }
+    clearTrajectoryVolumePayloadSlot(index);
+    if (trajVolDisplay && typeof trajVolDisplay.clearVolumeAt === "function") {
+      trajVolDisplay.clearVolumeAt(index);
+    }
+    // Nearest-snap invalidation keeps particle tick labels (points are on
+    // particles); free-drag invalidation marks detached for traj-vol labels.
+    if (opts.markDetached !== false
+        && typeof markTrajectoryTickDetachedFromParticle === "function") {
+      markTrajectoryTickDetachedFromParticle(index);
+    }
+    syncDirectModeVolumePendingOverlay();
+    syncGenerateVolumesButtonVisibility();
+    updateGenerateVolumesButtonLabel();
+    if (typeof syncManualVolumeSliderTickLabels === "function") {
+      syncManualVolumeSliderTickLabels();
+    }
+  }
+
+  function resetTrajectoryVolumeStaleState() {
+    if (directTraceUi) {
+      directTraceUi.clearAllInvalidation();
+      bindDirectTraceInvalidationAliases();
+    } else {
+      trajVolumeStaleAt = {};
+      dragVolumeInvalidated = {};
+    }
+  }
+
+  function draggedTrajectoryVolumeIndex() {
+    if (dragPointIndex >= 0) return dragPointIndex;
+    if (dragEndpoint === "start") return 0;
+    if (dragEndpoint === "end") {
+      if (editableTrajXY && editableTrajXY.length) return editableTrajXY.length - 1;
+      return Math.max(0, currentVolumeCount() - 1);
+    }
+    return -1;
+  }
+
+  function invalidateDraggedTrajectoryVolumeTick() {
+    if (!isScatterDirectOrNearestMode() || hasAnchorIndices()) return false;
+    var idx = draggedTrajectoryVolumeIndex();
+    if (idx < 0) return false;
+    if (directTraceUi) {
+      if (directTraceUi.isDragInvalidated(idx)) return true;
+      directTraceUi.markDragInvalidated(idx);
+      bindDirectTraceInvalidationAliases();
+    } else {
+      if (dragVolumeInvalidated[idx]) return true;
+      dragVolumeInvalidated[idx] = true;
+    }
+    invalidateTrajectoryVolumeAtIndex(idx);
+    return true;
+  }
+
+  function generateVolumesActionEnabled() {
+    if (catalogDecodedTrajectoryFullyCoversPath()) {
+      // Compact catalog covers ChimeraX without Generate, but VTK/slice still
+      // owes Decode for inactive ticks that lack volume_b64.
+      var interactiveOwesDecode = typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()
+        && typeof trajectoryVolumesToGenerateCount === "function"
+        && trajectoryVolumesToGenerateCount() > 0;
+      if (!interactiveOwesDecode) return false;
+    }
+    if (isManualTraversalMode()) {
+      if (trajectoryDecodeJobInFlight()) return false;
+      // Other / random waypoints and densified interiors both need decode —
+      // treat them the same for enablement (path geometry stays undensified).
+      if (typeof manualWaypointDecodePathActive === "function"
+          ? manualWaypointDecodePathActive()
+          : (manualInterpolatedCatalogActive()
+            || manualInterpolationArmed()
+            || manualTrajectoryHasInteriorSamples()
+            || (graphTraversalActive && hasAnchorIndices())
+            || (manualActiveCustomPlotRows
+              && manualActiveCustomPlotRows.length > 0))) {
+        return trajectoryVolumesToGenerateCount() > 0;
+      }
+      // Compact catalog + VTK/slice with unhydrated interiors.
+      if (typeof isInteractiveVolumeBackend === "function"
+          && isInteractiveVolumeBackend()) {
+        return trajectoryVolumesToGenerateCount() > 0;
+      }
+      return false;
+    }
+    if (!scatterTrajectoryPathReady()) return false;
+    if (trajectoryDecodeJobInFlight()) return false;
+    if (hasStaleTrajectoryVolumes()) return true;
+    if (directEndpointPathConfigured() && !hasGeneratedTrajectoryVolumes()) {
+      return trajectoryVolumesToGenerateCount() > 0;
+    }
+    if (!lastTrajectoryVolumeCacheId) return true;
+    return trajectoryVolumesToGenerateCount() > 0;
+  }
+
+  function saveVolumesActionEnabled() {
+    if (typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()) {
+      return false;
+    }
+    if (isManualTraversalMode()) return false;
+    if (analyzeVolumeCatalogFullyCoversPath()) return false;
+    if (!lastTrajectoryVolumeCacheId) return false;
+    return !trajectoryDecodeJobInFlight();
+  }
+
+  function saveVolumesButtonTitle(saveEnabled) {
+    if (saveEnabled) return "";
+    if (typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()) {
+      return "Save volumes is only available in ChimeraX mode.";
+    }
+    if (isManualTraversalMode() || analyzeVolumeCatalogFullyCoversPath()) {
+      return "Volumes are loaded from cryodrgn analyze output; nothing new to save.";
+    }
+    if (!lastTrajectoryVolumeCacheId) {
+      return "Decode volumes first.";
+    }
+    return "";
+  }
+
+  function syncGenerateVolumesButtonVisibility() {
+    reconcileChimeraxRenderingFlag();
+    if (btnGenerateVolumesEl) {
+      btnGenerateVolumesEl.hidden = false;
+      var genEnabled = decodeRenderVolumesActionEnabled();
+      btnGenerateVolumesEl.disabled = !genEnabled;
+      var interactiveBackend = typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend();
+      btnGenerateVolumesEl.title = !genEnabled && !trajectoryVolumeActionBusy()
+        ? (interactiveBackend
+          ? "Outstanding volumes need Decode for VTK / 2D display."
+          : (catalogDecodedTrajectoryFullyCoversPath()
+          && trajectoryVolumesOutstandingRenderCount() < 1
+          ? "Volumes and ChimeraX images are already available."
+          : ((isManualTraversalMode()
+              && (manualInterpolatedCatalogActive()
+                || (typeof manualWaypointDecodePathActive === "function"
+                  && manualWaypointDecodePathActive())))
+            ? "Decode and/or render volumes for the current trajectory."
+            : (scatterTrajectoryPathReady() && !isManualTraversalMode()
+              ? "Volumes for the current selection are already loaded."
+              : ""))))
+        : (genEnabled
+          ? (interactiveBackend
+            ? "Decode outstanding volumes for VTK / 2D display."
+            : "Decode outstanding volumes and render ChimeraX images.")
+          : "");
+    }
+    if (btnSaveVolumesEl) {
+      btnSaveVolumesEl.hidden = false;
+      var saveEnabled = saveVolumesActionEnabled();
+      btnSaveVolumesEl.disabled = !saveEnabled;
+      btnSaveVolumesEl.title = saveVolumesButtonTitle(saveEnabled);
+    }
+    if (typeof updateGenerateVolumesButtonLabel === "function") {
+      if (!updateGenerateVolumesButtonLabel._fromVisibilitySync) {
+        updateGenerateVolumesButtonLabel._fromVisibilitySync = true;
+        try {
+          updateGenerateVolumesButtonLabel();
+        } finally {
+          updateGenerateVolumesButtonLabel._fromVisibilitySync = false;
+        }
+      }
+    }
+  }
+
+  function deferredCatalogAnchorSelectionCount() {
+    if (isManualTraversalMode() || directTraceTraversalMode()) {
+      return manualAnchorPlotRowsFromSelection().length;
+    }
+    return hasAnchorIndices() ? anchorIndicesActive.length : 0;
+  }
+
+  function clearManualVolumeViewerIfSelectionEmpty() {
+    if (hasGeneratedTrajectoryVolumes()) return false;
+    if (isManualTraversalMode()) {
+      if (manualAnchorPlotRowsFromSelection().length > 0) return false;
+    } else if (manualSelectedVolIds.length > 0 || hasAnchorIndices()) {
+      return false;
+    } else if (directEndpointPathConfigured()) {
+      return false;
+    }
+    clearManualAnalyzeVolumeDisplay();
+    setAnalyzeVolumeLoadStatus(false);
+    if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+    syncTrajVolBackendChrome();
+    return true;
+  }
+
+  function manualVolumeViewerShowsMatchingSelection() {
+    return !!(volumesDisplayReady()
+      && volumePayload()
+      && !manualAnalyzeVolumeIdsMismatch()
+      && typeof trajectoryHasDisplayableVolumes === "function"
+      && trajectoryHasDisplayableVolumes());
+  }
+
+  function ensureManualVolumeViewerOrRenderOption() {
+    if (!deferManualWaypointVolumeRerender()) return;
+    if (deferredCatalogAnchorSelectionCount() < 2) {
+      updateGenerateVolumesButtonLabel();
+      return;
+    }
+    prepareDeferredCatalogVolumeChrome();
+    updateGenerateVolumesButtonLabel();
+  }
+
+  function syncManualVolumeViewerForWaypointSelection() {
+    if (hasGeneratedTrajectoryVolumes()) return;
+    if (!deferManualWaypointVolumeRerender()) {
+      if (isManualTraversalMode()) syncManualVolumeDisplay();
+      return;
+    }
+    if (isManualTraversalMode()) {
+      if (clearManualVolumeViewerIfSelectionEmpty()) {
+        updateGenerateVolumesButtonLabel();
+        return;
+      }
+      if (deferredCatalogAnchorSelectionCount() < 2) {
+        clearManualAnalyzeVolumeDisplay();
+        setAnalyzeVolumeLoadStatus(false);
+        if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+        syncTrajVolBackendChrome();
+        updateGenerateVolumesButtonLabel();
+        return;
+      }
+    } else if (hasAnchorIndices()) {
+      if (deferredCatalogAnchorSelectionCount() < 2
+          || (anchorKmeansVolumeIds.length < 2 && manualSelectedVolIds.length < 2)) {
+        clearManualAnalyzeVolumeDisplay();
+        setAnalyzeVolumeLoadStatus(false);
+        if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(false);
+        syncTrajVolBackendChrome();
+        updateGenerateVolumesButtonLabel();
+        return;
+      }
+    }
+    ensureManualVolumeViewerOrRenderOption();
+  }
+
+  function rerenderVolumesActionEnabled() {
+    if (!renderVolumesUiVisible()) return false;
+    if (trajectoryVolumeJobInFlight()) return false;
+    if ((typeof manualCompactCatalogDebtModeActive === "function"
+          && manualCompactCatalogDebtModeActive())
+        || catalogAnchorRenderModeActive()
+        || directEndpointAnchorRenderModeActive()) {
+      return trajectoryVolumesToRenderCount() > 0;
+    }
+    // After Generate (cache token) or when the densified path still owes ChimeraX
+    // frames, allow Render even if some catalog anchors lack client VTK blobs.
+    if (hasGeneratedTrajectoryVolumes() && lastTrajectoryVolumeCacheId) {
+      return trajectoryVolumesToRenderCount() > 0;
+    }
+    if (trajectoryVolumesToRenderCount() > 0
+        && (manualInterpolatedCatalogActive()
+          || manualInterpolationArmed()
+          || manualTrajectoryHasInteriorSamples()
+          || (typeof manualWaypointDecodePathActive === "function"
+            && manualWaypointDecodePathActive())
+          || hasGeneratedTrajectoryVolumes())) {
+      return true;
+    }
+    if (!allTrajectorySlotsVtkDecoded()) return false;
+    return trajectoryVolumesToRenderCount() > 0;
+  }
+
+  function renderVolumesUiVisible() {
+    if (deferManualWaypointVolumeRerender()) return true;
+    if (catalogAnchorRenderModeActive()) return true;
+    if (directEndpointAnchorRenderModeActive()) return true;
+    if (hasGeneratedTrajectoryVolumes()) return true;
+    if (isManualTraversalMode()
+        && (manualInterpolatedCatalogActive()
+          || manualInterpolationArmed()
+          || manualTrajectoryHasInteriorSamples()
+          || (typeof manualWaypointDecodePathActive === "function"
+            && manualWaypointDecodePathActive()))) {
+      return latentTrajectoryPointCount() >= 2 || trajectoryVolumeExpectedCount() >= 2;
+    }
+    if (hasAnchorIndices() && directTraceCatalogHasInteriorSamples()) return true;
+    return false;
+  }
+
+  function decodeRenderVolumesActionEnabled() {
+    reconcileChimeraxRenderingFlag();
+    if (trajectoryVolumeActionBusy()) return false;
+    // VTK / 2D slice: allow decode-only. ChimeraX PNG re-render is not applicable
+    // on interactive backends (that used to hard-disable this button and strand
+    // densified direct-trace interiors after PC1 → VTK).
+    if (typeof isInteractiveVolumeBackend === "function"
+        && isInteractiveVolumeBackend()) {
+      var interactiveDebts = typeof trajectoryDecodeRenderDebts === "function"
+        ? trajectoryDecodeRenderDebts()
+        : null;
+      var interactiveDecodeN = interactiveDebts && interactiveDebts.decode != null
+        ? interactiveDebts.decode
+        : (typeof trajectoryVolumesToGenerateCount === "function"
+          ? trajectoryVolumesToGenerateCount()
+          : 0);
+      if (interactiveDecodeN == null || !Number.isFinite(interactiveDecodeN)) {
+        interactiveDecodeN = 0;
+      }
+      return interactiveDecodeN > 0;
+    }
+    if (typeof manualCompactCatalogDebtModeActive === "function"
+        && manualCompactCatalogDebtModeActive()) {
+      var compactRenderN = typeof catalogAnchorsMissingChimeraxCount === "function"
+        ? catalogAnchorsMissingChimeraxCount()
+        : 0;
+      if (compactRenderN < 1
+          && typeof manualCatalogSelectionDiffersFromDisplay === "function"
+          && manualCatalogSelectionDiffersFromDisplay()
+          && manualSelectedVolIds.length >= 2) {
+        compactRenderN = manualSelectedVolIds.length;
+      }
+      if (compactRenderN > 0) return true;
+      var compactDecodeN = trajectoryVolumesToGenerateCount();
+      if (generateVolumesActionEnabled() && compactDecodeN > 0) return true;
+      return false;
+    }
+    var decodeN = trajectoryVolumesToGenerateCount();
+    if (generateVolumesActionEnabled() && decodeN > 0) return true;
+    if (rerenderVolumesActionEnabled()) return true;
+    var renderN = typeof trajectoryVolumesOutstandingRenderCount === "function"
+      ? trajectoryVolumesOutstandingRenderCount()
+      : trajectoryVolumesToRenderCount();
+    if (decodeN > 0 && renderN > 0 && scatterTrajectoryPathReady()) return true;
+    // Random waypoints and densified interiors share this gate: any outstanding
+    // decode or render debt on a manual waypoint path enables Decode/Render.
+    var waypointDecode = typeof manualWaypointDecodePathActive === "function"
+      && manualWaypointDecodePathActive();
+    if (isManualTraversalMode()
+        && (waypointDecode
+          || manualInterpolatedCatalogActive()
+          || manualInterpolationArmed()
+          || manualTrajectoryHasInteriorSamples()
+          || (graphTraversalActive && hasAnchorIndices()))
+        && (decodeN > 0 || renderN > 0)) {
+      return true;
+    }
+    return false;
+  }
+
+  function buildDecodeRenderVolumesButtonLabel(decodeN, renderN) {
+    decodeN = Math.max(0, Math.floor(Number(decodeN)) || 0);
+    renderN = Math.max(0, Math.floor(Number(renderN)) || 0);
+    // While the page is still loading (scatter / catalog / path), keep the
+    // generic label. Numbered debt appears only after first paint is ready.
+    if (typeof isTrajDecodeRenderChromeReady === "function"
+        && !isTrajDecodeRenderChromeReady()) {
+      return "Decode and render volumes";
+    }
+    // Same outstanding set: one combined count (e.g. PC1→direct interiors).
+    if (decodeN > 0 && decodeN === renderN) {
+      return "Decode and render\n" + decodeN + " " + volumeCountNoun(decodeN);
+    }
+    if (decodeN > 0 && renderN > 0) {
+      return "Decode " + decodeN + " " + volumeCountNoun(decodeN)
+        + "\nand render " + renderN + " " + volumeCountNoun(renderN);
+    }
+    if (decodeN > 0) {
+      // VTK / 2D decode hydrates the interactive viewer; keep the same user-facing
+      // phrasing as ChimeraX ("Decode and render") even when PNG render debt is 0.
+      return "Decode and render\n" + decodeN + " " + volumeCountNoun(decodeN);
+    }
+    if (renderN > 0) {
+      return "Render " + renderN + " " + volumeCountNoun(renderN);
+    }
+    return "Decode and render volumes";
+  }
+
+  function shouldShowRemoveIndicesButton() {
+    if (isManualTraversalMode()) return false;
+    if (!hasAnchorIndices()) return false;
+    // Catalog particle sets use the picker for membership (choose-waypoints
+    // parity) — do not offer a separate "Remove indices" control.
+    if (typeof particleSetDrivenDirectPath === "function"
+        && particleSetDrivenDirectPath()) {
+      return false;
+    }
+    return true;
+  }
+
+  function syncManualModeChrome() {
+    var manual = isManualTraversalMode();
+    var trajAnchorWrap = document.getElementById("traj-anchor-wrap");
+    syncGenerateVolumesButtonVisibility();
+    if (trajAnchorWrap) trajAnchorWrap.hidden = false;
+    if (!manual) {
+      if (manualSelectedVolIds.length) {
+        syncManualVolumeScatterHighlight();
+      } else {
+        clearManualVolumeScatterHighlight();
+      }
+      if (btnAnchorRemove) {
+        var showRemove = shouldShowRemoveIndicesButton();
+        btnAnchorRemove.classList.toggle("cryo-traj-remove--visible", showRemove);
+        btnAnchorRemove.setAttribute("aria-hidden", showRemove ? "false" : "true");
+      }
+      updateGenerateVolumesButtonLabel();
+    } else {
+      if (manualSelectedVolIds.length) syncManualVolumeScatterHighlight();
+      updateGenerateVolumesButtonLabel();
+    }
+    syncTrajReverseButton();
+  }
+
+  function manualCatalogGroupEntries(groupKey) {
+    if (groupKey === "custom") {
+      return manualCustomPlotRowsForPicker().map(function(row) {
+        return { kind: "custom", plot_row: Number(row), id: "custom:" + String(row) };
+      });
+    }
+    if (groupKey === "kmeans") {
+      return manualCatalog.filter(function(e) { return e.kind === "kmeans"; })
+        .sort(function(a, b) {
+          return Number(a.cluster_label) - Number(b.cluster_label);
+        });
+    }
+    var pcNum = groupKey === "pc1" ? 1 : (groupKey === "pc2" ? 2 : 0);
+    if (!pcNum) return [];
+    return manualCatalog.filter(function(e) {
+      return e.kind === "pc" && Number(e.pc) === pcNum;
+    }).sort(function(a, b) {
+      return Number(a.sample_index) - Number(b.sample_index);
+    });
+  }
+
+  function buildManualMarkersByPlotRow() {
+    manualMarkersByPlotRow = {};
+    Object.keys(manualMarkersByVolId).forEach(function(volId) {
+      var marker = manualMarkersByVolId[volId];
+      if (marker && marker.plot_row != null && isFinite(Number(marker.plot_row))) {
+        manualMarkersByPlotRow[Number(marker.plot_row)] = marker;
+      }
+    });
+  }
+
+  function manualCustomParticleSetLabel() {
+    return "Other";
+  }
+
+  /**
+   * Other (custom) particle-set cells in stable menu order.
+   * Deselection does not reshuffle; trajectory visit-order changes do.
+   */
+  function manualCustomPlotRowsForPicker() {
+    ensureManualCustomPlotRowsDisplayOrderCoverage();
+    var customSet = {};
+    (manualCustomPlotRows || []).forEach(function(row) {
+      row = Number(row);
+      if (isFinite(row) && row >= 0) customSet[row] = true;
+    });
+    var out = [];
+    var seen = {};
+    (manualCustomPlotRowsDisplayOrder || []).forEach(function(row) {
+      row = Number(row);
+      if (!customSet[row] || seen[row]) return;
+      seen[row] = true;
+      out.push(row);
+    });
+    (manualCustomPlotRows || []).forEach(function(row) {
+      row = Number(row);
+      if (!customSet[row] || seen[row]) return;
+      seen[row] = true;
+      out.push(row);
+      manualCustomPlotRowsDisplayOrder.push(row);
+    });
+    return out;
+  }
+
+  function ensureManualCustomPlotRowsDisplayOrderCoverage() {
+    if (!manualCustomPlotRowsDisplayOrder) manualCustomPlotRowsDisplayOrder = [];
+    var seen = {};
+    manualCustomPlotRowsDisplayOrder = manualCustomPlotRowsDisplayOrder.map(Number).filter(function(row) {
+      if (!isFinite(row) || row < 0 || seen[row]) return false;
+      if (manualCustomPlotRows.indexOf(row) < 0) return false;
+      seen[row] = true;
+      return true;
+    });
+  }
+
+  function uniqueCustomPlotRowsOnTrajectoryPath() {
+    var customSet = {};
+    (manualCustomPlotRows || []).forEach(function(row) {
+      row = Number(row);
+      if (isFinite(row) && row >= 0) customSet[row] = true;
+    });
+    var pathRows = null;
+    if (trajPlotRows && trajPlotRows.length >= 2) {
+      pathRows = trajPlotRows;
+    } else if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
+      pathRows = anchorIndicesActive;
+    }
+    if (!pathRows || !pathRows.length) return [];
+    var out = [];
+    var seen = {};
+    for (var i = 0; i < pathRows.length; i++) {
+      var pr = Number(pathRows[i]);
+      if (!customSet[pr] || seen[pr]) continue;
+      seen[pr] = true;
+      out.push(pr);
+    }
+    return out;
+  }
+
+  function isRowListSubsequence(sub, full) {
+    if (!sub || !sub.length) return true;
+    if (!full || !full.length) return false;
+    var j = 0;
+    for (var i = 0; i < full.length && j < sub.length; i++) {
+      if (Number(full[i]) === Number(sub[j])) j++;
+    }
+    return j === sub.length;
+  }
+
+  function sameRowList(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (Number(a[i]) !== Number(b[i])) return false;
+    }
+    return true;
+  }
+
+  function applyOnPathCustomPermutationToDisplayOrder(pathOrder) {
+    ensureManualCustomPlotRowsDisplayOrderCoverage();
+    var pathSet = {};
+    (pathOrder || []).forEach(function(row) { pathSet[Number(row)] = true; });
+    var display = manualCustomPlotRowsForPicker();
+    var pi = 0;
+    var usedPath = {};
+    var next = [];
+    for (var i = 0; i < display.length; i++) {
+      var row = display[i];
+      if (pathSet[row]) {
+        while (pi < pathOrder.length && usedPath[pathOrder[pi]]) pi++;
+        if (pi < pathOrder.length) {
+          var repl = Number(pathOrder[pi++]);
+          usedPath[repl] = true;
+          next.push(repl);
+          continue;
+        }
+      }
+      next.push(row);
+    }
+    for (; pi < pathOrder.length; pi++) {
+      var extra = Number(pathOrder[pi]);
+      if (usedPath[extra]) continue;
+      usedPath[extra] = true;
+      if (next.indexOf(extra) < 0) next.push(extra);
+    }
+    manualCustomPlotRowsDisplayOrder = next;
+  }
+
+  function insertNewOnPathCustomsIntoDisplayOrder(pathOrder) {
+    ensureManualCustomPlotRowsDisplayOrderCoverage();
+    var display = manualCustomPlotRowsForPicker();
+    var present = {};
+    display.forEach(function(row) { present[row] = true; });
+    for (var i = 0; i < pathOrder.length; i++) {
+      var row = Number(pathOrder[i]);
+      if (present[row]) continue;
+      var insertAt = display.length;
+      for (var back = i - 1; back >= 0; back--) {
+        var pred = Number(pathOrder[back]);
+        var predIdx = display.indexOf(pred);
+        if (predIdx >= 0) {
+          insertAt = predIdx + 1;
+          break;
+        }
+      }
+      display.splice(insertAt, 0, row);
+      present[row] = true;
+    }
+    manualCustomPlotRowsDisplayOrder = display;
+  }
+
+  /**
+   * Refresh Other-cell menu order only when the visit order of customs that
+   * remain on the trajectory changes (not on mere Other deselection).
+   */
+  function refreshManualCustomPlotRowsDisplayOrderFromTrajectory() {
+    var pathOrder = uniqueCustomPlotRowsOnTrajectoryPath();
+    var prev = lastOnPathCustomOrderList || [];
+    if (sameRowList(pathOrder, prev)) return false;
+    if (isRowListSubsequence(pathOrder, prev)) {
+      // Pure removal of on-path customs (e.g. Other deselection) — keep menu order.
+      lastOnPathCustomOrderList = pathOrder.slice();
+      return false;
+    }
+    if (isRowListSubsequence(prev, pathOrder)) {
+      // Pure addition of on-path customs — insert without reshuffling the rest.
+      insertNewOnPathCustomsIntoDisplayOrder(pathOrder);
+      lastOnPathCustomOrderList = pathOrder.slice();
+      return true;
+    }
+    applyOnPathCustomPermutationToDisplayOrder(pathOrder);
+    lastOnPathCustomOrderList = pathOrder.slice();
+    return true;
+  }
+
+  function manualCustomPlotRowButtonLabel(plotRow) {
+    return "p" + String(plotRow);
+  }
+
+  function manualCustomPlotRowActive(plotRow) {
+    return manualActiveCustomPlotRows.indexOf(Number(plotRow)) >= 0;
+  }
+
+  function catalogAnalyzeVolumePlotRows() {
+    var out = {};
+    Object.keys(manualMarkersByVolId).forEach(function(volId) {
+      var marker = manualMarkersByVolId[volId];
+      if (marker && marker.plot_row != null && isFinite(Number(marker.plot_row))) {
+        out[Number(marker.plot_row)] = true;
+      }
+    });
+    return out;
+  }
+
+  function filterNonCatalogPlotRows(rows) {
+    var catalogRows = catalogAnalyzeVolumePlotRows();
+    var out = [];
+    (rows || []).forEach(function(row) {
+      row = Number(row);
+      if (!isFinite(row) || row < 0) return;
+      if (!catalogRows[row]) out.push(row);
+    });
+    return out;
+  }
+
+  function filterInterpolationOtherPlotRows(trajRows, anchorRows) {
+    var anchorSet = {};
+    (anchorRows || []).forEach(function(row) {
+      row = Number(row);
+      if (isFinite(row)) anchorSet[row] = true;
+    });
+    var out = [];
+    (trajRows || []).forEach(function(row) {
+      row = Number(row);
+      if (!isFinite(row) || row < 0) return;
+      if (!anchorSet[row]) out.push(row);
+    });
+    return out;
+  }
+
+  function mergeManualCustomPlotRows(rows, opts) {
+    opts = opts || {};
+    var activate = opts.activate !== false;
+    var activateNewOnly = !!opts.activateNewOnly;
+    var skipPickerRebuild = !!opts.skipPickerRebuild;
+    var changed = false;
+    (rows || []).forEach(function(row) {
+      row = Number(row);
+      if (!isFinite(row) || row < 0) return;
+      var isNew = addManualCustomPlotRow(row);
+      if (isNew) changed = true;
+      if (activate && (!activateNewOnly || isNew) && manualActiveCustomPlotRows.indexOf(row) < 0) {
+        manualActiveCustomPlotRows.push(row);
+        changed = true;
+      }
+    });
+    if (!changed) return false;
+    manualActiveCustomPlotRows.sort(function(a, b) { return a - b; });
+    persistManualVolumeSelection();
+    if (!skipPickerRebuild) buildManualPickerRows();
+    return true;
+  }
+
+  /**
+   * Before Add-random append, register live path waypoints in catalog/custom
+   * selection so rebuildFromSelection does not replace the path with only the
+   * newly sampled indices.
+   */
+  function ensureExistingWaypointsTrackedBeforeRandomAppend() {
+    if (typeof isManualTraversalMode === "function" && !isManualTraversalMode()
+        && typeof directTraceTraversalMode === "function" && !directTraceTraversalMode()) {
+      return;
+    }
+    var pathRows = typeof directTraceTraversalMode === "function" && directTraceTraversalMode()
+      && typeof directTraceLivePlotRowsForAppend === "function"
+      ? directTraceLivePlotRowsForAppend()
+      : [];
+    if (!pathRows || pathRows.length < 2) {
+      pathRows = typeof visitOrderAnchorPlotRows === "function"
+        ? visitOrderAnchorPlotRows()
+        : (anchorIndicesActive && anchorIndicesActive.length >= 2
+          ? anchorIndicesActive.slice()
+          : []);
+    }
+    if (!pathRows || pathRows.length < 2) return;
+
+    var customToRegister = [];
+    var volIdsToAdd = [];
+    var volSeen = {};
+    (manualSelectedVolIds || []).forEach(function(id) {
+      volSeen[String(id)] = true;
+    });
+
+    pathRows.forEach(function(row) {
+      row = Number(row);
+      if (!Number.isFinite(row) || row < 0) return;
+      if (manualActiveCustomPlotRows && manualActiveCustomPlotRows.indexOf(row) >= 0) return;
+      if (typeof manualCatalogSelectedPlotRows === "function"
+          && manualCatalogSelectedPlotRows().indexOf(row) >= 0) {
+        return;
+      }
+      if (typeof isCatalogAnchorPlotRow === "function" && isCatalogAnchorPlotRow(row)) {
+        var marker = manualMarkersByPlotRow && manualMarkersByPlotRow[row];
+        if (marker && marker.vol_id != null) {
+          var vid = String(marker.vol_id);
+          if (!volSeen[vid]) {
+            volIdsToAdd.push(vid);
+            volSeen[vid] = true;
+          }
+        }
+        return;
+      }
+      customToRegister.push(row);
+    });
+
+    if (volIdsToAdd.length) {
+      manualSelectedVolIds = (manualSelectedVolIds || []).concat(volIdsToAdd);
+      persistManualVolumeSelection();
+    }
+    if (customToRegister.length) {
+      mergeManualCustomPlotRows(customToRegister, {
+        activate: true,
+        activateNewOnly: false,
+        skipPickerRebuild: true
+      });
+    }
+  }
+
+  function deactivateManualCustomPlotRows(rows) {
+    var remove = {};
+    (rows || []).forEach(function(row) {
+      row = Number(row);
+      if (isFinite(row) && row >= 0) remove[row] = true;
+    });
+    if (!Object.keys(remove).length) return false;
+    var next = (manualActiveCustomPlotRows || []).filter(function(row) {
+      return !remove[Number(row)];
+    });
+    if (next.length === (manualActiveCustomPlotRows || []).length) return false;
+    manualActiveCustomPlotRows = next;
+    persistManualVolumeSelection();
+    buildManualPickerRows();
+    return true;
+  }
+
+  /**
+   * Resolve an ordered plot-row list for a densified polyline. Catalog / prior
+   * anchors keep their rows on densify ticks; interiors snap to nearest particles
+   * so every sample can be treated as a waypoint (Other when non-catalog).
+   */
+  function plotRowsForDensifiedPathXY(trajXY, anchorRows, nInterp) {
+    trajXY = trajXY || [];
+    anchorRows = (anchorRows || []).map(Number).filter(function(row) {
+      return isFinite(row) && row >= 0;
+    });
+    if (trajXY.length < 2) return null;
+    if (trajPlotRows && trajPlotRows.length === trajXY.length) {
+      return trajPlotRows.map(Number);
+    }
+    nInterp = Math.max(0, Math.floor(Number(nInterp) || 0));
+    var slotMap = (anchorRows.length >= 2)
+      ? directPathAnchorSlotMap(anchorRows.length, nInterp, trajXY.length)
+      : {};
+    var rows = [];
+    for (var i = 0; i < trajXY.length; i++) {
+      var row = null;
+      if (Object.prototype.hasOwnProperty.call(slotMap, i)) {
+        row = Number(anchorRows[slotMap[i]]);
+      } else {
+        var pt = trajXY[i];
+        row = nearestPlotRowForXY(Number(pt[0]), Number(pt[1]));
+      }
+      if (!isFinite(row) || row < 0) return null;
+      rows.push(Number(row));
+    }
+    return rows;
+  }
+
+  /**
+   * Commit a densified / interpolated / snapped polyline as an ordinary waypoint
+   * path: new samples become active Other points (same as Add-random). Only the
+   * insertion operation differs; decode/render and slots use one path model.
+   */
+  function promoteDensifiedPathAsOtherWaypoints(plotRows, trajXY) {
+    if (!isManualTraversalMode()) return false;
+    trajXY = (trajXY && trajXY.length >= 2)
+      ? trajXY.map(function(p) { return [Number(p[0]), Number(p[1])]; })
+      : null;
+    plotRows = (plotRows || []).map(Number).filter(function(row) {
+      return isFinite(row) && row >= 0;
+    });
+    if ((!plotRows || plotRows.length < 2) && trajXY) {
+      var anchorRows = manualSnapAnchorRowsInOrder();
+      plotRows = plotRowsForDensifiedPathXY(
+        trajXY,
+        anchorRows,
+        typeof readManualSnapNPoints === "function" ? readManualSnapNPoints() : 0
+      ) || [];
+    }
+    if (!plotRows || plotRows.length < 2) return false;
+    if (!trajXY || trajXY.length !== plotRows.length) {
+      var rebuiltXY = typeof trajXYFromPlotRows === "function"
+        ? trajXYFromPlotRows(plotRows)
+        : null;
+      if (!rebuiltXY || rebuiltXY.length !== plotRows.length) return false;
+      trajXY = rebuiltXY;
+    }
+    // Collapse consecutive duplicate snaps so slot ids stay unique, matching
+    // how Add-random never repeats the same waypoint index twice.
+    var deduped = dedupeConsecutiveSnapPath(plotRows, trajXY);
+    plotRows = deduped.plotRows;
+    trajXY = deduped.trajXY;
+    if (plotRows.length < 2) return false;
+
+    var priorAnchors = {};
+    (manualSnapAnchorRowsInOrder() || []).forEach(function(row) {
+      priorAnchors[Number(row)] = true;
+    });
+    (manualCatalogSelectedPlotRows() || []).forEach(function(row) {
+      priorAnchors[Number(row)] = true;
+    });
+    var newOther = filterInterpolationOtherPlotRows(plotRows, Object.keys(priorAnchors).map(Number));
+    // Also include any non-catalog row on the path (shared plot_row edge cases).
+    var catalogOnly = catalogAnalyzeVolumePlotRows();
+    plotRows.forEach(function(row) {
+      row = Number(row);
+      if (!catalogOnly[row] && newOther.indexOf(row) < 0) newOther.push(row);
+    });
+    if (newOther.length) {
+      mergeManualCustomPlotRows(newOther, {
+        activate: true,
+        activateNewOnly: false,
+        skipPickerRebuild: true
+      });
+    }
+
+    // Install the full ordered path as waypoints (not a denser sample layer).
+    trajPlotRows = plotRows.slice();
+    anchorIndicesActive = plotRows.slice();
+    anchorTrajXY = trajXY.map(function(p) { return [Number(p[0]), Number(p[1])]; });
+    editableTrajXY = null;
+    manualInterpTrajectoryCount = 0;
+    lastLatentTrajectoryPointCount = plotRows.length;
+    manualTrajectoryVolumeIds = [];
+
+    // Clear densify arming only — do not call disarmInterpolation(), which wipes
+    // path XY. After promotion the path is ordinary waypoints + Other.
+    manualVolumeSnapActive = false;
+    manualParticleSnapPathActive = false;
+    graphTraversalActive = false;
+
+    var path = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+    if (path) {
+      if (typeof path.setAnchorRows === "function") path.setAnchorRows(plotRows.slice());
+      if (typeof path.setAnchorPathXY === "function") {
+        path.setAnchorPathXY(anchorTrajXY.map(function(p) { return p.slice(); }));
+      }
+      if (typeof path.setSamplePlotRows === "function") path.setSamplePlotRows(null);
+      if (typeof path.setInterpolatedCount === "function") path.setInterpolatedCount(0);
+    }
+
+    if (typeof buildManualPickerRows === "function") buildManualPickerRows();
+    if (typeof scheduleManualParticleSetPickerRefresh === "function") {
+      scheduleManualParticleSetPickerRefresh();
+    }
+    if (typeof syncPathOwnedVolumeSlots === "function") {
+      syncPathOwnedVolumeSlots();
+    } else if (typeof expandManualVolumeDisplayAfterWaypointAppend === "function") {
+      expandManualVolumeDisplayAfterWaypointAppend();
+    } else if (typeof syncManualVolumeSliderPreview === "function") {
+      syncManualVolumeSliderPreview({ fromSession: true });
+    }
+    if (typeof syncManualVolumeScatterHighlight === "function") {
+      syncManualVolumeScatterHighlight();
+    }
+    if (typeof redrawTrajectoryOverlay === "function") redrawTrajectoryOverlay();
+    if (typeof scheduleTrajGlyphOverlaySync === "function") scheduleTrajGlyphOverlaySync();
+    if (typeof updateGenerateVolumesButtonLabel === "function") {
+      updateGenerateVolumesButtonLabel();
+    }
+    if (typeof syncTraversalAltButtons === "function") syncTraversalAltButtons();
+    return true;
+  }
+
+  /**
+   * Direct-trace snap-to-nearest returns dataset particle plot_rows (latent-z)
+   * without entering choose-waypoints, so promoteDensifiedPathAsOtherWaypoints
+   * never runs. Register those samples as Other for the particle-set menu.
+   */
+  function registerDirectTraceSnappedPathAsOtherWaypoints(plotRows) {
+    if (typeof directTraceTraversalMode !== "function" || !directTraceTraversalMode()) {
+      return false;
+    }
+    plotRows = (plotRows || []).map(Number).filter(function(row) {
+      return isFinite(row) && row >= 0;
+    });
+    if (plotRows.length < 2) return false;
+
+    var catalogRows = catalogAnalyzeVolumePlotRows();
+    var ordered = [];
+    var seen = {};
+    plotRows.forEach(function(row) {
+      row = Number(row);
+      if (!isFinite(row) || row < 0 || catalogRows[row] || seen[row]) return;
+      seen[row] = true;
+      ordered.push(row);
+    });
+    if (!ordered.length) return false;
+
+    var catalogActive = typeof particleSetCatalogSelectionActive === "function"
+      && particleSetCatalogSelectionActive();
+
+    if (!catalogActive) {
+      manualCustomPlotRows = ordered.slice();
+      manualActiveCustomPlotRows = ordered.slice();
+      manualCustomPlotRowsDisplayOrder = ordered.slice();
+      if (typeof persistManualVolumeSelection === "function") {
+        persistManualVolumeSelection();
+      }
+    } else {
+      var priorAnchors = {};
+      (manualCatalogSelectedPlotRows() || []).forEach(function(row) {
+        priorAnchors[Number(row)] = true;
+      });
+      var newOther = filterInterpolationOtherPlotRows(
+        plotRows,
+        Object.keys(priorAnchors).map(Number)
+      );
+      plotRows.forEach(function(row) {
+        row = Number(row);
+        if (!catalogRows[row] && newOther.indexOf(row) < 0) newOther.push(row);
+      });
+      if (!newOther.length) return false;
+      if (!mergeManualCustomPlotRows(newOther, {
+        activate: true,
+        activateNewOnly: false,
+        skipPickerRebuild: true
+      })) {
+        newOther.forEach(function(row) {
+          if (manualActiveCustomPlotRows.indexOf(row) < 0) {
+            manualActiveCustomPlotRows.push(row);
+          }
+        });
+        manualActiveCustomPlotRows.sort(function(a, b) { return a - b; });
+      }
+    }
+
+    return true;
+  }
+
+  function ingestManualCustomPlotRowsFromTrajectoryResponse(res, opts) {
+    opts = opts || {};
+    if (!isManualTraversalMode()) return;
+    if (manualCustomPlotRowsRegisterPending) {
+      manualCustomPlotRowsRegisterPending = false;
+      var rowsToRegister = [];
+      if (res.anchor_indices && res.anchor_indices.length >= 2) {
+        rowsToRegister = res.anchor_indices.map(function(r) { return Number(r); });
+      } else if (res.traj_rows && res.traj_rows.length >= 2) {
+        rowsToRegister = res.traj_rows.map(function(r) { return Number(r); });
+      }
+      if (rowsToRegister.length) {
+        mergeManualCustomPlotRows(rowsToRegister, {
+          activate: true,
+          activateNewOnly: true
+        });
+        syncManualVolumeScatterHighlight();
+      }
+      return;
+    }
+    // A preserved direct-line path was already promoted before the coordinates
+    // payload was applied. Re-promoting from server traj_xy would replace that
+    // client-owned polyline with the server's particle-space coordinates.
+    if (opts.preserveDirectLineXY
+        && !manualInterpolationArmed()
+        && anchorTrajXY && anchorTrajXY.length >= 2) {
+      return;
+    }
+    // Densify / interpolate / snap responses: promote samples to Other waypoints.
+    if (manualInterpolationArmed()
+        || manualTrajectoryHasInteriorSamples()
+        || (trajPlotRows && trajPlotRows.length > (anchorIndicesActive || []).length)
+        || (anchorTrajXY && anchorTrajXY.length > (manualSnapAnchorRowsInOrder() || []).length)) {
+      var pathRows = (res && res.traj_rows && res.traj_rows.length >= 2)
+        ? res.traj_rows.map(Number)
+        : (trajPlotRows && trajPlotRows.length >= 2 ? trajPlotRows.slice() : null);
+      var pathXY = (res && res.traj_xy && res.traj_xy.length >= 2)
+        ? res.traj_xy.map(function(p) { return [Number(p[0]), Number(p[1])]; })
+        : (anchorTrajXY && anchorTrajXY.length >= 2
+          ? anchorTrajXY.map(function(p) { return p.slice(); })
+          : null);
+      if (promoteDensifiedPathAsOtherWaypoints(pathRows, pathXY)) return;
+    }
+  }
+
+  function addManualCustomPlotRow(plotRow) {
+    plotRow = Number(plotRow);
+    if (!isFinite(plotRow) || plotRow < 0) return false;
+    if (manualCustomPlotRows.indexOf(plotRow) >= 0) return false;
+    manualCustomPlotRows.push(plotRow);
+    manualCustomPlotRows.sort(function(a, b) { return a - b; });
+    if (manualCustomPlotRowsDisplayOrder.indexOf(plotRow) < 0) {
+      manualCustomPlotRowsDisplayOrder.push(plotRow);
+    }
+    return true;
+  }
+
+  function registerManualCustomPlotRows(rows, activate) {
+    if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return false;
+    if (!mergeManualCustomPlotRows(rows, { activate: activate !== false })) return false;
+    resetVolumeDisplayFocusEngaged();
+    resetAnchorPathOrderToDefault();
+    syncAnchorPathOrderUI();
+    invalidateManualVolumeDisplayForSelectionChange();
+    syncManualVolumeScatterHighlight();
+    resetManualInterpolationArmed();
+    syncManualAnchorsPreview();
+    return true;
+  }
+
+  function plotRowForManualVolId(volId) {
+    volId = String(volId);
+    var marker = manualMarkersByVolId[volId];
+    if (marker && marker.plot_row != null && isFinite(Number(marker.plot_row))) {
+      return Number(marker.plot_row);
+    }
+    return null;
+  }
+
+  function plotRowsForManualVolIds(volIds) {
+    var rows = [];
+    (volIds || []).forEach(function(volId) {
+      var row = plotRowForManualVolId(volId);
+      if (row != null && isFinite(row) && rows.indexOf(row) < 0) rows.push(row);
+    });
+    return rows;
+  }
+
+  function manualAnchorPlotRowsFromSelection() {
+    var path = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+    if (path && typeof path.anchorRowsFromSelection === "function") {
+      return path.anchorRowsFromSelection({ includeCustom: true }).rows.slice();
+    }
+    var rows = manualCatalogSelectedPlotRows().slice();
+    for (var ci = 0; ci < manualActiveCustomPlotRows.length; ci++) {
+      var crow = Number(manualActiveCustomPlotRows[ci]);
+      if (isFinite(crow) && rows.indexOf(crow) < 0) rows.push(crow);
+    }
+    return rows;
+  }
+
+  function spliceArrayAt(arr, idx) {
+    if (!arr || idx < 0 || idx >= arr.length) return arr ? arr.slice() : [];
+    return arr.slice(0, idx).concat(arr.slice(idx + 1));
+  }
+
+  function clearManualTrajectoryPathIfTooShort() {
+    var pathLen = trajPlotRows && trajPlotRows.length
+      ? trajPlotRows.length
+      : (anchorIndicesActive && anchorIndicesActive.length ? anchorIndicesActive.length : 0);
+    if (pathLen >= 2) return false;
+    trajPlotRows = null;
+    if (pathLen < 1) {
+      anchorIndicesActive = null;
+      anchorTrajXY = null;
+    } else if (anchorIndicesActive && anchorIndicesActive.length === 1) {
+      anchorTrajXY = trajXYFromPlotRows(anchorIndicesActive);
+    }
+    manualInterpTrajectoryCount = 0;
+    manualTrajectoryVolumeIds = [];
+    removeOverlayTraces();
+    syncManualVolumeSliderPreview();
+    syncManualVolumeSliderTickLabels();
+    updateGenerateVolumesButtonLabel();
+    return true;
+  }
+
+  function isCatalogAnchorPlotRow(plotRow) {
+    plotRow = Number(plotRow);
+    if (!isFinite(plotRow)) return false;
+    // Custom scatter picks are not catalog volumes.
+    if (manualCustomPlotRows.indexOf(plotRow) >= 0) {
+      return false;
+    }
+    // Analyze-catalog markers remain catalog rows even after deselection, so
+    // path mutation must not treat them as removable custom interiors.
+    if (manualMarkersByPlotRow && manualMarkersByPlotRow[plotRow]) return true;
+    var catalogRows = manualCatalogSelectedPlotRows();
+    for (var i = 0; i < catalogRows.length; i++) {
+      if (catalogRows[i] === plotRow) return true;
+    }
+    return false;
+  }
+
+  function manualTrajectoryPathLength() {
+    if (trajPlotRows && trajPlotRows.length >= 2) return trajPlotRows.length;
+    // Prefer explicit waypoint anchors over XY length alone — after Add random,
+    // trajPlotRows is cleared and nearest-XY rebuild can mis-map customs.
+    if (anchorIndicesActive && anchorIndicesActive.length >= 2) {
+      if (!anchorTrajXY || anchorTrajXY.length === anchorIndicesActive.length
+          || anchorTrajXY.length < 2) {
+        return anchorIndicesActive.length;
+      }
+    }
+    if (anchorTrajXY && anchorTrajXY.length >= 2) return anchorTrajXY.length;
+    return 0;
+  }
+
+  function plotRowAtTrajIndex(i) {
+    i = Math.floor(Number(i));
+    if (!isFinite(i) || i < 0) return null;
+    if (trajPlotRows && i < trajPlotRows.length) return Number(trajPlotRows[i]);
+    if (anchorIndicesActive && i < anchorIndicesActive.length) {
+      var anchorRow = Number(anchorIndicesActive[i]);
+      if (isFinite(anchorRow) && anchorRow >= 0) return anchorRow;
+    }
+    if (!anchorTrajXY || i >= anchorTrajXY.length) return null;
+    var pt = anchorTrajXY[i];
+    if (!pt) return null;
+    var row = nearestPlotRowForXY(Number(pt[0]), Number(pt[1]));
+    return isFinite(row) && row >= 0 ? Number(row) : null;
+  }
+
+  function ensureTrajPlotRowsAligned() {
+    var n = manualTrajectoryPathLength();
+    if (n < 2) return false;
+    if (trajPlotRows && trajPlotRows.length === n
+        && anchorTrajXY && anchorTrajXY.length === n) {
+      return true;
+    }
+    // Prefer live waypoint anchors when they already match the path length.
+    var rows = null;
+    if (anchorIndicesActive && anchorIndicesActive.length === n) {
+      rows = anchorIndicesActive.map(Number).filter(function(row) {
+        return isFinite(row) && row >= 0;
+      });
+      if (rows.length !== n) rows = null;
+    }
+    if (!rows) {
+      rows = [];
+      for (var i = 0; i < n; i++) {
+        var row = plotRowAtTrajIndex(i);
+        if (row == null || !isFinite(row)) return false;
+        rows.push(row);
+      }
+    }
+    trajPlotRows = rows;
+    if (!anchorTrajXY || anchorTrajXY.length !== n) {
+      var xy = trajXYFromPlotRows(rows);
+      if (xy && xy.length === n) anchorTrajXY = xy;
+    }
+    return !!(trajPlotRows && anchorTrajXY && trajPlotRows.length === anchorTrajXY.length);
+  }
+
+  function trajIndicesForPlotRow(plotRow) {
+    plotRow = Number(plotRow);
+    if (!isFinite(plotRow) || !ensureTrajPlotRowsAligned()) return [];
+    var out = [];
+    for (var i = 0; i < trajPlotRows.length; i++) {
+      if (Number(trajPlotRows[i]) === plotRow) out.push(i);
+    }
+    return out;
+  }
+
+  function manualSnappedTrajectoryPathLocked() {
+    return manualTrajectoryHasInteriorSamples()
+      && trajPlotRows && trajPlotRows.length >= 2
+      && anchorTrajXY && anchorTrajXY.length === trajPlotRows.length;
+  }
+
+  function manualTrajectoryVolumeArrays() {
+    // Prefer VolumeState — it is the authority for rendered ChimeraX frames.
+    // Falling back to lastVolumePayload alone can drop images after Decode/Render
+    // and cause Other-deselection to wipe PC1 frames (forcing a full re-render).
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    if (session && session.volumes && session.volumes()
+        && session.volumes().slotCount() >= 2
+        && (session.volumes().renderedCount() > 0 || session.volumes().decodedCount() > 0)) {
+      var snap = session.volumes().snapshot();
+      return {
+        vols: (snap.volumes || []).slice(),
+        imgs: (snap.images || []).slice(),
+        ids: (snap.ids || []).slice()
+      };
+    }
+    var src = (hasGeneratedTrajectoryVolumes() && lastVolumePayload)
+      ? lastVolumePayload
+      : volumePayload();
+    var vols = (src && (src.volumes || src.slots))
+      || volumeSlots() || [];
+    var imgs = (src && src.images) || [];
+    var ids = (src && src.ids)
+      || volumeDisplayIds() || [];
+    vols = vols.slice();
+    imgs = imgs.slice();
+    ids = ids.slice();
+    // Merge live viewer frames when the payload has empty image slots.
+    if (trajVolDisplay && Array.isArray(trajVolDisplay.chimeraxImages)
+        && trajVolDisplay.chimeraxImages.length) {
+      var displayImgs = trajVolDisplay.chimeraxImages;
+      var nMerge = Math.max(imgs.length, displayImgs.length, ids.length);
+      while (imgs.length < nMerge) imgs.push(null);
+      while (vols.length < nMerge) vols.push(null);
+      while (ids.length < nMerge) ids.push(null);
+      for (var di = 0; di < nMerge; di++) {
+        if (imgs[di]) continue;
+        if (di < displayImgs.length && displayImgs[di]) imgs[di] = displayImgs[di];
+      }
+    }
+    return { vols: vols, imgs: imgs, ids: ids };
+  }
+
+  function writeManualTrajectoryVolumeArrays(vols, imgs, ids, n) {
+    n = Math.max(0, Math.floor(Number(n)));
+    vols = (vols || []).slice(0, n);
+    imgs = (imgs || []).slice(0, n);
+    ids = (ids || []).slice(0, n);
+    while (vols.length < n) vols.push(null);
+    while (imgs.length < n) imgs.push(null);
+    while (ids.length < n) ids.push(null);
+    var session = typeof ensureTrajectorySession === "function"
+      ? ensureTrajectorySession()
+      : (typeof activeTrajectorySession === "function" ? activeTrajectorySession() : null);
+    // Never replace VolumeState with empty images when it already holds ChimeraX
+    // frames for these ids (Other deselection must keep PC1 renders).
+    if (session && session.volumes && session.volumes()
+        && typeof session.volumes().alignToIds === "function"
+        && session.volumes().slotCount() >= 2
+        && session.volumes().renderedCount() > 0) {
+      var incomingReady = 0;
+      for (var ri = 0; ri < imgs.length; ri++) {
+        if (imgs[ri]) incomingReady++;
+      }
+      if (incomingReady < Math.min(2, session.volumes().renderedCount())) {
+        session.volumes().alignToIds(ids);
+        var kept = session.volumes().snapshot();
+        vols = (kept.volumes || []).slice(0, n);
+        imgs = (kept.images || []).slice(0, n);
+        ids = (kept.ids || []).slice(0, n);
+        while (vols.length < n) vols.push(null);
+        while (imgs.length < n) imgs.push(null);
+        while (ids.length < n) ids.push(null);
+      } else {
+        session.volumes().replaceSlots(ids, vols, imgs);
+      }
+      if (hasGeneratedTrajectoryVolumes()
+          && typeof session.volumes().setGenerated === "function") {
+        session.volumes().setGenerated(true, lastTrajectoryVolumeCacheId || "");
+      }
+    } else if (session && session.volumes && session.volumes()
+        && typeof session.volumes().replaceSlots === "function") {
+      session.volumes().replaceSlots(ids, vols, imgs);
+      if (hasGeneratedTrajectoryVolumes()
+          && typeof session.volumes().setGenerated === "function") {
+        session.volumes().setGenerated(true, lastTrajectoryVolumeCacheId || "");
+      }
+    }
+    commitVolumePayload({
+      volumes: vols,
+      images: imgs,
+      ids: ids,
+      expectedVolumeCount: n
+    }, {
+      ready: vols.some(function(v) { return !!(v && v.volume_b64); })
+        || imgs.some(function(img) { return !!img; }),
+      skipLastPayload: hasGeneratedTrajectoryVolumes()
+    });
+    if (session && typeof session.syncVolumeCache === "function") {
+      session.syncVolumeCache();
+    }
+    if (volumePayload()) {
+      assignLastVolumePayloadFromSession(volumePayload());
+      if (hasGeneratedTrajectoryVolumes()) {
+        generatedTrajectoryVolumeCount = Math.max(n, imgs.filter(Boolean).length);
+      }
+    }
+  }
+
+  /**
+   * Remap already-decoded volume slots onto a new trajPlotRows order by matching
+   * particle plot rows. Unmatched slots become inactive (null).
+   */
+  function remapDecodedVolumesToPlotRows(prevRows, prevPayload) {
+    if (!prevPayload || !prevRows || !prevRows.length) return false;
+    if (!trajPlotRows || trajPlotRows.length < 2) return false;
+    var oldVols = prevPayload.volumes || prevPayload.slots || [];
+    var oldImgs = prevPayload.images || [];
+    var oldIds = prevPayload.ids || [];
+    var used = {};
+    var newVols = [];
+    var newImgs = [];
+    var newIds = [];
+    for (var i = 0; i < trajPlotRows.length; i++) {
+      var row = Number(trajPlotRows[i]);
+      var src = -1;
+      for (var j = 0; j < prevRows.length; j++) {
+        if (used[j]) continue;
+        if (Number(prevRows[j]) === row) {
+          src = j;
+          break;
+        }
+      }
+      if (src >= 0) {
+        used[src] = true;
+        newVols.push(oldVols[src] || null);
+        newImgs.push(oldImgs[src] || null);
+        newIds.push(oldIds[src] != null ? oldIds[src] : null);
+      } else {
+        newVols.push(null);
+        newImgs.push(null);
+        newIds.push(null);
+      }
+    }
+    writeManualTrajectoryVolumeArrays(newVols, newImgs, newIds, trajPlotRows.length);
+    if (typeof applyVolumePayloadDisplay === "function" && lastVolumePayload) {
+      applyVolumePayloadDisplay(lastVolumePayload, currentVolumeRenderBackend());
+    } else if (typeof applyManualInterpolatedVolumeSliderDisplay === "function") {
+      applyManualInterpolatedVolumeSliderDisplay();
+    }
+    return true;
+  }
+
+  function applyManualTrajectoryMutation() {
+    var pathLen = manualTrajectoryPathLength();
+    var nAnchors = (anchorIndicesActive && anchorIndicesActive.length >= 2)
+      ? anchorIndicesActive.length
+      : pathLen;
+    // Only bookkeep densified sample counts when the path is denser than its
+    // waypoints. Undensified PC / Other waypoint paths must keep count at 0 so
+    // manualSnappedDecodePathActive cannot invent densify debt.
+    manualInterpTrajectoryCount = (pathLen > nAnchors) ? pathLen : 0;
+    lastLatentTrajectoryPointCount = pathLen;
+    if (clearManualTrajectoryPathIfTooShort()) return true;
+    // Always rematch slider ticks by stable slot id after a local path splice.
+    // Prefer VolumeState over replaying a stale generated payload by index.
+    if (typeof syncPathOwnedVolumeSlots === "function") {
+      syncPathOwnedVolumeSlots();
+    } else if (typeof syncManualVolumeSliderPreview === "function") {
+      syncManualVolumeSliderPreview({ fromSession: true });
+    } else if (hasGeneratedTrajectoryVolumes() && lastVolumePayload) {
+      if (typeof applyVolumePayloadDisplay === "function") {
+        applyVolumePayloadDisplay(lastVolumePayload, currentVolumeRenderBackend());
+      }
+    } else if (volumePayload() && typeof applyManualInterpolatedVolumeSliderDisplay === "function") {
+      applyManualInterpolatedVolumeSliderDisplay();
+    } else {
+      syncManualVolumeSliderTickLabels();
+    }
+    if (typeof syncPathOwnedVolumeSlots !== "function"
+        && typeof restoreChimeraxRenderingsFromHeap === "function") {
+      var heapIds = typeof manualVolumeDisplayIdsForCurrentPath === "function"
+        ? manualVolumeDisplayIdsForCurrentPath()
+        : (volumeDisplayIds() || []);
+      if (heapIds.length >= 2) {
+        restoreChimeraxRenderingsFromHeap({
+          total: heapIds.length,
+          ids: heapIds,
+          allowViewFallback: true
+        });
+      }
+    }
+    redrawTrajectoryOverlay();
+    scheduleTrajGlyphOverlaySync();
+    updateGenerateVolumesButtonLabel();
+    if (typeof scheduleManualParticleSetPickerRefresh === "function") {
+      scheduleManualParticleSetPickerRefresh();
+    }
+
+    return true;
+  }
+
+  function insertionIndexForPlotRowOnPath(plotRow) {
+    var pt = scatterXYForPlotRow(plotRow);
+    if (!pt || !anchorTrajXY || anchorTrajXY.length < 2) return -1;
+    var bestIdx = anchorTrajXY.length;
+    var bestScore = Infinity;
+    for (var seg = 0; seg < anchorTrajXY.length - 1; seg++) {
+      var a = anchorTrajXY[seg];
+      var b = anchorTrajXY[seg + 1];
+      var dx = b[0] - a[0];
+      var dy = b[1] - a[1];
+      var len2 = dx * dx + dy * dy;
+      var t = len2 > 0
+        ? ((pt[0] - a[0]) * dx + (pt[1] - a[1]) * dy) / len2
+        : 0;
+      t = Math.max(0, Math.min(1, t));
+      var score = seg + t;
+      if (score < bestScore) {
+        bestScore = score;
+        bestIdx = seg + 1;
+      }
+    }
+    var d0 = (pt[0] - anchorTrajXY[0][0]) * (pt[0] - anchorTrajXY[0][0])
+      + (pt[1] - anchorTrajXY[0][1]) * (pt[1] - anchorTrajXY[0][1]);
+    if (d0 < bestScore) bestIdx = 0;
+    return bestIdx;
+  }
+
+  function insertPlotRowIntoManualTrajectory(plotRow) {
+    plotRow = Number(plotRow);
+    if (!isFinite(plotRow) || trajIndicesForPlotRow(plotRow).length) return false;
+    if (!ensureTrajPlotRowsAligned()) return false;
+    var pt = scatterXYForPlotRow(plotRow);
+    if (!pt) return false;
+    var idx = insertionIndexForPlotRowOnPath(plotRow);
+    if (idx < 0) return false;
+    idx = Math.max(0, Math.min(trajPlotRows.length, idx));
+    var arrays = manualTrajectoryVolumeArrays();
+    var n = trajPlotRows.length;
+    while (arrays.vols.length < n) arrays.vols.push(null);
+    while (arrays.imgs.length < n) arrays.imgs.push(null);
+    while (arrays.ids.length < n) arrays.ids.push(null);
+    var newRows = trajPlotRows.slice(0, idx).concat([plotRow], trajPlotRows.slice(idx));
+    var newXY = anchorTrajXY.slice(0, idx).concat([pt.slice()], anchorTrajXY.slice(idx));
+    var newVols = arrays.vols.slice(0, idx).concat([null], arrays.vols.slice(idx));
+    var newImgs = arrays.imgs.slice(0, idx).concat([null], arrays.imgs.slice(idx));
+    var newIds = arrays.ids.slice(0, idx).concat([
+      (typeof manualVolumeSlotIdForPlotRow === "function"
+        ? manualVolumeSlotIdForPlotRow(plotRow)
+        : null)
+    ], arrays.ids.slice(idx));
+    trajPlotRows = newRows;
+    anchorTrajXY = newXY;
+    if (anchorIndicesActive && anchorIndicesActive.length >= 2
+        && anchorIndicesActive.indexOf(plotRow) < 0) {
+      if (!manualTrajectoryHasInteriorSamples()
+          && anchorIndicesActive.length === trajPlotRows.length - 1) {
+        var insertAt = Math.max(0, Math.min(anchorIndicesActive.length, idx));
+        anchorIndicesActive = anchorIndicesActive.slice(0, insertAt)
+          .concat([plotRow], anchorIndicesActive.slice(insertAt));
+      } else {
+        // Densified path or mismatched anchor list: append the new waypoint.
+        anchorIndicesActive = anchorIndicesActive.concat([plotRow]);
+      }
+    }
+    writeManualTrajectoryVolumeArrays(newVols, newImgs, newIds, newRows.length);
+    refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
+    return true;
+  }
+
+  function addPlotRowToManualTrajectory(plotRow) {
+    plotRow = Number(plotRow);
+    if (!isFinite(plotRow)) return false;
+    if (!insertPlotRowIntoManualTrajectory(plotRow)) return false;
+    resetAnchorPathOrderToDefault();
+    return applyManualTrajectoryMutation();
+  }
+
+  function addPlotRowsToManualTrajectory(plotRows) {
+    var pending = (plotRows || []).map(function(row) { return Number(row); }).filter(function(row) {
+      return isFinite(row) && trajIndicesForPlotRow(row).length === 0;
+    });
+    if (!pending.length || !ensureTrajPlotRowsAligned()) return false;
+    pending.sort(function(a, b) {
+      return insertionIndexForPlotRowOnPath(b) - insertionIndexForPlotRowOnPath(a);
+    });
+    var changed = false;
+    for (var i = 0; i < pending.length; i++) {
+      if (insertPlotRowIntoManualTrajectory(pending[i])) changed = true;
+    }
+    if (!changed) return false;
+    resetAnchorPathOrderToDefault();
+    return applyManualTrajectoryMutation();
+  }
+
+  function plotRowsExclusiveToCustomSet() {
+    return manualCustomPlotRows.filter(function(row) {
+      return !isCatalogAnchorPlotRow(row);
+    });
+  }
+
+  function captureTrajectorySlotMediaById() {
+    var volsById = {};
+    var imgsById = {};
+    function add(id, vol, img) {
+      if (id == null || id === "") return;
+      var key = String(id);
+      if (vol && (vol.volume_b64 || vol.decoded === true) && !volsById[key]) {
+        volsById[key] = vol;
+      }
+      if (img && !imgsById[key]) imgsById[key] = img;
+    }
+    function addAtIndex(i, idHint) {
+      var id = idHint || null;
+      if (!id && volumeDisplayIds() && i < volumeDisplayIds().length) {
+        id = volumeDisplayIds()[i];
+      }
+      if (!id && trajPlotRows && i < trajPlotRows.length
+          && typeof manualVolumeSlotIdForPlotRow === "function") {
+        id = manualVolumeSlotIdForPlotRow(trajPlotRows[i]);
+      }
+      var vol = null;
+      var img = null;
+      if (volumeSlots() && i < volumeSlots().length) vol = volumeSlots()[i];
+      if (lastVolumePayload && lastVolumePayload.volumes && i < lastVolumePayload.volumes.length) {
+        vol = lastVolumePayload.volumes[i] || vol;
+      }
+      if (volumePayload() && volumeSlots()
+          && i < volumeSlots().length) {
+        vol = volumeSlots()[i] || vol;
+      }
+      if (trajVolDisplay && Array.isArray(trajVolDisplay.volumes)
+          && i < trajVolDisplay.volumes.length) {
+        vol = trajVolDisplay.volumes[i] || vol;
+      }
+      if (lastVolumePayload && lastVolumePayload.images && i < lastVolumePayload.images.length) {
+        img = lastVolumePayload.images[i] || img;
+      }
+      if (volumePayload() && volumeImages()
+          && i < volumeImages().length) {
+        img = volumeImages()[i] || img;
+      }
+      if (trajVolDisplay && Array.isArray(trajVolDisplay.chimeraxImages)
+          && i < trajVolDisplay.chimeraxImages.length) {
+        img = trajVolDisplay.chimeraxImages[i] || img;
+      }
+      add(id, vol, img);
+    }
+    var session = typeof activeTrajectorySession === "function"
+      ? activeTrajectorySession()
+      : (typeof ensureTrajectorySession === "function" ? ensureTrajectorySession() : null);
+    if (session && session.volumes && session.volumes() && session.volumes().slotCount() >= 2) {
+      var snap = session.volumes().snapshot();
+      var sIds = snap.ids || [];
+      var sVols = snap.volumes || [];
+      var sImgs = snap.images || [];
+      for (var si = 0; si < Math.max(sIds.length, sVols.length, sImgs.length); si++) {
+        add(sIds[si], sVols[si], sImgs[si]);
+        if (trajPlotRows && si < trajPlotRows.length
+            && typeof manualVolumeSlotIdForPlotRow === "function") {
+          add(manualVolumeSlotIdForPlotRow(trajPlotRows[si]), sVols[si], sImgs[si]);
+        }
+      }
+    }
+    var n = Math.max(
+      (trajPlotRows && trajPlotRows.length) || 0,
+      (volumeDisplayIds() && volumeDisplayIds().length) || 0,
+      (trajVolDisplay && trajVolDisplay.chimeraxImages && trajVolDisplay.chimeraxImages.length) || 0,
+      (lastVolumePayload && lastVolumePayload.images && lastVolumePayload.images.length) || 0,
+      (lastVolumePayload && lastVolumePayload.ids && lastVolumePayload.ids.length) || 0
+    );
+    for (var i = 0; i < n; i++) {
+      var payloadId = lastVolumePayload && lastVolumePayload.ids && i < lastVolumePayload.ids.length
+        ? lastVolumePayload.ids[i]
+        : null;
+      addAtIndex(i, payloadId);
+    }
+    return { volsById: volsById, imgsById: imgsById };
+  }
+
+  function mediaArraysForSlotIds(slotIds, media) {
+    media = media || { volsById: {}, imgsById: {} };
+    slotIds = slotIds || [];
+    var vols = [];
+    var imgs = [];
+    for (var i = 0; i < slotIds.length; i++) {
+      var key = slotIds[i] != null && slotIds[i] !== "" ? String(slotIds[i]) : null;
+      vols.push(key && media.volsById[key] ? media.volsById[key] : null);
+      imgs.push(key && media.imgsById[key] ? media.imgsById[key] : null);
+    }
+    return { volumes: vols, images: imgs, ids: slotIds.slice() };
+  }
+
+  function removePlotRowsFromManualTrajectory(rowsToRemove) {
+    var removeSet = {};
+    (rowsToRemove || []).forEach(function(row) {
+      row = Number(row);
+      if (isFinite(row) && !isCatalogAnchorPlotRow(row)) removeSet[row] = true;
+    });
+    if (!Object.keys(removeSet).length) return false;
+    // Preserve the direct-line point → nearest-particle mapping that was
+    // created when the path was promoted to Other waypoints. Coordinates are
+    // retained across the response, but trajPlotRows can be cleared; falling
+    // back to plotRowAtTrajIndex then invents different rows for interiors.
+    if ((!trajPlotRows || trajPlotRows.length < 2)
+        && anchorTrajXY && anchorTrajXY.length >= 2
+        && anchorIndicesActive && anchorIndicesActive.length >= 2
+        && anchorTrajXY.length > anchorIndicesActive.length
+        && !isGraphTraversalActive()
+        && !manualParticleSnapPathActive
+        && typeof plotRowsForDensifiedPathXY === "function") {
+      var recoveredDirectRows = plotRowsForDensifiedPathXY(
+        anchorTrajXY,
+        anchorIndicesActive,
+        typeof readManualSnapNPoints === "function" ? readManualSnapNPoints() : 0
+      );
+      if (recoveredDirectRows && recoveredDirectRows.length === anchorTrajXY.length) {
+        trajPlotRows = recoveredDirectRows;
+      }
+    }
+    if (!ensureTrajPlotRowsAligned()) return false;
+
+    var indices = [];
+    for (var i = 0; i < trajPlotRows.length; i++) {
+      if (removeSet[Number(trajPlotRows[i])]) indices.push(i);
+    }
+    if (!indices.length) return false;
+
+    // Capture ChimeraX / VTK media by every known slot id BEFORE mutating the
+    // path. alignToIds alone fails when VolumeState ids drifted from plot-row
+    // ids after Decode/Render, which previously wiped PC1 frames.
+    if (typeof stashActiveChimeraxRenderingsToHeap === "function") {
+      stashActiveChimeraxRenderingsToHeap();
+    }
+    var media = captureTrajectorySlotMediaById();
+
+    indices.sort(function(a, b) { return b - a; });
+    var newRows = trajPlotRows.slice();
+    var newXY = anchorTrajXY.slice();
+    for (var ri = 0; ri < indices.length; ri++) {
+      var idx = indices[ri];
+      newRows.splice(idx, 1);
+      if (idx < newXY.length) newXY.splice(idx, 1);
+    }
+    trajPlotRows = newRows;
+    anchorTrajXY = newXY.length === newRows.length
+      ? newXY
+      : trajXYFromPlotRows(newRows);
+
+    var nextIds = newRows.map(function(row) {
+      return typeof manualVolumeSlotIdForPlotRow === "function"
+        ? manualVolumeSlotIdForPlotRow(row)
+        : null;
+    });
+    var kept = mediaArraysForSlotIds(nextIds, media);
+    // If id rematch found nothing, fall back to index splice of live arrays.
+    var keptReady = kept.images.filter(Boolean).length
+      + kept.volumes.filter(function(v) { return !!(v && (v.volume_b64 || v.decoded)); }).length;
+    if (keptReady < 1) {
+      var arrays = manualTrajectoryVolumeArrays();
+      var oldN = newRows.length + indices.length;
+      while (arrays.vols.length < oldN) arrays.vols.push(null);
+      while (arrays.imgs.length < oldN) arrays.imgs.push(null);
+      while (arrays.ids.length < oldN) arrays.ids.push(null);
+      var newVols = arrays.vols.slice();
+      var newImgs = arrays.imgs.slice();
+      var newIds = arrays.ids.slice();
+      for (var rj = 0; rj < indices.length; rj++) {
+        var dropAt = indices[rj];
+        if (dropAt < newVols.length) newVols.splice(dropAt, 1);
+        if (dropAt < newImgs.length) newImgs.splice(dropAt, 1);
+        if (dropAt < newIds.length) newIds.splice(dropAt, 1);
+      }
+      kept = { volumes: newVols, images: newImgs, ids: nextIds };
+    }
+    if (typeof syncPathOwnedVolumeSlots === "function") {
+      syncPathOwnedVolumeSlots({
+        rows: newRows,
+        ids: kept.ids,
+        volumes: kept.volumes,
+        images: kept.images,
+        replace: true,
+        preview: false,
+        restoreHeap: false
+      });
+    } else {
+      writeManualTrajectoryVolumeArrays(
+        kept.volumes,
+        kept.images,
+        kept.ids,
+        newRows.length
+      );
+    }
+
+    if (anchorIndicesActive && anchorIndicesActive.length) {
+      var filteredAnchors = anchorIndicesActive.filter(function(row) {
+        return !removeSet[Number(row)];
+      });
+      if (filteredAnchors.length !== anchorIndicesActive.length) {
+        anchorIndicesActive = filteredAnchors;
+      }
+    }
+
+    refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
+    var mutationResult = applyManualTrajectoryMutation();
+    return mutationResult;
+  }
+
+  function removePlotRowFromManualTrajectory(plotRow) {
+    plotRow = Number(plotRow);
+    if (!isFinite(plotRow) || isCatalogAnchorPlotRow(plotRow)) return false;
+    return removePlotRowsFromManualTrajectory([plotRow]);
+  }
+
+  function finishManualVolumeDeselection(removedPlotRows) {
+    removedPlotRows = (removedPlotRows || []).map(Number).filter(function(row) {
+      return isFinite(row);
+    });
+    var hadInterior = manualTrajectoryHasInteriorSamples();
+    var hadInterp = manualInterpolationArmed();
+    var hadGenerated = typeof hasGeneratedTrajectoryVolumes === "function"
+      && hasGeneratedTrajectoryVolumes();
+    var removedCatalogAnchor = false;
+    for (var ri = 0; ri < removedPlotRows.length; ri++) {
+      if (manualCustomPlotRows.indexOf(removedPlotRows[ri]) < 0) {
+        removedCatalogAnchor = true;
+        break;
+      }
+    }
+    var retainedPathLenBefore = typeof manualRetainedSnappedPathLength === "function"
+      ? manualRetainedSnappedPathLength()
+      : 0;
+    // Once volumes are already decoded, keep path/volume lengths locked together
+    // via local splice or remapping — do not preserve a denser stale path.
+    var preserveSnappedDecodePath = !!(
+      !hadGenerated
+      && removedCatalogAnchor
+      && retainedPathLenBefore >= 2
+      && (hadInterior || hadInterp || manualInterpTrajectoryCount >= 2)
+      && (manualVolumeSnapActive || manualParticleSnapPathActive || manualInterpTrajectoryCount >= 2)
+    );
+    var prevDecodedRows = (hadGenerated && trajPlotRows && trajPlotRows.length >= 2)
+      ? trajPlotRows.slice()
+      : null;
+    var prevDecodedPayload = (hadGenerated && lastVolumePayload)
+      ? {
+          volumes: (lastVolumePayload.volumes || []).slice(),
+          images: (lastVolumePayload.images || []).slice(),
+          ids: (lastVolumePayload.ids || []).slice(),
+          expectedVolumeCount: lastVolumePayload.expectedVolumeCount
+        }
+      : null;
+
+    persistManualVolumeSelection();
+    buildManualPickerRows();
+    syncAnchorPathOrderUI();
+    syncManualVolumeScatterHighlight();
+    syncTraversalAltButtons();
+
+    try {
+
+    var removedFromTraj = false;
+    if (!preserveSnappedDecodePath) {
+      removedFromTraj = removedPlotRows.length
+        && removePlotRowsFromManualTrajectory(removedPlotRows);
+    }
+
+    resetVolumeDisplayFocusEngaged();
+    resetAnchorPathOrderToDefault();
+    if (!preserveSnappedDecodePath) {
+      // Local path splice already resized volume arrays — do not wipe them.
+      // After Decode/Render, never invalidate on Other-only deselection: that
+      // Force-clear discards PC1 ChimeraX frames and forces a full re-render.
+      if (!removedFromTraj) {
+        if (hadGenerated && !removedCatalogAnchor) {
+          if (typeof stashActiveChimeraxRenderingsToHeap === "function") {
+            stashActiveChimeraxRenderingsToHeap();
+          }
+          if (typeof syncManualVolumeSliderPreview === "function") {
+            var media = typeof captureTrajectorySlotMediaById === "function"
+              ? captureTrajectorySlotMediaById()
+              : null;
+            var catalogIds = typeof manualVolumeDisplayIdsForCurrentPath === "function"
+              ? manualVolumeDisplayIdsForCurrentPath()
+              : (manualSelectedVolIds || []).map(String);
+            if (media && catalogIds && catalogIds.length >= 2
+                && typeof mediaArraysForSlotIds === "function"
+                && typeof writeManualTrajectoryVolumeArrays === "function") {
+              var remapped = mediaArraysForSlotIds(catalogIds, media);
+              writeManualTrajectoryVolumeArrays(
+                remapped.volumes,
+                remapped.images,
+                remapped.ids,
+                catalogIds.length
+              );
+            }
+            syncManualVolumeSliderPreview({ fromSession: true });
+          }
+        } else {
+          invalidateManualVolumeDisplayForSelectionChange();
+        }
+      }
+      if (deferManualWaypointVolumeRerender()) {
+        manualTrajectoryVolumeIds = [];
+      }
+    } else {
+      manualTrajectoryVolumeIds = [];
+    }
+
+    if (manualAnchorPlotRowsFromSelection().length < 2) {
+      if (preserveSnappedDecodePath && preserveManualSnappedDecodeVolumeCatalog()) {
+        redrawTrajectoryOverlay();
+        scheduleTrajGlyphOverlaySync();
+        syncGenerateVolumesButtonVisibility();
+        return;
+      }
+      resetManualInterpolationArmed();
+      syncManualAnchorsPreview();
+      return;
+    }
+
+    // Custom / exclusive interior removals: local path+volume mutation is final.
+    // Force-reinterpolation would densify again and scramble decode status.
+    if (!removedCatalogAnchor && removedPlotRows.length) {
+      if (removedFromTraj) {
+        // Rematch viewer frames to the retained path by stable slot id so
+        // deselecting Other after Decode/Render cannot leave visit-order images
+        // misaligned with the volume-slider.
+        // Clearing Other after Add-random must restore the undensified catalog
+        // path (e.g. PC1 × 10), not invent densify debt from nPoints.
+        if (!(manualActiveCustomPlotRows && manualActiveCustomPlotRows.length)
+            && !manualVolumeSnapActive
+            && !manualParticleSnapPathActive
+            && !graphTraversalActive) {
+          var retainedLen = typeof manualTrajectoryPathLength === "function"
+            ? manualTrajectoryPathLength()
+            : 0;
+          var catalogN = typeof manualCatalogAnchorVolIdCount === "function"
+            ? manualCatalogAnchorVolIdCount()
+            : (manualSelectedVolIds || []).length;
+          if (retainedLen >= 2 && catalogN >= 2 && retainedLen <= catalogN) {
+            manualInterpTrajectoryCount = 0;
+            lastLatentTrajectoryPointCount = retainedLen;
+            var livePath = typeof activeTrajectoryPath === "function"
+              ? activeTrajectoryPath()
+              : null;
+            if (livePath && typeof livePath.setInterpolatedCount === "function") {
+              livePath.setInterpolatedCount(0);
+            }
+          }
+        }
+        if (typeof syncPathOwnedVolumeSlots === "function") {
+          syncPathOwnedVolumeSlots();
+        } else {
+          if (typeof syncManualVolumeSliderPreview === "function") {
+            syncManualVolumeSliderPreview({ fromSession: true });
+          }
+          if (typeof restoreChimeraxRenderingsFromHeap === "function") {
+            var heapIds = typeof manualVolumeDisplayIdsForCurrentPath === "function"
+              ? manualVolumeDisplayIdsForCurrentPath()
+              : (volumeDisplayIds() || []);
+            restoreChimeraxRenderingsFromHeap({
+              total: heapIds.length,
+              ids: heapIds,
+              allowViewFallback: true
+            });
+          }
+        }
+        // Local Other splice does not go through syncManualAnchorsPreview —
+        // refresh latent-z so densified PC listings collapse with the path.
+        if (typeof refreshTrajectoryZPanel === "function") {
+          refreshTrajectoryZPanel();
+        }
+        syncGenerateVolumesButtonVisibility();
+        updateGenerateVolumesButtonLabel();
+        return;
+      }
+      // Other-only membership changes must not rebuild from selector order.
+      // If the path splice failed (stale trajPlotRows), rebuild from the
+      // current catalog-only selection so Add-random → clear Other returns
+      // to compact PC1 instead of leaving a mixed / densified path.
+      if (!(manualActiveCustomPlotRows && manualActiveCustomPlotRows.length)
+          && !manualVolumeSnapActive
+          && !manualParticleSnapPathActive
+          && !graphTraversalActive) {
+        if (typeof resetManualInterpolationArmed === "function") {
+          resetManualInterpolationArmed();
+        }
+        if (typeof syncManualAnchorsPreview === "function") {
+          syncManualAnchorsPreview({ preferActiveOrder: false });
+        }
+        if (typeof syncPathOwnedVolumeSlots === "function") {
+          syncPathOwnedVolumeSlots();
+        }
+        if (typeof refreshTrajectoryZPanel === "function") {
+          refreshTrajectoryZPanel();
+        }
+        syncGenerateVolumesButtonVisibility();
+        updateGenerateVolumesButtonLabel();
+        return;
+      }
+      if (typeof syncPathOwnedVolumeSlots === "function") {
+        syncPathOwnedVolumeSlots();
+      }
+      if (typeof refreshTrajectoryZPanel === "function") {
+        refreshTrajectoryZPanel();
+      }
+      syncGenerateVolumesButtonVisibility();
+      updateGenerateVolumesButtonLabel();
+      return;
+    }
+
+    // Catalog-anchor removal while snap/graph interp is armed: rebuild path.
+    if (hadInterp && removedCatalogAnchor) {
+      if (isManualTraversalMode()) {
+        if (hadGenerated && prevDecodedRows && prevDecodedPayload) {
+          pendingDecodedVolumeRemap = {
+            rows: prevDecodedRows,
+            payload: prevDecodedPayload
+          };
+        }
+        syncManualSelectionToAnchors({
+          forceInterp: true,
+          directLine: typeof manualDirectLineDensifyActive === "function"
+            && manualDirectLineDensifyActive(),
+          snapVolume: !!manualParticleSnapPathActive
+        });
+        return;
+      }
+      resetManualInterpolationArmed();
+      syncManualAnchorsPreview();
+      return;
+    }
+
+    resetManualInterpolationArmed();
+    syncManualAnchorsPreview();
+    } finally {
+      if (typeof scheduleManualParticleSetPickerRefresh === "function") {
+        scheduleManualParticleSetPickerRefresh();
+      }
+    }
+  }
+
+  function finishManualIndividualDeselection(plotRow) {
+    if (plotRow != null) {
+      removeCustomVolIdsForPlotRows([plotRow]);
+    }
+    finishManualVolumeDeselection(plotRow != null ? [plotRow] : []);
+  }
+
+  function finishManualCustomSelectionChange(wasDeselect, plotRow) {
+    if (wasDeselect) {
+      finishManualIndividualDeselection(plotRow);
+      return;
+    }
+    persistManualVolumeSelection();
+    buildManualPickerRows();
+    syncAnchorPathOrderUI();
+    syncManualVolumeScatterHighlight();
+    syncTraversalAltButtons();
+    if (plotRow != null) {
+      addPlotRowToManualTrajectory(plotRow);
+      return;
+    }
+    if (manualCustomPlotRows.length) {
+      var rowsToAdd = manualCustomPlotRows.filter(function(row) {
+        return manualActiveCustomPlotRows.indexOf(row) >= 0;
+      });
+      if (rowsToAdd.length) addPlotRowsToManualTrajectory(rowsToAdd);
+      return;
+    }
+    // Any Other selection change returns to Original visit order with catalog
+    // subsets in native index order.
+    resetAnchorPathOrderToDefault();
+    if (manualTrajectoryHasInteriorSamples() || manualInterpolationArmed()) {
+      redrawTrajectoryOverlay();
+      scheduleTrajGlyphOverlaySync();
+      if (volumesDisplayReady() || manualInterpolatedCatalogActive()) {
+        syncManualVolumeSliderTickLabels();
+      }
+      return;
+    }
+    resetVolumeDisplayFocusEngaged();
+    invalidateManualVolumeDisplayForSelectionChange();
+    resetManualInterpolationArmed();
+    syncManualAnchorsPreview();
+  }
+
+  function toggleManualCustomPlotRowSelection(plotRow) {
+    plotRow = Number(plotRow);
+    if (!isFinite(plotRow) || plotRow < 0) return;
+    if (manualCustomPlotRows.indexOf(plotRow) < 0) {
+      registerManualCustomPlotRows([plotRow], true);
+      return;
+    }
+    var idx = manualActiveCustomPlotRows.indexOf(plotRow);
+    if (idx >= 0) {
+      manualActiveCustomPlotRows.splice(idx, 1);
+      finishManualCustomSelectionChange(true, plotRow);
+      return;
+    }
+    manualActiveCustomPlotRows.push(plotRow);
+    manualActiveCustomPlotRows.sort(function(a, b) { return a - b; });
+    finishManualCustomSelectionChange(false, plotRow);
+  }
+
+  function toggleManualCustomVolumeGroup() {
+    if (!manualCustomPlotRows.length) return;
+    if (manualCustomGroupFullySelected()) {
+      manualActiveCustomPlotRows = manualActiveCustomPlotRows.filter(function(row) {
+        return manualCustomPlotRows.indexOf(row) < 0;
+      });
+      removeCustomVolIdsForPlotRows(manualCustomPlotRows);
+      persistManualVolumeSelection();
+      buildManualPickerRows();
+      syncAnchorPathOrderUI();
+      syncManualVolumeScatterHighlight();
+      syncTraversalAltButtons();
+      finishManualVolumeDeselection(plotRowsExclusiveToCustomSet());
+      return;
+    }
+    manualCustomPlotRows.forEach(function(row) {
+      if (manualActiveCustomPlotRows.indexOf(row) < 0) manualActiveCustomPlotRows.push(row);
+    });
+    manualActiveCustomPlotRows.sort(function(a, b) { return a - b; });
+    finishManualCustomSelectionChange(false, null);
+  }
+
+  function manualCustomGroupVolIds() {
+    return manualCustomPlotRowsForPicker().map(function(row) {
+      var marker = manualMarkersByPlotRow[row];
+      return marker ? String(marker.vol_id) : null;
+    }).filter(Boolean);
+  }
+
+  function manualCustomGroupFullySelected() {
+    if (!manualCustomPlotRows.length) return false;
+    for (var i = 0; i < manualCustomPlotRows.length; i++) {
+      if (manualActiveCustomPlotRows.indexOf(manualCustomPlotRows[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  function manualCustomGroupAnySelected() {
+    for (var i = 0; i < manualActiveCustomPlotRows.length; i++) {
+      if (manualCustomPlotRows.indexOf(manualActiveCustomPlotRows[i]) >= 0) return true;
+    }
+    return false;
+  }
+
+  function manualGroupVolIds(groupKey) {
+    if (groupKey === "custom") return manualCustomGroupVolIds();
+    return manualCatalogGroupEntries(groupKey).map(function(e) { return String(e.id); });
+  }
+
+  function manualGroupFullySelected(groupKey) {
+    if (groupKey === "custom") return manualCustomGroupFullySelected();
+    var ids = manualGroupVolIds(groupKey);
+    if (!ids.length) return false;
+    for (var i = 0; i < ids.length; i++) {
+      if (manualSelectedVolIds.indexOf(ids[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  function manualGroupAnySelected(groupKey) {
+    if (groupKey === "custom") return manualCustomGroupAnySelected();
+    var ids = manualGroupVolIds(groupKey);
+    for (var i = 0; i < ids.length; i++) {
+      if (manualSelectedVolIds.indexOf(ids[i]) >= 0) return true;
+    }
+    return false;
+  }
+
+  function syncManualPickerExpandUI() {
+    var detail = document.getElementById("traj-vol-picker-detail");
+    if (detail) detail.hidden = !manualPickerDetailExpanded;
+    if (btnTrajVolPickerExpand) {
+      btnTrajVolPickerExpand.setAttribute("aria-expanded", manualPickerDetailExpanded ? "true" : "false");
+      btnTrajVolPickerExpand.classList.toggle("cryo-traj-vol-picker-expand--open", manualPickerDetailExpanded);
+      btnTrajVolPickerExpand.title = manualPickerDetailExpanded
+        ? "Hide individual volumes"
+        : "Show individual volumes";
+      btnTrajVolPickerExpand.setAttribute(
+        "aria-label",
+        manualPickerDetailExpanded ? "Hide individual volumes" : "Show individual volumes"
+      );
+    }
+  }
+
+  function toggleManualPickerDetailExpanded() {
+    manualPickerDetailExpanded = !manualPickerDetailExpanded;
+    syncManualPickerExpandUI();
+  }
+
+  function appendManualCustomGroupButton(host) {
+    if (!host) return;
+    var customBtn = document.createElement("button");
+    customBtn.type = "button";
+    customBtn.className = "btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn cryo-traj-vol-group-btn--custom";
+    customBtn.textContent = manualCustomParticleSetLabel();
+    customBtn.dataset.volGroup = "custom";
+    customBtn.title = manualCustomPlotRows.length
+      ? "Other manually picked particles"
+      : "Other manually picked particles (none yet)";
+    if (!manualCustomPlotRows.length) {
+      customBtn.disabled = true;
+      customBtn.classList.add("cryo-vslice-vol-btn--placeholder");
+    } else {
+      if (manualCustomGroupFullySelected()) {
+        customBtn.classList.add("cryo-vslice-vol-btn--active");
+      } else if (manualCustomGroupAnySelected()) {
+        customBtn.classList.add("cryo-vslice-vol-btn--partial");
+      }
+      customBtn.addEventListener("click", function() {
+        toggleManualVolumeGroup("custom");
+      });
+    }
+    host.appendChild(customBtn);
+  }
+
+  function buildManualPickerCompactRow() {
+    var host = document.getElementById("traj-vol-picker-compact-btns");
+    if (!host) return;
+    host.innerHTML = "";
+    var groups = [];
+    if (manualCatalogGroupEntries("kmeans").length) {
+      groups.push({ key: "kmeans", label: "Kmeans" + String(trajKmeansK) });
+    }
+    if (manualCatalogGroupEntries("pc1").length) {
+      groups.push({ key: "pc1", label: "PC1" });
+    }
+    if (manualCatalogGroupEntries("pc2").length) {
+      groups.push({ key: "pc2", label: "PC2" });
+    }
+    if (!groups.length) {
+      showManualPickerLoadingShell();
+      return;
+    }
+    groups.forEach(function(g) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-secondary cryo-vslice-vol-btn cryo-traj-vol-group-btn";
+      btn.textContent = g.label;
+      btn.dataset.volGroup = g.key;
+      if (manualGroupFullySelected(g.key)) {
+        btn.classList.add("cryo-vslice-vol-btn--active");
+      } else if (manualGroupAnySelected(g.key)) {
+        btn.classList.add("cryo-vslice-vol-btn--partial");
+      }
+      btn.addEventListener("click", function() {
+        toggleManualVolumeGroup(g.key);
+      });
+      host.appendChild(btn);
+    });
+    appendManualCustomGroupButton(host);
+  }
+
+  function buildManualPickerDetailRows() {
+    var rowsEl = document.getElementById("vslice-volume-picker-rows");
+    if (!rowsEl) return;
+    rowsEl.innerHTML = "";
+    var km = manualCatalog.filter(function(e) { return e.kind === "kmeans"; });
+    var pc = manualCatalog.filter(function(e) { return e.kind === "pc"; });
+    var specs = [];
+    if (km.length) specs.push({ head: "K-means", entries: km });
+    if (pc.length) specs.push({ head: "PC", entries: pc });
+    if (manualCustomPlotRows.length) {
+      specs.push({
+        head: manualCustomParticleSetLabel(),
+        entries: manualCustomPlotRowsForPicker().map(function(row) {
+          return { kind: "custom", plot_row: Number(row), id: "custom:" + String(row) };
+        }),
+        isCustom: true
+      });
+    }
+    if (!specs.length) return;
+    specs.forEach(function(spec) {
+      var row = document.createElement("div");
+      row.className = "cryo-vslice-volume-row";
+      var head = document.createElement("div");
+      head.className = "cryo-vslice-volume-row-head";
+      head.textContent = spec.head;
+      row.appendChild(head);
+      var btns = document.createElement("div");
+      btns.className = "cryo-vslice-volume-row-btns";
+      spec.entries.forEach(function(entry) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn btn-secondary cryo-vslice-vol-btn";
+        if (spec.isCustom) {
+          btn.textContent = manualCustomPlotRowButtonLabel(entry.plot_row);
+          btn.dataset.plotRow = String(entry.plot_row);
+          if (manualCustomPlotRowActive(entry.plot_row)) {
+            btn.classList.add("cryo-vslice-vol-btn--active");
+          }
+          btn.addEventListener("click", function() {
+            toggleManualCustomPlotRowSelection(entry.plot_row);
+          });
+        } else {
+          btn.textContent = manualVolButtonLabel(entry);
+          btn.dataset.volId = entry.id;
+          if (manualSelectedVolIds.indexOf(String(entry.id)) >= 0) {
+            btn.classList.add("cryo-vslice-vol-btn--active");
+          }
+          btn.addEventListener("click", function() {
+            toggleManualVolumeSelection(entry.id);
+          });
+        }
+        btns.appendChild(btn);
+      });
+      row.appendChild(btns);
+      rowsEl.appendChild(row);
+    });
+  }

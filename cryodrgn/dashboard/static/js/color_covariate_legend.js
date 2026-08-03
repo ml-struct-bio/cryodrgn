@@ -1749,8 +1749,22 @@
    * Measure widest toggle cell, cap at 79% of legend width, and set ``--cryo-discrete-col-w`` so
    * CSS ``repeat(auto-fill, …)`` packs as many columns as fit in the toggle-selection region.
    */
+  CryoColorCovariateLegend.prototype._isTrajMenuDiscreteHost = function () {
+    return !!(
+      this.discreteSwitches
+      && this.discreteSwitches.classList
+      && this.discreteSwitches.classList.contains("cryo-cc-discrete-switches--traj-menu")
+    );
+  };
+
   CryoColorCovariateLegend.prototype.fitDiscreteSwitchColumnWidths = function () {
     if (!this.discreteSwitches) return;
+    if (this._isTrajMenuDiscreteHost()) {
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-col-w");
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-max-w");
+      this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-min-h");
+      return;
+    }
     if (this._mode !== "discrete") {
       this.discreteSwitches.style.removeProperty("--cryo-discrete-col-w");
       this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-max-w");
@@ -1830,6 +1844,10 @@
    */
   CryoColorCovariateLegend.prototype.fitDiscreteLegendScrollRegion = function () {
     if (!this.discreteSwitches || this._mode !== "discrete") return;
+    if (this._isTrajMenuDiscreteHost()) {
+      this.discreteSwitches.style.removeProperty("max-height");
+      return;
+    }
     var scrollHost =
       this.discreteSwitches.querySelector(".cryo-cc-discrete-cells-wrap") ||
       this.discreteSwitches;

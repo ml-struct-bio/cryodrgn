@@ -26,6 +26,21 @@ from cryodrgn.dashboard.app import run_server
 logger = logging.getLogger(__name__)
 
 
+def _non_negative_int(value: str) -> int:
+    """Argparse type for ``--cpus``: reject negatives and non-integers."""
+    try:
+        ivalue = int(value)
+    except (TypeError, ValueError) as err:
+        raise argparse.ArgumentTypeError(
+            f"invalid CPU count {value!r}: must be a non-negative integer"
+        ) from err
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(
+            f"invalid CPU count {ivalue}: must be a non-negative integer"
+        )
+    return ivalue
+
+
 def _configure_dashboard_logging(verbosity: int) -> None:
     """Configure dashboard-related logger levels from ``-v`` count.
 
@@ -162,13 +177,22 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="open the landscape 3D visualizer instead of the launch menu",
     )
+    view.add_argument(
+        "--volume-viewer",
+        action="store_true",
+        help="open the trajectory creator (integrated volume display) instead of the launch menu",
+    )
 
     parser.add_argument(
         "--cpus",
         "-c",
-        type=int,
+        type=_non_negative_int,
         default=4,
-        help="CPU cores for image cache generation (default: %(default)s)",
+        metavar="N",
+        help=(
+            "CPU cores for image-cache generation and ChimeraX parallel renders "
+            "(non-negative integer; default: %(default)s)"
+        ),
     )
     parser.add_argument(
         "--debug",
@@ -213,6 +237,7 @@ def main(args: argparse.Namespace) -> None:
         "trajectory_creator": "/trajectory",
         "sketch_explorer": "/landscape-volpca",
         "landscape_three_dimensional": "/landscape-full-3d",
+        "volume_viewer": "/trajectory",
     }
     experiment_views = set(view_paths) - {"command_builder"}
     if command_builder_only and any(getattr(args, f, False) for f in experiment_views):

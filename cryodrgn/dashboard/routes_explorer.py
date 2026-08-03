@@ -6,6 +6,7 @@ Through preload.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import pickle
@@ -32,6 +33,7 @@ from cryodrgn.dashboard.context import (
     command_builder_template_kwargs,
     _request_json_dict,
 )
+from cryodrgn.dashboard.covariate_pkl import merge_covariate_pkl
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.covariate_labels import landscape_vol_pc_column_pretty_label
 from cryodrgn.dashboard.landscape_full_3d import (
@@ -45,7 +47,6 @@ from cryodrgn.dashboard.landscape_full_3d import (
 )
 from cryodrgn.dashboard.landscape_volpca import (
     landscape_analysis_ready,
-    landscape_dir_for_epoch,
     load_pca_explained_variance,
 )
 from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
@@ -77,10 +78,18 @@ from cryodrgn.dashboard.preload import (
     montage_bytes,
     sample_plot_df_rows_for_preload,
 )
+from cryodrgn.dashboard.chimerax_animation import chimerax_view_matrix_camera_arg
+from cryodrgn.dashboard.volume_slice_viewer import (
+    analyze_volume_by_id_payload,
+    analyze_volume_markers_payload,
+    analyze_volumes_batch_payload,
+    analyze_volumes_catalog_payload,
+    analyze_volumes_chimerax_batch_payload,
+    decode_volume_payload,
+)
 from cryodrgn.dashboard.route_helpers import (
     _EXPLORER_VOLUMES_INELIGIBLE_MSG,
     _covariate_display_map,
-    _default_xy_cols,
     _filter_ui_scatter_max_points,
     _parse_color_filter_for_column,
     _parse_optional_discrete_label_colors,
@@ -89,6 +98,8 @@ from cryodrgn.dashboard.route_helpers import (
     _particle_explorer_scatter_cap_from_env,
     _particle_explorer_scatter_max_points,
     _redirect,
+    default_embedding_xy_cols,
+    discrete_color_columns_for_exp,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,13 +118,13 @@ def _scatter3d_no_subsample_for_discrete_gif_frame(
 
 
 def _landscape_full_vol_pc_explained_variance(
-    workdir: str, epoch: int
+    exp: DashboardExperiment,
 ) -> np.ndarray | None:
     """Explained variance ratios from ``landscape.{epoch}/vol_pca_obj.pkl``.
 
     Returns None when missing.
     """
-    return load_pca_explained_variance(landscape_dir_for_epoch(workdir, int(epoch)))
+    return load_pca_explained_variance(exp.landscape_dir)
 
 
 _LEAD_LATENT_3D = (
@@ -233,6 +244,44 @@ def api_save_selection():
     if save_inverse:
         payload["inverse_path"] = path_inv
     return jsonify(payload)
+
+
+def api_load_covariate_pkl():
+    """Load a particle-indexed numeric numpy array from a server-side ``.pkl`` file.
+
+    Merges one or more columns into ``plot_df`` so scatter colour selectors can use
+    them like built-in covariates. Paths may be anywhere the dashboard process can
+    read (not limited to the experiment output folder).
+    """
+    e: DashboardExperiment = g.dashboard_exp
+    data = _request_json_dict()
+    server_path = str(data.get("path", "") or "").strip()
+    if not server_path:
+        return jsonify(error="No file path provided."), 400
+    if not server_path.lower().endswith(".pkl"):
+        return jsonify(error="Select a .pkl file."), 400
+    abs_path = os.path.abspath(server_path)
+    if not os.path.isfile(abs_path):
+        return jsonify(error="File not found on server."), 400
+    try:
+        new_cols, discrete_cols = merge_covariate_pkl(e, abs_path)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception:
+        logger.exception("load covariate pkl failed")
+        return jsonify(error="Could not load covariate file."), 500
+    color_cols = list(e.color_covariate_columns)
+    return jsonify(
+        ok=True,
+        columns=new_cols,
+        discrete_columns=discrete_cols,
+        primary_column=new_cols[0],
+        color_cols=color_cols,
+        numeric_cols=color_cols,
+        discrete_color_columns=discrete_color_columns_for_exp(e),
+        covariate_display_map=_covariate_display_map(color_cols),
+        path=abs_path,
+    )
 
 
 def api_covariate_threshold_rows():
@@ -356,8 +405,9 @@ def explorer():
             ),
             200,
         )
-    cols = e.numeric_columns
-    dx, dy = _default_xy_cols(cols)
+    axis_cols = e.numeric_columns
+    color_cols = e.color_covariate_columns
+    dx, dy = default_embedding_xy_cols(axis_cols)
     initial_rows = load_plot_df_rows_from_plot_inds_file(
         e, current_app.config.get("FILTER_PLOT_INDS")
     )
@@ -368,8 +418,9 @@ def explorer():
     preload_cache_step = explorer_cache_size_power10_step(scatter_plotted_n)
     return render_template(
         "particle_explorer.html",
-        numeric_cols=cols,
-        covariate_display_map=_covariate_display_map(cols),
+        numeric_cols=axis_cols,
+        color_cols=color_cols,
+        covariate_display_map=_covariate_display_map(color_cols),
         default_x=dx,
         default_y=dy,
         initial_rows=initial_rows,
@@ -384,6 +435,11 @@ def explorer():
         explorer_scatter_cap_from_env=_particle_explorer_scatter_cap_from_env(),
         scatter_plotted_n=scatter_plotted_n,
     )
+
+
+def volume_viewer_page():
+    """Redirect to trajectory creator (volume viewing is integrated there)."""
+    return _redirect("trajectory_creator_page")
 
 
 def api_explorer_volume_media():
@@ -466,6 +522,157 @@ def api_explorer_volume_media():
         return jsonify(error=str(err)), 500
 
 
+def api_volume_viewer_analyze_volumes():
+    """Catalog of ``analyze.{epoch}/kmeans*`` and ``pc*`` volumes (arrays load on demand)."""
+    e: DashboardExperiment = g.dashboard_exp
+    include_markers = request.args.get("include_markers", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+    try:
+        payload = analyze_volumes_catalog_payload(e, include_markers=include_markers)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume catalog failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_viewer_analyze_markers():
+    """Scatterplot markers for analyze k-means / PC volumes."""
+    e: DashboardExperiment = g.dashboard_exp
+    xcol = (request.args.get("x") or request.args.get("xcol") or "").strip() or None
+    ycol = (request.args.get("y") or request.args.get("ycol") or "").strip() or None
+    try:
+        payload = analyze_volume_markers_payload(e, xcol=xcol, ycol=ycol)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume markers failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_viewer_analyze_volume():
+    """Load one analyze volume by catalog id."""
+    e: DashboardExperiment = g.dashboard_exp
+    vol_id = request.args.get("id", "").strip()
+    if not vol_id:
+        return jsonify(error="Query parameter id is required."), 400
+    try:
+        payload = analyze_volume_by_id_payload(e, vol_id)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume load failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_viewer_analyze_volumes_batch():
+    """Load several analyze volumes in parallel (background prefetch)."""
+    e: DashboardExperiment = g.dashboard_exp
+    cpus = int(current_app.config.get("PRELOAD_CPUS") or 1)
+    data = _request_json_dict()
+    raw_ids = data.get("ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify(error="ids must be a non-empty list of volume ids."), 400
+    vol_ids = [str(v) for v in raw_ids]
+    target_d = data.get("target_d")
+    if target_d is not None:
+        try:
+            target_d = int(target_d)
+        except (TypeError, ValueError):
+            return jsonify(error="target_d must be an integer."), 400
+        if target_d < 1:
+            return jsonify(error="target_d must be positive."), 400
+    try:
+        payload = analyze_volumes_batch_payload(
+            e, vol_ids, n_cpus=cpus, target_d=target_d
+        )
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume batch load failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_viewer_analyze_volumes_chimerax_batch():
+    """Render ChimeraX PNGs from analyze ``.mrc`` files (manual trajectory selection)."""
+    e: DashboardExperiment = g.dashboard_exp
+    data = _request_json_dict()
+    raw_ids = data.get("ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify(error="ids must be a non-empty list of volume ids."), 400
+    vol_ids = [str(v) for v in raw_ids]
+    cc = max(1, min(int(data.get("chimerax_cpus", DEFAULT_CHIMERAX_PARALLEL)), 32))
+    view_matrix_camera = None
+    raw_vm = data.get("view_matrix")
+    if raw_vm is not None:
+        if not isinstance(raw_vm, str):
+            return jsonify(error="view_matrix must be a string."), 400
+        raw_vm = raw_vm.strip()
+        if raw_vm:
+            try:
+                view_matrix_camera = chimerax_view_matrix_camera_arg(raw_vm)
+            except ValueError as err:
+                return jsonify(error=str(err)), 400
+    view_turns = None
+    iso_level = None
+    try:
+        from cryodrgn.dashboard.volume_slice_viewer import (
+            parse_chimerax_view_turns_from_request,
+            parse_iso_level_from_request,
+        )
+
+        if data.get("view_turns") is not None:
+            view_turns = parse_chimerax_view_turns_from_request(data.get("view_turns"))
+        iso_level = parse_iso_level_from_request(data)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    try:
+        payload = analyze_volumes_chimerax_batch_payload(
+            e,
+            vol_ids,
+            chimerax_cpus=cc,
+            view_matrix_camera=view_matrix_camera,
+            view_turns=view_turns,
+            volume_level=iso_level,
+        )
+        return jsonify(payload)
+    except EnvironmentError as err:
+        return jsonify(error=str(err), need_chimerax=True), 503
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("analyze volume chimeraX batch failed")
+        return jsonify(error=str(err)), 500
+
+
+def api_volume_viewer_decode():
+    """Decode one particle volume and return default orthogonal slice PNGs."""
+    e: DashboardExperiment = g.dashboard_exp
+    if not explorer_volumes_eligible(e):
+        return jsonify(error=_EXPLORER_VOLUMES_INELIGIBLE_MSG), 400
+    data = _request_json_dict()
+    raw_row = data.get("row")
+    try:
+        row = int(raw_row)
+    except (TypeError, ValueError):
+        return jsonify(error="row must be an integer plot_df index."), 400
+    try:
+        payload = decode_volume_payload(e, row)
+        return jsonify(payload)
+    except ValueError as err:
+        return jsonify(error=str(err)), 400
+    except Exception as err:
+        logger.exception("volume decode failed")
+        return jsonify(error=str(err)), 500
+
+
 def api_scatter():
     """Plotly JSON for the explorer / filter scatter.
 
@@ -495,6 +702,7 @@ def api_scatter():
             try:
                 max_pts = max(1, min(int(raw_max_pts), 200_000))
             except ValueError:
+                # Invalid max_points query param; keep the default cap.
                 pass
     preselect_rows, pre_err = _parse_preselect_rows_param(
         request.args.get("preselect_rows"),
@@ -507,8 +715,26 @@ def api_scatter():
         try:
             marker_size = max(0.5, min(float(raw_ms), 20))
         except ValueError:
+            # Invalid marker_size query param; keep the default size.
+            pass
+    marker_opacity = 0.35
+    raw_mo = request.args.get("marker_opacity")
+    if raw_mo:
+        try:
+            marker_opacity = max(0.0, min(float(raw_mo), 1.0))
+        except ValueError:
+            # Invalid marker_opacity query param; keep the default opacity.
             pass
     use_svg = request.args.get("use_svg") == "1"
+    discrete_label_colors = None
+    raw_dlc = request.args.get("discrete_label_colors")
+    if raw_dlc:
+        try:
+            discrete_label_colors = _parse_optional_discrete_label_colors(
+                json.loads(raw_dlc)
+            )
+        except (ValueError, json.JSONDecodeError) as err:
+            return jsonify(error=str(err)), 400
     try:
         # WebGL trace (Scattergl) is required at explorer / filter caps: SVG Scatter
         # cannot paint O(10^5) markers in reasonable time, so the plot stays blank and
@@ -524,7 +750,9 @@ def api_scatter():
             preselect_plot_df_rows=preselect_rows,
             use_webgl=not use_svg,
             marker_size=marker_size,
+            marker_opacity=marker_opacity,
             continuous_palette=request.args.get("palette"),
+            discrete_label_colors=discrete_label_colors,
         )
     except Exception as err:
         logger.exception("scatter plot failed")
@@ -542,7 +770,7 @@ def latent_3d_page():
             200,
         )
     axis_cols = [f"z{i}" for i in range(zdim)]
-    cols = e.numeric_columns
+    cols = e.color_covariate_columns
     return render_template(
         "latent_3d.html",
         page_title="3D latent space visualizer · cryoDRGN",
@@ -595,7 +823,7 @@ def landscape_full_3d_page():
         )
     dx, dy, dz = vol_axes[0], vol_axes[1], vol_axes[2]
     cols = landscape_full_sampled_numeric_covariates(sampled)
-    vol_evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
+    vol_evr = _landscape_full_vol_pc_explained_variance(e)
     vol_anim = landscape_analysis_ready(e.workdir, e.epoch)
     return render_template(
         "latent_3d.html",
@@ -717,7 +945,7 @@ def api_scatter3d_z_landscape_full():
         )
     ax_allow = frozenset(vol_axes)
     d0, d1, d2 = vol_axes[0], vol_axes[1], vol_axes[2]
-    evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
+    evr = _landscape_full_vol_pc_explained_variance(e)
 
     def _vol_landscape_scene_titles(xc: str, yc: str, zc: str) -> tuple[str, str, str]:
         return (
@@ -894,7 +1122,7 @@ def api_latent3d_landscape_full_discrete_gif():
         )
     ax_allow = frozenset(vol_axes)
     d0, d1, d2 = vol_axes[0], vol_axes[1], vol_axes[2]
-    evr = _landscape_full_vol_pc_explained_variance(e.workdir, e.epoch)
+    evr = _landscape_full_vol_pc_explained_variance(e)
 
     def _scene_titles(xc: str, yc: str, zc: str) -> tuple[str, str, str]:
         return (
@@ -1220,20 +1448,29 @@ def api_preload_images():
     key = (e.epoch, e.kmeans_folder_id, xcol, ycol, _preload_restriction_key())
     cpus = int(current_app.config.get("PRELOAD_CPUS") or 4)
 
+    def _preload_json(**payload):
+        return jsonify(payload)
+
     def _encode_indices(global_indices: list[int]) -> list[str]:
+        img_src = e.particle_image_source()
         parallel_threshold = max(128, cpus * 32)
         if cpus > 1 and len(global_indices) >= parallel_threshold:
-            from concurrent.futures import ProcessPoolExecutor
+            from concurrent.futures import ThreadPoolExecutor
 
             chunk_sz = -(-len(global_indices) // cpus)
             chunks = [
                 global_indices[i : i + chunk_sz]
                 for i in range(0, len(global_indices), chunk_sz)
             ]
-            with ProcessPoolExecutor(max_workers=len(chunks)) as pool:
+            with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
                 futures = [
                     pool.submit(
-                        encode_particle_batch, e.particles_path, e.datadir, ch, 96
+                        encode_particle_batch,
+                        e.particles_path,
+                        e.datadir,
+                        ch,
+                        96,
+                        src=img_src,
                     )
                     for ch in chunks
                 ]
@@ -1241,7 +1478,13 @@ def api_preload_images():
                 for f in futures:
                     imgs.extend(f.result())
                 return imgs
-        return encode_particle_batch(e.particles_path, e.datadir, global_indices, 96)
+        return encode_particle_batch(
+            e.particles_path,
+            e.datadir,
+            global_indices,
+            96,
+            src=img_src,
+        )
 
     cached = PRELOAD_CACHE.get(key)
     if cached:
@@ -1255,7 +1498,7 @@ def api_preload_images():
                     total_cached=len(cached_rows),
                     batch_elapsed=0.0,
                 )
-            return jsonify(
+            return _preload_json(
                 rows=cached_rows[:max_images],
                 images=cached_imgs[:max_images],
                 elapsed=cached_elapsed,
@@ -1283,7 +1526,9 @@ def api_preload_images():
                     total_cached=len(cached_rows),
                     batch_elapsed=0.0,
                 )
-            return jsonify(rows=cached_rows, images=cached_imgs, elapsed=cached_elapsed)
+            return _preload_json(
+                rows=cached_rows, images=cached_imgs, elapsed=cached_elapsed
+            )
         add_imgs = _encode_indices(add_global_indices)
         rows = cached_rows + add_rows
         imgs = cached_imgs + add_imgs
@@ -1291,14 +1536,14 @@ def api_preload_images():
         elapsed = round(cached_elapsed + batch_elapsed, 1)
         PRELOAD_CACHE[key] = (rows, imgs, elapsed)
         if delta_response:
-            return jsonify(
+            return _preload_json(
                 rows=add_rows,
                 images=add_imgs,
                 elapsed=elapsed,
                 total_cached=len(rows),
                 batch_elapsed=batch_elapsed,
             )
-        return jsonify(rows=rows, images=imgs, elapsed=elapsed)
+        return _preload_json(rows=rows, images=imgs, elapsed=elapsed)
 
     t0 = time.monotonic()
     rows, global_indices = sample_plot_df_rows_for_preload(
@@ -1315,4 +1560,6 @@ def api_preload_images():
 
     elapsed = round(time.monotonic() - t0, 1)
     PRELOAD_CACHE[key] = (rows, imgs, elapsed)
-    return jsonify(rows=rows, images=imgs, elapsed=elapsed, total_cached=len(rows))
+    return _preload_json(
+        rows=rows, images=imgs, elapsed=elapsed, total_cached=len(rows)
+    )

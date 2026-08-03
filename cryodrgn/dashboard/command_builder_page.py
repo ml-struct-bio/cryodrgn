@@ -15,11 +15,13 @@ from urllib.parse import quote
 
 from flask import Flask, render_template
 
+from cryodrgn.dashboard.bundled_plotly import bundled_plotly_js
 from cryodrgn.dashboard.command_builder_cli_help import (
     jinja_arg_display_name,
     load_command_module_docstrings,
 )
 from cryodrgn.dashboard.command_builder_data import (
+    COMMAND_BUILDER_BATCH_SIZE_ARG_IDS,
     COMMAND_BUILDER_MANUSCRIPT_LABELS,
     COMMAND_BUILDER_MANUSCRIPT_URLS,
     COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
@@ -38,7 +40,7 @@ _STATIC_DIR = _THIS_DIR / "static"
 # Root-absolute paths in rendered HTML (Flask ``url_for`` / hard-coded ``/``).
 _ROOT_PATH_RE = re.compile(r'(?P<attr>(?:href|src|action))="(?P<path>/[^"]*)"')
 _PLOTLY_SCRIPT_RE = re.compile(
-    r'\s*<script src="https://cdn\.plot\.ly/plotly[^"]*"[^>]*></script>\s*',
+    r'\s*<script src="[^"]*plotly(?:\.min)?\.js[^"]*"[^>]*></script>\s*',
     re.IGNORECASE,
 )
 
@@ -99,6 +101,7 @@ def _github_repo_release_url(repo_url: str, version: str) -> str:
 
 def _command_builder_template_kwargs() -> dict[str, object]:
     return {
+        "default_cmd_type": "abinit",
         "default_particles": "",
         "default_ctf": "",
         "default_workdir": "",
@@ -115,6 +118,7 @@ def _command_builder_template_kwargs() -> dict[str, object]:
         ),
         "default_poses": "",
         "command_builder_schema": COMMAND_BUILDER_SCHEMA,
+        "command_builder_batch_size_arg_ids": COMMAND_BUILDER_BATCH_SIZE_ARG_IDS,
         "command_builder_required_field_titles": COMMAND_BUILDER_REQUIRED_FIELD_TITLES,
         "command_builder_command_docs": load_command_module_docstrings(),
         "command_builder_manuscript_urls": COMMAND_BUILDER_MANUSCRIPT_URLS,
@@ -207,8 +211,11 @@ def render_command_builder_html(
     for rule, endpoint in (
         ("/api/set_workdir", "api_set_workdir"),
         ("/api/set_epoch", "api_set_epoch"),
+        ("/vendor/plotly.min.js", "bundled_plotly_js"),
     ):
-        app.add_url_rule(rule, endpoint=endpoint, view_func=_noop_api, methods=["POST"])
+        view = bundled_plotly_js if endpoint == "bundled_plotly_js" else _noop_api
+        methods = ["GET"] if endpoint == "bundled_plotly_js" else ["POST"]
+        app.add_url_rule(rule, endpoint=endpoint, view_func=view, methods=methods)
 
     ver_ctx = _cryodrgn_version_context()
     ctx = {

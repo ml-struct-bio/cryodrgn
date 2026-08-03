@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def get_igraph_from_adjacency(adjacency):
     sources, targets = adjacency.nonzero()
-    weights = (adjacency[sources, targets]).A.ravel()
+    weights = np.asarray(adjacency[sources, targets]).ravel()
     g = ig.Graph(directed=False)
     g.add_vertices(adjacency.shape[0])  # this adds adjacency.shape[0] vertices
     g.add_edges(list(zip(sources, targets)))
@@ -260,8 +260,11 @@ def zero_sphere(vol: np.ndarray) -> np.ndarray:
 
 
 def assert_pkl_close(pkl_a: str, pkl_b: str, atol: float = 1e-4) -> None:
-    a = pickle.load(open(pkl_a, "rb"))
-    b = pickle.load(open(pkl_b, "rb"))
+    with open(pkl_a, "rb") as fi:
+        a = pickle.load(fi)
+    with open(pkl_b, "rb") as fi:
+        b = pickle.load(fi)
+
     if isinstance(a, tuple):
         for _a, _b in zip(a, b):
             assert np.linalg.norm(_a - _b) < atol

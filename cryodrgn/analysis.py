@@ -3,6 +3,7 @@ import re
 import logging
 import warnings
 import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from matplotlib.figure import Figure, Axes
 import numpy as np
 import numpy.typing as npt
@@ -28,11 +29,14 @@ warnings.filterwarnings(
 
 def parse_loss(f: str) -> np.ndarray:
     """Parse loss from run.log"""
-    lines = open(f).readlines()
+    with open(f) as fi:
+        lines = fi.readlines()
+
     lines = [x for x in lines if "====" in x]
     regex = "total\sloss\s=\s(\d.\d+)"  # type: ignore  # noqa: W605
     matches = [re.search(regex, x) for x in lines]
-    loss = []
+
+    loss = list()
     for m in matches:
         # assert m is not None
         if m:
@@ -259,7 +263,7 @@ def _get_chimerax_colors(K: int) -> List:
 
 def _get_colors(K: int, cmap: Optional[str] = None) -> List:
     if cmap is not None:
-        cm = plt.get_cmap(cmap)
+        cm = colormaps.get_cmap(cmap)
         colors = [cm(i / float(K)) for i in range(K)]
     else:
         colors = ["C{}".format(i) for i in range(10)]

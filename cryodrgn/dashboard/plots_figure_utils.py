@@ -27,9 +27,9 @@ DASHBOARD_SCATTER_HOVERLABEL_FONT_SIZE = 10
 
 # Dashboard-only discrete palette for labels/k-means (kept out of non-dashboard tools).
 _DASHBOARD_CHIMERAX_COLORS: tuple[str, ...] = (
-    "#949494",
+    "#00f700",
     "#ffd84d",
-    "#81bfd1",
+    "#0025ff",
     "#929ad1",
     "#c39bc3",
     "#d1a0a0",
@@ -188,6 +188,12 @@ def _axes_cell_bboxes(axes: np.ndarray) -> list[dict[str, float]]:
 
 
 def _plotly_to_json(fig: go.Figure) -> str:
+    """Serialize a figure for the dashboard Plotly.js client.
+
+    Plotly 5 emits plain JSON lists; Plotly 6 may binary-encode numpy-backed
+    trace arrays as ``{dtype, bdata[, shape]}``. Both forms are valid for
+    ``Plotly.newPlot`` / ``Plotly.react`` in the browser.
+    """
     sj = fig.to_json()
     if sj is None:
         raise RuntimeError("Plotly failed to serialize figure.")

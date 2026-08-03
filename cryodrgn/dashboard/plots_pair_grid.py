@@ -48,7 +48,6 @@ _PAIR_GRID_LEFT = 0.035
 _PAIR_GRID_TOP = 0.98
 _PAIR_GRID_BOTTOM = 0.06
 _PAIR_GRID_RIGHT = 0.965
-_PAIR_GRID_RIGHT_PLACEHOLDER = _PAIR_GRID_RIGHT
 
 
 def _pair_jointplot_hex_cmap(color: str | None = None):

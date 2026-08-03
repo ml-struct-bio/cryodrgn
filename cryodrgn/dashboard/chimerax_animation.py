@@ -13,6 +13,7 @@ and trajectory creator volume strips.
 
 from __future__ import annotations
 
+import atexit
 import html
 import os
 import re
@@ -21,6 +22,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -82,28 +84,209 @@ def chimerax_path() -> str:
     return p
 
 
+def _env_truthy_flag(name: str) -> bool | None:
+    """Parse an optional boolean env override (``1``/``0``, ``true``/``false``, …)."""
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return None
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return None
+
+
+def use_chimerax_xvfb() -> bool:
+    """Whether to run ChimeraX under a virtual X11 display instead of ``--offscreen``.
+
+    ChimeraX ``--offscreen`` requires OSMesa/EGL. On many HPC login nodes those are
+    missing, so ChimeraX starts but ``save`` fails with ``OpenGL rendering is not
+    available``. A local ``Xvfb`` display *without* ``--offscreen`` uses software GL.
+
+    Override with ``CRYODRGN_CHIMERAX_XVFB=1`` / ``0``. Default: use Xvfb when
+    ``DISPLAY`` is unset or empty.
+    """
+    forced = _env_truthy_flag("CRYODRGN_CHIMERAX_XVFB")
+    if forced is not None:
+        return forced
+    return not bool(os.environ.get("DISPLAY", "").strip())
+
+
+def _chimerax_opengl_unavailable(out: str, err: str) -> bool:
+    """True when ChimeraX failed because OpenGL / offscreen rendering is missing."""
+    blob = f"{err}\n{out}".lower()
+    return (
+        "opengl rendering is not available" in blob
+        or "unable to save images because opengl" in blob
+        or "limitationerror: unable to save images" in blob
+    )
+
+
+_SHARED_XVFB_LOCK = threading.Lock()
+_SHARED_XVFB_PROC: subprocess.Popen | None = None
+_SHARED_XVFB_DISPLAY: str | None = None
+
+
+def _shutdown_shared_xvfb() -> None:
+    """Terminate the process-local Xvfb started by :func:`_ensure_shared_xvfb_display`."""
+    global _SHARED_XVFB_PROC, _SHARED_XVFB_DISPLAY
+    with _SHARED_XVFB_LOCK:
+        proc = _SHARED_XVFB_PROC
+        _SHARED_XVFB_PROC = None
+        _SHARED_XVFB_DISPLAY = None
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _ensure_shared_xvfb_display() -> str:
+    """Start (or reuse) a process-local ``Xvfb`` and return its ``DISPLAY`` value.
+
+    Prefer a managed ``Xvfb`` over ``xvfb-run`` so parallel joblib workers do not race
+    on ``xvfb-run`` cleanup (which can yield exit code 1 after a successful render).
+    """
+    global _SHARED_XVFB_PROC, _SHARED_XVFB_DISPLAY
+    with _SHARED_XVFB_LOCK:
+        if (
+            _SHARED_XVFB_PROC is not None
+            and _SHARED_XVFB_PROC.poll() is None
+            and _SHARED_XVFB_DISPLAY
+        ):
+            return _SHARED_XVFB_DISPLAY
+        xvfb_bin = shutil.which("Xvfb")
+        if not xvfb_bin:
+            raise EnvironmentError(
+                "ChimeraX image saves need OpenGL, but --offscreen/OSMesa is unavailable "
+                "on this host and Xvfb was not found on PATH. Install Xvfb "
+                "(e.g. xorg-x11-server-Xvfb), set a working DISPLAY, or set "
+                "CRYODRGN_CHIMERAX_XVFB=0 if your ChimeraX build supports true offscreen."
+            )
+        last_err = ""
+        for display_num in range(90, 200):
+            lock_path = f"/tmp/.X{display_num}-lock"
+            if os.path.exists(lock_path):
+                continue
+            display = f":{display_num}"
+            try:
+                proc = subprocess.Popen(
+                    [
+                        xvfb_bin,
+                        display,
+                        "-screen",
+                        "0",
+                        "1024x768x24",
+                        "-nolisten",
+                        "tcp",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            except OSError as err:
+                last_err = str(err)
+                continue
+            # Brief settle; abort if Xvfb dies immediately (display taken, etc.).
+            time.sleep(0.2)
+            if proc.poll() is not None:
+                err_txt = ""
+                try:
+                    err_txt = (proc.stderr.read() if proc.stderr else "") or ""
+                except Exception:
+                    pass
+                last_err = err_txt.strip() or f"Xvfb exited with {proc.returncode}"
+                continue
+            _SHARED_XVFB_PROC = proc
+            _SHARED_XVFB_DISPLAY = display
+            atexit.register(_shutdown_shared_xvfb)
+            return display
+        raise EnvironmentError(
+            "Could not start Xvfb for ChimeraX rendering"
+            + (f": {last_err}" if last_err else ".")
+        )
+
+
+def _chimerax_subprocess(
+    cx: str, joined_cmds: str, *, xvfb: bool
+) -> subprocess.CompletedProcess[str]:
+    """Run one ChimeraX ``--cmd`` invocation (``--offscreen`` or DISPLAY via Xvfb)."""
+    cmd_arg = shlex.quote(joined_cmds)
+    cx_q = shlex.quote(cx)
+    env = None
+    if xvfb:
+        display = _ensure_shared_xvfb_display()
+        env = os.environ.copy()
+        env["DISPLAY"] = display
+        # GUI GL context via virtual display — do not pass --offscreen/--nogui.
+        shell_cmd = f"{cx_q} --cmd {cmd_arg}"
+    else:
+        shell_cmd = f"{cx_q} --offscreen --cmd {cmd_arg}"
+    return subprocess.run(
+        shell_cmd,
+        shell=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
 def run_chimerax_cmds(
     cmds: list[str], *, catch_errors: bool = False
 ) -> tuple[str, str]:
-    """Run ChimeraX offscreen with semicolon-separated commands.
+    """Run ChimeraX with semicolon-separated commands (offscreen or Xvfb).
 
     See ``pipelines/tile.py``. Limited by :data:`CHIMERAX_MAX_CONCURRENT_SLOTS`.
+    When ``--offscreen`` fails for missing OpenGL, retries once under Xvfb
+    unless ``CRYODRGN_CHIMERAX_XVFB=0``.
     """
     cx = chimerax_path()
     joined = " ; ".join(cmds)
+    if _env_truthy_flag("CRYODRGN_CHIMERAX_XVFB") is False:
+        attempts = [False]
+    elif use_chimerax_xvfb():
+        attempts = [True]
+    else:
+        # Prefer --offscreen when DISPLAY is set; fall back to Xvfb on OpenGL failure.
+        attempts = [False, True]
+
+    last_out, last_err, last_code = "", "", 0
     with _CHIMERAX_SLOT_SEM:
-        proc = subprocess.run(
-            f"{shlex.quote(cx)} --offscreen --cmd {shlex.quote(joined)}",
-            shell=True,
-            capture_output=True,
-            text=True,
+        for attempt_idx, xvfb in enumerate(attempts):
+            proc = _chimerax_subprocess(cx, joined, xvfb=xvfb)
+            last_out, last_err = proc.stdout or "", proc.stderr or ""
+            last_code = int(proc.returncode)
+            # Some ChimeraX builds return 0 after a LimitationError on ``save``.
+            opengl_missing = _chimerax_opengl_unavailable(last_out, last_err)
+            ok = last_code == 0 and not opengl_missing
+            if ok:
+                break
+            if not xvfb and attempt_idx + 1 < len(attempts) and opengl_missing:
+                continue
+            if opengl_missing and last_code == 0:
+                last_code = 70
+            break
+
+    if catch_errors and last_err.strip():
+        raise RuntimeError(f"ChimeraX stderr:\n{last_err}\nstdout:\n{last_out}")
+    if last_code != 0:
+        hint = ""
+        if _chimerax_opengl_unavailable(last_out, last_err):
+            hint = (
+                "\nChimeraX could not create an OpenGL context for image saves. "
+                "On headless hosts install Xvfb and retry (or export "
+                "CRYODRGN_CHIMERAX_XVFB=1). If --offscreen/OSMesa works on this "
+                "machine, export CRYODRGN_CHIMERAX_XVFB=0."
+            )
+        raise RuntimeError(
+            f"ChimeraX exited with {last_code}.{hint}\n{last_err}\n{last_out}"
         )
-    out, err = proc.stdout or "", proc.stderr or ""
-    if catch_errors and err.strip():
-        raise RuntimeError(f"ChimeraX stderr:\n{err}\nstdout:\n{out}")
-    if proc.returncode != 0:
-        raise RuntimeError(f"ChimeraX exited with {proc.returncode}.\n{err}\n{out}")
-    return out, err
+    return last_out, last_err
 
 
 _CHIMERAX_MATRIX_NUM_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
@@ -152,6 +335,34 @@ def chimerax_volume_color_spec(color: str | None) -> str:
     return s
 
 
+def _normalize_chimerax_turn_axis(axis_raw) -> str:
+    """Validate a ChimeraX ``turn`` axis: ``x``/``y``/``z`` or a ``ax,ay,az`` vector.
+
+    A custom axis lets the dashboard send an exact axis-angle rotation (matching the
+    VTK camera) as a single ``turn`` command, avoiding lossy Euler decomposition.
+    """
+    axis = str(axis_raw).strip().lower()
+    if axis in ("x", "y", "z"):
+        return axis
+    parts = [p for p in re.split(r"[,\s]+", axis) if p]
+    if len(parts) != 3:
+        raise ValueError(f"Invalid ChimeraX view rotation axis: {axis_raw!r}.")
+    comps: list[float] = []
+    for p in parts:
+        try:
+            val = float(p)
+        except ValueError:
+            raise ValueError(f"Invalid ChimeraX view rotation axis: {axis_raw!r}.")
+        if not np.isfinite(val):
+            raise ValueError("ChimeraX view rotation axis must be finite.")
+        comps.append(val)
+    norm = float(np.sqrt(sum(c * c for c in comps)))
+    if norm < 1e-9:
+        raise ValueError("ChimeraX view rotation axis must be non-zero.")
+    comps = [c / norm for c in comps]
+    return ",".join(f"{c:.6f}" for c in comps)
+
+
 def normalize_chimerax_view_turns(
     view_turns: Sequence[tuple[str, float]] | None,
 ) -> list[ChimeraxViewTurn]:
@@ -160,9 +371,7 @@ def normalize_chimerax_view_turns(
     if not view_turns:
         return out
     for axis_raw, degrees_raw in view_turns:
-        axis = str(axis_raw).strip().lower()
-        if axis not in ("x", "y", "z"):
-            raise ValueError(f"Invalid ChimeraX view rotation axis: {axis_raw!r}.")
+        axis = _normalize_chimerax_turn_axis(axis_raw)
         degrees = float(degrees_raw)
         if not np.isfinite(degrees):
             raise ValueError("ChimeraX view rotation degrees must be finite.")
@@ -183,6 +392,7 @@ def _extract_chimerax_view_matrix_text(
             with open(log_path, encoding="utf-8", errors="replace") as fh:
                 chunks.append(fh.read())
         except OSError:
+            # View-matrix log is optional; parse stdout/stderr only.
             pass
     text = "\n".join(chunks)
     if not text.strip():
@@ -219,11 +429,22 @@ def _extract_chimerax_view_matrix_text(
     return None
 
 
+def _view_matrix_camera_from_report(text: str | None) -> str | None:
+    """Parse ChimeraX ``view matrix`` report text into a camera argument."""
+    if not text:
+        return None
+    try:
+        return chimerax_view_matrix_camera_arg(text)
+    except ValueError:
+        return None
+
+
 def _mpl_retrim_png(out_png: str, dpi: int, *, corner_label: str | None = None) -> None:
     """Re-save ``out_png`` with matplotlib for uniform framing.
 
-    Pads to a centered square and uses a fixed figure bbox so GIF frames stay
-    aligned across rotation angles and across volumes of different extents.
+    Pads to a centered square and fills the figure edge-to-edge (no subplot
+    margins) so GIF and volume-viewer frames stay aligned across rotation
+    angles and across volumes that share a camera matrix.
     """
     import matplotlib.pyplot as plt
     import numpy as np
@@ -252,6 +473,9 @@ def _mpl_retrim_png(out_png: str, dpi: int, *, corner_label: str | None = None) 
     canvas[pad_y : pad_y + h, pad_x : pad_x + w] = img
 
     fig, ax = plt.subplots(figsize=(5, 5))
+    # Avoid default subplot margins so whitespace is not re-cut differently
+    # from frame to frame when the PNG is shown with object-fit: contain.
+    ax.set_position([0.0, 0.0, 1.0, 1.0])
     ax.imshow(canvas, interpolation="nearest", aspect="equal")
     ax.set_xticks([])
     ax.set_yticks([])
@@ -283,6 +507,116 @@ def _mpl_retrim_png(out_png: str, dpi: int, *, corner_label: str | None = None) 
     plt.close(fig)
 
 
+_ISO_SLIDER_RANK_LO = 2.0
+_ISO_SLIDER_RANK_HI = 99.5
+# Default ChimeraX contour when the client has not set an absolute iso level.
+_DEFAULT_CHIMERAX_SD_LEVEL = 2.0
+
+
+def volume_percentile_samples(
+    values: np.ndarray, max_samples: int = 65536
+) -> np.ndarray:
+    """Sorted subsample of finite voxel values (matches dashboard JS helper)."""
+    flat = np.asarray(values, dtype=np.float64).ravel()
+    flat = flat[np.isfinite(flat)]
+    if flat.size == 0:
+        return np.array([0.0, 1.0], dtype=np.float64)
+    step = max(1, flat.size // max(1, int(max_samples)))
+    samples = flat[::step]
+    return np.sort(samples)
+
+
+def iso_slider_data_range(samples: np.ndarray) -> tuple[float, float]:
+    """Map-data range spanned by the iso slider (2nd–99.5th percentile)."""
+    samples = np.asarray(samples, dtype=np.float64)
+    if samples.size < 2:
+        return 0.0, 1.0
+    lo, hi = np.percentile(samples, (_ISO_SLIDER_RANK_LO, _ISO_SLIDER_RANK_HI))
+    lo, hi = float(lo), float(hi)
+    if hi <= lo:
+        lo, hi = float(samples[0]), float(samples[-1])
+    return lo, hi
+
+
+def suggest_iso_data_value(samples: np.ndarray) -> float:
+    """Default contour as mean + 2σ (matches ChimeraX ``sdLevel 2``).
+
+    Mirrors ``volume_3d_utils.js``. Used for the dashboard iso slider when the
+    initial ChimeraX render used ``volume #1 sdLevel 2``.
+    """
+    samples = np.asarray(samples, dtype=np.float64)
+    if samples.size == 0:
+        return 0.0
+    if samples.size == 1:
+        return float(samples[0])
+    mean = float(np.mean(samples))
+    std = float(np.std(samples))
+    if not np.isfinite(mean):
+        return 0.0
+    if not (std > 0) or not np.isfinite(std):
+        return mean
+    return mean + _DEFAULT_CHIMERAX_SD_LEVEL * std
+
+
+def mrc_iso_metadata(
+    mrc_path: str,
+    *,
+    iso_level: float | None = None,
+) -> dict[str, float]:
+    """Iso slider range and effective ChimeraX contour level for one map."""
+    from cryodrgn.mrcfile import parse_mrc
+
+    vol, _ = parse_mrc(mrc_path)
+    samples = volume_percentile_samples(np.asarray(vol, dtype=np.float64))
+    lo, hi = iso_slider_data_range(samples)
+    level = (
+        float(iso_level) if iso_level is not None else suggest_iso_data_value(samples)
+    )
+    if not np.isfinite(level):
+        level = suggest_iso_data_value(samples)
+    return {"min": lo, "max": hi, "level": level}
+
+
+def resolve_chimerax_volume_level(
+    mrc_path: str | None,
+    iso_level: float | None,
+) -> float | None:
+    """Absolute ``volume #1 level`` override, or ``None`` for ChimeraX ``sdLevel 2``.
+
+    When ``iso_level`` is unset, callers should leave ``volume_level`` unset so
+    :func:`chimerax_render_cmds` emits ``volume #1 sdLevel 2``. Slider metadata
+    still uses :func:`mrc_iso_metadata` / :func:`suggest_iso_data_value`.
+    ``mrc_path`` is retained for call-site compatibility; it is not required to
+    choose the default ``sdLevel``.
+    """
+    _ = mrc_path
+    if iso_level is not None and np.isfinite(float(iso_level)):
+        return float(iso_level)
+    return None
+
+
+def chimerax_iso_response_fields(
+    mrc_path: str | None,
+    *,
+    iso_level: float | None = None,
+) -> dict[str, object]:
+    """JSON fields ``iso_range`` and ``iso_level`` for dashboard clients."""
+    if not mrc_path:
+        return {}
+    meta = mrc_iso_metadata(mrc_path, iso_level=iso_level)
+    return {
+        "iso_range": {"min": meta["min"], "max": meta["max"]},
+        "iso_level": meta["level"],
+    }
+
+
+# Match ``cryodrgn.commands_utils.make_movies`` epilogue for surface display.
+_CHIMERAX_VOLUME_DISPLAY_POLISH: tuple[str, ...] = (
+    "surface dust all size 10",
+    "lighting soft",
+)
+
+
 def chimerax_render_cmds(
     mrc_path: str,
     out_png: str,
@@ -291,6 +625,7 @@ def chimerax_render_cmds(
     vol_name: str,
     turn_y: float | None,
     volume_color: str | None = None,
+    volume_level: float | None = None,
     view_turns: Sequence[tuple[str, float]] | None = None,
     view_matrix_camera: str | None = None,
     report_view_matrix: bool = False,
@@ -305,14 +640,18 @@ def chimerax_render_cmds(
         "set bgColor white ",
         "volume center #1",
         f"volume color {vc} ",
-        # Standard orientation + zoom-to-fit for consistent framing.  Do not use
-        # ``camera ortho`` here: ``--offscreen`` uses OffScreenRenderingContext,
-        # which lacks attributes the ortho camera path expects (e.g. stereo).
-        "view #1 orient ",
     ]
+    if volume_level is not None and np.isfinite(float(volume_level)):
+        cmds.append(f"volume #1 level {float(volume_level):g} ")
+    else:
+        cmds.append(f"volume #1 sdLevel {_DEFAULT_CHIMERAX_SD_LEVEL:g} ")
+    cmds.extend(_CHIMERAX_VOLUME_DISPLAY_POLISH)
     if view_matrix_camera:
+        # VTK exports an absolute camera matrix; skip ``view orient`` so it is not composed
+        # on top of a default orientation (which would mismatch the VTK view).
         cmds.append(f"view matrix camera {view_matrix_camera} ")
     else:
+        cmds.append("view #1 orient ")
         for axis, degrees in normalize_chimerax_view_turns(view_turns):
             cmds.append(f"turn {axis} {degrees} ")
     if turn_y is not None:
@@ -332,6 +671,7 @@ def render_static_png(
     dpi: int = 100,
     *,
     volume_color: str | None = None,
+    volume_level: float | None = None,
     corner_label: str | None = None,
     view_turns: Sequence[tuple[str, float]] | None = None,
     view_matrix_camera: str | None = None,
@@ -346,6 +686,7 @@ def render_static_png(
         vol_name="vol000",
         turn_y=None,
         volume_color=volume_color,
+        volume_level=volume_level,
         view_turns=view_turns,
         view_matrix_camera=view_matrix_camera,
         report_view_matrix=report_view_matrix,
@@ -360,6 +701,7 @@ def render_static_png(
             try:
                 os.remove(matrix_log)
             except OSError:
+                # Best-effort removal of the temporary view-matrix log.
                 pass
     return None
 
@@ -376,44 +718,82 @@ def render_static_pngs_parallel(
     *,
     chimerax_cpus: int,
 ) -> list[str]:
-    """Run :func:`mrc_to_static_png` for each task in parallel.
+    """Run :func:`render_static_png` for each task in parallel.
 
     Each task is ``(sort_index, mrc_path, out_png_path, dpi)`` or with optional
     ``volume_color`` and/or ``corner_label`` (hex or ChimeraX color name).
     Returns ``out_png`` paths sorted by ``sort_index``.
+
+    The first task establishes a shared ChimeraX camera matrix so later cells
+    keep the same centering instead of each volume auto-fitting independently.
     """
-    n = len(tasks)
+    ordered = sorted(tasks, key=lambda t: int(t[0]))
+    n = len(ordered)
     if n == 0:
         return []
-    n_jobs = parallel_jobs(chimerax_cpus, n)
 
-    def _one(task: ChimeraxPngTask) -> tuple[int, str]:
+    def _render_task(
+        task: ChimeraxPngTask,
+        *,
+        view_matrix_camera: str | None = None,
+        report_view_matrix: bool = False,
+    ) -> tuple[int, str, str | None]:
         if len(task) == 6:
             idx, mrc_path, out_png, dpi, vcol, clab = task
-            mrc_to_static_png(
+            vm = render_static_png(
                 mrc_path,
                 out_png,
                 dpi=dpi,
                 volume_color=vcol,
                 corner_label=clab,
+                view_matrix_camera=view_matrix_camera,
+                report_view_matrix=report_view_matrix,
             )
         elif len(task) == 5:
             idx, mrc_path, out_png, dpi, vcol = task
-            mrc_to_static_png(mrc_path, out_png, dpi=dpi, volume_color=vcol)
+            vm = render_static_png(
+                mrc_path,
+                out_png,
+                dpi=dpi,
+                volume_color=vcol,
+                view_matrix_camera=view_matrix_camera,
+                report_view_matrix=report_view_matrix,
+            )
         else:
             idx, mrc_path, out_png, dpi = task
-            mrc_to_static_png(mrc_path, out_png, dpi=dpi)
+            vm = render_static_png(
+                mrc_path,
+                out_png,
+                dpi=dpi,
+                view_matrix_camera=view_matrix_camera,
+                report_view_matrix=report_view_matrix,
+            )
+        return int(idx), out_png, vm
+
+    seed_idx, seed_png, seed_vm = _render_task(ordered[0], report_view_matrix=True)
+    shared_camera = _view_matrix_camera_from_report(seed_vm)
+    pairs: list[tuple[int, str]] = [(seed_idx, seed_png)]
+    rest = ordered[1:]
+    if not rest:
+        return [seed_png]
+
+    n_jobs = parallel_jobs(chimerax_cpus, len(rest))
+
+    def _one(task: ChimeraxPngTask) -> tuple[int, str]:
+        idx, out_png, _vm = _render_task(
+            task, view_matrix_camera=shared_camera, report_view_matrix=False
+        )
         return idx, out_png
 
     if n_jobs <= 1:
-        pairs = [_one(t) for t in tasks]
+        pairs.extend(_one(t) for t in rest)
     else:
         try:
             from joblib import Parallel, delayed
 
-            pairs = Parallel(n_jobs=n_jobs)(delayed(_one)(t) for t in tasks)
+            pairs.extend(Parallel(n_jobs=n_jobs)(delayed(_one)(t) for t in rest))
         except ImportError:
-            pairs = [_one(t) for t in tasks]
+            pairs.extend(_one(t) for t in rest)
     pairs.sort(key=lambda x: x[0])
     return [p for _, p in pairs]
 
@@ -463,12 +843,13 @@ def chimerax_rotation_session_cmds(
         "set bgColor white ",
         "volume center #1",
         f"volume color {vc} ",
-        "view #1 orient ",
+        *_CHIMERAX_VOLUME_DISPLAY_POLISH,
     ]
     matrix_log: str | None = None
     if view_matrix_camera:
         cmds.append(f"view matrix camera {view_matrix_camera} ")
     else:
+        cmds.append("view #1 orient ")
         for axis, degrees in normalize_chimerax_view_turns(view_turns):
             cmds.append(f"turn {axis} {degrees} ")
     for i, (png, rot, frame_color) in enumerate(frame_pngs):
@@ -517,6 +898,7 @@ def chimerax_multi_volume_rotation_session_cmds(
                 f"open {qvol} name {vol.vol_name} ",
                 "volume center #1",
                 f"volume color {vc} ",
+                *_CHIMERAX_VOLUME_DISPLAY_POLISH,
                 "view #1 orient ",
             ]
         )
@@ -878,6 +1260,7 @@ class LandscapeStaticView:
     mrc_path: str
     out_png: str
     volume_color: str | None = None
+    volume_level: float | None = None
     view_turns: Sequence[ChimeraxViewTurn] | None = None
     view_matrix_camera: str | None = None
     report_view_matrix: bool = False
@@ -888,37 +1271,79 @@ def render_landscape_cycle_static_views(
     *,
     chimerax_cpus: int,
 ) -> tuple[list[str], str | None]:
-    """Render cycle-mode static PNGs in parallel (one ChimeraX process per volume)."""
+    """Render cycle-mode static PNGs in parallel (one ChimeraX process per volume).
+
+    When the client has not pinned a camera matrix, the first volume is rendered
+    with ``view orient`` and its matrix is reused for the rest of the batch so
+    every frame shares the same centering in the volume viewer (instead of
+    each volume auto-fitting with different whitespace margins).
+    """
+    views = list(views)
     if not views:
         return [], None
-    n_jobs = parallel_jobs(chimerax_cpus, len(views))
+
+    explicit_camera = next(
+        (v.view_matrix_camera for v in views if v.view_matrix_camera), None
+    )
+    view_matrix_text: str | None = None
+    shared_camera = explicit_camera
+    start_i = 0
+
+    if shared_camera is None:
+        seed = views[0]
+        view_matrix_text = render_static_png(
+            seed.mrc_path,
+            seed.out_png,
+            dpi=100,
+            volume_color=seed.volume_color,
+            volume_level=seed.volume_level,
+            view_turns=seed.view_turns,
+            view_matrix_camera=None,
+            report_view_matrix=True,
+        )
+        shared_camera = _view_matrix_camera_from_report(view_matrix_text)
+        start_i = 1
+
+    rest = views[start_i:]
+    if not rest:
+        return [views[0].out_png], view_matrix_text
+
+    n_jobs = parallel_jobs(chimerax_cpus, len(rest))
 
     def _one(i: int, view: LandscapeStaticView) -> tuple[int, str, str | None]:
+        # Once a shared camera is known, skip per-volume orient/turns so framing
+        # stays locked; turns from the seed are already baked into the matrix.
+        use_camera = view.view_matrix_camera or shared_camera
+        use_turns = None if use_camera else view.view_turns
+        report = bool(view.report_view_matrix and view_matrix_text is None)
         vm = render_static_png(
             view.mrc_path,
             view.out_png,
             dpi=100,
             volume_color=view.volume_color,
-            view_turns=view.view_turns,
-            view_matrix_camera=view.view_matrix_camera,
-            report_view_matrix=view.report_view_matrix,
+            volume_level=view.volume_level,
+            view_turns=use_turns,
+            view_matrix_camera=use_camera,
+            report_view_matrix=report,
         )
         return i, view.out_png, vm
 
     if n_jobs <= 1:
-        pairs = [_one(i, v) for i, v in enumerate(views)]
+        pairs = [_one(start_i + j, v) for j, v in enumerate(rest)]
     else:
         try:
             from joblib import Parallel, delayed
 
             pairs = Parallel(n_jobs=n_jobs)(
-                delayed(_one)(i, v) for i, v in enumerate(views)
+                delayed(_one)(start_i + j, v) for j, v in enumerate(rest)
             )
         except ImportError:
-            pairs = [_one(i, v) for i, v in enumerate(views)]
+            pairs = [_one(start_i + j, v) for j, v in enumerate(rest)]
     pairs.sort(key=lambda x: x[0])
-    view_matrix = next((m for _, _, m in pairs if m), None)
-    return [p for _, p, _ in pairs], view_matrix
+    if view_matrix_text is None:
+        view_matrix_text = next((m for _, _, m in pairs if m), None)
+    paths = ([views[0].out_png] if start_i == 1 else []) + [p for _, p, _ in pairs]
+    return paths, view_matrix_text
 
 
 def render_rotating_gif(
@@ -954,8 +1379,6 @@ def render_rotating_gif(
 
 
 # Backward-compatible aliases used across the dashboard codebase.
-mrc_to_static_png = render_static_png
-parallel_chimerax_static_pngs = render_static_pngs_parallel
 mrc_to_rotating_gif_single_session = render_rotating_gif_single_session
 mrc_to_rotating_gif = render_rotating_gif
 batch_landscape_rotate_gifs = render_landscape_rotate_gifs

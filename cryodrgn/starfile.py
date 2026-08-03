@@ -27,6 +27,16 @@ from typing import Tuple, Union, Optional, TextIO, Iterable
 from typing_extensions import Self
 
 
+def _coerce_star_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert numeric .star columns from string to numeric dtypes when possible."""
+    for col in df.columns:
+        converted = pd.to_numeric(df[col], errors="coerce")
+        if converted.notna().all():
+            df[col] = converted
+
+    return df
+
+
 def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Read the data table in a .star file, and the data optics table if present."""
     if not starfile.endswith(".star"):
@@ -74,8 +84,8 @@ def parse_star(starfile: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
             f"Error in parsing. Number of columns {blocks[block]['body'].shape[1]} "
             f"!= number of headers {blocks[block]['headers']}"
         )
-        blocks[block] = pd.DataFrame(
-            data=blocks[block]["body"], columns=blocks[block]["headers"]
+        blocks[block] = _coerce_star_dtypes(
+            pd.DataFrame(data=blocks[block]["body"], columns=blocks[block]["headers"])
         )
 
     data_block = None
@@ -213,12 +223,15 @@ class Starfile:
                 )
             else:
                 vals = np.array(
-                    [self.data_optics[fieldname][0] for _ in range(self.df.shape[0])]
+                    [
+                        self.data_optics[fieldname].iloc[0]
+                        for _ in range(self.df.shape[0])
+                    ]
                 )
 
         # If can't find this field in the optics table, look in the primary data table
         elif fieldname in self.df:
-            vals = self.df[fieldname].values.reshape(-1)
+            vals = np.asarray(self.df[fieldname]).ravel()
         else:
             vals = None
 

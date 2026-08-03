@@ -1,0 +1,120 @@
+  .cryo-dash-page--latent3d .l3dva-quick-actions .l3dva-quick-actions-btns {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .cryo-dash-page--latent3d .l3dva-quick-actions .l3dva-quick-actions-inner {
+    width: 80%;
+    max-width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .cryo-dash-page--latent3d .l3dva-quick-actions .l3dva-quick-actions-inner > .btn,
+  .cryo-dash-page--latent3d .l3dva-quick-actions .l3dva-quick-actions-inner > a.btn {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 2.55rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .cryo-dash-page--latent3d .l3d-gif-discrete-btn {
+    white-space: pre-line;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    min-height: 4.1rem;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+  .cryo-dash-page--latent3d .l3d-gif-discrete-btn:disabled {
+    opacity: 0.52;
+    cursor: not-allowed;
+    filter: grayscale(0.22);
+    box-shadow: none;
+  }
+  .l3d-discrete-gif-progress {
+    width: 100%;
+    margin-top: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    align-items: stretch;
+    box-sizing: border-box;
+  }
+  .l3d-discrete-gif-progress[hidden] {
+    display: none !important;
+  }
+  .l3d-discrete-gif-progress__label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    text-align: center;
+    line-height: 1.25;
+  }
+  .l3d-discrete-gif-progress .cryo-plot-rendering-overlay__track {
+    width: 100%;
+  }
+  .l3d-plot-gif-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2147482000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    box-sizing: border-box;
+  }
+  .l3d-plot-gif-modal[hidden] {
+    display: none !important;
+  }
+  .l3d-plot-gif-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(26, 32, 44, 0.45);
+    cursor: pointer;
+  }
+  .l3d-plot-gif-modal__dialog {
+    position: relative;
+    z-index: 1;
+    max-width: min(96vw, 42rem);
+    width: 100%;
+    max-height: min(92vh, 40rem);
+    overflow: auto;
+    background: #fffdf8;
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(36, 59, 83, 0.22);
+    padding: 1rem 1.1rem 1.15rem;
+    box-sizing: border-box;
+    border: 1px solid rgba(36, 59, 83, 0.14);
+  }
+  .l3d-plot-gif-modal__title {
+    margin: 0 0 0.65rem;
+    font-size: 1.12rem;
+    font-weight: 700;
+    color: var(--nav-bg, #243b53);
+  }
+  .l3d-plot-gif-modal__preview {
+    display: block;
+    width: 100%;
+    max-height: min(58vh, 22rem);
+    object-fit: contain;
+    margin: 0 auto 0.85rem;
+    border-radius: 6px;
+    background: rgba(250, 248, 244, 0.95);
+    border: 1px solid rgba(36, 59, 83, 0.1);
+    box-sizing: border-box;
+  }
+  .l3d-plot-gif-modal__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }

@@ -25,6 +25,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from matplotlib.colors import ListedColormap
 import seaborn as sns
 import umap
@@ -410,10 +411,11 @@ def choose_cmap(M):
 
 
 def get_colors_for_cmap(cmap, M):
+    cm = colormaps.get_cmap(cmap)
     if M <= 20:
-        colors = plt.cm.get_cmap(cmap)(np.arange(M) / (np.ceil(M / 10) * 10))
+        colors = cm(np.arange(M) / (np.ceil(M / 10) * 10))
     else:
-        colors = plt.cm.get_cmap(cmap)(np.linspace(0, 1, M))
+        colors = cm(np.linspace(0, 1, M))
     return colors
 
 
@@ -543,7 +545,7 @@ def main(args: argparse.Namespace) -> None:
     plt.legend(markerscale=5)
     plt.xlabel("UMAP1")
     plt.ylabel("UMAP2")
-    plt.savefig(f"{clustering_dir}/umap.png")
+    plt.savefig(os.path.join(clustering_dir, "umap.png"))
     plt.close()
 
     # Plot landscape
@@ -558,7 +560,7 @@ def main(args: argparse.Namespace) -> None:
     # make new ax object for the cbar
     cbar_ax = g.fig.add_axes([0.85, 0.25, 0.03, 0.4])  # x, y, width, height
     plt.colorbar(cax=cbar_ax)
-    plt.savefig(f"{outdir}/volpca_landscape.png")
+    plt.savefig(os.path.join(outdir, "volpca_landscape.png"))
     plt.close()
 
     # Copy viz notebook

@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import io
 import matplotlib.colors as mcolors
+from matplotlib import colormaps
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -53,7 +54,7 @@ from cryodrgn.dashboard.plots_figure_utils import (
 
 # Interactive Plotly 3-D scatters (legend filters must not change trace x/y/z — see helpers
 # below). Consumed by ``/latent-3d``, ``/api/scatter3d_z``, ``/api/scatter3d_z_landscape_full``,
-# and ``landscape_full_3d_scatter_plotly_json``. Static Matplotlib exports
+# ``scatter3d_z_json`` (and the landscape-full API route). Static Matplotlib exports
 # (``scatter3d_z_preview_png``, ``scatter3d_discrete_level_png_bytes``) are separate.
 
 
@@ -107,20 +108,6 @@ def _scatter3d_filter_visibility_on_subsample(
 # Plotly ``scatter3d`` draws per-point ``marker.size`` arrays smaller than a scalar at the
 # same value; boost filtered visible sizes so they scale up from the subsample baseline.
 _SCATTER3D_FILTERED_MARKER_SIZE_ARRAY_BOOST = 2.0
-
-
-def _scatter3d_glyph_count_for_filter(
-    n_sub: int,
-    filter_vis: np.ndarray | None,
-) -> int:
-    """Effective n for the size curve when enlarging a partial legend filter."""
-    n_sub = int(n_sub)
-    if filter_vis is None or bool(np.all(filter_vis)):
-        return n_sub
-    n_visible = int(np.count_nonzero(filter_vis))
-    if 0 < n_visible < n_sub:
-        return n_visible
-    return n_sub
 
 
 def _scatter3d_style_marker_size_opacity(
@@ -270,9 +257,12 @@ def scatter_json(
     preselect_plot_df_rows: Collection[int] | None = None,
     use_webgl: bool = True,
     marker_size: float = 4,
+    marker_opacity: float = 0.35,
     continuous_palette: str | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
 ) -> str:
     plotly_cs = normalize_continuous_palette(continuous_palette)
+    marker_opacity = float(max(0.0, min(1.0, marker_opacity)))
 
     sub, row_indices = _subsample(exp.plot_df, max_points, seed=0)
     idx_arr = sub["index"].to_numpy()
@@ -291,11 +281,11 @@ def scatter_json(
             exp.plot_df,
             sub,
             color_col,
-            None,
+            discrete_label_colors,
         )
         marker = dict(
             size=marker_size,
-            opacity=0.35,
+            opacity=marker_opacity,
             color=hex_colors,
         )
         fk_arr = np.asarray(fk_list, dtype=object)
@@ -303,7 +293,7 @@ def scatter_json(
     elif color_col and color_col != "none" and color_col in sub.columns:
         marker = dict(
             size=marker_size,
-            opacity=0.35,
+            opacity=marker_opacity,
             color=sub[color_col],
             colorscale=plotly_cs,
         )
@@ -315,7 +305,7 @@ def scatter_json(
         disp[~finite_mask] = None
         customdata = np.column_stack([idx_arr, row_arr, disp])
     else:
-        marker = dict(size=marker_size, opacity=0.35, color="#4a5568")
+        marker = dict(size=marker_size, opacity=marker_opacity, color="#4a5568")
         customdata = np.column_stack([idx_arr, row_arr])
 
     has_cov_color = bool(color_col and color_col != "none" and color_col in sub.columns)
@@ -373,6 +363,38 @@ def scatter_json(
         showlegend=False,
         hoverlabel=dict(font=hoverlabel_font, align="left"),
     )
+    legend_meta: dict[str, Any] | None = None
+    if has_cov_color and color_col:
+        cc = cast(str, color_col)
+        if discrete_trace:
+            lookup_preview = _stable_discrete_covariate_hex_map(
+                exp.plot_df, color_col, discrete_label_colors
+            )
+            counts_map = discrete_category_counts_by_filter_key(exp.plot_df, color_col)
+            sort_keys = sorted(lookup_preview.keys(), key=_discrete_legend_sort_tuple)
+            color_legend_title = covariate_display_name(cc)
+            legend_meta = {
+                "type": "discrete",
+                "title": color_legend_title,
+                "items": [
+                    {
+                        "label": k,
+                        "color": lookup_preview[k],
+                        "count": counts_map.get(k, 0),
+                    }
+                    for k in sort_keys
+                ],
+            }
+        else:
+            _cvals, cmin, cmax = _continuous_series_stats(sub[color_col])
+            color_legend_title = covariate_display_name(cc)
+            legend_meta = {
+                "type": "continuous",
+                "title": color_legend_title,
+                "min": cmin,
+                "max": cmax,
+            }
+
     layout_meta: dict[str, Any] = {}
     if preselect_plot_df_rows is not None:
         want = frozenset(int(x) for x in preselect_plot_df_rows)
@@ -385,6 +407,8 @@ def scatter_json(
             layout_meta[
                 "cdrgn_discrete_category_counts"
             ] = discrete_category_counts_by_filter_key(exp.plot_df, color_col)
+    if legend_meta is not None:
+        layout_meta["cdrgn_color_legend"] = legend_meta
     if layout_meta:
         layout_kw["meta"] = layout_meta
 
@@ -593,11 +617,12 @@ def scatter3d_z_json(
     hover_kwargs_3d: dict[str, Any]
     # L3-E7: slim customdata; L3-E7fix: hovertemplate only (no per-point hovertext bloat)
     if volume_landscape_3d_style:
+        # Column order must keep the sketch-centroid flag immediately before the
+        # nearest-volume id (second-last when both are present). The landscape
+        # vol-animation JS reads ``customdata[length-2]`` as the centroid flag;
+        # inserting the colour covariate *after* the centroid column broke that
+        # contract and made circling depend on colour values.
         parts: list[np.ndarray] = [row_cd]
-        if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
-            parts.append(
-                np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
-            )
         cov_cd_idx: int | None = None
         if has_cov_color:
             if discrete_trace:
@@ -609,6 +634,10 @@ def scatter3d_z_json(
                     )
                 )
             cov_cd_idx = len(parts) - 1
+        if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
+            parts.append(
+                np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
+            )
         nv_cd_idx: int | None = None
         if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
             parts.append(
@@ -841,7 +870,7 @@ def scatter3d_z_preview_png(
             else:
                 cvals, cmin, cmax = _continuous_series_stats(sub[color_col])
                 norm = mcolors.Normalize(vmin=cmin, vmax=cmax)
-                cmap = plt.get_cmap(mpl_cmap_name)
+                cmap = colormaps.get_cmap(mpl_cmap_name)
                 cplot = np.where(np.isfinite(cvals), cvals, 0.5 * (cmin + cmax))
                 m = ax.scatter(
                     xs,

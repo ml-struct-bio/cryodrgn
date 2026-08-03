@@ -28,11 +28,37 @@
     "#fb-save-btn",
     "#btn-save-zpath-workdir",
     "#btn-save-zpath-as",
-    "#btn-generate-volumes"
+    "#btn-save-volumes"
   ].join(",");
 
   function floppyDiskSvgInnerHTML() {
     return FLOPPY_SVG;
+  }
+
+  function migrateButtonTextToLabel(btn) {
+    if (!btn) return;
+    var parts = [];
+    var toRemove = [];
+    for (var i = 0; i < btn.childNodes.length; i++) {
+      var n = btn.childNodes[i];
+      if (n.nodeType === 3 && n.textContent.trim()) {
+        parts.push(n.textContent.trim());
+        toRemove.push(n);
+      }
+    }
+    for (var j = 0; j < toRemove.length; j++) {
+      btn.removeChild(toRemove[j]);
+    }
+    if (!parts.length) return;
+    var labelEl = btn.querySelector(".cryo-btn-save-label");
+    if (!labelEl) {
+      labelEl = document.createElement("span");
+      labelEl.className = "cryo-btn-save-label";
+      btn.appendChild(labelEl);
+    }
+    if (!labelEl.textContent.trim()) {
+      labelEl.textContent = parts.join(" ");
+    }
   }
 
   function decorateSaveButton(btn, opts) {
@@ -55,6 +81,7 @@
     slot.setAttribute("aria-hidden", "true");
     slot.innerHTML = floppyDiskSvgInnerHTML();
     btn.insertBefore(slot, btn.firstChild);
+    migrateButtonTextToLabel(btn);
     return btn;
   }
 
@@ -62,6 +89,7 @@
   function setSaveButtonLabel(btn, text) {
     if (!btn) return;
     decorateSaveButton(btn);
+    migrateButtonTextToLabel(btn);
     var labelEl = btn.querySelector(".cryo-btn-save-label");
     if (!labelEl) {
       labelEl = document.createElement("span");

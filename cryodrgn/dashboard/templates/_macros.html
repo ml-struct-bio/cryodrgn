@@ -6,22 +6,22 @@
   {#- -#}<span class="nav-page-title">{{ page_title|nav_interface_title }}</span>
 {%- endmacro %}
 
-{% macro cmd_reconstruction_command_select() -%}
+{% macro cmd_reconstruction_command_select(selected='abinit') -%}
 <label class="cryo-select-line" for="cmd-type">Command</label>
 <select id="cmd-type" name="cmd_type">
   <optgroup label="Reconstruction">
-    <option value="abinit" selected>cryodrgn abinit</option>
-    <option value="train_vae">cryodrgn train_vae</option>
-    <option value="train_nn">cryodrgn train_nn</option>
-    <option value="train_dec">cryodrgn train_dec</option>
-    <option value="backproject_voxel">cryodrgn backproject_voxel</option>
-    <option value="abinit_het_old">cryodrgn abinit_het_old</option>
-    <option value="abinit_homo_old">cryodrgn abinit_homo_old</option>
+    <option value="abinit"{% if selected == 'abinit' %} selected{% endif %}>cryodrgn abinit</option>
+    <option value="train_vae"{% if selected == 'train_vae' %} selected{% endif %}>cryodrgn train_vae</option>
+    <option value="train_nn"{% if selected == 'train_nn' %} selected{% endif %}>cryodrgn train_nn</option>
+    <option value="train_dec"{% if selected == 'train_dec' %} selected{% endif %}>cryodrgn train_dec</option>
+    <option value="backproject_voxel"{% if selected == 'backproject_voxel' %} selected{% endif %}>cryodrgn backproject_voxel</option>
+    <option value="abinit_het_old"{% if selected == 'abinit_het_old' %} selected{% endif %}>cryodrgn abinit_het_old</option>
+    <option value="abinit_homo_old"{% if selected == 'abinit_homo_old' %} selected{% endif %}>cryodrgn abinit_homo_old</option>
   </optgroup>
   <optgroup label="Analysis">
-    <option value="analyze">cryodrgn analyze</option>
-    <option value="analyze_landscape">cryodrgn analyze_landscape</option>
-    <option value="analyze_landscape_full">cryodrgn analyze_landscape_full</option>
+    <option value="analyze"{% if selected == 'analyze' %} selected{% endif %}>cryodrgn analyze</option>
+    <option value="analyze_landscape"{% if selected == 'analyze_landscape' %} selected{% endif %}>cryodrgn analyze_landscape</option>
+    <option value="analyze_landscape_full"{% if selected == 'analyze_landscape_full' %} selected{% endif %}>cryodrgn analyze_landscape_full</option>
   </optgroup>
 </select>
 {%- endmacro %}

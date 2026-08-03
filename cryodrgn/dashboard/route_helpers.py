@@ -14,6 +14,7 @@ from cryodrgn.dashboard.covariate_labels import (
 )
 from cryodrgn.dashboard.data import DashboardExperiment
 from cryodrgn.dashboard.particle_explorer import explorer_volumes_eligible
+from cryodrgn.dashboard.plots_color_covariate import _lower_color_series_is_discrete
 from cryodrgn.dashboard.palette_config import normalize_continuous_palette
 from cryodrgn.dashboard.preload import DEFAULT_PRELOAD_IMAGE_LIMIT
 from cryodrgn.dashboard.trajectory import (
@@ -22,7 +23,17 @@ from cryodrgn.dashboard.trajectory import (
     has_umap_columns,
 )
 
-__all__ = ["_covariate_display_map"]
+__all__ = ["_covariate_display_map", "discrete_color_columns_for_exp"]
+
+
+def discrete_color_columns_for_exp(exp: DashboardExperiment) -> list[str]:
+    """Colour columns that use discrete toggle legends rather than palettes."""
+    return [
+        c
+        for c in exp.color_covariate_columns
+        if c in exp.plot_df.columns and _lower_color_series_is_discrete(exp.plot_df[c])
+    ]
+
 
 _PAIR_DISCRETE_HEX6 = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -36,8 +47,11 @@ _EXPLORER_VOLUMES_INELIGIBLE_MSG = (
 )
 
 
-def _dashboard_scatter_cap_from_env(default: int) -> tuple[int, bool]:
-    """Return clamped scatter cap and whether a valid env override was present."""
+def _scatter_cap(default: int) -> tuple[int, bool]:
+    """Return clamped scatter cap and whether a valid env override was present.
+
+    Reads ``CRYODRGN_DASHBOARD_FILTER_MAX_POINTS`` environment variable.
+    """
     raw = (os.environ.get("CRYODRGN_DASHBOARD_FILTER_MAX_POINTS") or "").strip()
     if not raw:
         return default, False
@@ -50,7 +64,7 @@ def _dashboard_scatter_cap_from_env(default: int) -> tuple[int, bool]:
 
 def _filter_ui_scatter_max_points() -> int:
     """Cap for ``/api/scatter`` when ``filter_ui=1`` (env override available)."""
-    return _dashboard_scatter_cap_from_env(500_000)[0]
+    return _scatter_cap(500_000)[0]
 
 
 def _particle_explorer_scatter_max_points() -> int:
@@ -60,19 +74,30 @@ def _particle_explorer_scatter_max_points() -> int:
     … --filter-max N``), use that clamped cap. Otherwise keep the historical
     200k default for ``/api/scatter`` without ``filter_ui``.
     """
-    return _dashboard_scatter_cap_from_env(200_000)[0]
+    return _scatter_cap(200_000)[0]
 
 
 def _particle_explorer_scatter_cap_from_env() -> bool:
     """True when the explorer scatter cap comes from FILTER_MAX_POINTS (CLI or env)."""
-    return _dashboard_scatter_cap_from_env(200_000)[1]
+    return _scatter_cap(200_000)[1]
 
 
-def _default_xy_cols(cols: list[str]) -> tuple[str, str]:
-    """Pick sensible default X/Y axes (UMAP if available, else first two)."""
-    x = "UMAP1" if "UMAP1" in cols else cols[0]
-    y = "UMAP2" if "UMAP2" in cols else cols[min(1, len(cols) - 1)]
-    return x, y
+def default_embedding_xy_cols(
+    cols: list[str],
+    *,
+    zdim: int | None = None,
+    prefer_pc: bool = False,
+) -> tuple[str, str]:
+    """Pick default X/Y axes from an allowed column list."""
+    if prefer_pc and zdim is not None and zdim > 2 and "PC1" in cols and "PC2" in cols:
+        return "PC1", "PC2"
+    if "UMAP1" in cols and "UMAP2" in cols:
+        return "UMAP1", "UMAP2"
+    if len(cols) >= 2:
+        return cols[0], cols[1]
+    if len(cols) == 1:
+        return cols[0], cols[0]
+    return cols[0] if cols else "z0", cols[1] if len(cols) > 1 else "z1"
 
 
 def _parse_preselect_rows_param(raw: str | None) -> tuple[list[int] | None, str | None]:
@@ -226,9 +251,18 @@ def _parse_optional_discrete_label_colors(
     return out if out else None
 
 
-def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:
-    """Merge direct-anchor particle IDs into ``payload`` when applicable."""
-    if not (p.get("use_anchors") and p["mode"] == "direct"):
+def _add_direct_anchor_pidx(
+    payload: dict,
+    p: dict,
+    z_traj: np.ndarray,
+    e: DashboardExperiment,
+) -> None:
+    """Merge anchor indices and direct-anchor particle IDs into ``payload``."""
+    if not p.get("use_anchors"):
+        return
+    payload["anchor_indices"] = p["anchor_indices"]
+    if p["mode"] != "direct":
+        payload["anchor_path_order"] = p.get("anchor_path_order", "preserve")
         return
     pidx = direct_anchor_particle_indices_payload(
         anchor_indices=p["anchor_indices"],
@@ -237,3 +271,4 @@ def _add_direct_anchor_pidx(payload: dict, p: dict, z_traj: np.ndarray) -> None:
     )
     if pidx is not None:
         payload["traj_particle_indices"] = pidx
+    payload["anchor_path_order"] = p.get("anchor_path_order", "preserve")

@@ -1,0 +1,1976 @@
+  function enqueueTrajGifScatterCapture(task) {
+    var run = trajGifScatterCaptureChain.then(function() {
+      return task();
+    });
+    trajGifScatterCaptureChain = run.catch(function() {});
+    return run;
+  }
+
+  function stashTrajGifLiveLayoutBaseline() {
+    if (!trajGifLiveLayoutBaseline) {
+      trajGifLiveLayoutBaseline = snapshotTrajGifScatterLayout();
+    }
+  }
+
+  function restoreTrajGifLiveLayoutBaseline() {
+    if (!trajGifLiveLayoutBaseline) return Promise.resolve();
+    var snap = trajGifLiveLayoutBaseline;
+    trajGifLiveLayoutBaseline = null;
+    return restoreTrajGifScatterLayout(snap, { skipHighlight: true });
+  }
+
+  function trajGifScatterStackDims() {
+    if (trajGifLockedScatterSize) return trajGifLockedScatterSize;
+    return {
+      w: (scatterPlotStack && scatterPlotStack.offsetWidth) || (gd && gd.offsetWidth) || 640,
+      h: (scatterPlotStack && scatterPlotStack.offsetHeight) || (gd && gd.offsetHeight) || 480
+    };
+  }
+
+  function snapshotTrajGifPlotStackMap() {
+    if (!gd || !gd._fullLayout || !gd._fullLayout.xaxis || !gd._fullLayout.yaxis
+        || !scatterPlotStack) {
+      return null;
+    }
+    var plotArea = gd.querySelector(".nsewdrag");
+    if (!plotArea) return null;
+    var plotRect = plotArea.getBoundingClientRect();
+    var stackRect = scatterPlotStack.getBoundingClientRect();
+    var xr = gd._fullLayout.xaxis.range;
+    var yr = gd._fullLayout.yaxis.range;
+    if (!xr || xr.length < 2 || !yr || yr.length < 2) return null;
+    if (xr[1] === xr[0] || yr[1] === yr[0]) return null;
+    return {
+      plotLeft: plotRect.left - stackRect.left,
+      plotTop: plotRect.top - stackRect.top,
+      plotW: plotRect.width,
+      plotH: plotRect.height,
+      xr: xr.slice(),
+      yr: yr.slice()
+    };
+  }
+
+  function ensureTrajGifPlotStackMap() {
+    if (trajGifPlotStackMap) return trajGifPlotStackMap;
+    trajGifPlotStackMap = snapshotTrajGifPlotStackMap();
+    return trajGifPlotStackMap;
+  }
+
+  function trajGifPanelTargetSize() {
+    var ref = trajGifVolumeDisplayRegionRect();
+    return {
+      w: Math.max(64, Math.round(ref.w * TRAJ_GIF_PANEL_SCALE)),
+      h: Math.max(64, Math.round(ref.h * TRAJ_GIF_PANEL_SCALE))
+    };
+  }
+
+  function trajGifStackPixelScale(exportW) {
+    var dims = trajGifScatterStackDims();
+    return exportW / Math.max(1, dims.w);
+  }
+
+  function trajGifPlotLayoutMetrics(exportW, exportH) {
+    return {
+      drawScale: trajGifStackPixelScale(exportW)
+    };
+  }
+
+  function dataToTrajGifExportXY(dataX, dataY, exportW, exportH) {
+    var m = trajGifPlotStackMap || ensureTrajGifPlotStackMap();
+    if (m) {
+      var fracX = (dataX - m.xr[0]) / (m.xr[1] - m.xr[0]);
+      var fracY = (m.yr[1] - dataY) / (m.yr[1] - m.yr[0]);
+      var s = trajGifStackPixelScale(exportW);
+      return [
+        (m.plotLeft + fracX * m.plotW) * s,
+        (m.plotTop + fracY * m.plotH) * s
+      ];
+    }
+    var pt = dataToPlotStackXY(dataX, dataY);
+    if (!pt) return null;
+    var sFallback = trajGifStackPixelScale(exportW);
+    return [pt[0] * sFallback, pt[1] * sFallback];
+  }
+
+  function loadTrajGifPngB64(b64) {
+    return new Promise(function(resolve, reject) {
+      var img = new Image();
+      img.onload = function() { resolve(img); };
+      img.onerror = function() { reject(new Error("Could not load PNG frame.")); };
+      img.src = "data:image/png;base64," + b64;
+    });
+  }
+
+  function trajGifPngContentBounds(imageData, imgW, imgH) {
+    var bgR = TRAJ_GIF_BG_RGB[0];
+    var bgG = TRAJ_GIF_BG_RGB[1];
+    var bgB = TRAJ_GIF_BG_RGB[2];
+    var tol = 14;
+    var minX = imgW;
+    var minY = imgH;
+    var maxX = 0;
+    var maxY = 0;
+    var found = false;
+    for (var y = 0; y < imgH; y++) {
+      for (var x = 0; x < imgW; x++) {
+        var idx = (y * imgW + x) * 4;
+        var r = imageData[idx];
+        var g = imageData[idx + 1];
+        var b = imageData[idx + 2];
+        var a = imageData[idx + 3];
+        if (a < 8) continue;
+        if (Math.abs(r - bgR) <= tol && Math.abs(g - bgG) <= tol && Math.abs(b - bgB) <= tol) continue;
+        found = true;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (!found) return null;
+    return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+  }
+
+  function unionTrajGifContentBounds(a, b) {
+    if (!a) {
+      return b ? { minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY } : null;
+    }
+    if (!b) return { minX: a.minX, minY: a.minY, maxX: a.maxX, maxY: a.maxY };
+    return {
+      minX: Math.min(a.minX, b.minX),
+      minY: Math.min(a.minY, b.minY),
+      maxX: Math.max(a.maxX, b.maxX),
+      maxY: Math.max(a.maxY, b.maxY)
+    };
+  }
+
+  function trajGifBoundsToCropRect(bounds, imgW, imgH, paddingFrac) {
+    if (!bounds || imgW <= 0 || imgH <= 0) return null;
+    paddingFrac = (paddingFrac == null) ? TRAJ_GIF_VOLUME_PADDING : paddingFrac;
+    var cw = bounds.maxX - bounds.minX + 1;
+    var ch = bounds.maxY - bounds.minY + 1;
+    var padX = Math.max(1, Math.round(cw * paddingFrac));
+    var padY = Math.max(1, Math.round(ch * paddingFrac));
+    var cropX = Math.max(0, bounds.minX - padX);
+    var cropY = Math.max(0, bounds.minY - padY);
+    return {
+      x: cropX,
+      y: cropY,
+      w: Math.min(imgW - cropX, cw + (2 * padX)),
+      h: Math.min(imgH - cropY, ch + (2 * padY))
+    };
+  }
+
+  function trajGifPngContentCropRect(imageData, imgW, imgH, paddingFrac) {
+    return trajGifBoundsToCropRect(
+      trajGifPngContentBounds(imageData, imgW, imgH),
+      imgW,
+      imgH,
+      paddingFrac
+    );
+  }
+
+  function computeTrajGifVolumeFrameBoundsList(volumeImages) {
+    if (!volumeImages || !volumeImages.length) return Promise.resolve([]);
+    var boundsList = new Array(volumeImages.length);
+    var chain = Promise.resolve();
+    for (var i = 0; i < volumeImages.length; i++) {
+      (function(idx, b64) {
+        chain = chain.then(function() {
+          return loadTrajGifPngB64(b64).then(function(img) {
+            var canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            var ctx = canvas.getContext("2d");
+            if (!ctx) {
+              boundsList[idx] = null;
+              return;
+            }
+            ctx.drawImage(img, 0, 0);
+            var data = ctx.getImageData(0, 0, img.width, img.height);
+            boundsList[idx] = trajGifPngContentBounds(data.data, img.width, img.height);
+          });
+        });
+      })(i, volumeImages[i]);
+    }
+    return chain.then(function() { return boundsList; });
+  }
+
+  function trajGifContentSizeFromBounds(bounds) {
+    if (!bounds) return { w: 0, h: 0 };
+    return {
+      w: bounds.maxX - bounds.minX + 1,
+      h: bounds.maxY - bounds.minY + 1
+    };
+  }
+
+  function computeTrajGifLockedVolumeContentScale(frameBoundsList, panelW, panelH, paddingFrac) {
+    if (!frameBoundsList || !frameBoundsList.length) return null;
+    paddingFrac = (paddingFrac == null) ? TRAJ_GIF_VOLUME_PADDING : paddingFrac;
+    var union = null;
+    for (var i = 0; i < frameBoundsList.length; i++) {
+      union = unionTrajGifContentBounds(union, frameBoundsList[i]);
+    }
+    if (!union) return null;
+    var maxW = union.maxX - union.minX + 1;
+    var maxH = union.maxY - union.minY + 1;
+    if (maxW < 1 || maxH < 1) return null;
+    var availW = panelW * (1 - (2 * paddingFrac));
+    var availH = panelH * (1 - (2 * paddingFrac));
+    return {
+      scale: Math.min(availW / maxW, availH / maxH),
+      maxContentW: maxW,
+      maxContentH: maxH,
+      // Shared crop window so every frame has identical whitespace dimensions.
+      unionBounds: {
+        minX: union.minX,
+        minY: union.minY,
+        maxX: union.maxX,
+        maxY: union.maxY
+      }
+    };
+  }
+
+  function lockTrajGifVolumeAlignment(volumeImages, panel) {
+    clearTrajGifVolumeAlignmentLocks();
+    return computeTrajGifVolumeFrameBoundsList(volumeImages).then(function(boundsList) {
+      trajGifLockedVolumeFrameBounds = boundsList;
+      trajGifLockedVolumeContentScale = computeTrajGifLockedVolumeContentScale(
+        boundsList,
+        panel.w,
+        panel.h,
+        TRAJ_GIF_VOLUME_PADDING
+      );
+    });
+  }
+
+  function cropTrajGifImageToCanvas(img, rect) {
+    if (!rect || rect.w <= 0 || rect.h <= 0) {
+      var full = document.createElement("canvas");
+      full.width = img.width;
+      full.height = img.height;
+      var fctx = full.getContext("2d");
+      if (!fctx) throw new Error("Could not crop GIF frame.");
+      fctx.drawImage(img, 0, 0);
+      return full;
+    }
+    var cropX = Math.max(0, Math.min(rect.x, img.width - 1));
+    var cropY = Math.max(0, Math.min(rect.y, img.height - 1));
+    var cropW = Math.max(1, Math.min(rect.w, img.width - cropX));
+    var cropH = Math.max(1, Math.min(rect.h, img.height - cropY));
+    var out = document.createElement("canvas");
+    out.width = cropW;
+    out.height = cropH;
+    var octx = out.getContext("2d");
+    if (!octx) throw new Error("Could not crop GIF frame.");
+    octx.fillStyle = "#faf8f4";
+    octx.fillRect(0, 0, cropW, cropH);
+    octx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    return out;
+  }
+
+  function cropTrajGifImageToRect(img, rect) {
+    return gifDataUrlToBareB64(cropTrajGifImageToCanvas(img, rect).toDataURL("image/png"));
+  }
+
+  function cropTrajGifPngB64ToContent(b64, paddingFrac) {
+    paddingFrac = (paddingFrac == null) ? TRAJ_GIF_VOLUME_PADDING : paddingFrac;
+    return loadTrajGifPngB64(b64).then(function(img) {
+      var canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      var ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not crop GIF frame.");
+      ctx.drawImage(img, 0, 0);
+      var data = ctx.getImageData(0, 0, img.width, img.height);
+      var rect = trajGifPngContentCropRect(data.data, img.width, img.height, paddingFrac);
+      return cropTrajGifImageToRect(img, rect);
+    });
+  }
+
+  function cropVolumePngB64ToContent(b64, paddingFrac) {
+    return cropTrajGifPngB64ToContent(b64, paddingFrac);
+  }
+
+  function panelCanvasFromCroppedVolume(croppedCanvas, panelW, panelH, fit) {
+    var canvas = document.createElement("canvas");
+    canvas.width = panelW;
+    canvas.height = panelH;
+    var ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not scale GIF panel.");
+    ctx.fillStyle = "#faf8f4";
+    ctx.fillRect(0, 0, panelW, panelH);
+    if (fit) {
+      ctx.drawImage(croppedCanvas, fit.dx, fit.dy, fit.dw, fit.dh);
+    } else {
+      var scale = Math.min(panelW / croppedCanvas.width, panelH / croppedCanvas.height);
+      var dw = Math.max(1, Math.round(croppedCanvas.width * scale));
+      var dh = Math.max(1, Math.round(croppedCanvas.height * scale));
+      var dx = Math.round((panelW - dw) / 2);
+      var dy = Math.round((panelH - dh) / 2);
+      ctx.drawImage(croppedCanvas, dx, dy, dw, dh);
+    }
+    return gifDataUrlToBareB64(canvas.toDataURL("image/png"));
+  }
+
+  function scalePngB64ToPanel(b64, panelW, panelH) {
+    return loadTrajGifPngB64(b64).then(function(img) {
+      var canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      var ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not scale GIF panel.");
+      ctx.drawImage(img, 0, 0);
+      return panelCanvasFromCroppedVolume(canvas, panelW, panelH, null);
+    });
+  }
+
+  function renderVolumeFrameForGif(img, bounds, placement, panelW, panelH) {
+    var canvas = document.createElement("canvas");
+    canvas.width = panelW;
+    canvas.height = panelH;
+    var ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not render GIF volume frame.");
+    ctx.fillStyle = "#faf8f4";
+    ctx.fillRect(0, 0, panelW, panelH);
+    if (!placement || !placement.scale) {
+      return gifDataUrlToBareB64(canvas.toDataURL("image/png"));
+    }
+    // Only crop when a shared union window was locked for the batch. Per-frame
+    // content trims produce different whitespace margins and break centering
+    // across ChimeraX trajectory frames in the volume viewer / GIF.
+    var crop = placement.unionBounds || null;
+    var minX, minY, cropW, cropH;
+    if (crop) {
+      minX = Math.max(0, crop.minX);
+      minY = Math.max(0, crop.minY);
+      cropW = Math.max(1, Math.min(crop.maxX - crop.minX + 1, img.width - minX));
+      cropH = Math.max(1, Math.min(crop.maxY - crop.minY + 1, img.height - minY));
+    } else {
+      minX = 0;
+      minY = 0;
+      cropW = img.width;
+      cropH = img.height;
+    }
+    var dw = cropW * placement.scale;
+    var dh = cropH * placement.scale;
+    var dx = (panelW - dw) / 2;
+    var dy = (panelH - dh) / 2;
+    ctx.drawImage(img, minX, minY, cropW, cropH, dx, dy, dw, dh);
+    return gifDataUrlToBareB64(canvas.toDataURL("image/png"));
+  }
+
+  function prepareVolumeFrameForGif(b64, panel, frameIndex) {
+    return loadTrajGifPngB64(b64).then(function(img) {
+      var bounds = (trajGifLockedVolumeFrameBounds && frameIndex != null)
+        ? trajGifLockedVolumeFrameBounds[frameIndex]
+        : null;
+      return renderVolumeFrameForGif(
+        img,
+        bounds,
+        trajGifLockedVolumeContentScale,
+        panel.w,
+        panel.h
+      );
+    });
+  }
+
+  function stripTrajGifGlyphLabelHtml(html) {
+    return String(html || "").replace(/<[^>]+>/g, "");
+  }
+
+  function drawTrajGlyphPathOnGifCanvas(ctx, exportW, exportH) {
+    var pathPts = trajectoryOverlayPathPoints();
+    if (!pathPts || pathPts.length < 2) return;
+    var metrics = trajGifPlotLayoutMetrics(exportW, exportH);
+    if (!metrics) return;
+    var drawScale = metrics.drawScale || 1;
+    var linePts = [];
+    for (var pi = 0; pi < pathPts.length; pi++) {
+      var pt = dataToTrajGifExportXY(pathPts[pi][0], pathPts[pi][1], exportW, exportH);
+      if (pt) linePts.push(pt);
+    }
+    if (linePts.length < 2) return;
+    ctx.save();
+    ctx.strokeStyle = "#c4703a";
+    ctx.lineWidth = 3 * drawScale;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.setLineDash([7 * drawScale, 5 * drawScale]);
+    ctx.shadowColor = "rgba(255, 255, 255, 0.85)";
+    ctx.shadowBlur = 1 * drawScale;
+    ctx.beginPath();
+    ctx.moveTo(linePts[0][0], linePts[0][1]);
+    for (var li = 1; li < linePts.length; li++) {
+      ctx.lineTo(linePts[li][0], linePts[li][1]);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function trajGifGlyphLabelFontSize(ctx, label, sizePx, borderW) {
+    // Largest bold digit size whose text bbox still fits inside the circle.
+    var innerDiam = Math.max(4, sizePx - (2 * borderW) - 1);
+    var maxR = innerDiam * 0.5;
+    var maxFs = Math.max(6, Math.floor(innerDiam));
+    for (var fs = maxFs; fs >= 6; fs--) {
+      ctx.font = "700 " + fs + 'px "Barlow", sans-serif';
+      var tw = ctx.measureText(label).width;
+      var th = fs * 0.82;
+      var halfDiag = 0.5 * Math.sqrt((tw * tw) + (th * th));
+      if (halfDiag <= maxR) return fs;
+    }
+    return 6;
+  }
+
+  function drawTrajGlyphSpecOnGifCanvas(ctx, spec, exportW, exportH) {
+    var pt = dataToTrajGifExportXY(spec.x, spec.y, exportW, exportH);
+    if (!pt) return;
+    var metrics = trajGifPlotLayoutMetrics(exportW, exportH);
+    var drawScale = (metrics && metrics.drawScale) ? metrics.drawScale : 1;
+    var gifNeutral = trajGifGenerationActive();
+    var sizePx = Number(spec.size) || TRAJ_MARKER_SIZE_WAYPOINT;
+    if (!gifNeutral && spec.focused) {
+      sizePx = Math.max(sizePx + 4, Math.round(sizePx * 1.2));
+    }
+    sizePx *= drawScale;
+    var color = spec.color || "#243b53";
+    var fillColor = color;
+    if (spec.focused) {
+      fillColor = trajGlyphFocusHighlightColor(color);
+    }
+    var borderW = (spec.focused ? 1 : 1.25) * drawScale;
+    var half = sizePx * 0.5;
+    ctx.save();
+    ctx.fillStyle = fillColor;
+    ctx.strokeStyle = spec.focused ? "#000000" : "#ffffff";
+    ctx.lineWidth = borderW;
+    ctx.beginPath();
+    ctx.arc(pt[0], pt[1], half, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    var label = stripTrajGifGlyphLabelHtml(spec.labelHtml);
+    if (!label) return;
+    var fontSize = trajGifGlyphLabelFontSize(ctx, label, sizePx, borderW);
+    ctx.save();
+    ctx.font = "700 " + fontSize + 'px "Barlow", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label, pt[0], pt[1] + (fontSize * 0.04));
+    ctx.restore();
+  }
+
+  function drawTrajGlyphsOnGifCanvas(ctx, exportW, exportH) {
+    drawTrajGlyphPathOnGifCanvas(ctx, exportW, exportH);
+    var specs = collectTrajGlyphSpecs();
+    for (var gi = 0; gi < specs.length; gi++) {
+      drawTrajGlyphSpecOnGifCanvas(ctx, specs[gi], exportW, exportH);
+    }
+  }
+
+  function trajGifCloneScaledFont(font, baseSize) {
+    var out = {};
+    if (font && typeof font === "object") {
+      Object.keys(font).forEach(function(key) {
+        out[key] = font[key];
+      });
+    }
+    var sz = (out.size != null) ? Number(out.size) : Number(baseSize || 15);
+    if (!isFinite(sz)) sz = Number(baseSize || 15);
+    out.size = Math.max(8, Math.round(sz * TRAJ_GIF_AXIS_FONT_MULT));
+    if (!out.family) out.family = "Barlow, sans-serif";
+    if (!out.color) out.color = "#243b53";
+    return out;
+  }
+
+  function trajGifScatterDataPoints() {
+    var pts = [];
+    function addPt(x, y) {
+      x = Number(x);
+      y = Number(y);
+      if (isFinite(x) && isFinite(y)) pts.push([x, y]);
+    }
+    if (gd && gd.data && gd.data[0]) {
+      var tr = gd.data[0];
+      var n = plotlyArrayLength(tr.x);
+      for (var i = 0; i < n; i++) {
+        addPt(plotlyAt(tr.x, i), plotlyAt(tr.y, i));
+      }
+    }
+    var pathPts = trajectoryOverlayPathPoints();
+    if (pathPts) {
+      for (var j = 0; j < pathPts.length; j++) {
+        addPt(pathPts[j][0], pathPts[j][1]);
+      }
+    }
+    return pts;
+  }
+
+  function trajGifScatterDataRange(paddingFrac) {
+    var pts = trajGifScatterDataPoints();
+    if (!pts.length) return null;
+    var minX = Infinity;
+    var maxX = -Infinity;
+    var minY = Infinity;
+    var maxY = -Infinity;
+    for (var i = 0; i < pts.length; i++) {
+      minX = Math.min(minX, pts[i][0]);
+      maxX = Math.max(maxX, pts[i][0]);
+      minY = Math.min(minY, pts[i][1]);
+      maxY = Math.max(maxY, pts[i][1]);
+    }
+    var spanX = maxX - minX;
+    var spanY = maxY - minY;
+    if (!isFinite(spanX) || spanX <= 0) spanX = 1;
+    if (!isFinite(spanY) || spanY <= 0) spanY = 1;
+    var padX = spanX * paddingFrac;
+    var padY = spanY * paddingFrac;
+    return {
+      x: [minX - padX, maxX + padX],
+      y: [minY - padY, maxY + padY]
+    };
+  }
+
+  function snapshotTrajGifScatterLayout() {
+    var fl = gd && gd._fullLayout;
+    if (!fl) return null;
+    return {
+      xRange: fl.xaxis && fl.xaxis.range ? fl.xaxis.range.slice() : null,
+      yRange: fl.yaxis && fl.yaxis.range ? fl.yaxis.range.slice() : null,
+      xAutorange: !!(fl.xaxis && fl.xaxis.autorange),
+      yAutorange: !!(fl.yaxis && fl.yaxis.autorange),
+      xTitleFont: JSON.parse(JSON.stringify(
+        (fl.xaxis && fl.xaxis.title && fl.xaxis.title.font) || {}
+      )),
+      yTitleFont: JSON.parse(JSON.stringify(
+        (fl.yaxis && fl.yaxis.title && fl.yaxis.title.font) || {}
+      )),
+      xTickFont: JSON.parse(JSON.stringify((fl.xaxis && fl.xaxis.tickfont) || {})),
+      yTickFont: JSON.parse(JSON.stringify((fl.yaxis && fl.yaxis.tickfont) || {})),
+      margin: JSON.parse(JSON.stringify(fl.margin || {}))
+    };
+  }
+
+  function restoreTrajGifScatterLayout(snap, opts) {
+    opts = opts || {};
+    if (!snap || !gd || typeof Plotly === "undefined" || !Plotly.relayout) {
+      return Promise.resolve();
+    }
+    var patch = {
+      "xaxis.title.font": snap.xTitleFont || {},
+      "yaxis.title.font": snap.yTitleFont || {},
+      "xaxis.tickfont": snap.xTickFont || {},
+      "yaxis.tickfont": snap.yTickFont || {}
+    };
+    if (snap.margin) {
+      patch.margin = snap.margin;
+    }
+    if (snap.xAutorange) patch["xaxis.autorange"] = true;
+    else if (snap.xRange) patch["xaxis.range"] = snap.xRange.slice();
+    if (snap.yAutorange) patch["yaxis.autorange"] = true;
+    else if (snap.yRange) patch["yaxis.range"] = snap.yRange.slice();
+    return Plotly.relayout(gd, patch).catch(function() {}).then(function() {
+      syncTrajGlyphOverlay();
+      if (opts.skipHighlight) return waitGifPaintFrames(2);
+      return waitTrajScatterHighlightPaint();
+    });
+  }
+
+  function clearTrajGifScatterHighlightForCapture() {
+    if (!manualScatterHighlightActive) return waitGifPaintFrames(2);
+    resetVolumeScatterMarkerAesthetics();
+    return waitGifPaintFrames(4);
+  }
+
+  function applyTrajGifScatterExportLayout(opts) {
+    opts = opts || {};
+    var fl = gd._fullLayout;
+    var range = trajGifScatterDataRange(TRAJ_GIF_VOLUME_PADDING);
+    var xTitleFont = trajGifCloneScaledFont(
+      fl.xaxis && fl.xaxis.title && fl.xaxis.title.font, 15
+    );
+    var yTitleFont = trajGifCloneScaledFont(
+      fl.yaxis && fl.yaxis.title && fl.yaxis.title.font, 15
+    );
+    var xTickFont = trajGifCloneScaledFont(fl.xaxis && fl.xaxis.tickfont, 12);
+    var yTickFont = trajGifCloneScaledFont(fl.yaxis && fl.yaxis.tickfont, 12);
+    var margin = fl.margin || {};
+    var patch = {
+      "xaxis.title.font": xTitleFont,
+      "yaxis.title.font": yTitleFont,
+      "xaxis.tickfont": xTickFont,
+      "yaxis.tickfont": yTickFont,
+      "margin.l": Math.round((margin.l || 50) * TRAJ_GIF_AXIS_FONT_MULT),
+      "margin.r": Math.round((margin.r || 20) * 1.15),
+      "margin.t": Math.round((margin.t || 16) * 1.2),
+      "margin.b": Math.round((margin.b || 50) * TRAJ_GIF_AXIS_FONT_MULT)
+    };
+    if (range) {
+      patch["xaxis.range"] = range.x.slice();
+      patch["yaxis.range"] = range.y.slice();
+      patch["xaxis.autorange"] = false;
+      patch["yaxis.autorange"] = false;
+    }
+    return Plotly.relayout(gd, patch).then(function() {
+      return waitGifPaintFrames(3);
+    }).then(function() {
+      if (!trajGifGenerationActive()) {
+        applyTrajScatterLegendPosition();
+      }
+      syncTrajGlyphOverlay();
+      if (trajGifGenerationActive()) ensureTrajGifPlotStackMap();
+      if (opts.skipHighlight) return waitGifPaintFrames(2);
+      return waitTrajScatterHighlightPaint();
+    });
+  }
+
+  function captureTrajScatterPngB64() {
+    if (typeof Plotly === "undefined" || !Plotly.toImage || !gd || !gd._fullLayout) {
+      return Promise.reject(new Error("Scatter plot is not ready for capture."));
+    }
+    return enqueueTrajGifScatterCapture(function() {
+      var scale = TRAJ_GIF_PLOT_IMAGE_SCALE;
+      var stackDims = trajGifScatterStackDims();
+      var stackW = stackDims.w;
+      var stackH = stackDims.h;
+      var exportW = Math.round(stackW * scale);
+      var exportH = Math.round(stackH * scale);
+      var layoutSnap = snapshotTrajGifScatterLayout();
+      var captureOpts = { skipHighlight: true };
+      return clearTrajGifScatterHighlightForCapture()
+        .then(function() {
+          return applyTrajGifScatterExportLayout(captureOpts);
+        })
+        .then(function() {
+          return Plotly.toImage(gd, {
+            format: "png",
+            width: stackW,
+            height: stackH,
+            imageScale: scale
+          });
+        })
+        .then(function(dataUrl) {
+          return new Promise(function(resolve, reject) {
+            var img = new Image();
+            img.onload = function() {
+              var canvas = document.createElement("canvas");
+              canvas.width = exportW;
+              canvas.height = exportH;
+              var ctx = canvas.getContext("2d");
+              if (!ctx) {
+                reject(new Error("Could not render scatter frame."));
+                return;
+              }
+              ctx.fillStyle = "#faf8f4";
+              ctx.fillRect(0, 0, exportW, exportH);
+              ctx.drawImage(img, 0, 0, exportW, exportH);
+              drawTrajGlyphsOnGifCanvas(ctx, exportW, exportH);
+              drawTrajScatterColorLegendOnGifCanvas(ctx, exportW, exportH);
+              resolve(gifDataUrlToBareB64(canvas.toDataURL("image/png")));
+            };
+            img.onerror = function() { reject(new Error("Could not load scatter frame.")); };
+            img.src = (String(dataUrl).indexOf("data:") === 0)
+              ? dataUrl
+              : ("data:image/png;base64," + dataUrl);
+          });
+        })
+        .catch(function(err) {
+          return restoreTrajGifScatterLayout(layoutSnap, captureOpts).then(function() {
+            throw err;
+          });
+        })
+        .then(function(frameB64) {
+          return restoreTrajGifScatterLayout(layoutSnap, captureOpts).then(function() {
+            return frameB64;
+          });
+        });
+    });
+  }
+
+  function compositeTrajGifPanels(leftB64, rightB64, panelW, panelH) {
+    return Promise.all([
+      loadTrajGifPngB64(leftB64),
+      loadTrajGifPngB64(rightB64)
+    ]).then(function(imgs) {
+      var canvas = document.createElement("canvas");
+      canvas.width = panelW * 2;
+      canvas.height = panelH;
+      var ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not composite GIF frames.");
+      ctx.fillStyle = "#faf8f4";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(imgs[0], 0, 0, panelW, panelH);
+      ctx.drawImage(imgs[1], panelW, 0, panelW, panelH);
+      return gifDataUrlToBareB64(canvas.toDataURL("image/png"));
+    });
+  }
+
+  function setTrajGifMainVeilVisible(visible) {
+    if (trajGifMainVeil) {
+      trajGifMainVeil.hidden = !visible;
+      trajGifMainVeil.setAttribute("aria-hidden", visible ? "false" : "true");
+    }
+    if (trajGifRecordModal) {
+      trajGifRecordModal.classList.toggle("cryo-traj-gif-modal--generating", !!visible);
+    }
+  }
+
+  function beginTrajGifGeneration() {
+    trajGifGenerationDepth++;
+    if (trajGifGenerationDepth === 1) setTrajGifMainVeilVisible(true);
+  }
+
+  function endTrajGifGeneration() {
+    if (trajGifGenerationDepth > 0) trajGifGenerationDepth--;
+    if (trajGifGenerationDepth === 0) setTrajGifMainVeilVisible(false);
+  }
+
+  function trajGifGenerationActive() {
+    return trajGifGenerationDepth > 0;
+  }
+
+  function buildTrajectoryGifFrames(volumeImages, includeScatter) {
+    var panel = trajGifPanelTargetSize();
+    var needsMainVeil = !!(includeScatter && canIncludeScatterInTrajectoryGif());
+    if (needsMainVeil) {
+      clearTrajGifScatterCaptureLocks();
+      trajGifLockedScatterSize = trajGifScatterStackDims();
+      stashTrajGifLiveLayoutBaseline();
+      beginTrajGifGeneration();
+    }
+    function finishGifFrames(out) {
+      clearTrajGifVolumeAlignmentLocks();
+      if (needsMainVeil) {
+        clearTrajGifScatterCaptureLocks();
+        endTrajGifGeneration();
+        return restoreTrajGifLiveLayoutBaseline().then(function() {
+          return out;
+        });
+      }
+      return out;
+    }
+    function failGifFrames(err) {
+      clearTrajGifVolumeAlignmentLocks();
+      if (needsMainVeil) {
+        clearTrajGifScatterCaptureLocks();
+        endTrajGifGeneration();
+        return restoreTrajGifLiveLayoutBaseline().then(function() {
+          throw err;
+        });
+      }
+      throw err;
+    }
+    if (!includeScatter || !canIncludeScatterInTrajectoryGif()) {
+      return lockTrajGifVolumeAlignment(volumeImages, panel).then(function() {
+        var volChain = Promise.resolve();
+        var volOut = [];
+        for (var vi = 0; vi < volumeImages.length; vi++) {
+          (function(frameB64, frameIdx) {
+            volChain = volChain.then(function() {
+              return prepareVolumeFrameForGif(frameB64, panel, frameIdx);
+            }).then(function(panelB64) {
+              volOut.push(panelB64);
+            });
+          })(volumeImages[vi], vi);
+        }
+        return volChain.then(function() { return volOut; });
+      }).then(finishGifFrames).catch(failGifFrames);
+    }
+    return lockTrajGifVolumeAlignment(volumeImages, panel).then(function() {
+    var savedFocus = currentVolumeFocusIndex();
+    var hadFocusEngaged = volumeDisplayFocusEngaged;
+    engageVolumeDisplayFocus();
+    var chain = Promise.resolve();
+    var out = [];
+    for (var i = 0; i < volumeImages.length; i++) {
+      (function(frameIdx) {
+        chain = chain
+          .then(function() {
+            if (trajVolDisplay && typeof trajVolDisplay.setFocusIndex === "function") {
+              trajVolDisplay.setFocusIndex(frameIdx);
+            }
+            return waitGifPaintFrames(2);
+          })
+          .then(function() {
+            return captureTrajScatterPngB64();
+          })
+          .then(function(scatterRawB64) {
+            return scalePngB64ToPanel(scatterRawB64, panel.w, panel.h)
+              .then(function(scatterPanelB64) {
+                return prepareVolumeFrameForGif(volumeImages[frameIdx], panel, frameIdx)
+                  .then(function(volumePanelB64) {
+                    return compositeTrajGifPanels(
+                      scatterPanelB64, volumePanelB64, panel.w, panel.h
+                    );
+                  });
+              });
+          })
+          .then(function(compositeB64) {
+            out.push(compositeB64);
+          });
+      })(i);
+    }
+    return chain.then(function() {
+      if (trajVolDisplay && typeof trajVolDisplay.setFocusIndex === "function") {
+        trajVolDisplay.setFocusIndex(savedFocus);
+      }
+      if (!hadFocusEngaged) resetVolumeDisplayFocusEngaged();
+      else engageVolumeDisplayFocus();
+      syncManualVolumeScatterHighlight();
+      syncTrajGlyphOverlay();
+      return out;
+    }).then(finishGifFrames).catch(failGifFrames);
+    });
+  }
+
+  function trajGifIncludeScatterSelected() {
+    return !!(trajGifIncludeScatterEl
+      && trajGifIncludeScatterEl.checked
+      && canIncludeScatterInTrajectoryGif());
+  }
+
+  function trajGifCurrentFps() {
+    var fps = parseFloat((trajGifFpsEl && trajGifFpsEl.value) || "4");
+    if (!Number.isFinite(fps) || fps <= 0 || fps > 60) return null;
+    return fps;
+  }
+
+  function trajGifPreviewSettingsKey() {
+    var fps = trajGifCurrentFps();
+    return String(fps == null ? "" : fps) + "|" + trajGifPreviewScatterKey();
+  }
+
+  function trajGifPreviewScatterKey() {
+    return trajGifIncludeScatterSelected() ? "1" : "0";
+  }
+
+  function setTrajGifPreviewStatus(msg, isError) {
+    if (!trajGifPreviewStatus) return;
+    trajGifPreviewStatus.textContent = msg || "";
+    trajGifPreviewStatus.classList.toggle("is-error", !!isError);
+  }
+
+  function clearTrajGifPreviewDisplay() {
+    lastTrajGifPreviewB64 = null;
+    lastTrajGifPreviewFrames = null;
+    lastTrajGifPreviewKey = "";
+    lastTrajGifPreviewScatterKey = "";
+    if (trajGifPreviewImg) {
+      trajGifPreviewImg.removeAttribute("src");
+      trajGifPreviewImg.hidden = true;
+    }
+    setTrajGifPreviewStatus("", false);
+  }
+
+  function cancelTrajGifPreview() {
+    trajGifPreviewGen++;
+    if (trajGifPreviewDebounceTimer) {
+      clearTimeout(trajGifPreviewDebounceTimer);
+      trajGifPreviewDebounceTimer = 0;
+    }
+  }
+
+  function showTrajGifPreviewB64(gifB64) {
+    if (!trajGifPreviewImg) return;
+    lastTrajGifPreviewB64 = gifB64;
+    trajGifPreviewImg.src = "data:image/gif;base64," + gifB64;
+    trajGifPreviewImg.hidden = false;
+    setTrajGifPreviewStatus("", false);
+  }
+
+  function assembleTrajectoryGifB64(frames, fps) {
+    var durationMs = Math.max(1, Math.round(1000.0 / fps));
+    return fetch(TRAJ_GIF_ASSEMBLE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        frames: frames,
+        durations_ms: durationMs
+      })
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          throw new Error((res.j && res.j.error) ? res.j.error : "Could not assemble GIF preview.");
+        }
+        if (!res.j || !res.j.gif_b64) {
+          throw new Error("Server did not return a GIF preview.");
+        }
+        return res.j.gif_b64;
+      });
+  }
+
+  function collectTrajectoryGifFramesForExport() {
+    var scatterKey = trajGifPreviewScatterKey();
+    if (lastTrajGifPreviewFrames
+        && lastTrajGifPreviewFrames.length >= 2
+        && lastTrajGifPreviewScatterKey === scatterKey) {
+      return Promise.resolve(lastTrajGifPreviewFrames);
+    }
+    return fetchChimeraxImagesForGif().then(function(images) {
+      return buildTrajectoryGifFrames(images, trajGifIncludeScatterSelected());
+    }).then(function(frames) {
+      lastTrajGifPreviewFrames = frames;
+      lastTrajGifPreviewScatterKey = scatterKey;
+      return frames;
+    });
+  }
+
+  function refreshTrajGifPreview() {
+    if (!trajGifRecordModal || trajGifRecordModal.hidden) return;
+    var fps = trajGifCurrentFps();
+    if (fps == null) {
+      clearTrajGifPreviewDisplay();
+      setTrajGifPreviewStatus("Enter a valid frames-per-second value (0.5–60).", true);
+      if (trajGifSaveBtn) trajGifSaveBtn.disabled = true;
+      return;
+    }
+    var scatterKey = trajGifPreviewScatterKey();
+    var key = String(fps) + "|" + scatterKey;
+    if (key === lastTrajGifPreviewKey && lastTrajGifPreviewB64) {
+      showTrajGifPreviewB64(lastTrajGifPreviewB64);
+      if (trajGifSaveBtn) trajGifSaveBtn.disabled = !!trajGifSaveInFlight;
+      return;
+    }
+    var myGen = ++trajGifPreviewGen;
+    if (trajGifPreviewImg) trajGifPreviewImg.hidden = true;
+    var rebuildingFrames = !(
+      lastTrajGifPreviewFrames
+      && lastTrajGifPreviewFrames.length >= 2
+      && lastTrajGifPreviewScatterKey === scatterKey
+    );
+    setTrajGifPreviewStatus(
+      rebuildingFrames && trajGifIncludeScatterSelected()
+        ? "Generating preview with scatter plot…"
+        : (rebuildingFrames ? "Generating preview…" : "Updating preview timing…"),
+      false
+    );
+    if (trajGifSaveBtn) trajGifSaveBtn.disabled = true;
+    var framePromise;
+    if (!rebuildingFrames) {
+      framePromise = Promise.resolve(lastTrajGifPreviewFrames);
+    } else {
+      framePromise = fetchChimeraxImagesForGif().then(function(images) {
+        return buildTrajectoryGifFrames(images, trajGifIncludeScatterSelected());
+      });
+    }
+    framePromise
+      .then(function(frames) {
+        if (myGen !== trajGifPreviewGen) return null;
+        if (!frames || frames.length < 2) {
+          throw new Error("Need at least two frames to preview the GIF.");
+        }
+        lastTrajGifPreviewFrames = frames;
+        lastTrajGifPreviewScatterKey = scatterKey;
+        return assembleTrajectoryGifB64(frames, fps);
+      })
+      .then(function(gifB64) {
+        if (!gifB64 || myGen !== trajGifPreviewGen) return;
+        lastTrajGifPreviewKey = key;
+        showTrajGifPreviewB64(gifB64);
+        if (trajGifSaveBtn) trajGifSaveBtn.disabled = !!trajGifSaveInFlight;
+      })
+      .catch(function(err) {
+        if (myGen !== trajGifPreviewGen) return;
+        console.error(err);
+        clearTrajGifPreviewDisplay();
+        setTrajGifPreviewStatus(err.message || "Could not generate GIF preview.", true);
+        if (trajGifSaveBtn) trajGifSaveBtn.disabled = true;
+      });
+  }
+
+  function scheduleTrajGifPreviewRefresh() {
+    if (trajGifPreviewDebounceTimer) clearTimeout(trajGifPreviewDebounceTimer);
+    trajGifPreviewDebounceTimer = setTimeout(function() {
+      trajGifPreviewDebounceTimer = 0;
+      refreshTrajGifPreview();
+    }, 400);
+  }
+
+  function openTrajGifRecordModal() {
+    if (!trajGifRecordModal || !canRecordTrajectoryGif()) return;
+    trajGifGenerationDepth = 0;
+    setTrajGifMainVeilVisible(false);
+    if (trajGifSaveName) trajGifSaveName.value = "trajectory.gif";
+    if (trajGifFpsEl && !trajGifFpsEl.value) trajGifFpsEl.value = "4";
+    syncTrajGifScatterOption();
+    clearTrajGifPreviewDisplay();
+    if (window.CryoDashModal) {
+      CryoDashModal.open(trajGifRecordModal);
+    } else {
+      trajGifRecordModal.hidden = false;
+      trajGifRecordModal.setAttribute("aria-hidden", "false");
+    }
+    loadTrajGifFileBrowserDir(expWorkdir || "");
+    refreshTrajGifPreview();
+  }
+
+  function closeTrajGifRecordModal() {
+    if (!trajGifRecordModal) return;
+    if (trajGifGenerationActive()) return;
+    cancelTrajGifPreview();
+    if (window.CryoDashModal) {
+      CryoDashModal.close(trajGifRecordModal);
+    } else {
+      trajGifRecordModal.hidden = true;
+      trajGifRecordModal.setAttribute("aria-hidden", "true");
+    }
+    trajGifFbCurrentDir = null;
+    clearTrajGifVolumeAlignmentLocks();
+    clearTrajGifPreviewDisplay();
+  }
+
+  function normalizedTrajGifSaveFilename() {
+    var name = String((trajGifSaveName && trajGifSaveName.value) || "").trim();
+    if (!name) name = "trajectory.gif";
+    if (name.indexOf("/") >= 0 || name.indexOf("\\") >= 0) return null;
+    if (!/\.gif$/i.test(name)) name = name + ".gif";
+    return name;
+  }
+
+  function loadTrajGifFileBrowserDir(dir) {
+    if (!trajGifFbList || !trajGifFbPath) return;
+    if (window.CryoFileBrowser) {
+      CryoFileBrowser.loadDir({
+        listUrl: "{{ url_for('api_list_server_files') }}",
+        dir: dir || null,
+        listEl: trajGifFbList,
+        pathEl: trajGifFbPath,
+        onDir: function(next) { loadTrajGifFileBrowserDir(next); },
+        onFile: function(path, ent) {
+          if (trajGifSaveName) trajGifSaveName.value = ent.name;
+        },
+        onLoaded: function(j) { trajGifFbCurrentDir = j.dir; }
+      });
+      return;
+    }
+    trajGifFbList.innerHTML = "<li class='cryo-file-browser-empty'>Loading…</li>";
+    var q = dir ? ("?dir=" + encodeURIComponent(dir)) : "";
+    fetch("{{ url_for('api_list_server_files') }}" + q)
+      .then(function(r) { return r.json(); })
+      .then(function(j) {
+        if (!j.ok) {
+          trajGifFbList.innerHTML = "<li class='cryo-file-browser-empty'>" + (j.error || "Error") + "</li>";
+          return;
+        }
+        trajGifFbCurrentDir = j.dir;
+        trajGifFbPath.textContent = j.dir;
+        trajGifFbPath.title = j.dir;
+        trajGifFbList.innerHTML = "";
+        if (!j.entries || !j.entries.length) {
+          trajGifFbList.innerHTML = "<li class='cryo-file-browser-empty'>No entries here</li>";
+          return;
+        }
+        j.entries.forEach(function(ent) {
+          var li = document.createElement("li");
+          var icon = document.createElement("span");
+          icon.className = "fb-icon";
+          icon.textContent = ent.type === "dir" ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
+          var name = document.createElement("span");
+          name.className = "fb-name";
+          name.textContent = ent.name;
+          li.appendChild(icon);
+          li.appendChild(name);
+          if (ent.type === "dir") {
+            li.addEventListener("click", function() {
+              loadTrajGifFileBrowserDir(j.dir + "/" + ent.name);
+            });
+          } else {
+            li.addEventListener("click", function() {
+              if (trajGifSaveName) trajGifSaveName.value = ent.name;
+            });
+          }
+          trajGifFbList.appendChild(li);
+        });
+      })
+      .catch(function() {
+        trajGifFbList.innerHTML = "<li class='cryo-file-browser-empty'>Could not list directory</li>";
+      });
+  }
+
+  function fetchChimeraxImagesForGif() {
+    var payloads = [
+      activeVolumePayload(),
+      lastVolumePayload,
+      volumePayload()
+    ];
+    for (var i = 0; i < payloads.length; i++) {
+      var imgs = chimeraxImagesFromPayload(payloads[i]);
+      if (imgs.length >= 2) return Promise.resolve(imgs);
+    }
+    if (!lastTrajectoryVolumeCacheId) {
+      return Promise.reject(new Error("No rendered volume frames available."));
+    }
+    var rerenderPayload = {
+      volume_cache_id: lastTrajectoryVolumeCacheId,
+      chimerax_rerender_only: true,
+      chimerax_cpus: trajChimeraxCpus,
+      render_backend: "chimerax"
+    };
+    appendChimeraxIsoPayloadFields(rerenderPayload);
+    var renderTurns = chimeraxViewTurnsForRender();
+    var renderVm = chimeraxViewMatrixForRender();
+    if (renderVm) rerenderPayload.view_matrix = renderVm;
+    else if (renderTurns.length) rerenderPayload.view_turns = renderTurns;
+    return fetch("{{ url_for('api_trajectory_volumes') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(rerenderPayload)
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          var msg = (res.j && res.j.error) ? res.j.error : "ChimeraX render failed.";
+          throw new Error(msg);
+        }
+        mergeVolumePayload(res.j);
+        var fresh = chimeraxImagesFromPayload(res.j);
+        if (fresh.length < 2) {
+          throw new Error("Need at least two ChimeraX frames to build a GIF.");
+        }
+        return fresh;
+      });
+  }
+
+  function saveTrajectoryGifViaModal() {
+    if (trajGifSaveInFlight || trajGifGenerationActive()) return;
+    if (!trajGifFbCurrentDir) {
+      setTrajStatus("Choose a destination folder first.", false);
+      return;
+    }
+    var fname = normalizedTrajGifSaveFilename();
+    if (!fname) {
+      setTrajStatus("Filename cannot contain path separators.", false);
+      return;
+    }
+    var fps = trajGifCurrentFps();
+    if (fps == null) {
+      setTrajStatus("Frames per second must be between 0.5 and 60.", false);
+      return;
+    }
+    var outPath = trajGifFbCurrentDir + "/" + fname;
+    trajGifSaveInFlight = true;
+    if (trajGifSaveBtn) trajGifSaveBtn.disabled = true;
+    setTrajStatus("Saving trajectory GIF…", false);
+    collectTrajectoryGifFramesForExport()
+      .then(function(images) {
+        return fetch("{{ url_for('api_trajectory_save_gif') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            images: images,
+            fps: fps,
+            out_path: outPath
+          })
+        }).then(function(r) {
+          return r.json().then(function(j) { return { ok: r.ok, j: j }; });
+        });
+      })
+      .then(function(res) {
+        if (!res.ok) {
+          throw new Error((res.j && res.j.error) ? res.j.error : "Could not save GIF.");
+        }
+        closeTrajGifRecordModal();
+        setTrajStatus("Saved " + (res.j.path || outPath), false);
+      })
+      .catch(function(err) {
+        console.error(err);
+        setTrajStatus(err.message || "GIF save failed.", false);
+      })
+      .then(function() {
+        trajGifSaveInFlight = false;
+        if (trajGifSaveBtn) {
+          trajGifSaveBtn.disabled = !(lastTrajGifPreviewB64 && trajGifCurrentFps() != null);
+        }
+      });
+  }
+
+  function syncFileBrowserModeUI() {
+    var saveMode = fbMode === "save-zpath";
+    if (fbSaveRow) fbSaveRow.hidden = !saveMode;
+  }
+
+  function openFileBrowser(startDir, mode) {
+    if (!trajFileBrowserPanel || !serverFileBrowser) return;
+    fbMode = (mode === "save-zpath") ? "save-zpath" : "import";
+    trajFileBrowserPanel.hidden = false;
+    trajFileBrowserPanel.setAttribute("aria-hidden", "false");
+    syncFileBrowserModeUI();
+    loadFileBrowserDir(startDir || "");
+  }
+
+  function closeFileBrowser() {
+    if (trajFileBrowserPanel) {
+      trajFileBrowserPanel.hidden = true;
+      trajFileBrowserPanel.setAttribute("aria-hidden", "true");
+    }
+    fbCurrentDir = null;
+    fbMode = "import";
+    syncFileBrowserModeUI();
+  }
+
+  function normalizedSaveFilename() {
+    var name = String((fbSaveName && fbSaveName.value) || "").trim();
+    if (!name) name = "z-path.txt";
+    if (name.indexOf("/") >= 0 || name.indexOf("\\") >= 0) return null;
+    if (!/\.txt$/i.test(name)) name = name + ".txt";
+    return name;
+  }
+
+  function saveZPathViaBrowser() {
+    if (!lastZPathTxt) {
+      setTrajStatus("No latent z path to save yet.", false);
+      return;
+    }
+    if (!fbCurrentDir) {
+      setTrajStatus("Choose a destination folder first.", false);
+      return;
+    }
+    var fname = normalizedSaveFilename();
+    if (!fname) {
+      setTrajStatus("Filename cannot contain path separators.", false);
+      return;
+    }
+    var outPath = fbCurrentDir + "/" + fname;
+    setTrajStatus("Saving latent z path…", false);
+    fetch("{{ url_for('api_trajectory_save_zpath') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        z_path_txt: lastZPathTxt,
+        out_path: outPath
+      })
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          setTrajStatus(res.j.error || "Could not save z-path.txt.", false);
+          return;
+        }
+        closeFileBrowser();
+        setTrajStatus("Saved " + (res.j.path || outPath), false);
+      })
+      .catch(function(err) {
+        console.error(err);
+        setTrajStatus("Save request failed.", false);
+      });
+  }
+
+  function loadFileBrowserDir(dir) {
+    if (!fbList || !fbPath) return;
+    fbList.innerHTML = "<li class='cryo-file-browser-empty'>Loading…</li>";
+    var q = dir ? ("?dir=" + encodeURIComponent(dir)) : "";
+    fetch("{{ url_for('api_list_server_files') }}" + q)
+      .then(function(r) { return r.json(); })
+      .then(function(j) {
+        if (!j.ok) {
+          fbList.innerHTML = "<li class='cryo-file-browser-empty'>" + (j.error || "Error") + "</li>";
+          return;
+        }
+        fbCurrentDir = j.dir;
+        fbPath.textContent = j.dir;
+        fbPath.title = j.dir;
+        fbList.innerHTML = "";
+        if (!j.entries || !j.entries.length) {
+          fbList.innerHTML = "<li class='cryo-file-browser-empty'>No entries here</li>";
+          return;
+        }
+        j.entries.forEach(function(ent) {
+          var li = document.createElement("li");
+          var icon = document.createElement("span");
+          icon.className = "fb-icon";
+          icon.textContent = ent.type === "dir" ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
+          var name = document.createElement("span");
+          name.className = "fb-name";
+          name.textContent = ent.name;
+          li.appendChild(icon);
+          li.appendChild(name);
+          if (ent.type === "dir") {
+            li.addEventListener("click", function() {
+              loadFileBrowserDir(j.dir + "/" + ent.name);
+            });
+          } else {
+            li.addEventListener("click", function() {
+              var fullPath = j.dir + "/" + ent.name;
+              if (fbMode === "save-zpath") {
+                if (fbSaveName) fbSaveName.value = ent.name;
+              } else {
+                closeFileBrowser();
+                importServerPklFile(fullPath);
+              }
+            });
+          }
+          fbList.appendChild(li);
+        });
+      })
+      .catch(function() {
+        fbList.innerHTML = "<li class='cryo-file-browser-empty'>Could not list directory</li>";
+      });
+  }
+
+  function importServerPklFile(serverPath) {
+    setTrajStatus("Loading anchor indices…", false);
+    resetAnchorPathOrderToDefault();
+    if (isManualTraversalMode()) manualCustomPlotRowsRegisterPending = true;
+    var anchorMode = currentAnchorTraversalMode();
+    var nPointsReq = requestedAnchorNPoints(anchorMode);
+    fetch("{{ url_for('api_trajectory_import_anchors') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({
+        server_path: serverPath,
+        x: sx.value,
+        y: sy.value,
+        mode: anchorMode,
+        n_points: nPointsReq,
+        max_neighbors: currentMaxNeighbors(),
+        avg_neighbors: currentAvgNeighbors()
+      }, trajAnchorPathOrderFields()))
+    })
+      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          manualCustomPlotRowsRegisterPending = false;
+          setTrajStatus(res.j.error || "Import failed.", false);
+          return;
+        }
+        onTrajectoryIndicesLoaded(res.j);
+      })
+      .catch(function(err) {
+        manualCustomPlotRowsRegisterPending = false;
+        console.error(err);
+        setTrajStatus("Import request failed.", false);
+      });
+  }
+
+  if (btnTrajVolPickerExpand) {
+    btnTrajVolPickerExpand.addEventListener("click", toggleManualPickerDetailExpanded);
+  }
+  if (btnAnchorImportPkl) {
+    btnAnchorImportPkl.addEventListener("click", function() {
+      openFileBrowser("", "import");
+    });
+  }
+  if (fbUp) {
+    fbUp.addEventListener("click", function() {
+      if (fbCurrentDir) {
+        var parent = fbCurrentDir.replace(/\/[^\/]*\/?$/, "") || "/";
+        loadFileBrowserDir(parent);
+      }
+    });
+  }
+  if (fbCancel) {
+    fbCancel.addEventListener("click", function() {
+      closeFileBrowser();
+    });
+  }
+  if (fbSaveBtn) {
+    fbSaveBtn.addEventListener("click", function() {
+      saveZPathViaBrowser();
+    });
+  }
+  if (btnReverseTraj) {
+    btnReverseTraj.addEventListener("click", function() {
+      if (btnReverseTraj.disabled) return;
+      reverseTrajectory();
+    });
+  }
+  if (btnRecordTrajGif) {
+    btnRecordTrajGif.addEventListener("click", function() {
+      if (btnRecordTrajGif.disabled) return;
+      openTrajGifRecordModal();
+    });
+  }
+  if (trajGifFbUp) {
+    trajGifFbUp.addEventListener("click", function() {
+      if (trajGifFbCurrentDir) {
+        var parent = window.CryoFileBrowser
+          ? CryoFileBrowser.parentDir(trajGifFbCurrentDir)
+          : (trajGifFbCurrentDir.replace(/\/[^\/]*\/?$/, "") || "/");
+        loadTrajGifFileBrowserDir(parent);
+      }
+    });
+  }
+  if (trajGifSaveBtn) {
+    trajGifSaveBtn.addEventListener("click", function() {
+      saveTrajectoryGifViaModal();
+    });
+  }
+  if (trajGifFpsEl) {
+    trajGifFpsEl.addEventListener("input", scheduleTrajGifPreviewRefresh);
+    trajGifFpsEl.addEventListener("change", scheduleTrajGifPreviewRefresh);
+  }
+  if (trajGifIncludeScatterEl) {
+    trajGifIncludeScatterEl.addEventListener("change", scheduleTrajGifPreviewRefresh);
+  }
+  if (trajGifRecordModal) {
+    trajGifRecordModal.addEventListener("click", function(ev) {
+      if (ev.target && ev.target.getAttribute("data-traj-gif-close")) {
+        closeTrajGifRecordModal();
+      }
+    });
+  }
+  if (fbSaveName) {
+    fbSaveName.addEventListener("keydown", function(evt) {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        saveZPathViaBrowser();
+      }
+    });
+  }
+  if (btnAnchorRandom) {
+    btnAnchorRandom.addEventListener("click", function() {
+      addRandomIndicesToTrajectory();
+    });
+  }
+  document.querySelectorAll('input[name="traj-anchor-path-order"]').forEach(function(radio) {
+    radio.addEventListener("change", function() {
+      if (!radio.checked || radio.disabled) return;
+      if (radio.value === "exact") requestExactAnchorPathOrder();
+      else if (radio.value === "heuristic") requestHeuristicAnchorPathOrder();
+      else if (radio.value === "preserve") requestPreserveAnchorPathOrder();
+    });
+  });
+  if (btnAnchorManualOpen) {
+    btnAnchorManualOpen.addEventListener("click", openTrajAnchorManualModal);
+  }
+  if (btnAnchorManualLoad) {
+    btnAnchorManualLoad.addEventListener("click", loadManualAnchorIndices);
+  }
+  if (anchorIndicesManualEl) {
+    anchorIndicesManualEl.addEventListener("keydown", function(evt) {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        loadManualAnchorIndices();
+      }
+    });
+  }
+  if (trajAnchorManualModal && window.CryoDashModal) {
+    CryoDashModal.wire(trajAnchorManualModal, {
+      closeAttr: "data-traj-anchor-manual-close",
+      restoreFocusEl: btnAnchorManualOpen
+    });
+  }
+  if (btnAnchorRemove) {
+    btnAnchorRemove.addEventListener("click", function() {
+      var wasManual = isManualTraversalMode();
+      clearAnchorMode();
+      clearTrajectoryZPanel();
+      if (wasManual) {
+        manualDefaultSelectionApplied = false;
+        if (manualCatalogLoaded) applyDefaultManualPc1Selection(true);
+        else loadManualVolumeCatalog();
+        return;
+      }
+      initDefaultTrajectory(scatterLoadGeneration);
+    });
+  }
+
+  /* ── Before reloading scatter (axes / color): cancel in-flight requests, clear stale 2D state ── */
+  function preparePlotReload(opts) {
+    opts = opts || {};
+    var preservePathIdentity = !!opts.preservePathIdentity;
+    if (!shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh()) {
+      volumeGeneration++;
+      stopDecodeProgressPoll();
+    }
+    coordsRequestId++;
+    dragEndpoint = null;
+    dragPointIndex = -1;
+    clearTrajGlyphOverlay();
+    if (!preservePathIdentity) {
+      trajPlotRows = null;
+    }
+    trajMarkerColors = null;
+    startXY = null;
+    endXY = null;
+    anchorTrajXY = null;
+    editableTrajXY = null;
+    setTrajStatus("", false);
+    if (!anchorIndicesActive) {
+      trajVolColumn.innerHTML = "";
+      clearTrajectoryZPanel();
+    }
+  }
+
+  function reprojectTrajectoryPathToCurrentAxes() {
+    // Catalog / PC waypoints: prefer marker.xy (from z_values.txt projection)
+    // over nearest-particle plot rows when rebuilding for new axes.
+    if (isManualTraversalMode()
+        && manualSelectedVolIds
+        && manualSelectedVolIds.length >= 2
+        && typeof scatterXYForVolumeId === "function") {
+      var markerXY = [];
+      for (var mi = 0; mi < manualSelectedVolIds.length; mi++) {
+        var mpt = scatterXYForVolumeId(manualSelectedVolIds[mi]);
+        if (!mpt) {
+          markerXY = null;
+          break;
+        }
+        markerXY.push(mpt.slice());
+      }
+      if (markerXY && markerXY.length === manualSelectedVolIds.length) {
+        if (typeof syncManualAnchorsPreview === "function") {
+          syncManualAnchorsPreview({ skipVolumeSync: true });
+        } else {
+          anchorTrajXY = markerXY;
+          editableTrajXY = null;
+        }
+        return true;
+      }
+    }
+    var rows = (trajPlotRows && trajPlotRows.length >= 2)
+      ? trajPlotRows
+      : ((anchorIndicesActive && anchorIndicesActive.length >= 2) ? anchorIndicesActive : null);
+    if (!rows || rows.length < 2 || typeof trajXYFromPlotRows !== "function") return false;
+    var xy = trajXYFromPlotRows(rows);
+    if (!xy || xy.length !== rows.length) return false;
+    // Direct-trace must not populate anchorTrajXY: getPathXY prefers anchors
+    // over editable, while glyph markers read editableTrajXY — a nearest fetch
+    // then updates only editable and leaves point 1 visually disconnected.
+    if (!hasAnchorIndices() && !isManualTraversalMode()) {
+      anchorTrajXY = null;
+      editableTrajXY = xy.map(function (p) { return [Number(p[0]), Number(p[1])]; });
+      startXY = editableTrajXY[0].slice();
+      endXY = editableTrajXY[editableTrajXY.length - 1].slice();
+    } else {
+      anchorTrajXY = xy;
+      editableTrajXY = null;
+    }
+    if (!trajPlotRows || trajPlotRows.length < 2) {
+      // Catalog / waypoint preview: keep anchors aligned with reprojected XY.
+      if (anchorIndicesActive && anchorIndicesActive.length === xy.length) {
+        /* keep existing anchors */
+      }
+    }
+    return true;
+  }
+
+  function resetTrajectory() {
+    var wasManual = isManualTraversalMode();
+    resetDisplayedVolumeFocusIndex();
+    clearAnchorMode();
+    if (wasManual) {
+      manualDefaultSelectionApplied = false;
+      if (manualCatalogLoaded) applyDefaultManualPc1Selection(true);
+      else loadManualVolumeCatalog();
+      syncTrajReverseButton();
+      return;
+    }
+    initDefaultTrajectory(scatterLoadGeneration);
+    syncTrajReverseButton();
+  }
+  btnResetEl.addEventListener("click", resetTrajectory);
+
+  /* ── Overlay traces (markers + line) on the scatter ── */
+  var TRAJ_MARKER_ENDPOINT = "circle";
+  var TRAJ_MARKER_WAYPOINT = "circle";
+  var TRAJ_MARKER_SIZE_ENDPOINT = 18;
+  var TRAJ_MARKER_SIZE_WAYPOINT = 18;
+  var TRAJ_TEXTFONT_SIZE = 11;
+  var TRAJ_ANCHOR_MARKER_SIZE = 18;
+  var TRAJ_ANCHOR_TEXTFONT_SIZE = 11;
+
+  function trajectoryLabelCount(pointCount) {
+    if (typeof pointCount === "number" && pointCount >= 2) return pointCount;
+    if (editableTrajXY && editableTrajXY.length >= 2) return editableTrajXY.length;
+    return Math.max(2, currentNPoints());
+  }
+
+  function buildTrajectoryPointLabels(pointCount) {
+    var n = trajectoryLabelCount(pointCount);
+    var labels = [];
+    for (var i = 0; i < n; i++) {
+      labels.push(String(i + 1));
+    }
+    return labels;
+  }
+
+  function trajColorPayloadFields() {
+    var colorCol = sc.value || "none";
+    var fields = { color: colorCol };
+    if (colorCol !== "none" && !trajColorByIsDiscrete()) {
+      fields.palette = selectedTrajPalette();
+    }
+    if (colorCol !== "none" && trajColorByIsDiscrete() && trajDiscreteColorOverridesActive()) {
+      fields.discrete_label_colors = Object.assign({}, trajDiscreteColorOverrides);
+    }
+    return fields;
+  }
+
+  function shouldRefetchTrajectoryColorsOnCovariateChange() {
+    return !!(sc.value && sc.value !== "none" && hasAnchorIndices());
+  }
+
+  function refreshTrajectoryMarkerColorsFromScatter() {
+    if (!sc.value || sc.value === "none") {
+      trajMarkerColors = null;
+      if (typeof scheduleTrajGlyphOverlaySync === "function") scheduleTrajGlyphOverlaySync();
+      else if (typeof syncTrajGlyphOverlay === "function") syncTrajGlyphOverlay();
+      return true;
+    }
+    var rows = (trajPlotRows && trajPlotRows.length >= 2)
+      ? trajPlotRows
+      : ((anchorIndicesActive && anchorIndicesActive.length >= 2) ? anchorIndicesActive : null);
+    if (!rows || rows.length < 2) return false;
+    if (typeof scatterColorForPlotRow !== "function") return false;
+    trajMarkerColors = rows.map(function(row) {
+      return scatterColorForPlotRow(Number(row), null);
+    });
+    if (typeof scheduleTrajGlyphOverlaySync === "function") scheduleTrajGlyphOverlaySync();
+    else if (typeof syncTrajGlyphOverlay === "function") syncTrajGlyphOverlay();
+    return true;
+  }
+
+  function onTrajCovariateStyleChanged() {
+    // Covariate / palette changes must never densify or rebuild path geometry.
+    if (refreshTrajectoryMarkerColorsFromScatter()) return;
+    if (shouldRefetchTrajectoryColorsOnCovariateChange()) {
+      fetchTrajectoryCoords({ colorsOnly: true });
+      return;
+    }
+    syncTrajGlyphOverlay();
+  }
+
+  function trajCovariateColoringActive() {
+    if (!sc.value || sc.value === "none") return false;
+    if (trajMarkerColors && trajMarkerColors.length >= 1) return true;
+    return !!(trajPlotRows && trajPlotRows.length >= 1);
+  }
+
+  function trajCovariateColorAtIndex(ti, fallback) {
+    if (trajMarkerColors && ti >= 0 && ti < trajMarkerColors.length) {
+      var mc = trajMarkerColors[ti];
+      if (mc != null && String(mc)) return String(mc);
+    }
+    if (trajPlotRows && ti >= 0 && ti < trajPlotRows.length) {
+      return scatterColorForPlotRow(trajPlotRows[ti], fallback);
+    }
+    return fallback;
+  }
+
+  function anchorGlyphTrajIndexMap(glyphCount, fullTrajLen, nAnchors) {
+    var map = [];
+    if (!fullTrajLen || fullTrajLen < 2 || glyphCount < 1) {
+      for (var z = 0; z < glyphCount; z++) map.push(z);
+      return map;
+    }
+    if (glyphCount >= fullTrajLen) {
+      for (var a = 0; a < glyphCount; a++) map.push(Math.min(a, fullTrajLen - 1));
+      return map;
+    }
+    var anchorN = Math.max(2, nAnchors || glyphCount);
+    var perSeg = Math.max(1, Math.round((fullTrajLen - 1) / (anchorN - 1)));
+    for (var i = 0; i < glyphCount; i++) {
+      if (i >= anchorN - 1) map.push(fullTrajLen - 1);
+      else map.push(Math.min(i * perSeg, fullTrajLen - 1));
+    }
+    return map;
+  }
+
+  function plotlyColorToCss(c) {
+    if (c == null) return null;
+    if (typeof c === "string") {
+      if (/^#/.test(c) || c.indexOf("rgb") === 0) return c;
+      return null;
+    }
+    if (typeof c === "object" && c.r != null) {
+      return "rgb(" + Math.round(c.r) + "," + Math.round(c.g) + "," + Math.round(c.b) + ")";
+    }
+    return null;
+  }
+
+  var TRAJ_GLYPH_FOCUS_NO_COVARIATE_COLOR = "#e53e3e";
+
+  function trajParseCssRgbColor(c) {
+    if (c == null) return null;
+    var s = String(c).trim();
+    if (/^#/.test(s)) {
+      var h = s.slice(1);
+      if (h.length === 3) {
+        h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      }
+      if (h.length !== 6) return null;
+      var n = parseInt(h, 16);
+      if (!isFinite(n)) return null;
+      return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+    }
+    var m = s.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+    if (m) {
+      return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+    }
+    return null;
+  }
+
+  function trajRgbToHex(r, g, b) {
+    function byte(v) {
+      v = Math.max(0, Math.min(255, Math.round(v)));
+      var hx = v.toString(16);
+      return hx.length < 2 ? "0" + hx : hx;
+    }
+    return "#" + byte(r) + byte(g) + byte(b);
+  }
+
+  function trajInverseCssColor(c) {
+    var rgb = trajParseCssRgbColor(c);
+    if (!rgb) return TRAJ_GLYPH_FOCUS_NO_COVARIATE_COLOR;
+    return trajRgbToHex(255 - rgb.r, 255 - rgb.g, 255 - rgb.b);
+  }
+
+  function trajGlyphFocusHighlightColor(covariateColor) {
+    if (trajCovariateColoringActive()) {
+      return trajInverseCssColor(covariateColor || "#243b53");
+    }
+    return TRAJ_GLYPH_FOCUS_NO_COVARIATE_COLOR;
+  }
+
+  function trajEscapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function trajFormatLegendValue(v) {
+    var CCL = window.CryoCcLegendPrimitives;
+    if (CCL && typeof CCL.formatThresholdValue === "function") {
+      return CCL.formatThresholdValue(v);
+    }
+    if (typeof v !== "number" || !isFinite(v)) return "";
+    return String(Math.round(v * 1000) / 1000);
+  }
+
+  function trajPaletteLinearGradientCss(pal) {
+    var steps = [];
+    for (var si = 0; si <= 10; si++) {
+      var t = si / 10;
+      var col = "#888888";
+      if (typeof CryoColorCovariateLegend !== "undefined"
+          && typeof CryoColorCovariateLegend.paletteScaleCSS === "function") {
+        col = CryoColorCovariateLegend.paletteScaleCSS(pal, t);
+      }
+      steps.push(col + " " + (t * 100) + "%");
+    }
+    return "linear-gradient(to top, " + steps.join(", ") + ")";
+  }
+
+  function resetTrajScatterLegendUiIfColumnChanged(col) {
+    var cc = col ? String(col) : "";
+    if (cc === lastTrajScatterLegendColorCol) return;
+    lastTrajScatterLegendColorCol = cc;
+    trajScatterLegendUi.xNorm = null;
+    trajScatterLegendUi.yNorm = null;
+    trajScatterLegendUi.titleOverride = null;
+    trajScatterLegendUi.discreteLabels = Object.create(null);
+    trajScatterLegendUi.continuousMinLabel = null;
+    trajScatterLegendUi.continuousMaxLabel = null;
+  }
+
+  function trajScatterLegendTitleText(leg) {
+    if (trajScatterLegendUi.titleOverride != null) {
+      return String(trajScatterLegendUi.titleOverride);
+    }
+    return leg.title ? String(leg.title) : String(sc.value || "");
+  }
+
+  function trajScatterLegendDiscreteLabelText(catKey, fallback) {
+    if (Object.prototype.hasOwnProperty.call(trajScatterLegendUi.discreteLabels, catKey)) {
+      return String(trajScatterLegendUi.discreteLabels[catKey]);
+    }
+    return String(fallback);
+  }
+
+  function trajScatterLegendContinuousBoundText(bound, leg) {
+    if (bound === "max" && trajScatterLegendUi.continuousMaxLabel != null) {
+      return String(trajScatterLegendUi.continuousMaxLabel);
+    }
+    if (bound === "min" && trajScatterLegendUi.continuousMinLabel != null) {
+      return String(trajScatterLegendUi.continuousMinLabel);
+    }
+    return bound === "max"
+      ? trajFormatLegendValue(leg.max)
+      : trajFormatLegendValue(leg.min);
+  }
+
+  function clampTrajScatterLegendBox(x, y, legW, legH) {
+    if (!trajScatterColorLegendEl || !scatterPlotStack) return { x: x, y: y };
+    legW = legW || trajScatterColorLegendEl.offsetWidth || 0;
+    legH = legH || trajScatterColorLegendEl.offsetHeight || 0;
+    var stackW = scatterPlotStack.clientWidth || 0;
+    var stackH = scatterPlotStack.clientHeight || 0;
+    var margin = 4;
+    if (stackW > 0) {
+      x = Math.max(margin, Math.min(x, stackW - legW - margin));
+    }
+    if (stackH > 0) {
+      y = Math.max(margin, Math.min(y, stackH - legH - margin));
+    }
+    return { x: x, y: y };
+  }
+
+  function saveTrajScatterLegendPositionFromDom() {
+    if (!trajScatterColorLegendEl || !scatterPlotStack) return;
+    var stackW = scatterPlotStack.clientWidth;
+    var stackH = scatterPlotStack.clientHeight;
+    if (stackW <= 0 || stackH <= 0) return;
+    var x = parseFloat(trajScatterColorLegendEl.style.left);
+    var y = parseFloat(trajScatterColorLegendEl.style.top);
+    if (!isFinite(x)) x = 0;
+    if (!isFinite(y)) y = 0;
+    trajScatterLegendUi.xNorm = x / stackW;
+    trajScatterLegendUi.yNorm = y / stackH;
+  }
+
+  function applyTrajScatterLegendPosition() {
+    if (!trajScatterColorLegendEl || trajScatterColorLegendEl.hidden || !scatterPlotStack) return;
+    trajScatterColorLegendEl.style.right = "auto";
+    trajScatterColorLegendEl.style.bottom = "auto";
+    var stackW = scatterPlotStack.clientWidth;
+    var stackH = scatterPlotStack.clientHeight;
+    var legW = trajScatterColorLegendEl.offsetWidth;
+    var legH = trajScatterColorLegendEl.offsetHeight;
+    var margin = 6;
+    var x;
+    var y;
+    if (trajScatterLegendUi.xNorm != null && trajScatterLegendUi.yNorm != null
+        && stackW > 0 && stackH > 0) {
+      x = trajScatterLegendUi.xNorm * stackW;
+      y = trajScatterLegendUi.yNorm * stackH;
+    } else {
+      x = stackW - legW - margin;
+      y = margin;
+    }
+    var clamped = clampTrajScatterLegendBox(x, y, legW, legH);
+    trajScatterColorLegendEl.style.left = Math.round(clamped.x) + "px";
+    trajScatterColorLegendEl.style.top = Math.round(clamped.y) + "px";
+  }
+
+  function finishTrajScatterLegendTextEdit(el, revertText) {
+    if (!el) return;
+    if (revertText != null) el.textContent = revertText;
+    el.contentEditable = "false";
+    el.classList.remove("cryo-traj-scatter-color-legend__editing");
+    if (el.classList.contains("cryo-traj-scatter-color-legend__title")) {
+      trajScatterLegendUi.titleOverride = String(el.textContent || "").trim();
+    } else if (el.classList.contains("cryo-traj-scatter-color-legend__label")) {
+      var catKey = el.getAttribute("data-cat-key");
+      if (catKey != null) {
+        trajScatterLegendUi.discreteLabels[String(catKey)] = String(el.textContent || "").trim();
+      }
+    } else if (el.classList.contains("cryo-traj-scatter-color-legend__scale-val")) {
+      var bound = el.getAttribute("data-legend-bound");
+      if (bound === "max") {
+        trajScatterLegendUi.continuousMaxLabel = String(el.textContent || "").trim();
+      } else if (bound === "min") {
+        trajScatterLegendUi.continuousMinLabel = String(el.textContent || "").trim();
+      }
+    }
+    requestAnimationFrame(applyTrajScatterLegendPosition);
+  }
+
+  function startTrajScatterLegendTextEdit(el) {
+    if (!el || el.classList.contains("cryo-traj-scatter-color-legend__editing")) return;
+    var original = el.textContent;
+    el.contentEditable = "true";
+    el.classList.add("cryo-traj-scatter-color-legend__editing");
+    el.focus();
+    try {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    } catch (eSel) { /* ignore */ }
+    function onBlur() {
+      el.removeEventListener("blur", onBlur);
+      el.removeEventListener("keydown", onKey);
+      finishTrajScatterLegendTextEdit(el, null);
+    }
+    function onKey(ev) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        el.blur();
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        el.removeEventListener("blur", onBlur);
+        el.removeEventListener("keydown", onKey);
+        finishTrajScatterLegendTextEdit(el, original);
+      }
+    }
+    el.addEventListener("blur", onBlur);
+    el.addEventListener("keydown", onKey);
+  }
+
+  function loadTrajScatterLegendScale() {
+    try {
+      var raw = sessionStorage.getItem(TRAJ_SCATTER_LEGEND_SCALE_STORAGE);
+      if (raw == null || raw === "") {
+        raw = sessionStorage.getItem("cryo-discrete-legend-scale");
+      }
+      if (raw != null && raw !== "") {
+        var v = parseFloat(raw);
+        if (isFinite(v)) {
+          return Math.max(TRAJ_SCATTER_LEGEND_SCALE_MIN, Math.min(TRAJ_SCATTER_LEGEND_SCALE_MAX, v));
+        }
+      }
+    } catch (eLoad) { /* ignore */ }
+    return 1;
+  }
+
+  trajScatterLegendScale = loadTrajScatterLegendScale();
+
+  function trajScatterLegendSizeControlHtml() {
+    var step = String(TRAJ_SCATTER_LEGEND_SCALE_STEP);
+    return '<div class="cryo-traj-scatter-color-legend__size-control" role="group" aria-label="Legend size">'
+      + '<button type="button" class="cryo-traj-scatter-color-legend__size-btn"'
+      + ' data-traj-scatter-legend-size-delta="-' + step + '" aria-label="Decrease legend size">\u2212</button>'
+      + '<button type="button" class="cryo-traj-scatter-color-legend__size-btn"'
+      + ' data-traj-scatter-legend-size-delta="' + step + '" aria-label="Increase legend size">+</button>'
+      + "</div>";
+  }
+
+  function trajScatterLegendHeaderHtml(title) {
+    return '<div class="cryo-traj-scatter-color-legend__header">'
+      + '<div class="cryo-traj-scatter-color-legend__title">' + trajEscapeHtml(title) + "</div>"
+      + "</div>";
+  }
+
+  function syncTrajScatterLegendSizeButtons() {
+    if (!trajScatterColorLegendEl) return;
+    var minus = trajScatterColorLegendEl.querySelector(
+      '[data-traj-scatter-legend-size-delta="-' + String(TRAJ_SCATTER_LEGEND_SCALE_STEP) + '"]'
+    );
+    var plus = trajScatterColorLegendEl.querySelector(
+      '[data-traj-scatter-legend-size-delta="' + String(TRAJ_SCATTER_LEGEND_SCALE_STEP) + '"]'
+    );
+    if (minus) minus.disabled = trajScatterLegendScale <= TRAJ_SCATTER_LEGEND_SCALE_MIN + 1e-6;
+    if (plus) plus.disabled = trajScatterLegendScale >= TRAJ_SCATTER_LEGEND_SCALE_MAX - 1e-6;
+  }
+
+  function applyTrajScatterLegendScale() {
+    if (!trajScatterColorLegendEl) return;
+    trajScatterColorLegendEl.style.setProperty(
+      "--cryo-traj-scatter-legend-scale",
+      String(trajScatterLegendScale)
+    );
+    syncTrajScatterLegendSizeButtons();
+    requestAnimationFrame(applyTrajScatterLegendPosition);
+  }
+
+  function adjustTrajScatterLegendScale(delta) {
+    if (!isFinite(delta) || delta === 0) return;
+    var next = Math.round((trajScatterLegendScale + delta) * 1000) / 1000;
+    next = Math.max(TRAJ_SCATTER_LEGEND_SCALE_MIN, Math.min(TRAJ_SCATTER_LEGEND_SCALE_MAX, next));
+    if (Math.abs(next - trajScatterLegendScale) < 1e-6) return;
+    trajScatterLegendScale = next;
+    try {
+      sessionStorage.setItem(TRAJ_SCATTER_LEGEND_SCALE_STORAGE, String(next));
+    } catch (eStore) { /* ignore */ }
+    applyTrajScatterLegendScale();
+  }

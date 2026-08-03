@@ -59,7 +59,8 @@ def main(args):
     if args.outdir:
         os.makedirs(args.outdir)
 
-    z = pickle.load(open(args.zfile, "rb"))
+    with open(args.zfile, "rb") as fi:
+        z = pickle.load(fi)
     zdim = z.shape[1]
     pc, pca = analysis.run_pca(z)
     dims = args.pc if args.pc is not None else list(range(1, zdim + 1))

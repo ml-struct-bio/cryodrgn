@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from io import BytesIO
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
+
 from PIL import Image
 from plotly.colors import sample_colorscale
 
@@ -36,18 +38,20 @@ from cryodrgn.dashboard.plots_figure_utils import (
 from cryodrgn.dashboard.plots_scatter import (
     _SCATTER3D_FILTERED_MARKER_SIZE_ARRAY_BOOST,
     _scatter3d_apply_filter_visibility_sizes,
-    _scatter3d_glyph_count_for_filter,
     _scatter3d_marker_sizes_with_legend_filter,
     scatter3d_discrete_level_png_bytes,
     scatter3d_z_json,
 )
 from cryodrgn.dashboard.plot_gif_utils import png_base64_frames_to_gif_bytes
 from tests.conftest import (
-    js_function_body,
+    DASHBOARD_ANALYZE_EPOCH,
+    decode_plotly_figure,
+    decode_plotly_value,
+    plotly_trace_array,
     png_b64_rgb,
-    read_dashboard_static_js,
-    read_latent_3d_html,
 )
+
+pytestmark = pytest.mark.dashboard
 
 LATENT_Z_AXES = frozenset({"z0", "z1", "z2"})
 DEFAULT_POINT_CAP = 120_000
@@ -61,7 +65,9 @@ def _scatter3d_figure(
     color: str | None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    return json.loads(scatter3d_z_json(exp, x, y, z, color, **kwargs))
+    return decode_plotly_figure(
+        json.loads(scatter3d_z_json(exp, x, y, z, color, **kwargs))
+    )
 
 
 def _expected_dashboard_scatter3d_glyph(
@@ -84,9 +90,9 @@ def _expected_dashboard_scatter3d_glyph(
 
 
 def _trace_visible_glyph(trace: dict[str, Any]) -> tuple[float, float, int, int]:
-    n_total = len(trace["x"])
+    n_total = len(plotly_trace_array(trace, "x"))
     op = float(trace["marker"]["opacity"])
-    sz = trace["marker"]["size"]
+    sz = decode_plotly_value(trace["marker"]["size"])
     if isinstance(sz, list):
         vis = [float(s) for s in sz if float(s) > 0.0]
         assert vis, "expected at least one visible point"
@@ -98,35 +104,32 @@ def _trace_visible_glyph(trace: dict[str, Any]) -> tuple[float, float, int, int]
 def _assert_filter_preserves_plotly_xyz(unfiltered: dict, filtered: dict) -> None:
     u = unfiltered["data"][0]
     f = filtered["data"][0]
-    assert len(f["x"]) == len(u["x"])
-    assert f["x"] == u["x"]
-    assert f["y"] == u["y"]
-    assert f["z"] == u["z"]
+    ux = plotly_trace_array(u, "x")
+    fx = plotly_trace_array(f, "x")
+    assert len(fx) == len(ux)
+    assert fx == ux
+    assert plotly_trace_array(f, "y") == plotly_trace_array(u, "y")
+    assert plotly_trace_array(f, "z") == plotly_trace_array(u, "z")
     for axis_name in ("xaxis", "yaxis", "zaxis"):
         scene = filtered["layout"]["scene"]
         assert "range" not in (scene.get(axis_name) or {})
-    sizes = f["marker"]["size"]
+    sizes = decode_plotly_value(f["marker"]["size"])
     assert isinstance(sizes, list)
-    assert len(sizes) == len(f["x"])
+    assert len(sizes) == len(fx)
     assert any(float(s) == 0.0 for s in sizes)
     assert any(float(s) > 0.0 for s in sizes)
-    colors = f["marker"]["color"]
+    colors = decode_plotly_value(f["marker"]["color"])
     assert isinstance(colors, list)
     assert not any(str(c).strip().lower().startswith("rgba") for c in colors[:50])
     op = f["marker"]["opacity"]
     assert isinstance(op, (int, float))
     vis_sizes = [float(s) for s in sizes if float(s) > 0.0]
-    u_sz = u["marker"]["size"]
+    u_sz = decode_plotly_value(u["marker"]["size"])
     u_base = float(u_sz) if not isinstance(u_sz, list) else float(max(u_sz))
     if vis_sizes and len(vis_sizes) == len(sizes):
         assert max(vis_sizes) == pytest.approx(u_base)
     elif vis_sizes and len(vis_sizes) < len(sizes):
         assert max(vis_sizes) > u_base
-
-
-@pytest.fixture(scope="module")
-def plotly_scatter3d_scene_js() -> str:
-    return read_dashboard_static_js("plotly_scatter3d_scene.js")
 
 
 class TestScatter3dPlotGifUtils:
@@ -174,6 +177,59 @@ class TestScatter3dApiEndpoints:
             or "landscape" in err.lower()
             or "three" in err.lower()
         )
+
+    def test_api_scatter3d_z_landscape_full_with_mock_outputs(
+        self,
+        flask_client_landscape_full,
+        dashboard_workdir_with_landscape_full: str,
+    ) -> None:
+        from cryodrgn.dashboard.landscape_full_3d import landscape_full_3d_ready
+
+        assert landscape_full_3d_ready(
+            dashboard_workdir_with_landscape_full, DASHBOARD_ANALYZE_EPOCH
+        )
+        r = flask_client_landscape_full.get(
+            "/api/scatter3d_z_landscape_full"
+            "?x=landscape_vol_PC1&y=landscape_vol_PC2&z=landscape_vol_PC3&color=none"
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:500]
+        assert r.get_json()["data"]
+
+    def test_landscape_full_scatter_covariate_roundtrip(
+        self, flask_client_landscape_full
+    ) -> None:
+        """Colour by vol-PC uses display labels from ``covariate_labels``."""
+        from cryodrgn.dashboard import covariate_labels
+
+        r = flask_client_landscape_full.get(
+            "/api/scatter3d_z_landscape_full"
+            "?x=landscape_vol_PC1&y=landscape_vol_PC2&z=landscape_vol_PC3"
+            "&color=landscape_vol_PC1"
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)[:500]
+        fig = r.get_json()
+        assert fig["data"]
+        layout = fig.get("layout") or {}
+        # Axis / colourbar titles should use the pretty Vol PC label when available.
+        pretty = covariate_labels.covariate_display_name("landscape_vol_PC1")
+        text_blob = json.dumps(layout)
+        assert (
+            "Vol PC" in text_blob
+            or pretty in text_blob
+            or "landscape_vol_PC1" in text_blob
+        )
+        marker = fig["data"][0].get("marker") or {}
+        assert marker.get("color") is not None or marker.get("colorscale") is not None
+
+    def test_landscape_full_3d_page_renders_with_mock_outputs(
+        self, flask_client_landscape_full
+    ) -> None:
+        r = flask_client_landscape_full.get("/landscape-full-3d")
+        assert r.status_code == 200
+        body = r.get_data(as_text=True)
+        assert 'id="latent3d"' in body
+        assert "/vendor/plotly.min.js" in body
+        assert "analyze_landscape_full" not in body.lower()
 
     def test_api_latent3d_landscape_full_discrete_gif_without_outputs_is_400(
         self, flask_client
@@ -373,6 +429,45 @@ class TestScatter3dPlotJson:
         assert int(row0[-1]) in (1, 2, 3)
         assert int(row0[-2]) in (0, 1)
 
+    def test_scatter3d_vol_landscape_centroid_cd_before_nearest_with_color(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        """Colour covariates must not displace the centroid flag from length-2.
+
+        ``latent3d_landscape_vol_animations.js`` circles montage letters using
+        ``customdata[length-2] === 1``. Packing the colour column after the
+        centroid flag made circling depend on colour values.
+        """
+        e = dashboard_experiment
+        sub = e.plot_df.iloc[:40].copy()
+        sub[VOL_LANDSCAPE_3D_PLOT_DF_ROW] = np.arange(40, dtype=np.int64)
+        sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL] = (
+            np.arange(len(sub), dtype=np.int64) % 3 + 1
+        )
+        cent = (np.arange(len(sub), dtype=np.int64) % 5 == 0).astype(np.int64)
+        sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID] = cent
+        # Distinct from 0/1 so a misplaced colour column cannot look like a flag.
+        sub["umap1"] = np.linspace(10.0, 20.0, len(sub), dtype=np.float64)
+        allow = frozenset(list(LATENT_Z_AXES) + ["umap1"])
+        fig = _scatter3d_figure(
+            e,
+            "z0",
+            "z1",
+            "z2",
+            "umap1",
+            plot_df=sub,
+            xyz_axes_allowed=allow,
+            volume_landscape_3d_style=True,
+        )
+        cd = np.asarray(fig["data"][0]["customdata"])
+        assert cd.shape[1] == 4
+        # [plot_row, colour, centroid_flag, nearest_vol] — colour must not sit at length-2.
+        assert np.all((cd[:, 1] >= 10.0) & (cd[:, 1] <= 20.0))
+        assert set(cd[:, -2].astype(np.int64).tolist()) <= {0, 1}
+        assert int(cd[:, -2].sum()) == int(cent.sum())
+        assert set(cd[:, -1].astype(np.int64).tolist()) <= {1, 2, 3}
+        assert not np.allclose(cd[:, -2], cd[:, 1])
+
     def test_subsample_preserving_sketch_centroids_keeps_centroid_rows(self) -> None:
         n = 200
         cent = np.zeros(n, dtype=np.int64)
@@ -412,7 +507,6 @@ class TestScatter3dLegendFilterAxisStability:
         assert hasattr(plots_scatter_mod, "_scatter3d_subsample_full_table")
         assert hasattr(plots_scatter_mod, "_scatter3d_filter_visibility_on_subsample")
         assert hasattr(plots_scatter_mod, "_scatter3d_apply_filter_visibility_sizes")
-        assert hasattr(plots_scatter_mod, "_scatter3d_glyph_count_for_filter")
         assert hasattr(plots_scatter_mod, "_scatter3d_marker_sizes_with_legend_filter")
 
     def test_scatter3d_apply_filter_visibility_sizes_keeps_scalar_when_all_visible(
@@ -470,19 +564,9 @@ class TestScatter3dLegendFilterAxisStability:
         mismatched = _scatter3d_figure(e, "z0", "z1", "z2", "znorm", color_filter=stale)
         u = unfiltered["data"][0]
         m = mismatched["data"][0]
-        assert m["x"] == u["x"]
+        assert plotly_trace_array(m, "x") == plotly_trace_array(u, "x")
         assert m["marker"]["size"] == u["marker"]["size"]
         assert m["marker"]["opacity"] == u["marker"]["opacity"]
-
-    def test_scatter3d_glyph_count_for_filter_curve(self) -> None:
-        import numpy as np
-
-        assert _scatter3d_glyph_count_for_filter(1000, None) == 1000
-        all_vis = np.ones(1000, dtype=bool)
-        assert _scatter3d_glyph_count_for_filter(1000, all_vis) == 1000
-        part = all_vis.copy()
-        part[::2] = False
-        assert _scatter3d_glyph_count_for_filter(1000, part) == 500
 
     def test_scatter3d_full_subsample_filter_matches_no_colour_glyph(
         self, dashboard_experiment: DashboardExperiment
@@ -695,7 +779,7 @@ class TestScatter3dLegendFilterAxisStability:
             no_subsample=True,
             color_filter={"kind": "discrete", "keys": [fk]},
         )
-        assert len(unfiltered["data"][0]["x"]) == len(sub)
+        assert len(plotly_trace_array(unfiltered["data"][0], "x")) == len(sub)
         _assert_filter_preserves_plotly_xyz(unfiltered, filtered)
         point_cap = max(len(sub), 1)
         u_sz, _, _, n_all = _trace_visible_glyph(unfiltered["data"][0])
@@ -727,341 +811,268 @@ class TestScatter3dLegendFilterAxisStability:
         assert isinstance(png, bytes) and len(png) > 100
 
 
-class TestScatter3dLatent3dTemplateContracts:
-    """Template / vol-PCA JS contracts for the shared ``latent_3d.html`` shell."""
+class TestScatter3dBrowserSmoke:
+    """Headless Chromium: latent-3D and landscape-full-3D Plotly flows."""
 
-    def test_latent_3d_vol_anim_wires_preview_loading_callback(self) -> None:
-        """ChimeraX runs use ``setPreviewAnimLoading`` on the preview stack; main ``setRendering`` is scatter reload only."""
-        text = read_latent_3d_html()
-        assert "setPreviewAnimLoading:" in text
-        assert "latent3dVolAnimApi.afterPlotRedraw" in text
-        assert "l3dva-preview-anim-overlay" in text
-        assert "function setRendering(on" in text
-        assert "setRendering(true" in text
-        assert "setLatent3dPreviewAnimLoading" in text
-        assert "CryoLatent3dVolLandscapeAnim.boot" in text
-        vol_text = read_dashboard_static_js("latent3d_landscape_vol_animations.js")
-        assert "reapplySelectionHighlightIfNeeded" in vol_text
-        assert "estimatedChimeraxViewMatrixText" in vol_text
-        assert "viewRotationsAreActive" in vol_text
-        assert "syncViewMatrixField" in vol_text
-        assert "applyViewMatrixFromField" in vol_text
-        assert "view-matrix-input" in text
-        assert 'name="l3dva-gif-mode"' in text
-        assert 'value="disabled"' in text
-        assert "animationsEnabled" in vol_text
-        assert "volSelectionBlockedForAdd" in vol_text
-        assert "ChimeraX view matrix: rendering" not in vol_text
-        assert "referenceScatter3dBaseMarkerSize" in vol_text
+    pytestmark = pytest.mark.browser
 
-    def test_landscape_volpca_selection_sizes_respect_trace_marker(self) -> None:
-        vol_text = read_dashboard_static_js("landscape_volpca.js")
-        assert "referenceScatter3dBaseMarkerSize" in vol_text
-        assert "cdrgnVolSelectionOverlay" in vol_text
-        assert "volIdToPointIndex" in vol_text
-        assert "updateVolSelectionOverlay" in vol_text
-        assert "volMontageLabel" in vol_text
-        assert "syncStableSelectionLabels" in vol_text
-        assert "suppressPlotlySelectedUntil" in vol_text
-        assert "beginClickToggleSelection" in vol_text
-        assert "plotlySelectedSuppressed" in vol_text
-        assert "plotlySelectedFromLassoOrBox" in vol_text
-        assert "volFromClickEvent" in vol_text
-        assert "volLassoBoxGestureActive" in vol_text
-        assert "plotly_selecting" in vol_text
-        assert "baseTracePointsFromSelectedEvent" in vol_text
-        assert "traceForPlotlyPoint" in vol_text
-        assert "applyBaseTraceOpacityDimming" in vol_text
-        assert "VOLSKETCH_LASSO_DEBOUNCE_MS" in vol_text
-        assert "beginVolsketchLassoDimmingGesture" in vol_text
-        start = vol_text.find('gd.on("plotly_selected", function(ev)')
-        assert start != -1
-        mid = vol_text.find("volsketchLassoSelectTimer = setTimeout(function()", start)
-        assert mid != -1
-        end = vol_text.find("}, VOLSKETCH_LASSO_DEBOUNCE_MS);", mid)
-        debounce_block = vol_text[mid:end]
-        assert "handleVolSketchPlotlySelected" in debounce_block
-        assert "selectedpoints: [indices.slice()]" in vol_text
-        assert "assignVolMontageLabelsSorted" in vol_text
-        assert "resetVolMontageLabels" in vol_text
-
-    def test_latent_3d_loads_scatter3d_scene_module_before_vol_anim(self) -> None:
-        text = read_latent_3d_html()
-        assert "plotly_scatter3d_scene.js" in text
-        assert "lastLatent3dPersistedSceneSnap" in text
-        assert "latent3dSceneSnapHasCamera" in text
-        assert "inset: 0" in text
-        assert "background: transparent" in text
-        p3 = text.index("plotly_scatter3d_scene.js")
-        assert p3 < text.index("(function() {")
-        js_text = read_dashboard_static_js("plotly_scatter3d_scene.js")
-        assert "CryoPlotlyScatter3dScene" in js_text
-        assert "applySnapshotToFigureLayout" in js_text
-        assert "sceneRelayoutPatchCameraOnly" in js_text
-        # Colour-covariate changes await legend ``refresh`` before vol-anim tail + scene restore.
-        assert "pRefresh" in text and "cRefresh.then" in text
-
-
-class TestPlotlyScatter3dSceneCameraPreserve:
-    """Static contracts for ``plotly_scatter3d_scene.js`` orbit preservation."""
-
-    def test_scene_relayout_patch_camera_only_is_camera_only(
-        self, plotly_scatter3d_scene_js: str
+    def test_scatter3d_and_discrete_legend(
+        self, playwright_page, dashboard_live_url
     ) -> None:
-        body = js_function_body(
-            plotly_scatter3d_scene_js,
-            "function sceneRelayoutPatchCameraOnly",
-            "function restore(",
-        )
-        assert '"scene.camera"' in body
-        assert "scene.xaxis.range" not in body
-        assert "scene.yaxis.range" not in body
+        from tests.conftest import dashboard_smoke_latent_3d
 
-    def test_marker_restyle_preserving_camera_uses_plotly_update(
-        self, plotly_scatter3d_scene_js: str
+        out = dashboard_smoke_latent_3d(playwright_page, dashboard_live_url)
+        assert out["trace0type"] == "scatter3d"
+        assert out["discrete_legend_toggles"] >= 1
+
+    def test_camera_stable_on_discrete_covariate_change(
+        self, playwright_page, dashboard_live_url
     ) -> None:
-        body = js_function_body(
-            plotly_scatter3d_scene_js,
-            "function traceMarkerRestylePreservingCamera",
-            "function traceCoordsRestyleFromFigure",
+        from tests.conftest import dashboard_smoke_latent_3d_camera_on_covariate_change
+
+        out = dashboard_smoke_latent_3d_camera_on_covariate_change(
+            playwright_page, dashboard_live_url
         )
-        assert "Plotly.update(gd, upd, layoutPatch, [0])" in body
-        assert "snapHasAxisRanges(pinSnap)" in body
-        assert "sceneRelayoutPatchFromSnap(pinSnap)" in body
-        assert "sceneRelayoutPatchCameraOnly(pinSnap)" in body
+        assert out["camera_stable"]
 
-    def test_relayout_preserve_view_patch_uses_pin_ranges_not_server_layout(
-        self, plotly_scatter3d_scene_js: str
-    ) -> None:
-        body = js_function_body(
-            plotly_scatter3d_scene_js,
-            "function relayoutPreserveViewPatch",
-            "function applySnapshotToFigureLayout",
-        )
-        assert "sceneRelayoutPatchFromSnap(pin)" in body
-        assert "sceneAxisRangeRelayoutPatchFromLayout" not in body
-
-    def test_resolve_camera_prefers_webgl_get_camera(
-        self, plotly_scatter3d_scene_js: str
-    ) -> None:
-        body = js_function_body(
-            plotly_scatter3d_scene_js,
-            "function resolveCameraFromGd",
-            "function snapshot(",
-        )
-        assert "scene._scene.getCamera" in body
-
-    def test_apply_snapshot_camera_only_skips_axis_ranges(
-        self, plotly_scatter3d_scene_js: str
-    ) -> None:
-        body = js_function_body(
-            plotly_scatter3d_scene_js,
-            "function applySnapshotCameraOnlyToFigureLayout",
-            "function layoutPatchWithoutScene",
-        )
-        assert "fig.layout.scene.camera" in body
-        assert "xaxis" not in body or "applyRange" not in body
-
-
-class TestColorCovariateLegendFilterColumnBinding:
-    """Legend filters must not leak across covariate column changes."""
-
-    def test_get_filter_for_api_discrete_requires_matching_column(self) -> None:
-        text = read_dashboard_static_js("color_covariate_legend.js")
-        body = js_function_body(
-            text,
-            "CryoColorCovariateLegend.prototype.getFilterForApi",
-            "CryoColorCovariateLegend.prototype.clearThreshold",
-        )
-        assert "_discreteCol !== col" in body
-        refresh = text.split('if (data.mode === "discrete")', 1)[1]
-        assert "self._discreteCol = col" in refresh
-
-
-class TestScatter3dLatent3dCameraSnapBack:
-    """Regression guards for latent-3D viewing-angle snap-back fixes."""
-
-    def test_set_rendering_does_not_restore_camera_before_overlay(self) -> None:
-        text = read_latent_3d_html()
-        fn = text.split("function setRendering(on, opts)", 1)[1]
-        body = fn.split("function selectedLatentPalette", 1)[0]
-        assert "Do not relayout the camera before showing the badge" in body
-        assert "restoreCameraOnly" not in body
-
-    def test_same_axes_reload_uses_nonblocking_rendering_overlay(self) -> None:
-        text = read_latent_3d_html()
-        fn = text.split("function loadPlot()", 1)[1]
-        body = fn.split("function buildLatent3dPostPayload", 1)[0]
-        assert "useNonblockingOverlay" in body
-        assert "latent3dSameAxesAsLast" in body
-        assert "setRendering(true, { nonblocking: useNonblockingOverlay })" in body
-
-    def test_load_plot_captures_live_scene_pin_before_fetch(self) -> None:
-        text = read_latent_3d_html()
-        fn = text.split("function loadPlot()", 1)[1]
-        body = fn.split("fetch(scatter3dUrl", 1)[0]
-        assert "latent3dCaptureScenePinPreferLive()" in body
-        assert (
-            "P3S.snapshot(gd)"
-            in text.split("function latent3dCaptureScenePinPreferLive", 1)[1].split(
-                "function latent3dCameraWatchdog", 1
-            )[0]
-        )
-
-    def test_colour_covariate_tail_awaits_legend_refresh_before_overlay_off(
+    @pytest.mark.parametrize(
+        "smoke_name,fixture_url,key,min_val",
+        [
+            (
+                "dashboard_smoke_landscape_full_3d",
+                "dashboard_landscape_full_live_url",
+                "count",
+                1,
+            ),
+            (
+                "dashboard_smoke_landscape_full_3d_clear_selection",
+                "dashboard_landscape_full_live_url",
+                "annotations_cleared",
+                True,
+            ),
+        ],
+        ids=["random_selection", "clear_selection"],
+    )
+    def test_landscape_full_3d_smokes(
         self,
+        smoke_name: str,
+        fixture_url: str,
+        key: str,
+        min_val,
+        request,
+        playwright_page,
     ) -> None:
-        text = read_latent_3d_html()
-        assert "knocks the scatter3d camera back" in text
-        tail = text.split("function runLatent3dPostResizeTail", 1)[1]
-        assert "cRefresh.then(function()" in tail
-        idx_refresh = tail.index("cRefresh.then")
-        idx_overlay_off = tail.index("setRendering(false)")
-        assert idx_refresh < idx_overlay_off
+        import tests.conftest as cf
 
-    def test_same_axes_marker_restyle_preserves_camera(self) -> None:
-        text = read_latent_3d_html()
-        fn = text.split("function latent3dApplyFigurePreservingScene", 1)[1]
-        body = fn.split("function latent3dStabilizeSceneAfterOverlay", 1)[0]
-        assert "traceMarkerRestylePreservingCamera(fig, gd, viewPin)" in body
-        assert "prepareFigureSceneForPinnedViewRedraw(fig, gd, pin)" in body
-        assert "relayoutPreserveViewPatch(viewPin)" in body
+        smoke_fn = getattr(cf, smoke_name)
+        url = request.getfixturevalue(fixture_url)
+        out = smoke_fn(playwright_page, url)
+        assert out is not None
+        if isinstance(min_val, bool):
+            assert out[key] is min_val
+        else:
+            assert out[key] >= min_val
 
-    def test_same_axes_filter_restyle_does_not_apply_server_axis_ranges(self) -> None:
-        text = read_latent_3d_html()
-        fn = text.split("function latent3dApplyFigurePreservingScene", 1)[1]
-        body = fn.split("function latent3dStabilizeSceneAfterOverlay", 1)[0]
-        assert "relayoutCameraAndAxisPatch(pin, fig.layout, true)" not in body
 
-    def test_legend_colour_filter_preserves_user_3d_axis_limits_regression(
-        self, plotly_scatter3d_scene_js: str
-    ) -> None:
-        """Client-side freeze on ``latent_3d.html`` (server contract: ``TestScatter3dLegendFilterAxisStability``)."""
-        html = read_latent_3d_html()
-        scene_js = plotly_scatter3d_scene_js
-        apply_body = html.split("function latent3dApplyFigurePreservingScene", 1)[
-            1
-        ].split("function latent3dStabilizeSceneAfterOverlay", 1)[0]
-        assert "prepareFigureSceneForPinnedViewRedraw(fig, gd, pin)" in apply_body
-        assert "relayoutPreserveViewPatch(viewPin)" in apply_body
-        assert "relayoutCameraAndAxisPatch(pin, fig.layout, true)" not in apply_body
-        marker_fn = scene_js.split("function traceMarkerRestylePreservingCamera", 1)[1]
-        assert (
-            "snapHasAxisRanges(pinSnap)"
-            in marker_fn.split("function traceCoordsRestyleFromFigure", 1)[0]
+@pytest.fixture(scope="class")
+def oriented_page(playwright_isolated_browser, dashboard_live_url):
+    """One orbited latent-3D page shared by ``TestLatent3dCameraPreservation``."""
+    from tests.conftest import (
+        dashboard_open_latent_3d,
+        dashboard_orbit_scene_camera,
+        dashboard_scene_camera,
+    )
+
+    context = playwright_isolated_browser.new_context(
+        viewport={"width": 1400, "height": 900}
+    )
+    page = context.new_page()
+    dashboard_open_latent_3d(page, dashboard_live_url)
+    default_camera = dashboard_scene_camera(page, "latent3d")
+    orbited = dashboard_orbit_scene_camera(page, "latent3d")
+    yield page, default_camera, orbited
+    context.close()
+
+
+class TestLatent3dCameraPreservation:
+    """A user's orbit must survive every control that redraws the 3D scene.
+
+    Losing the camera on redraw has been fixed repeatedly: a selection restyled the
+    trace ``mode`` and reset orbit and zoom, axis ranges read back as ``undefined``,
+    and Plotly's own reset fired before the pose could be captured. Comparing cameras
+    from the default pose cannot detect a reset *back* to that default, so the scene
+    is dragged somewhere distinctive first and every check also asserts the pose has
+    not fallen back.
+
+    One page serves the whole class: each 3D scene holds WebGL resources that are not
+    released between contexts, and after a few of them a drag no longer orbits at all
+    under SwiftShader.
+    """
+
+    pytestmark = pytest.mark.browser
+
+    @staticmethod
+    def _settled_camera(page):
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_wait_latent3d_overlay_hidden,
+            dashboard_scene_camera,
         )
-        prep_fn = scene_js.split("function prepareFigureSceneForPinnedViewRedraw", 1)[1]
-        prep_body = prep_fn.split("function restorePinnedView", 1)[0]
-        assert "stripSceneAxisRangesFromFigureLayout(fig)" in prep_body
-        assert "effectiveViewSnapForRedraw(gd, pin)" in prep_body
-        enforce_fn = scene_js.split("function scheduleEnforceCamera", 1)[1]
-        enforce_body = enforce_fn.split("function markerRestyleUpdateFromFigure", 1)[0]
-        assert "restorePinnedView(gd, pin)" in enforce_body
 
-    def test_rendering_overlay_is_not_stacked_over_webgl_plot(self) -> None:
-        text = read_latent_3d_html()
-        assert "latent3d-rendering-overlay" in text
-        assert "cryo-plot-rendering-overlay--nonblocking" in text
-        # Full-bleed veil must not use backdrop-filter over the WebGL canvas.
-        head = text.split("{% block content %}", 1)[0]
-        assert "backdrop-filter" not in head or "No backdrop-filter" in head
-        assert "#latent3d-rendering-overlay" in head
-        assert "inset: 0" in head
-
-    def test_afterplot_does_not_restore_stale_load_pin_after_user_orbit(self) -> None:
-        text = read_latent_3d_html()
-        fn = text.split("function latent3dOnPlotlyAfterplot", 1)[1]
-        body = fn.split("function latent3dPersistSceneAfterUserOrbit", 1)[0]
-        assert "User orbited during scene hold" in body
-        assert "cameraEyeDiffers(loadPin, liveAfter)" in body
-        persist = text.split("function latent3dPersistSceneAfterUserOrbit", 1)[1]
-        persist = persist.split("function latent3dOnPlotlyAfterplot", 1)[0]
-        assert "gd._cryoLatent3dLoadScenePin = holdPin" in persist
-
-    def test_volanim_discrete_legend_does_not_expand_from_plot_width(self) -> None:
-        """Discrete mode must not set ``--cryo-discrete-legend-w`` from plot stack (squeezes the 3D view)."""
-        text = read_latent_3d_html()
-        fn = text.split("function syncLatent3dDiscreteLegendTargetWidth", 1)[1]
-        body = fn.split("function syncLatent3dLegendMiddleWidth", 1)[0]
-        assert "latent3dIsVolanimLayout()" in body
-        assert 'removeProperty("--cryo-discrete-legend-w")' in body
-        volanim = text.split(
-            ".cryo-dash-row--latent3d-volanim .latent3d-plot-legend-band", 1
-        )[1]
-        volanim = volanim.split("{% endif %}", 1)[0]
-        assert (
-            "grid-template-columns: minmax(0, max-content) minmax(0, 9.25rem)"
-            in volanim
+        _dashboard_smoke_wait_latent3d_overlay_hidden(
+            page, timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS
         )
-        assert "cryo-cc-discrete-switches--pair-2col" in volanim
+        return dashboard_scene_camera(page, "latent3d")
+
+    def _assert_camera_held(self, oriented_page, before, after):
+        """The pose must be unchanged, and must not have fallen back to the default."""
+        from tests.conftest import dashboard_cameras_match
+
+        _, default_camera, _ = oriented_page
+        assert dashboard_cameras_match(before, after), f"{before!r} -> {after!r}"
+        assert not dashboard_cameras_match(
+            default_camera, after
+        ), "camera reset to the default pose"
+
+    def _to_discrete_colour(self, page):
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_set_select_value,
+        )
+
+        _dashboard_smoke_set_select_value(page, "sc", "labels")
+        page.wait_for_function(
+            """() => {
+              var s = document.getElementById('latent3d-color-discrete-switches');
+              return s && s.querySelectorAll('button, label, input').length > 0;
+            }""",
+            timeout=DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+        )
+        return self._settled_camera(page)
+
+    def test_dragging_the_scene_orbits_the_camera(self, oriented_page):
+        """Guards the rest of the class: a no-op orbit would make it vacuous."""
+        from tests.conftest import dashboard_cameras_match
+
+        _, default_camera, orbited = oriented_page
+        assert orbited["eye"] and orbited["up"]
+        assert not dashboard_cameras_match(default_camera, orbited)
+
+    def test_orbit_survives_a_discrete_covariate_change(self, oriented_page):
+        page, _, _ = oriented_page
+        before = self._settled_camera(page)
+        after = self._to_discrete_colour(page)
+        self._assert_camera_held(oriented_page, before, after)
+
+    def test_orbit_survives_toggling_a_discrete_level(self, oriented_page):
+        page, _, _ = oriented_page
+        before = self._to_discrete_colour(page)
+
+        page.locator("#latent3d-color-discrete-switches input").first.click()
+        page.wait_for_timeout(600)
+        self._assert_camera_held(oriented_page, before, self._settled_camera(page))
+
+    def test_orbit_survives_inverting_the_discrete_selection(self, oriented_page):
+        page, _, _ = oriented_page
+        before = self._to_discrete_colour(page)
+
+        invert = page.locator("#latent3d-btn-discrete-invert")
+        if invert.count() == 0 or not invert.is_visible():
+            pytest.skip("discrete invert control not offered on this dataset")
+        invert.click()
+        page.wait_for_timeout(600)
+        self._assert_camera_held(oriented_page, before, self._settled_camera(page))
+
+    def test_orbit_survives_clearing_the_colour_column(self, oriented_page):
+        from tests.conftest import _dashboard_smoke_set_select_value
+
+        page, _, _ = oriented_page
+        before = self._to_discrete_colour(page)
+
+        _dashboard_smoke_set_select_value(page, "sc", "none")
+        page.wait_for_timeout(600)
+        self._assert_camera_held(oriented_page, before, self._settled_camera(page))
+
+    def test_scene_still_holds_points_after_the_redraws(self, oriented_page):
+        """A preserved camera pointing at an empty scene would still be a regression."""
+        from tests.conftest import (
+            DASHBOARD_BROWSER_FAST_TIMEOUT_MS,
+            _dashboard_smoke_wait_plot_ready,
+        )
+
+        page, _, _ = oriented_page
+        self._to_discrete_colour(page)
+        info = _dashboard_smoke_wait_plot_ready(
+            page, "latent3d", timeout_ms=DASHBOARD_BROWSER_FAST_TIMEOUT_MS
+        )
+        assert info["n"] > 0
+        assert info["type"] == "scatter3d"
 
 
-class TestLatent3dVolAnimScatter3dCameraPreserve:
-    """Vol-landscape animation UI must not reset the main scatter3d orbit on relayout."""
+class TestLandscapeFull3dColumnConsistency:
+    """The 3D volume-landscape page must not offer columns its API rejects.
 
-    def test_montage_relayout_only_patches_camera_when_annotations_present(
-        self,
+    The page injects ``axis_cols`` and ``numeric_cols`` into the same
+    ``latent_3d.html`` menus that ``/api/scatter3d_z_landscape_full`` validates
+    separately. This is the sibling of the landscape vol-PCA colour menu, where the
+    two lists had drifted apart and every mixed-case column was refused.
+    """
+
+    @staticmethod
+    def _page_columns(client):
+        """The axis and colour lists the page actually hands to its menus."""
+        body = client.get("/landscape-full-3d").get_data(as_text=True)
+        axes = re.search(r"var axisCols = (\[.*?\]);", body, re.S)
+        colours = re.search(r"var cols = (\[.*?\]);", body, re.S)
+        assert axes and colours, "landscape-full-3D page did not embed its menus"
+        return json.loads(axes.group(1)), json.loads(colours.group(1))
+
+    @staticmethod
+    def _scatter(client, axes, color):
+        return client.get(
+            "/api/scatter3d_z_landscape_full",
+            query_string={"x": axes[0], "y": axes[1], "z": axes[2], "color": color},
+        )
+
+    def test_every_advertised_axis_can_be_plotted(
+        self, flask_client_landscape_full
     ) -> None:
-        text = read_dashboard_static_js("latent3d_landscape_vol_animations.js")
-        fn = text.split("function relayoutMontageAnnotations", 1)[1]
-        body = fn.split("function refreshSelectionHighlight", 1)[0]
-        assert "captureVolAnimScenePinLiveOnly() || scenePin" in body
-        assert "if (anns.length && camPin && camPin.camera" in body
-        assert "Patching scene.camera when only clearing" in text
+        axes, _ = self._page_columns(flask_client_landscape_full)
+        assert len(axes) >= 3, "the 3D landscape page needs three axes"
 
-    def test_capture_vol_anim_scene_pin_prefers_live_snapshot(self) -> None:
-        text = read_dashboard_static_js("latent3d_landscape_vol_animations.js")
-        fn = text.split("function captureVolAnimScenePin", 1)[1]
-        body = fn.split("function scheduleRestoreVolAnimScenePin", 1)[0]
-        assert "P3S.snapshot(gd)" in body
-        assert "P3S.getPinnedSnap(gd)" in body
+        for axis in axes:
+            others = [a for a in axes if a != axis][:2]
+            r = self._scatter(flask_client_landscape_full, [axis, *others], "none")
+            assert r.status_code == 200, (
+                f"page offers axis {axis!r} but the scatter rejects it: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
 
-    def test_selection_highlight_extends_scene_hold_when_load_pin_set(self) -> None:
-        text = read_dashboard_static_js("latent3d_landscape_vol_animations.js")
-        fn = text.split("function refreshSelectionHighlight", 1)[1]
-        body = fn.split("function reapplySelectionHighlightIfNeeded", 1)[0]
-        assert "gd._cryoLatent3dLoadScenePin" in body
-        assert "gd._cryoLatent3dSceneHoldUntil = Date.now()" in body
+    def test_every_advertised_colour_column_is_accepted(
+        self, flask_client_landscape_full
+    ) -> None:
+        axes, colours = self._page_columns(flask_client_landscape_full)
+        assert colours, "the 3D landscape page offered no colour columns"
 
-    def test_vol_anim_restore_uses_camera_only_api(self) -> None:
-        text = read_dashboard_static_js("latent3d_landscape_vol_animations.js")
-        assert "P3S.restoreCameraOnly" in text
-        assert "P3S.scheduleEnforceCamera" in text
+        for column in ["none", *colours]:
+            r = self._scatter(flask_client_landscape_full, axes, column)
+            assert r.status_code == 200, (
+                f"page offers colour {column!r} but the scatter rejects it: "
+                f"{r.get_data(as_text=True)[:200]}"
+            )
 
-    def test_cycle_segment_colors_prefer_server_backgrounds(self) -> None:
-        text = read_dashboard_static_js("latent3d_landscape_vol_animations.js")
-        fn = text.split("function refreshPreviewOverlayLetterColors", 1)[1]
-        body = fn.split("function boldAnchorPointForVol", 1)[0]
-        assert "segment_covariate_backgrounds" in body
-        assert "fromServer" in body
+    def test_advertised_colours_actually_colour_the_points(
+        self, flask_client_landscape_full
+    ) -> None:
+        """Accepting a colour and then ignoring it is the quieter half of this bug."""
+        from tests.conftest import decode_plotly_figure
 
-    def test_refresh_selection_highlight_prefers_live_scene_pin(self) -> None:
-        """GIF / montage tail must not restore double-click / load pin over the live orbit."""
-        text = read_dashboard_static_js("latent3d_landscape_vol_animations.js")
-        fn = text.split("function refreshSelectionHighlight", 1)[1]
-        body = fn.split("function toggleVol", 1)[0]
-        assert "_cryoLatent3dLoadScenePin || captureVolAnimScenePin" not in body
-        assert "var scenePin = captureVolAnimScenePinLiveOnly()" in body
-        assert "captureVolAnimScenePinLiveOnly() || scenePin" in text
-        assert "volAnimSelOverlayDepth >= 1" in body
-        assert "mergeSnapsPreferPointerdown(volAnimPointerdownSnap, pin)" in text
-        cap = text.split("function captureVolAnimScenePin()", 1)[1]
-        cap = cap.split("function scheduleRestoreVolAnimScenePin", 1)[0]
-        assert "Date.now() - volAnimPointerdownAt < 1200" in cap
-
-    def test_montage_letter_colors_use_discrete_and_continuous_plot_modes(self) -> None:
-        text = read_dashboard_static_js("latent3d_landscape_vol_animations.js")
-        assert "function discreteColorLegendMap" in text
-        assert "function continuousCssFromValue" in text
-        assert "montageLetterFontColor(trace, gd, i)" in text
-        assert "montagePlotLetterStrokeForFill" in text
-        assert "rebuildRotateFrameBadgeBackgrounds" in text
-        assert "applyBadgeLetterColor(badge, letterBg)" in text
-        assert "#ffffff" in text or "#ffffff" in text
-        assert "applyBadgeLetterColor" in text
-        assert "sketchCentroidPointIndexForVol" in text
-        assert "VOL_MONTAGE_PLOT_LETTER_PX_SECONDARY" in text
-        assert "montagePlotLetterFontSizePx" in text
-        assert "VOL_MONTAGE_PLOT_LETTER_PX * 0.8" in text
-        assert "resolvePlotPalette()" in text
-        assert "refreshPreviewOverlayLetterColors" in text
+        axes, colours = self._page_columns(flask_client_landscape_full)
+        for column in colours:
+            fig = decode_plotly_figure(
+                self._scatter(flask_client_landscape_full, axes, column).get_json()
+            )
+            marker = fig["data"][0].get("marker") or {}
+            assert isinstance(
+                marker.get("color"), list
+            ), f"colour {column!r} was accepted but left a single flat marker colour"

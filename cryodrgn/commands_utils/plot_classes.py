@@ -130,7 +130,7 @@ def main(args: argparse.Namespace) -> None:
                 f"homogeneous reconstruction experiment (`cryodrgn {cfgs['cmd'][1]}`), "
                 "for which no class-based plots are currently available!"
             )
-            exit(0)
+            return None
         else:
             raise ValueError(f"Cannot find saved latent space embeddings `{z_file}`!")
 

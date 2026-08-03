@@ -326,7 +326,7 @@ class TiltSeriesData(ImageDataset):
 
         tilt_masks = []
         for tilt_idx in tilt_indices:
-            tilt_mask = np.zeros(len(tilt_idx), dtype=np.bool)
+            tilt_mask = np.zeros(len(tilt_idx), dtype=bool)
             if self.random_tilts:
                 tilt_mask_idx = np.random.choice(
                     len(tilt_idx), self.ntilts, replace=False

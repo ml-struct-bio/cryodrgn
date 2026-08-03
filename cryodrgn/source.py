@@ -308,7 +308,11 @@ class ImageSource:
             indices = np.arange(self.n)
 
         if chunksize is None:
-            header_args = {"Apix": self.apix or 1.0} if header is None else dict()
+            if header is None:
+                header_args = {"Apix": 1.0 if self.apix is None else self.apix}
+            else:
+                header_args = dict()
+
             write_mrc(
                 output_file,
                 self.images(indices),
@@ -457,9 +461,9 @@ class _MRCDataFrameSource(ImageSource):
     ----------
     df (pd.DataFrame):  The table listing the constituent parts of this stack.
     datadir (str):  Optional path used by .cs and .star files to prepend to file names.
-    _sources (dict[str, MRCFileSource])
-        Index of the .mrc/.mrcs files in this collection; keys are the file paths
-        and values are the data in each loaded lazily.
+    _sources (dict[str, MRCFileSource | None])
+        Cache of opened .mrc/.mrcs files in this collection; keys are file paths
+        and values are loaded on demand (``None`` if the path is missing).
     """
 
     def __init__(
@@ -474,18 +478,19 @@ class _MRCDataFrameSource(ImageSource):
         assert "__mrc_filename" in df.columns
         self.df = df
         self.datadir = datadir
-        self.df["__mrc_filepath"] = self.df["__mrc_filename"].apply(self.parse_filename)
-
-        self._sources = {
-            filepath: MRCFileSource(filepath) if os.path.exists(filepath) else None
-            for filepath in self.df["__mrc_filepath"].unique()
+        path_by_filename = {
+            fn: self.parse_filename(fn) for fn in self.df["__mrc_filename"].unique()
         }
+        self.df["__mrc_filepath"] = self.df["__mrc_filename"].map(path_by_filename)
 
-        # Peek into the first mrc file to get image size
+        # Open constituent .mrc/.mrcs stacks on demand (star/cs stacks may list thousands).
+        self._sources: dict[str, MRCFileSource | None] = {}
+
+        # Peek into the first extant stack to get image size (one header read).
         D = None
-        for filepath, src in self._sources.items():
-            if isinstance(src, MRCFileSource):
-                D = src.D
+        for filepath in path_by_filename.values():
+            if os.path.exists(filepath):
+                D = MRCFileSource(filepath).D
                 break
 
         super().__init__(
@@ -496,11 +501,20 @@ class _MRCDataFrameSource(ImageSource):
             indices=indices,
         )
 
+    def _get_mrc_source(self, filepath: str) -> MRCFileSource | None:
+        if filepath not in self._sources:
+            self._sources[filepath] = (
+                MRCFileSource(filepath) if os.path.exists(filepath) else None
+            )
+        return self._sources[filepath]
+
     def _images(
         self, indices: np.ndarray, require_contiguous: bool = False
     ) -> np.ndarray:
         def load_single_mrcs(filepath, df):
-            src = self._sources[filepath]
+            src = self._get_mrc_source(filepath)
+            if src is None:
+                raise ValueError(f"Missing MRC file `{filepath}`.")
 
             # `df.index` indicates the positions where the data needs to be inserted
             # and returned for use by caller
@@ -528,8 +542,15 @@ class _MRCDataFrameSource(ImageSource):
         return data
 
     @property
-    def sources(self) -> Iterator[tuple[str, MRCFileSource]]:
-        return iter(self._sources.items())
+    def sources(self) -> Iterator[tuple[str, MRCFileSource | None]]:
+        """All unique stack paths, opening each MRC header/source on first access.
+
+        Construction leaves ``_sources`` empty for large .star/.cs inputs; callers such
+        as ``cryodrgn downsample`` still need the full path inventory, so this property
+        materialises entries from ``__mrc_filepath`` rather than only the cache.
+        """
+        for filepath in self.df["__mrc_filepath"].unique():
+            yield filepath, self._get_mrc_source(filepath)
 
     def parse_filename(self, filename: str) -> str:
         """Get the complete path to an image stack using `self.datadir` if necessary.
@@ -607,12 +628,13 @@ class TxtFileSource(_MRCDataFrameSource):
     ):
         _paths = []
         filepath_dir = os.path.dirname(filepath)
-        for line in open(filepath).readlines():
-            path = line.strip()
-            if not os.path.isabs(path):
-                _paths.append(os.path.join(filepath_dir, path))
-            else:
-                _paths.append(path)
+        with open(filepath) as fi:
+            for line in fi.readlines():
+                path = line.strip()
+                if not os.path.isabs(path):
+                    _paths.append(os.path.join(filepath_dir, path))
+                else:
+                    _paths.append(path)
 
         _source_lengths = [MRCHeader.parse(path).N for path in _paths]
         mrc_filename, mrc_index = [], []
@@ -631,7 +653,7 @@ class TxtFileSource(_MRCDataFrameSource):
             f.write("\n".join(self.df["__mrc_filename"].unique()))
 
 
-class StarfileSource(_MRCDataFrameSource, Starfile):
+class StarfileSource(Starfile, _MRCDataFrameSource):
     """Image stacks indexed using a .star file in RELION3.0 or RELION3.1 format.
 
     In RELION3.1 format, these files will have an optics table that lists parameters
@@ -644,6 +666,10 @@ class StarfileSource(_MRCDataFrameSource, Starfile):
     df (pd.DataFrame):  The primary data table in the .star file.
     data_optics (pd.Dataframe): `None` if RELION3.1
     """
+
+    def __len__(self) -> int:
+        """Number of images in this stack (respecting any index filter)."""
+        return self.n
 
     def __init__(
         self,

@@ -128,6 +128,7 @@ def util_commands() -> None:
             "invert_contrast",
             "make_movies",
             "parse_relion",
+            "parse_warptools",
             "phase_flip",
             "plot_classes",
             "plot_fsc",

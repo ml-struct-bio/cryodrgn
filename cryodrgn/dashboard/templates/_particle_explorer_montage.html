@@ -86,8 +86,8 @@
               type="number"
               id="montage-cache-size-input"
               name="montage_cache_size"
-              min="0"
-              step="{{ preload_cache_step }}"
+              min="1"
+              step="1"
               inputmode="numeric"
               value="{{ preload_image_limit }}"
               max="{{ scatter_plotted_n }}"
@@ -169,11 +169,34 @@
                       <option value="8">8 × 8</option>
                     </select>
                   </label>
+                  <div id="image-grid-contrast-switch" class="cryo-image-grid-contrast-switch" role="group"
+                    aria-label="Image contrast">
+                    <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--original">
+                      <span class="cryo-image-grid-contrast-label" aria-hidden="true">
+                        <span class="cryo-image-grid-contrast-label__line">Original</span>
+                        <span class="cryo-image-grid-contrast-label__line">contrast</span>
+                      </span>
+                    </span>
+                    <label id="image-grid-invert-wrap" class="cryo-image-grid-invert-switch"
+                      for="image-grid-invert-check">
+                      <input type="checkbox" id="image-grid-invert-check" role="switch"
+                        aria-label="Inverted contrast"/>
+                      <span class="cryo-image-grid-invert-switch__track" aria-hidden="true">
+                        <span class="cryo-image-grid-invert-switch__thumb"></span>
+                      </span>
+                    </label>
+                    <span class="cryo-image-grid-contrast-side cryo-image-grid-contrast-side--inverted">
+                      <span class="cryo-image-grid-contrast-label" aria-hidden="true">
+                        <span class="cryo-image-grid-contrast-label__line">Inverted</span>
+                        <span class="cryo-image-grid-contrast-label__line">contrast</span>
+                      </span>
+                    </span>
+                  </div>
                   <button type="button" id="btn-montage-resample-cache" class="btn cryo-image-grid-resample-btn"
-                    aria-label="Resample images from cache" disabled>
+                    aria-label="Randomly reselect 9 grid images" disabled>
                     <span class="cryo-image-grid-resample-btn__label">
-                      <span class="cryo-image-grid-resample-btn__line">Resample images</span>
-                      <span class="cryo-image-grid-resample-btn__line">from cache</span>
+                      <span class="cryo-image-grid-resample-btn__line">Randomly reselect</span>
+                      <span class="cryo-image-grid-resample-btn__line">9 grid images</span>
                     </span>
                   </button>
                 </div>

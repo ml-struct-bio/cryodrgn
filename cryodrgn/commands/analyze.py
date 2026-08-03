@@ -118,12 +118,19 @@ def analyze_z1(z, outdir, vg, n_per_pc=10):
     plt.scatter(np.arange(N), z, alpha=0.1, s=2)
     plt.xlabel("particle")
     plt.ylabel("z")
-    plt.savefig(f"{outdir}/z.png")
+    plt.savefig(os.path.join(outdir, "z.png"))
 
     plt.figure(2)
-    sns.distplot(z)
+    sns.histplot(
+        z,
+        kde=True,
+        stat="density",
+        kde_kws={"cut": 3},
+        alpha=0.43,
+        edgecolor=None,
+    )
     plt.xlabel("z")
-    plt.savefig(f"{outdir}/z_hist.png")
+    plt.savefig(os.path.join(outdir, "z_hist.png"))
 
     ztraj = np.percentile(z, np.linspace(5, 95, n_per_pc))
     vg.gen_volumes(outdir, ztraj)
@@ -150,7 +157,7 @@ def analyze_zN(
     for i in range(num_pcs):
         start, end = np.percentile(pc[:, i], (5, 95))
         z_pc = analysis.get_pc_traj(pca, z.shape[1], n_per_pc, i + 1, start, end)
-        vg.gen_volumes(f"{outdir}/pc{i+1}", z_pc)
+        vg.gen_volumes(os.path.join(outdir, f"pc{i+1}"), z_pc)
 
     # kmeans clustering
     logger.info("K-means clustering...")

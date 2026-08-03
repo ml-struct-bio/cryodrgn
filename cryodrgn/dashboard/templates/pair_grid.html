@@ -648,7 +648,7 @@
         <legend>
           <span class="legend-row">{{ picto_lower() }}<span>Covariate coloring<br>(below diagonal)</span></span>
         </legend>
-        <div class="color-grid">
+        <div class="color-grid" id="pair-color-grid">
           <label class="radio-line">
             <input type="radio" name="color_cov" value="none" {% if default_color == "none" %}checked{% endif %}/>
             <span>None</span>
@@ -804,8 +804,11 @@
 </div>
 </div>
 
+{% include "_covariate_pkl_loader.html" %}
+
 <script src="{{ url_for('static', filename='js/cryo_cc_legend_primitives.js') }}"></script>
 <script src="{{ url_for('static', filename='js/color_covariate_legend.js') }}"></script>
+<script src="{{ url_for('static', filename='js/covariate_pkl_loader.js') }}"></script>
 <script>
 (function() {
   var el = document.getElementById("pairplot");
@@ -837,6 +840,7 @@
   var saveDefaultDir = {{ pairplot_save_default_dir | tojson }};
   var saveBtn = document.getElementById("save-pairplot-png");
   var covariateDisplayMap = {{ covariate_display_map | tojson }};
+  var discreteColorCols = {{ discrete_color_columns | default([]) | tojson }};
   var legendContextUrl = "{{ url_for('api_covariate_legend_context') }}";
 
   function checkedVal(name) {
@@ -1017,6 +1021,57 @@
       draw();
     }
   });
+
+  var pairColorGrid = document.getElementById("pair-color-grid");
+  if (window.CryoCovariatePklLoader && pairColorGrid) {
+    var covariatePklLoader = CryoCovariatePklLoader.create({
+      listFilesUrl: "{{ url_for('api_list_server_files') }}",
+      loadCovariateUrl: "{{ url_for('api_load_covariate_pkl') }}",
+      applyLoaded: function(j) {
+        if (j.covariate_display_map) {
+          Object.assign(covariateDisplayMap, j.covariate_display_map);
+        }
+        if (j.discrete_color_columns) {
+          discreteColorCols = j.discrete_color_columns.slice();
+        }
+        covariatePklLoader.appendPairGridRadios(
+          pairColorGrid,
+          j.columns,
+          j.covariate_display_map,
+          j.primary_column
+        );
+      },
+      onLoaded: function(j) {
+        pairDiscreteColorOverrides = {};
+        if (j.primary_column) {
+          var inp = pairColorGrid.querySelector(
+            'input[name="color_cov"][value="' + j.primary_column + '"]'
+          );
+          if (inp) inp.checked = true;
+        }
+        pairColorLegend.refresh({
+          afterLayout: function() {
+            draw();
+          }
+        });
+      },
+      onPairColorChange: function() {
+        pairDiscreteColorOverrides = {};
+        pairColorLegend.refresh({
+          afterLayout: function() {
+            draw();
+          }
+        });
+      },
+      onError: function(msg) {
+        status.textContent = msg;
+      }
+    });
+    covariatePklLoader.wirePairGrid(
+      pairColorGrid,
+      function() { return checkedVal("color_cov"); }
+    );
+  }
 
   function currentPayload() {
     var cf = pairColorLegend.getFilterForApi();

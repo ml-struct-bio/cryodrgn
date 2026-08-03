@@ -34,7 +34,9 @@ def parse_args():
 def main(args):
     fig, ax = plt.subplots()
     print(args)
-    z = pickle.load(open(args.input, "rb"))
+    with open(args.input, "rb") as fi:
+        z = pickle.load(fi)
+
     if args.stride:
         z = z[:: args.stride]
     print("{} points".format(len(z)))

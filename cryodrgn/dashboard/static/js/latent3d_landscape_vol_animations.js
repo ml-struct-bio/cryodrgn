@@ -5,6 +5,8 @@
 (function(global) {
   "use strict";
 
+  var PLOTLY = global.CryoPlotlyArrays;
+
   function postJson(url, body) {
     return fetch(url, {
       method: "POST",
@@ -19,16 +21,13 @@
   }
 
   function customDataRowAsArray(row) {
-    if (row == null) return [];
-    if (Array.isArray(row)) return row;
-    if (typeof row === "object" && row.length !== undefined) {
-      try {
-        return Array.from(row);
-      } catch (e) {
-        return [];
-      }
-    }
-    return [row];
+    if (!PLOTLY) return Array.isArray(row) ? row : [];
+    return PLOTLY.rowAsArray(row);
+  }
+
+  function plotlyTraceLength(trace, key) {
+    if (!trace || !trace[key] || !PLOTLY) return 0;
+    return PLOTLY.length(trace[key]);
   }
 
   function layoutHasVolAnim(gd) {
@@ -49,17 +48,18 @@
   function customdataForHighlight(gd, trace) {
     trace = trace || (gd && gd.data && gd.data[0]);
     if (!trace || !trace.x) return null;
-    var n = trace.x.length;
-    if (trace.customdata && trace.customdata.length === n) return trace.customdata;
+    var n = plotlyTraceLength(trace, "x");
+    if (trace.customdata && PLOTLY.rowsEqualLength(trace.customdata, trace.x)) return trace.customdata;
     var full = gd && gd._fullData && gd._fullData[0];
-    if (full && full.customdata && full.customdata.length === n) return full.customdata;
+    if (full && full.customdata && PLOTLY.rowsEqualLength(full.customdata, trace.x)) return full.customdata;
     return null;
   }
 
   function isSketchCentroidAtPointIndex(gd, trace, i) {
     var cd = customdataForHighlight(gd, trace);
-    if (!cd || i < 0 || i >= cd.length || cd[i] == null) return false;
-    var row = customDataRowAsArray(cd[i]);
+    var cdLen = PLOTLY.length(cd);
+    if (!cd || i < 0 || i >= cdLen) return false;
+    var row = customDataRowAsArray(PLOTLY.rowAt(cd, i));
     if (row.length < 2) return false;
     var centFlag = parseInt(String(row[row.length - 2]), 10);
     if (isNaN(centFlag)) return false;
@@ -67,11 +67,13 @@
 
     // Meta flag isn't present; infer from a small customdata sample that the
     // second-last column is behaving like a 0/1 centroid flag.
+    // (Backend packs: [plot_row, colour?, centroid, nearest_vol] so centroid is
+    // always immediately before nearest_vol — i.e. customdata[length-2].)
     if (sketchCentroidCdInferred == null) {
-      var maxJ = Math.min(cd.length, 100);
+      var maxJ = Math.min(cdLen, 100);
       var ok = true;
       for (var j = 0; j < maxJ; j++) {
-        var rj = customDataRowAsArray(cd[j]);
+        var rj = customDataRowAsArray(PLOTLY.rowAt(cd, j));
         if (rj.length < 2) continue;
         var vj = parseInt(String(rj[rj.length - 2]), 10);
         // Some Plotly/serialisation paths can yield null-ish customdata entries;
@@ -88,13 +90,14 @@
   }
 
   function volIdAtPointIndex(gd, trace, i) {
-    if (trace.ids && trace.ids.length === trace.x.length && trace.ids[i] != null && trace.ids[i] !== "") {
-      var vid = parseInt(String(trace.ids[i]), 10);
+    var xLen = plotlyTraceLength(trace, "x");
+    if (trace.ids && PLOTLY.rowsEqualLength(trace.ids, trace.x) && PLOTLY.valueAt(trace.ids, i) != null && PLOTLY.valueAt(trace.ids, i) !== "") {
+      var vid = parseInt(String(PLOTLY.valueAt(trace.ids, i)), 10);
       if (!isNaN(vid)) return vid;
     }
     var cd = customdataForHighlight(gd, trace);
-    if (cd && cd.length === trace.x.length && cd[i] != null) {
-      var row = customDataRowAsArray(cd[i]);
+    if (cd && PLOTLY.rowsEqualLength(cd, trace.x)) {
+      var row = customDataRowAsArray(PLOTLY.rowAt(cd, i));
       if (layoutHasVolAnim(gd) && row.length >= 2) {
         var last = row[row.length - 1];
         var vLast = parseInt(String(last), 10);
@@ -603,31 +606,37 @@
     if (!trace || !gd || i < 0) return "#4a5568";
     var full = gd._fullData && gd._fullData[0];
     var expanded = full && full.marker && full.marker.color;
-    if (Array.isArray(expanded) && expanded[i] != null) {
-      var exCss = plotlyColorToCss(expanded[i]);
+    if (PLOTLY.isArray(expanded) && PLOTLY.valueAt(expanded, i) != null) {
+      var exCss = plotlyColorToCss(PLOTLY.valueAt(expanded, i));
       if (exCss) return exCss;
     }
     var mk = (full && full.marker) || trace.marker || {};
     var mc = mk.color;
     if (typeof mc === "string") return mc;
-    if (Array.isArray(mc) && mc[i] != null) {
-      var mcCss = plotlyColorToCss(mc[i]);
-      if (mcCss) return mcCss;
-      if (typeof mc[i] === "string") return mc[i];
+    if (PLOTLY.isArray(mc)) {
+      var mcVal = PLOTLY.valueAt(mc, i);
+      if (mcVal != null) {
+        var mcCss = plotlyColorToCss(mcVal);
+        if (mcCss) return mcCss;
+        if (typeof mcVal === "string") return mcVal;
+      }
     }
     var mode = plotColorModeFromGd(gd);
     var cd = customdataForHighlight(gd, trace);
-    var row = cd && cd[i] != null ? cd[i] : null;
+    var row = cd ? PLOTLY.rowAt(cd, i) : null;
     if (mode === "discrete") {
       var fk = colorCovariateKeyFromCustomdataRow(row);
       if (fk) {
         var dmap = discreteColorLegendMap(gd);
         if (dmap[fk]) return dmap[fk];
       }
-      if (Array.isArray(mc) && mc[i] != null) {
-        var dCss = plotlyColorToCss(mc[i]);
-        if (dCss) return dCss;
-        if (typeof mc[i] === "string") return mc[i];
+      if (PLOTLY.isArray(mc)) {
+        var dVal = PLOTLY.valueAt(mc, i);
+        if (dVal != null) {
+          var dCss = plotlyColorToCss(dVal);
+          if (dCss) return dCss;
+          if (typeof dVal === "string") return dVal;
+        }
       }
     }
     if (mode === "continuous") {
@@ -637,15 +646,19 @@
         var fromCd = continuousCssFromValue(cVal, trace, gd, paletteName);
         if (fromCd) return fromCd;
       }
-      if (Array.isArray(mc) && mc[i] != null && typeof mc[i] === "number" && isFinite(mc[i])) {
-        var fromMc = continuousCssFromValue(mc[i], trace, gd, paletteName);
+      var mcNum = PLOTLY.valueAt(mc, i);
+      if (PLOTLY.isArray(mc) && mcNum != null && typeof mcNum === "number" && isFinite(mcNum)) {
+        var fromMc = continuousCssFromValue(mcNum, trace, gd, paletteName);
         if (fromMc) return fromMc;
       }
     }
-    if (Array.isArray(mc) && mc[i] != null) {
-      var anyCss = plotlyColorToCss(mc[i]);
-      if (anyCss) return anyCss;
-      if (typeof mc[i] === "string") return mc[i];
+    if (PLOTLY.isArray(mc)) {
+      var anyVal = PLOTLY.valueAt(mc, i);
+      if (anyVal != null) {
+        var anyCss = plotlyColorToCss(anyVal);
+        if (anyCss) return anyCss;
+        if (typeof anyVal === "string") return anyVal;
+      }
     }
     return "#4a5568";
   }
@@ -707,8 +720,9 @@
       var tr = gd && gd.data && gd.data[0];
       var mo = tr && tr.marker && tr.marker.opacity;
       if (typeof mo === "number" && isFinite(mo)) return mo;
-      if (Array.isArray(mo) && mo.length && typeof mo[0] === "number" && isFinite(mo[0])) {
-        return mo[0];
+      if (PLOTLY.isArray(mo) && PLOTLY.length(mo)) {
+        var mo0 = PLOTLY.valueAt(mo, 0);
+        if (typeof mo0 === "number" && isFinite(mo0)) return mo0;
       }
     } catch (eMo) { /* ignore */ }
     return null;
@@ -1224,7 +1238,7 @@
     function allPlotVolIds() {
       if (!gd || !gd.data || !gd.data[0]) return [];
       var trace = gd.data[0];
-      var n = trace.x ? trace.x.length : 0;
+      var n = plotlyTraceLength(trace, "x");
       if (!n) return [];
       var s = new Set();
       for (var i = 0; i < n; i++) {
@@ -1320,11 +1334,12 @@
       if (!marker || marker.size == null) return null;
       var sz = marker.size;
       if (typeof sz === "number" && isFinite(sz) && sz > 0) return sz;
-      if (Array.isArray(sz) && sz.length) {
+      if (PLOTLY.isArray(sz) && PLOTLY.length(sz)) {
         var minS = Infinity;
         var si;
-        for (si = 0; si < sz.length; si++) {
-          var one = sz[si];
+        var szLen = PLOTLY.length(sz);
+        for (si = 0; si < szLen; si++) {
+          var one = PLOTLY.valueAt(sz, si);
           if (typeof one === "number" && isFinite(one) && one > 0 && one < minS) minS = one;
         }
         if (minS < Infinity) return minS;
@@ -1333,7 +1348,7 @@
     }
 
     function sketchCentroidPointIndexForVol(gd, trace, vol) {
-      var n = trace.x ? trace.x.length : 0;
+      var n = plotlyTraceLength(trace, "x");
       for (var ci = 0; ci < n; ci++) {
         if (volIdAtPointIndex(gd, trace, ci) !== vol) continue;
         if (isSketchCentroidAtPointIndex(gd, trace, ci)) return ci;
@@ -1353,7 +1368,7 @@
           isNaN(v)
           || pt == null
           || pt < 0
-          || pt >= trace.x.length
+          || pt >= plotlyTraceLength(trace, "x")
           || volIdAtPointIndex(gd, trace, pt) !== v
         ) {
           toDrop.push(k);
@@ -1393,7 +1408,8 @@
       var pt = sketchCentroidPointIndexForVol(gd, trace, v);
       if (pt == null) pt = boldAnchorPointForVol(gd, trace, v);
       if (pt == null) {
-        for (var fi = 0; fi < trace.x.length; fi++) {
+        var traceLen = plotlyTraceLength(trace, "x");
+        for (var fi = 0; fi < traceLen; fi++) {
           if (volIdAtPointIndex(gd, trace, fi) === v) {
             pt = fi;
             break;
@@ -1501,7 +1517,7 @@
           anchored != null
           && trace.x
           && anchored >= 0
-          && anchored < trace.x.length
+          && anchored < plotlyTraceLength(trace, "x")
           && volIdAtPointIndex(gd, trace, anchored) === vol
         ) {
           return anchored;
@@ -1645,12 +1661,11 @@
       syncStableSelectionLabels();
       var trace = gd.data[0];
       pruneVolDblClickAnchors(gd, trace);
-      var xs = trace.x;
-      if (!xs || !xs.length) return Promise.resolve();
-      var n = xs.length;
-      var hasIds = trace.ids && trace.ids.length === n;
+      var n = plotlyTraceLength(trace, "x");
+      if (!n) return Promise.resolve();
+      var hasIds = trace.ids && PLOTLY.rowsEqualLength(trace.ids, trace.x);
       var cd = customdataForHighlight(gd, trace);
-      if (!hasIds && (!cd || cd.length !== n)) return Promise.resolve();
+      if (!hasIds && (!cd || !PLOTLY.rowsEqualLength(cd, trace.x))) return Promise.resolve();
 
       var sceneAnnotations = [];
       for (var i = 0; i < n; i++) {
@@ -1663,10 +1678,14 @@
         var boldPt = boldAnchorPointForVol(gd, trace, v);
         var isBold = boldPt != null && i === boldPt;
         var labelText = isCent ? circledMontageLabelText(letter) : letter;
+        var ax = PLOTLY.traceValueAt(gd, 0, "x", i);
+        var ay = PLOTLY.traceValueAt(gd, 0, "y", i);
+        var az = PLOTLY.traceValueAt(gd, 0, "z", i);
+        if (!isFinite(ax) || !isFinite(ay) || !isFinite(az)) continue;
         var ann = volMontageSceneAnnotation(
-          trace.x[i],
-          trace.y[i],
-          trace.z[i],
+          ax,
+          ay,
+          az,
           labelText,
           isBold,
           isCent && !isBold,

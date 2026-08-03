@@ -57,7 +57,6 @@ _LANDSCAPE_ANIM_ROOT: str | None = None
 # optional rotate_keyframes: { vol_index: png_path } (first frame of each rotate GIF)
 _LANDSCAPE_ANIM_ENTRIES: dict[str, dict[str, Any]] = {}
 
-_LANDSCAPE_VOLPCA_KMEANS_RE = re.compile(r"^kmeans(\d+)$")
 _LANDSCAPE_VOLPCA_PKL_RE = re.compile(r"^vol_pca_(\d+)\.pkl$")
 _LANDSCAPE_VOL_PC_COL_RE = re.compile(r"^landscape_vol_PC(\d+)$", re.IGNORECASE)
 # ``vol_mean.mrc`` and similar match ``vol_*.mrc`` but are not k-means centroids.
@@ -175,15 +174,30 @@ def load_vol_pca_matrix(landscape_dir: str, k_sketch: int) -> np.ndarray:
     return pc
 
 
+_PCA_EXPLAINED_VARIANCE_CACHE: dict[tuple[str, float], np.ndarray | None] = {}
+
+
 def load_pca_explained_variance(landscape_dir: str) -> np.ndarray | None:
     obj_path = os.path.join(landscape_dir, "vol_pca_obj.pkl")
     if not os.path.isfile(obj_path):
         return None
+    try:
+        mtime = os.path.getmtime(obj_path)
+    except OSError:
+        return None
+    cache_key = (landscape_dir, mtime)
+    if cache_key in _PCA_EXPLAINED_VARIANCE_CACHE:
+        return _PCA_EXPLAINED_VARIANCE_CACHE[cache_key]
     pca = utils.load_pkl(obj_path)
     evr = getattr(pca, "explained_variance_ratio_", None)
     if evr is None:
-        return None
-    return np.asarray(evr, dtype=np.float64)
+        result = None
+    else:
+        result = np.asarray(evr, dtype=np.float64)
+    if len(_PCA_EXPLAINED_VARIANCE_CACHE) > 64:
+        _PCA_EXPLAINED_VARIANCE_CACHE.clear()
+    _PCA_EXPLAINED_VARIANCE_CACHE[cache_key] = result
+    return result
 
 
 def _first_sketch_clustering_dir(landscape_dir: str) -> str | None:
@@ -243,13 +257,6 @@ def vol_mrc_path(kmeans_dir: str, vol_index: int) -> str:
     return p
 
 
-def _volsketch_covariate_display(name: str) -> str:
-    """Match particle explorer naming for covariate selectors."""
-    if name == "labels":
-        return "k-means labels"
-    return covariate_display_name(name)
-
-
 def sketch_plot_color_covariate_variable_label(plot_color_mode: str) -> str | None:
     """Human-readable color dimension name for GIF preview (matches Color by column)."""
     raw = (plot_color_mode or "").strip()
@@ -270,7 +277,7 @@ def landscape_color_options(exp: DashboardExperiment) -> list[dict[str, str]]:
         {"value": "state", "label": "Agglomerative state"},
     ]
     for c in exp.numeric_columns:
-        opts.append({"value": c, "label": _volsketch_covariate_display(c)})
+        opts.append({"value": c, "label": covariate_display_name(c)})
     return opts
 
 
@@ -440,11 +447,13 @@ def _sketch_continuous_covariate_per_volume_values(
                                         else np.nan
                                     )
                             except ValueError:
+                                # Plot-row lookup failed for this volume; leave NaN.
                                 pass
                     if np.isfinite(out).any():
                         _, cmin, cmax = _continuous_series_stats(bounds)
                         return out, cmin, cmax
         except (FileNotFoundError, ValueError, OSError):
+            # Sampled landscape table unavailable; fall back to plot_df below.
             pass
 
     df = exp.plot_df
@@ -611,6 +620,7 @@ def _plot_color_mode_is_continuous_numeric(
             ):
                 return True
         except (FileNotFoundError, ValueError, OSError):
+            # Sketch bundle missing; check plot_df covariates instead.
             pass
     col = _resolve_covariate_column_name(exp.plot_df, pcm)
     return bool(
@@ -812,7 +822,12 @@ def landscape_volpca_scatter_figure(
     )
 
     plotly_cs = normalize_continuous_palette(continuous_palette)
-    color_mode = (color_mode or "none").strip().lower()
+    # Covariate names are case-sensitive: lower-casing them here made every
+    # mixed-case column (UMAP1, PC1, ...) miss the branch below and render
+    # uncoloured, without any error to show for it.
+    color_mode = (color_mode or "none").strip()
+    if color_mode.lower() in ("none", "state"):
+        color_mode = color_mode.lower()
     df = exp.plot_df
 
     if color_mode == "state" and states is not None:
@@ -1021,6 +1036,7 @@ def _cycle_gif_from_png_paths(
             try:
                 f.close()
             except Exception:
+                # Best-effort PIL frame cleanup after GIF assembly.
                 pass
 
 
@@ -1419,6 +1435,7 @@ def generate_landscape_volume_animations(
             try:
                 os.remove(tpath)
             except OSError:
+                # Best-effort removal of temporary cycle PNGs.
                 pass
 
     with _LANDSCAPE_ANIM_LOCK:

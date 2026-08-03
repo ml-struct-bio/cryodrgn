@@ -75,8 +75,11 @@ class DashboardExperiment:
     umap: np.ndarray | None
     pc: np.ndarray
     z: np.ndarray
-    _image_dataset: ImageDataset | None = field(
+    _image_source: object | None = field(
         default=None, init=False, repr=False, compare=False
+    )
+    user_covariate_columns: list[str] = field(
+        default_factory=list, init=False, repr=False, compare=False
     )
 
     @cached_property
@@ -91,9 +94,52 @@ class DashboardExperiment:
             if c != "index"
         ]
 
+    @cached_property
+    def color_covariate_columns(self) -> list[str]:
+        """Columns available for scatter colour (numeric plus user-loaded labels)."""
+        out = list(self.numeric_columns)
+        for c in self.user_covariate_columns:
+            if c in self.plot_df.columns and c not in out:
+                out.append(c)
+        return out
+
     @property
     def can_preview_particles(self) -> bool:
         return self.enc_mode != "tilt"
+
+    @property
+    def analyze_dir(self) -> str:
+        return os.path.join(self.workdir, f"analyze.{self.epoch}")
+
+    @property
+    def kmeans_dir(self) -> str:
+        return os.path.join(self.analyze_dir, f"kmeans{self.kmeans_folder_id}")
+
+    @property
+    def weights_path(self) -> str:
+        return os.path.join(self.workdir, f"weights.{self.epoch}.pkl")
+
+    @property
+    def z_pkl_path(self) -> str:
+        return os.path.join(self.workdir, f"z.{self.epoch}.pkl")
+
+    @property
+    def landscape_dir(self) -> str:
+        return os.path.join(self.workdir, f"landscape.{self.epoch}")
+
+    @property
+    def landscape_full_dir(self) -> str:
+        return os.path.join(self.workdir, f"landscape_full.{self.epoch}")
+
+    def particle_image_source(self):
+        """Lazily opened particle stack shared by explorer thumbnail preload."""
+        if self._image_source is None:
+            from cryodrgn.source import ImageSource
+
+            self._image_source = ImageSource.from_file(
+                self.particles_path, lazy=True, datadir=self.datadir or ""
+            )
+        return self._image_source
 
 
 def load_experiment(
@@ -177,7 +223,8 @@ def load_experiment(
             trans = trans[indices, :]
 
     pc, _ = analysis.run_pca(z)
-    umap = utils.load_pkl(os.path.join(anlzdir, "umap.pkl"))
+    umap_path = os.path.join(anlzdir, "umap.pkl")
+    umap = utils.load_pkl(umap_path) if os.path.isfile(umap_path) else None
 
     if kmeans == -1:
         kmeans_dirs = [
@@ -242,11 +289,7 @@ def particle_image_array(exp: DashboardExperiment, row_index: int) -> np.ndarray
     if not exp.can_preview_particles:
         raise RuntimeError("Particle previews are not supported for tilt-series data.")
     g = int(exp.all_indices[int(row_index)])
-    if exp._image_dataset is None:
-        exp._image_dataset = ImageDataset(
-            mrcfile=exp.particles_path, lazy=True, datadir=exp.datadir
-        )
-    img = exp._image_dataset.src.images(g, as_numpy=True)
+    img = exp.particle_image_source().images(g, as_numpy=True)
     if img.ndim == 3:
         img = img[0]
     return np.asarray(img, dtype=np.float32)

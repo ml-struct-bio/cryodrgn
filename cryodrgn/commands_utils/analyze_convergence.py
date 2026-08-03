@@ -29,6 +29,7 @@ import cryodrgn.config
 try:
     from cuml.manifold.umap import UMAP as cuUMAP  # type: ignore
 except ImportError:
+    # cuML is optional; CPU umap-learn is used when GPU UMAP is disabled.
     pass
 
 logger = logging.getLogger(__name__)
@@ -312,6 +313,7 @@ def encoder_latent_umaps(
             )
             ax.set_title(f"epoch {epochs[i]}")
         except IndexError:
+            # No UMAP data for this subplot; leave it empty.
             pass
         except FileNotFoundError:
             logger.info(f"Could not find file `{umap_fl}`!")
@@ -714,6 +716,7 @@ def follow_candidate_particles(
             ax.set_title(f"epoch {epochs[i]}")
 
         except IndexError:
+            # No UMAP data for this subplot; leave it empty.
             pass
 
     if len(axes.shape) == 1:
@@ -995,6 +998,7 @@ def calculate_FSCs(outdir, epochs, labels, img_size, chimerax_colors):
                 ax.plot(x, fsc_masked[cluster, i, :], color=colors[i])
                 legend.append(f"epoch {epochs[i+1]}")
         except IndexError:
+            # FSC data missing for this cluster; leave subplot empty.
             pass
 
     x_center, y_center = n_cols // 2, n_rows // 2

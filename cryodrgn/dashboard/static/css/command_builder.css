@@ -1,0 +1,448 @@
+  /* Viewport column: scroll form, command dock pinned to bottom of main */
+  main:has(.cryo-dash-page.cmd-builder-page--dock) {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    height: calc(100vh - var(--cryo-dash-below-nav));
+    height: calc(100dvh - var(--cryo-dash-below-nav));
+    max-height: calc(100vh - var(--cryo-dash-below-nav));
+    max-height: calc(100dvh - var(--cryo-dash-below-nav));
+    min-height: calc(100vh - var(--cryo-dash-below-nav));
+    min-height: calc(100dvh - var(--cryo-dash-below-nav));
+    overflow: hidden;
+    padding-bottom: max(0.35rem, env(safe-area-inset-bottom, 0px));
+  }
+  .cmd-builder-page--dock {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-width: min(100%, 112rem);
+    margin: 0 auto;
+    width: 100%;
+  }
+  .cmd-builder-page--dock .cmd-builder-header {
+    flex-shrink: 0;
+  }
+  .cmd-builder-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 0.2rem;
+    padding-bottom: 0.5rem;
+  }
+  .cmd-builder-cmd-dock {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 8.5dvh;
+    max-height: min(17dvh, 13rem);
+    margin-top: 0.5rem;
+    padding: 0.8rem 0.75rem 0.55rem;
+    box-sizing: border-box;
+    border: 1px solid rgba(186, 212, 232, 0.75);
+    border-radius: 8px;
+    background: linear-gradient(
+      135deg,
+      rgba(255, 228, 232, 0.92) 0%,
+      rgba(232, 244, 255, 0.95) 38%,
+      rgba(228, 248, 236, 0.95) 72%,
+      rgba(255, 240, 224, 0.92) 100%
+    );
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+      0 1px 5px rgba(36, 59, 83, 0.07);
+    overflow: hidden;
+  }
+  .cmd-builder-cmd-dock .cmd-output.card {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+  }
+  .cmd-form.card { padding: 1rem 1.25rem; }
+  .cmd-builder-program {
+    margin-bottom: 0.35rem;
+  }
+  .cmd-builder-program .cryo-select-line {
+    margin-top: 0;
+    font-size: calc(0.86rem * 1.5);
+    font-weight: 800;
+    color: var(--nav-bg, #243b53);
+    letter-spacing: 0.015em;
+  }
+  .cmd-builder-program select#cmd-type {
+    font-size: calc(1rem * 1.5);
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--nav-bg, #243b53);
+    padding: 0.5rem 0.65rem;
+    min-height: 2.85rem;
+    border-radius: 4px;
+    border-width: 2px;
+    border-color: rgba(36, 59, 83, 0.35);
+    background-color: var(--paper, #fff);
+  }
+  .cmd-builder-top-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    align-items: stretch;
+  }
+  .cmd-builder-required-fieldset {
+    background: rgba(196, 112, 58, 0.1);
+    border-color: rgba(196, 112, 58, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(196, 112, 58, 0.06);
+  }
+  .cmd-builder-required-fieldset > legend {
+    color: var(--accent, #c4703a);
+  }
+  .cmd-builder-rest-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    align-items: start;
+    margin-top: 0.75rem;
+  }
+  .cmd-form fieldset {
+    border: 1px solid rgba(36, 59, 83, 0.15);
+    border-radius: 4px;
+    margin: 0;
+    padding: 0.65rem 0.85rem 0.85rem;
+    min-width: 0;
+  }
+  .cmd-form legend {
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--nav-bg, #243b53);
+    padding: 0 0.35rem;
+  }
+  .cmd-form label.cryo-select-line {
+    display: block;
+    margin: 0.35rem 0 0.15rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+  }
+  .cmd-arg-display-name {
+    font-weight: 300;
+    font-style: italic;
+    color: var(--muted, #5c6b7a);
+    margin-left: 0.4em;
+    white-space: nowrap;
+  }
+  .cmd-form .choice-line .cmd-arg-display-name,
+  .cmd-form .check-line .cmd-arg-display-name {
+    margin-left: 0.35em;
+  }
+  .cmd-arg-value-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: 100%;
+    vertical-align: middle;
+  }
+  .cmd-arg-value-row input[type="number"] {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .cmd-arg-unit {
+    flex-shrink: 0;
+    font-size: 0.82rem;
+    font-weight: 300;
+    color: var(--muted, #5c6b7a);
+    white-space: nowrap;
+  }
+  .cmd-arg-unit--scaled {
+    font-size: calc(1em * 1.31);
+  }
+  .cmd-arg-unit--num-epochs {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.05;
+    text-align: center;
+    white-space: normal;
+  }
+  .cmd-arg-unit-line {
+    display: block;
+  }
+  .cmd-form input[type="text"],
+  .cmd-form input[type="number"],
+  .cmd-form select {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+    margin-bottom: 0.25rem;
+  }
+  .cmd-outdir-stepper {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.35rem;
+    align-items: stretch;
+    width: 100%;
+  }
+  .cmd-outdir-input-wrap {
+    position: relative;
+    min-width: 0;
+  }
+  .cmd-outdir-stepper .cmd-outdir-input-wrap {
+    margin-bottom: 0;
+  }
+  .cmd-outdir-input-wrap .cmd-outdir-input {
+    margin-bottom: 0;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding-right: 0.85em;
+  }
+  .cmd-outdir-input-suffix {
+    position: absolute;
+    right: 0.42rem;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--muted, #5c6b7a);
+    font-weight: 400;
+    line-height: 1;
+  }
+  .cmd-outdir-input-wrap--empty .cmd-outdir-input-suffix {
+    visibility: hidden;
+  }
+  .cmd-outdir-step {
+    margin: 0;
+    padding: 0 0.55rem;
+    min-width: 2.1rem;
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.2;
+    border: 1px solid rgba(36, 59, 83, 0.35);
+    border-radius: 4px;
+    background: var(--paper, #fff);
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+    font-family: var(--font-sans);
+  }
+  .cmd-outdir-step:hover,
+  .cmd-outdir-step:focus-visible {
+    background: rgba(196, 112, 58, 0.12);
+    border-color: rgba(196, 112, 58, 0.55);
+    outline: none;
+  }
+  .cmd-form .check-line {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0.35rem 0;
+    font-size: 0.88rem;
+    font-weight: 500;
+  }
+  .cmd-form .check-line input { width: auto; margin: 0; }
+  .cmd-form .choice-line {
+    display: block;
+    margin: 0.35rem 0 0.15rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--muted, #5c6b7a);
+  }
+  .cmd-form .choice-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.85rem;
+    margin: 0.15rem 0 0.35rem;
+  }
+  .cmd-form .choice-options .check-line {
+    margin: 0;
+    font-size: 0.84rem;
+    white-space: nowrap;
+  }
+  .cmd-builder-dataset-flags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.85rem;
+    margin: 0.3rem 0 0.15rem;
+  }
+  .cmd-builder-dataset-flags .check-line {
+    margin: 0;
+    white-space: nowrap;
+    font-size: 0.84rem;
+  }
+  .cmd-builder-dataset-flags + .cryo-select-line {
+    margin-top: 0.45rem;
+  }
+  .cmd-panel { display: none; }
+  .cmd-panel.cmd-panel--active { display: block; }
+  .cmd-output.card {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    max-height: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0.55rem 0.75rem 0.6rem;
+    background: #1a2332;
+    color: #e8eef4;
+    border: 1px solid rgba(36, 59, 83, 0.4);
+    overflow: hidden;
+  }
+  .cmd-output-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.35rem calc(0.85rem * 0.8);
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  .cmd-output-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+  .cmd-output pre {
+    flex: 1 1 auto;
+    margin: 0;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    --cmd-line-hang-indent: 2ch;
+    --cmd-out-font-base: calc(0.72rem * 1.35 * 1.1 * 1.3);
+    font-family: "Cascadia Code", "Cascadia Mono", ui-monospace, monospace;
+    font-size: var(--cmd-out-font-base);
+    line-height: 1.12;
+    color: #fff;
+    white-space: pre;
+    word-break: normal;
+    overflow-wrap: normal;
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(232, 238, 244, 0.45) rgba(26, 35, 50, 0.5);
+  }
+  .cmd-output pre::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .cmd-output pre::-webkit-scrollbar-thumb {
+    background: rgba(232, 238, 244, 0.4);
+    border-radius: 4px;
+  }
+  .cmd-output-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: calc(0.45rem * 1.13 * 0.8);
+    align-self: stretch;
+    height: 100%;
+    min-height: 0;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+  .cmd-output .btn-copy {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: calc(0.35rem * 0.8);
+    box-sizing: border-box;
+    flex: 0 0 41%;
+    height: 41%;
+    max-height: 41%;
+    min-height: 0;
+    min-width: calc(4.75rem * 1.3 * 0.8);
+    width: 100%;
+    padding: calc(0.15rem * 0.8 * 0.8) calc(0.55rem * 1.3 * 0.8);
+    background: var(--accent, #c4703a);
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: normal;
+  }
+  .cmd-output .btn-copy:hover { background: var(--accent-hover, #a85a2e); }
+  .cmd-output .btn-copy-icon {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    height: 70%;
+    max-height: 70%;
+    width: auto;
+    aspect-ratio: 1;
+    line-height: 0;
+  }
+  .cmd-output .btn-copy-icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .cmd-output .btn-copy-icon--clipboard svg {
+    stroke: #000;
+  }
+  .cmd-output .btn-copy-label {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    align-self: center;
+    gap: 0;
+    height: auto;
+    max-height: none;
+    min-width: 0;
+    flex: 1 1 auto;
+    line-height: 1;
+    text-align: center;
+  }
+  .cmd-output .btn-copy-label-line {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    line-height: 1;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    font-size: calc(0.62rem * 1.35 * 1.1 * 0.8);
+    letter-spacing: 0.01em;
+  }
+  .cmd-output .btn-copy--colorize {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(232, 238, 244, 0.35);
+  }
+  .cmd-output .btn-copy--colorize:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  .cmd-output .btn-copy--colorize[aria-pressed="true"] {
+    background: rgba(196, 112, 58, 0.35);
+    border-color: rgba(196, 112, 58, 0.75);
+    box-shadow: inset 0 0 0 1px rgba(196, 112, 58, 0.25);
+  }
+  .cmd-output pre .cmd-seg--prefix {
+    color: #fff;
+  }
+  .cmd-output pre .cmd-line-cont {
+    color: #fff;
+    opacity: 0.92;
+  }
+  .cmd-output pre .cmd-line-hang {
+    padding-left: var(--cmd-line-hang-indent, 2ch);
+  }
+  .cmd-builder-cmd-dock .cmd-output .hint {
+    display: none;
+  }

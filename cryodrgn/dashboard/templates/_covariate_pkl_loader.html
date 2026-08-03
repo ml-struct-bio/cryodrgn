@@ -1,0 +1,40 @@
+{# Modal file browser for loading particle-indexed covariate .pkl arrays. #}
+<div
+  id="covariate-pkl-browser-panel"
+  class="cryo-explorer-save-modal cryo-covariate-pkl-modal"
+  hidden
+  aria-hidden="true"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="covariate-pkl-modal-title"
+>
+  <div class="cryo-explorer-save-modal__backdrop" data-covariate-pkl-close="1" aria-hidden="true"></div>
+  <div class="cryo-explorer-save-modal__dialog">
+    <div class="cryo-explorer-save-modal__header">
+      <h2 id="covariate-pkl-modal-title" class="cryo-explorer-save-modal__title">
+        Load covariate from .pkl
+      </h2>
+      <button
+        type="button"
+        id="covariate-pkl-cancel"
+        class="cryo-explorer-save-modal__close"
+        aria-label="Close covariate file dialog"
+      >&times;</button>
+    </div>
+    <p class="cryo-dash-legend-note" style="margin:0 0 0.65rem;">
+      Choose a numpy array saved as <code>.pkl</code> with one row per particle
+      (length must match the plotted particle count). Use a 1-D array for one
+      covariate or a 2-D array for several columns. Numeric values use continuous
+      colouring; text labels (or other non-numeric values) are always treated as
+      discrete colour categories.
+    </p>
+    <div class="cryo-file-browser cryo-explorer-save-modal__browser">
+      <div class="cryo-file-browser-bar">
+        <button type="button" id="covariate-pkl-up" title="Parent directory">&#8593; Up</button>
+        <span class="cryo-file-browser-path" id="covariate-pkl-path"></span>
+      </div>
+      <ul class="cryo-file-browser-list" id="covariate-pkl-list"></ul>
+    </div>
+    <p id="covariate-pkl-status" class="status" style="margin:0.5rem 0 0;font-size:0.88rem;"></p>
+  </div>
+</div>

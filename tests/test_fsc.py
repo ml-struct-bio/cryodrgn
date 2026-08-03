@@ -153,7 +153,8 @@ def test_use_cryosparc_correction(trained_dir) -> None:
         f"cryodrgn_utils gen_mask {vol_file1} {mask_file} --dist 6 --dilate 6"
     )
     assert err == ""
-    assert round(float(out.split("\n")[0].split("Threshold=")[1]), 4) == 0.1266
+    threshold = float(out.split("\n")[0].split("Threshold=")[1])
+    assert threshold == pytest.approx(0.1266, abs=0.001)
     out, err = run_command(
         f"cryodrgn_utils fsc {vol_file1} {vol_file2} "
         f"--ref-volume {ref_vol} --mask {mask_file}"

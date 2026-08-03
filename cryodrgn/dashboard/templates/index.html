@@ -73,7 +73,7 @@
   .landing-cards {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-auto-rows: var(--landing-row-h);
     gap: 1rem;
     align-items: stretch;
@@ -81,6 +81,8 @@
   }
   .landing-card-slot {
     position: relative;
+    min-width: 0;
+    width: 100%;
     min-height: 0;
     height: 100%;
     z-index: 0;
@@ -91,6 +93,8 @@
   }
   .landing-cards > .landing-card-slot > .landing-card,
   .landing-cards > .landing-card-slot > .landing-card-link {
+    width: 100%;
+    max-width: 100%;
     height: 100%;
     min-height: 0;
   }
@@ -103,6 +107,9 @@
     border: 1px solid rgba(36, 59, 83, 0.12);
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
@@ -136,6 +143,15 @@
     outline: 2px solid var(--accent, #c4703a);
     outline-offset: 3px;
   }
+  /* Reserve inactive-badge height on active cards so title rows share the same width. */
+  .landing-card:not(.landing-card--inactive)::before {
+    content: "";
+    display: block;
+    flex: 0 0 auto;
+    width: 100%;
+    height: calc(0.14rem * 2 + 0.82rem * 1.2);
+    margin-bottom: 0.4rem;
+  }
   .landing-card h2.landing-card-title {
     font-family: var(--font-sans);
     font-weight: 700;
@@ -144,6 +160,8 @@
     margin: 0 0 0.45rem;
     color: var(--nav-bg, #243b53);
     flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
     letter-spacing: 0.01em;
   }
   .landing-card-thumb-region {
@@ -240,6 +258,11 @@
     color: var(--muted, #5c6b7a);
     font-size: 1.17rem;
     line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  .landing-card-text-scroll code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .landing-card-text-scroll p:last-child,
   .landing-card > p:last-child {
@@ -401,8 +424,8 @@
     <h2 class="landing-card-title">Trajectory creator</h2>
     <img class="landing-card-thumb" alt="" src="{{ url_for('static', filename='thumb_trajectory.png') }}"/>
     <div class="landing-card-text-scroll" tabindex="0">
-      <p>Draw a line through the latent scatter to generate volumes along a trajectory — direct interpolation or
-            nearest-neighbor mode — with ChimeraX previews.</p>
+      <p>Draw a path through latent space, generate volumes along a trajectory, and inspect them in the
+            right-hand panel with VTK 3D (default), 2D slices, or ChimeraX — including manual k-means/PC selection.</p>
     </div>
   </a>
   {% endif %}

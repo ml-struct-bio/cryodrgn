@@ -7,12 +7,12 @@ static/template paths, and URL wiring.
 
 from __future__ import annotations
 
-import logging
 import os
 import uuid
 
 from flask import Flask
 
+from cryodrgn.dashboard.bundled_plotly import bundled_plotly_js
 from cryodrgn.dashboard.command_builder_cli_help import jinja_arg_display_name
 from cryodrgn.dashboard.command_builder_data import (
     arg_is_batch_size_denominated,
@@ -52,8 +52,6 @@ __all__ = [
     "_particle_explorer_scatter_max_points",
 ]
 
-logger = logging.getLogger(__name__)
-
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _TEMPLATE_DIR = os.path.join(_THIS_DIR, "templates")
 _STATIC_DIR = os.path.join(_THIS_DIR, "static")
@@ -62,75 +60,109 @@ _STATIC_DIR = os.path.join(_THIS_DIR, "static")
 # ---------------------------------------------------------------------------
 
 
+# Route table: (path, view_func, methods)
+# Single-method routes use GET/POST directly instead of tuple for brevity
 _ROUTES = (
-    ("/api/set_epoch", api_set_epoch, ("POST",)),
-    ("/api/set_workdir", api_set_workdir, ("POST",)),
-    ("/api/set_chimerax_path", api_set_chimerax_path, ("POST",)),
-    ("/", re.index, ("GET",)),
-    ("/command-builder", re.command_builder_page, ("GET",)),
-    ("/abinit-builder", re.abinit_builder_redirect, ("GET",)),
-    ("/filter", re.filter_page_redirect, ("GET",)),
-    ("/api/save_selection", re.api_save_selection, ("POST",)),
-    ("/api/covariate_threshold_rows", re.api_covariate_threshold_rows, ("POST",)),
-    ("/api/covariate_legend_context", re.api_covariate_legend_context, ("POST",)),
-    ("/explorer", re.explorer, ("GET",)),
-    ("/api/explorer_volume_media", re.api_explorer_volume_media, ("POST",)),
-    ("/api/scatter", re.api_scatter, ("GET",)),
-    ("/latent-3d", re.latent_3d_page, ("GET",)),
-    ("/landscape-full-3d", re.landscape_full_3d_page, ("GET",)),
+    ("/vendor/plotly.min.js", bundled_plotly_js, "GET"),
+    ("/api/set_epoch", api_set_epoch, "POST"),
+    ("/api/set_workdir", api_set_workdir, "POST"),
+    ("/api/set_chimerax_path", api_set_chimerax_path, "POST"),
+    ("/", re.index, "GET"),
+    ("/command-builder", re.command_builder_page, "GET"),
+    ("/abinit-builder", re.abinit_builder_redirect, "GET"),
+    ("/filter", re.filter_page_redirect, "GET"),
+    ("/api/save_selection", re.api_save_selection, "POST"),
+    ("/api/load_covariate_pkl", re.api_load_covariate_pkl, "POST"),
+    ("/api/covariate_threshold_rows", re.api_covariate_threshold_rows, "POST"),
+    ("/api/covariate_legend_context", re.api_covariate_legend_context, "POST"),
+    ("/explorer", re.explorer, "GET"),
+    ("/volume-viewer", re.volume_viewer_page, "GET"),
+    ("/api/explorer_volume_media", re.api_explorer_volume_media, "POST"),
+    (
+        "/api/volume_viewer/analyze_volumes",
+        re.api_volume_viewer_analyze_volumes,
+        "GET",
+    ),
+    (
+        "/api/volume_viewer/analyze_markers",
+        re.api_volume_viewer_analyze_markers,
+        "GET",
+    ),
+    (
+        "/api/volume_viewer/analyze_volume",
+        re.api_volume_viewer_analyze_volume,
+        "GET",
+    ),
+    (
+        "/api/volume_viewer/analyze_volumes_batch",
+        re.api_volume_viewer_analyze_volumes_batch,
+        "POST",
+    ),
+    (
+        "/api/volume_viewer/analyze_volumes_chimerax_batch",
+        re.api_volume_viewer_analyze_volumes_chimerax_batch,
+        "POST",
+    ),
+    ("/api/volume_viewer/decode", re.api_volume_viewer_decode, "POST"),
+    ("/api/scatter", re.api_scatter, "GET"),
+    ("/latent-3d", re.latent_3d_page, "GET"),
+    ("/landscape-full-3d", re.landscape_full_3d_page, "GET"),
     ("/api/scatter3d_z", re.api_scatter3d_z, ("GET", "POST")),
     (
         "/api/scatter3d_z_landscape_full",
         re.api_scatter3d_z_landscape_full,
         ("GET", "POST"),
     ),
-    ("/api/latent3d_preview.png", re.api_latent3d_preview_png, ("GET",)),
+    ("/api/latent3d_preview.png", re.api_latent3d_preview_png, "GET"),
     (
         "/api/latent3d_plot_gif_from_png_frames",
         re.api_latent3d_plot_gif_from_png_frames,
-        ("POST",),
+        "POST",
     ),
     (
         "/api/latent3d_landscape_full_discrete_gif",
         re.api_latent3d_landscape_full_discrete_gif,
-        ("POST",),
+        "POST",
     ),
-    (
-        "/api/latent3d_discrete_gif",
-        re.api_latent3d_discrete_gif,
-        ("POST",),
-    ),
-    ("/api/preview_montage", re.api_preview_montage, ("GET",)),
+    ("/api/latent3d_discrete_gif", re.api_latent3d_discrete_gif, "POST"),
+    ("/api/preview_montage", re.api_preview_montage, "GET"),
     ("/api/preload_images", re.api_preload_images, ("GET", "POST")),
-    ("/pairplot", ra.pairplot_page, ("GET",)),
-    ("/api/pairplot", ra.api_pairplot, ("POST",)),
-    ("/api/save_pairplot_png", ra.api_save_pairplot_png, ("POST",)),
-    ("/trajectory", ra.trajectory_creator_page, ("GET",)),
-    ("/api/trajectory_volumes", ra.api_trajectory_volumes, ("POST",)),
-    ("/api/trajectory_coords", ra.api_trajectory_coords, ("POST",)),
-    ("/api/trajectory_save_zpath", ra.api_trajectory_save_zpath, ("POST",)),
-    ("/api/trajectory_save_volumes", ra.api_trajectory_save_volumes, ("POST",)),
-    ("/api/trajectory_import_anchors", ra.api_trajectory_import_anchors, ("POST",)),
-    ("/api/list_server_files", ra.api_list_server_files, ("GET",)),
-    ("/api/trajectory_kmeans_centers", ra.api_trajectory_kmeans_centers, ("POST",)),
-    ("/api/trajectory_random_indices", ra.api_trajectory_random_indices, ("POST",)),
+    ("/pairplot", ra.pairplot_page, "GET"),
+    ("/api/pairplot", ra.api_pairplot, "POST"),
+    ("/api/save_pairplot_png", ra.api_save_pairplot_png, "POST"),
+    ("/trajectory", ra.trajectory_creator_page, "GET"),
+    ("/api/trajectory_volumes", ra.api_trajectory_volumes, "POST"),
     (
-        "/api/default_trajectory_endpoints",
-        ra.api_default_trajectory_endpoints,
-        ("GET",),
+        "/api/trajectory_volumes_decode_progress",
+        ra.api_trajectory_volumes_decode_progress,
+        "GET",
     ),
-    ("/landscape-volpca", ra.landscape_volpca_page, ("GET",)),
-    ("/api/landscape_volpca/meta", ra.api_landscape_volpca_meta, ("GET",)),
-    ("/api/landscape_volpca/scatter", ra.api_landscape_volpca_scatter, ("GET",)),
+    (
+        "/api/trajectory_volumes_partial",
+        ra.api_trajectory_volumes_partial,
+        "GET",
+    ),
+    ("/api/trajectory_coords", ra.api_trajectory_coords, "POST"),
+    ("/api/trajectory_save_zpath", ra.api_trajectory_save_zpath, "POST"),
+    ("/api/trajectory_save_volumes", ra.api_trajectory_save_volumes, "POST"),
+    ("/api/trajectory_save_gif", ra.api_trajectory_save_gif, "POST"),
+    ("/api/trajectory_import_anchors", ra.api_trajectory_import_anchors, "POST"),
+    ("/api/list_server_files", ra.api_list_server_files, "GET"),
+    ("/api/trajectory_kmeans_centers", ra.api_trajectory_kmeans_centers, "POST"),
+    ("/api/trajectory_random_indices", ra.api_trajectory_random_indices, "POST"),
+    ("/api/default_trajectory_endpoints", ra.api_default_trajectory_endpoints, "GET"),
+    ("/landscape-volpca", ra.landscape_volpca_page, "GET"),
+    ("/api/landscape_volpca/meta", ra.api_landscape_volpca_meta, "GET"),
+    ("/api/landscape_volpca/scatter", ra.api_landscape_volpca_scatter, "GET"),
     (
         "/api/landscape_volpca/generate_animations",
         ra.api_landscape_volpca_generate_animations,
-        ("POST",),
+        "POST",
     ),
     (
         "/api/landscape_volpca/save_animations",
         ra.api_landscape_volpca_save_animations,
-        ("POST",),
+        "POST",
     ),
 )
 
@@ -225,7 +257,8 @@ def create_app(
         app.context_processor(inject_meta)
 
     for rule, view_func, methods in _ROUTES:
-        app.add_url_rule(rule, view_func=view_func, methods=list(methods))
+        method_list = [methods] if isinstance(methods, str) else list(methods)
+        app.add_url_rule(rule, view_func=view_func, methods=method_list)
 
     return app
 

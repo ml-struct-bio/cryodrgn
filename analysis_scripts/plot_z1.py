@@ -43,8 +43,10 @@ def main(args):
     np.random.seed(args.seed)
     f = args.input
     print(f)
-    fi = open(f, "rb")
-    x = pickle.load(fi)
+
+    with open(f, "rb") as fi:
+        x = pickle.load(fi)
+
     N = len(x)
     plt.scatter(np.arange(N), x, label=f, alpha=args.alpha, s=args.ms)
     # plt.scatter(np.arange(N), x, c=np.arange(len(x[:,0])), label=f, alpha=.1, s=2, cmap='hsv')
@@ -64,10 +66,12 @@ def main(args):
         print(len(xd))
         print(xd)
         plt.plot(t, xd, "o", color="k")
+
     if args.out_s and xd is not None:
         np.savetxt(args.out_s, xd)
     if args.ylim:
         plt.ylim(args.ylim)
+
     plt.xlabel("image")
     plt.ylabel("latent encoding")
     plt.legend(loc="best")
@@ -76,7 +80,9 @@ def main(args):
 
     # Plot histogram
     plt.figure()
-    sns.distplot(x)
+    sns.histplot(
+        x, kde=True, stat="density", kde_kws={"cut": 3}, alpha=0.43, edgecolor=None
+    )
     plt.show()
 
 

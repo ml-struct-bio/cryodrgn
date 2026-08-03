@@ -57,7 +57,8 @@ def main(args):
     np.random.seed(args.seed)
     f = args.input
     print(f)
-    x = pickle.load(open(f, "rb"))
+    with open(f, "rb") as fi:
+        x = pickle.load(fi)
     if args.stride:
         x = x[:: args.stride]
     print(x.shape)
@@ -82,6 +83,7 @@ def main(args):
             )
         else:
             plt.scatter(x[:, 0], x[:, 1], label=f, alpha=args.alpha, s=args.ms)
+
         plt.xlabel("z1")
         plt.ylabel("z2")
         plt.legend(loc="best")

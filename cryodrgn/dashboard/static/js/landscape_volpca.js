@@ -1,4 +1,11 @@
 (function() {
+  var PLOTLY = window.CryoPlotlyArrays;
+
+  function plotlyTraceLength(trace, key) {
+    if (!trace || !trace[key] || !PLOTLY) return 0;
+    return PLOTLY.length(trace[key]);
+  }
+
   var gd = document.getElementById("volsketch");
   var plotStatusEl = document.getElementById("volsketch-plot-status");
   var animateStatusEl = document.getElementById("volsketch-animate-status");
@@ -783,26 +790,20 @@
   }
 
   function customDataRowAsArray(row) {
-    if (row == null) return [];
-    if (Array.isArray(row)) return row;
-    if (typeof row === "object" && row.length !== undefined) {
-      try {
-        return Array.from(row);
-      } catch (e) {
-        return [];
-      }
-    }
-    return [row];
+    return PLOTLY ? PLOTLY.rowAsArray(row) : (Array.isArray(row) ? row : []);
   }
 
   function volIdAtPointIndex(trace, i) {
-    if (trace.ids && trace.ids.length === trace.x.length && trace.ids[i] != null && trace.ids[i] !== "") {
-      var vid = parseInt(String(trace.ids[i]), 10);
-      if (!isNaN(vid)) return vid;
+    if (trace.ids && PLOTLY.rowsEqualLength(trace.ids, trace.x)) {
+      var idVal = PLOTLY.valueAt(trace.ids, i);
+      if (idVal != null && idVal !== "") {
+        var vid = parseInt(String(idVal), 10);
+        if (!isNaN(vid)) return vid;
+      }
     }
     var cd = trace.customdata;
-    if (cd && cd.length === trace.x.length && cd[i] != null) {
-      var row = customDataRowAsArray(cd[i]);
+    if (cd && PLOTLY.rowsEqualLength(cd, trace.x)) {
+      var row = customDataRowAsArray(PLOTLY.rowAt(cd, i));
       if (row.length) return parseInt(String(row[0]), 10);
     }
     return NaN;
@@ -811,7 +812,7 @@
   function allPlotVolIds() {
     if (!gd || !gd.data || !gd.data[0]) return [];
     var trace = gd.data[0];
-    var n = trace.x ? trace.x.length : 0;
+    var n = plotlyTraceLength(trace, "x");
     if (!n) return [];
     var s = new Set();
     for (var i = 0; i < n; i++) {
@@ -1007,13 +1008,17 @@
   function markerFillCssAtIndexVs(trace, gd, i) {
     var full = gd._fullData && gd._fullData[0];
     var expanded = full && full.marker && full.marker.color;
-    if (Array.isArray(expanded) && expanded[i] != null && typeof expanded[i] === "string") {
-      return expanded[i];
+    if (PLOTLY.isArray(expanded)) {
+      var exVal = PLOTLY.valueAt(expanded, i);
+      if (exVal != null && typeof exVal === "string") return exVal;
     }
     var mk = trace.marker || {};
     var mc = mk.color;
     if (typeof mc === "string") return mc;
-    if (Array.isArray(mc) && mc[i] != null && typeof mc[i] === "string") return mc[i];
+    if (PLOTLY.isArray(mc)) {
+      var mcStr = PLOTLY.valueAt(mc, i);
+      if (mcStr != null && typeof mcStr === "string") return mcStr;
+    }
     return "#4a5568";
   }
 
@@ -1028,11 +1033,12 @@
     if (!marker || marker.size == null) return null;
     var sz = marker.size;
     if (typeof sz === "number" && isFinite(sz) && sz > 0) return sz;
-    if (Array.isArray(sz) && sz.length) {
+    if (PLOTLY.isArray(sz) && PLOTLY.length(sz)) {
       var minS = Infinity;
       var si;
-      for (si = 0; si < sz.length; si++) {
-        var one = sz[si];
+      var szLen = PLOTLY.length(sz);
+      for (si = 0; si < szLen; si++) {
+        var one = PLOTLY.valueAt(sz, si);
         if (typeof one === "number" && isFinite(one) && one > 0 && one < minS) minS = one;
       }
       if (minS < Infinity) return minS;
@@ -1044,10 +1050,10 @@
     volIdToPointIndex = {};
     if (!gd || !gd.data || !gd.data[0]) return;
     var trace = gd.data[0];
-    var n = trace.x ? trace.x.length : 0;
-    var hasIds = trace.ids && trace.ids.length === n;
+    var n = plotlyTraceLength(trace, "x");
+    var hasIds = trace.ids && PLOTLY.rowsEqualLength(trace.ids, trace.x);
     var cd = trace.customdata;
-    if (!hasIds && (!cd || cd.length !== n)) return;
+    if (!hasIds && (!cd || !PLOTLY.rowsEqualLength(cd, trace.x))) return;
     for (var i = 0; i < n; i++) {
       var v = volIdAtPointIndex(trace, i);
       if (!isNaN(v)) volIdToPointIndex[v] = i;
@@ -1146,14 +1152,14 @@
     volsketchLassoDimPreviewDone = true;
     if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== "scattergl") return;
     var trace = gd.data[0];
-    var n = trace.x ? trace.x.length : 0;
+    var n = plotlyTraceLength(trace, "x");
     if (!n) return;
     var mo = trace.marker && trace.marker.opacity;
     var perPoint =
       mo != null &&
       typeof mo !== "number" &&
-      Array.isArray(mo) &&
-      mo.length === n;
+      PLOTLY.isArray(mo) &&
+      PLOTLY.length(mo) === n;
     var patch = {
       selectedpoints: [null],
       "unselected.marker.opacity": [VOLSKETCH_SCATTER_DIM_OP],
@@ -1169,7 +1175,7 @@
     opts = opts || {};
     if (!gd || !gd.data || !gd.data[0]) return Promise.resolve();
     var trace = gd.data[0];
-    var n = trace.x ? trace.x.length : 0;
+    var n = plotlyTraceLength(trace, "x");
     if (!n) return Promise.resolve();
     var indices = pointIndices || [];
     if (opts.skipEmpty && !indices.length) return Promise.resolve();
@@ -1280,21 +1286,21 @@
     var lineColors = new Array(k);
     var markerColors = null;
     var mcAll = baseTrace.marker ? baseTrace.marker.color : null;
-    if (mcAll != null && typeof mcAll !== "string" && Array.isArray(mcAll)) {
+    if (mcAll != null && typeof mcAll !== "string" && PLOTLY.isArray(mcAll)) {
       markerColors = new Array(k);
     }
     for (var ki = 0; ki < k; ki++) {
       var ti = pointIndices[ki];
-      xSel[ki] = xAll ? xAll[ti] : null;
-      ySel[ki] = yAll ? yAll[ti] : null;
-      cdSel[ki] = cdAll ? cdAll[ti] : null;
+      xSel[ki] = xAll ? PLOTLY.valueAt(xAll, ti) : null;
+      ySel[ki] = yAll ? PLOTLY.valueAt(yAll, ti) : null;
+      cdSel[ki] = cdAll ? PLOTLY.rowAt(cdAll, ti) : null;
       var v = volIdAtPointIndex(baseTrace, ti);
       texts[ki] = !isNaN(v) && labelByVol[v] != null ? labelByVol[v] : "";
       sizes[ki] = hiSize;
       opacities[ki] = hiOp;
       lineWidths[ki] = 1;
       lineColors[ki] = selectionOutlineForFillVs(markerFillCssAtIndexVs(baseTrace, gd, ti));
-      if (markerColors) markerColors[ki] = mcAll[ti];
+      if (markerColors) markerColors[ki] = PLOTLY.valueAt(mcAll, ti);
     }
     var upd = {
       x: [xSel],
@@ -1805,8 +1811,8 @@
         if (afterColor && hasPlot && fig.data && fig.data[0] && gd.data && gd.data[0]) {
           var g0 = gd.data[0];
           var d0 = fig.data[0];
-          var nOld = g0.x ? g0.x.length : 0;
-          var nNew = d0.x ? d0.x.length : 0;
+          var nOld = plotlyTraceLength(g0, "x");
+          var nNew = plotlyTraceLength(d0, "x");
           if (nOld === nNew && typeof Plotly.restyle === "function") {
             plotPromise = Plotly.restyle(
               gd,

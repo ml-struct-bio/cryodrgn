@@ -1423,6 +1423,39 @@
   }
 
   /**
+   * Map near-pure ``ax,ay,az`` axis-angles onto cardinal ``x``/``y``/``z``.
+   * VTK ``getChimeraxViewTurns`` often emits ``1,0,0`` near 180°, which ChimeraX
+   * treats less stably across volumes than ``turn x``.
+   */
+  function canonicalizeChimeraxViewTurn(t) {
+    var axis = String((t && t.axis) || "").toLowerCase().trim();
+    var degrees = Number(t && t.degrees);
+    if (!axis || !isFinite(degrees) || Math.abs(degrees) < 1e-9) return null;
+    if (axis === "x" || axis === "y" || axis === "z") {
+      return { axis: axis, degrees: degrees };
+    }
+    var parts = axis.split(/[,\s]+/).map(Number).filter(function (n) {
+      return isFinite(n);
+    });
+    if (parts.length !== 3) return { axis: axis, degrees: degrees };
+    var ax = parts[0], ay = parts[1], az = parts[2];
+    var n = Math.sqrt(ax * ax + ay * ay + az * az);
+    if (!(n > 1e-9)) return null;
+    ax /= n; ay /= n; az /= n;
+    var thresh = 0.98;
+    if (Math.abs(ax) >= thresh && Math.abs(ay) < 0.15 && Math.abs(az) < 0.15) {
+      return { axis: "x", degrees: ax < 0 ? -degrees : degrees };
+    }
+    if (Math.abs(ay) >= thresh && Math.abs(ax) < 0.15 && Math.abs(az) < 0.15) {
+      return { axis: "y", degrees: ay < 0 ? -degrees : degrees };
+    }
+    if (Math.abs(az) >= thresh && Math.abs(ax) < 0.15 && Math.abs(ay) < 0.15) {
+      return { axis: "z", degrees: az < 0 ? -degrees : degrees };
+    }
+    return { axis: axis, degrees: degrees };
+  }
+
+  /**
    * Adopt a live VTK camera when switching VTK → ChimeraX with a volume on screen.
    * Prefer exact axis-angle (or y/x) turns; absolute rotation-only matrices are a
    * last resort and often mismatch after volume center.
@@ -1435,19 +1468,31 @@
     if (turns.length) {
       clearTrajChimeraxAppliedViewMatrix();
       trajChimeraxViewRotations = { x: 0, y: 0, z: 0 };
-      trajChimeraxAppliedViewTurns = turns.map(function (t) {
-        return {
-          axis: String((t && t.axis) || ""),
-          degrees: Number(t && t.degrees),
-        };
-      }).filter(function (t) {
-        return t.axis && isFinite(t.degrees) && Math.abs(t.degrees) > 1e-9;
-      });
-      for (var ti = 0; ti < trajChimeraxAppliedViewTurns.length; ti++) {
-        var t = trajChimeraxAppliedViewTurns[ti];
-        var axis = String(t.axis || "").toLowerCase();
-        if (axis === "x" || axis === "y" || axis === "z") {
-          trajChimeraxViewRotations[axis] = normalizeViewDegrees(t.degrees);
+      var canonical = [];
+      var allCardinal = true;
+      for (var ti = 0; ti < turns.length; ti++) {
+        var c = canonicalizeChimeraxViewTurn(turns[ti]);
+        if (!c) continue;
+        canonical.push(c);
+        if (c.axis !== "x" && c.axis !== "y" && c.axis !== "z") allCardinal = false;
+      }
+      if (allCardinal && canonical.length) {
+        // Prefer Euler-only for pure x/y/z so every ChimeraX frame shares one
+        // stable turn list (y then x then z) instead of a brittle custom axis.
+        clearTrajChimeraxAppliedViewTurns();
+        for (var ci = 0; ci < canonical.length; ci++) {
+          var ct = canonical[ci];
+          trajChimeraxViewRotations[ct.axis] = normalizeViewDegrees(
+            Number(trajChimeraxViewRotations[ct.axis] || 0) + ct.degrees
+          );
+        }
+      } else {
+        trajChimeraxAppliedViewTurns = canonical;
+        for (var tj = 0; tj < trajChimeraxAppliedViewTurns.length; tj++) {
+          var t = trajChimeraxAppliedViewTurns[tj];
+          if (t.axis === "x" || t.axis === "y" || t.axis === "z") {
+            trajChimeraxViewRotations[t.axis] = normalizeViewDegrees(t.degrees);
+          }
         }
       }
       trajChimeraxViewMatrixInputDirty = false;
@@ -1739,7 +1784,7 @@
     requestTrajChimeraxViewRerender("Applying custom ChimeraX view matrix…");
   }
 
-  function applyTrajChimeraxViewRotation(axis) {
+  function applyTrajChimeraxViewRotation(axis, statusMsg) {
     if (!trajChimeraxViewControlsReady()) {
       setTrajStatus("Render ChimeraX images before rotating the view.", false);
       return;
@@ -1750,14 +1795,44 @@
       return;
     }
     clearTrajChimeraxAppliedViewMatrix();
-    clearTrajChimeraxAppliedViewTurns();
     trajChimeraxViewMatrixInputDirty = false;
-    trajChimeraxViewRotations[axis] = normalizeViewDegrees(
-      Number(trajChimeraxViewRotations[axis] || 0) + deg
-    );
+    // Fold any VTK-synced cardinal turns into Euler first so Rotate X/Y/Z keeps
+    // one stable turn list for the whole re-render batch.
+    if (trajChimeraxAppliedViewTurns && trajChimeraxAppliedViewTurns.length) {
+      var leftover = [];
+      for (var ai = 0; ai < trajChimeraxAppliedViewTurns.length; ai++) {
+        var c = canonicalizeChimeraxViewTurn(trajChimeraxAppliedViewTurns[ai]);
+        if (!c) continue;
+        if (c.axis === "x" || c.axis === "y" || c.axis === "z") {
+          trajChimeraxViewRotations[c.axis] = normalizeViewDegrees(
+            Number(trajChimeraxViewRotations[c.axis] || 0) + c.degrees
+          );
+        } else {
+          leftover.push(c);
+        }
+      }
+      if (leftover.length) {
+        trajChimeraxAppliedViewTurns = leftover.concat([{
+          axis: String(axis || "").toLowerCase(),
+          degrees: deg,
+        }]);
+      } else {
+        clearTrajChimeraxAppliedViewTurns();
+        trajChimeraxViewRotations[axis] = normalizeViewDegrees(
+          Number(trajChimeraxViewRotations[axis] || 0) + deg
+        );
+      }
+    } else {
+      clearTrajChimeraxAppliedViewTurns();
+      trajChimeraxViewRotations[axis] = normalizeViewDegrees(
+        Number(trajChimeraxViewRotations[axis] || 0) + deg
+      );
+    }
     syncTrajChimeraxViewMatrixField();
     if (trajVolDisplay) trajVolDisplay.setChimeraxRendering(true, { rerender: true });
-    requestTrajChimeraxViewRerender("Updated " + trajChimeraxViewRotationSummary() + " — re-rendering…");
+    var msg = statusMsg
+      || ("Rotating ChimeraX view " + deg + "° about " + String(axis || "").toUpperCase() + "…");
+    requestTrajChimeraxViewRerender(msg);
   }
 
   function normalizeViewTurnsKey(turns) {
@@ -2773,10 +2848,13 @@
       return;
     }
     // Mark interactive load in-flight so setVolumeViewerJobStatus does not
-    // suppress "Loading volume…" merely because another slot is still painted.
+    // suppress a pending focus status merely because another slot is still painted.
     var focusIdx = idx;
     var loadSeq = beginInteractiveVolumeLoad();
-    setVolumeViewerJobStatus("Loading volume\u2026", true);
+    setVolumeViewerJobStatus(
+      backend === "vtk" ? "Rendering VTK volumes\u2026" : "Loading volume\u2026",
+      true
+    );
     fetchAnalyzeVolumesBatch([String(volId)])
       .then(function(res) {
         if (loadSeq !== interactiveVolumeLoadSeq) return;

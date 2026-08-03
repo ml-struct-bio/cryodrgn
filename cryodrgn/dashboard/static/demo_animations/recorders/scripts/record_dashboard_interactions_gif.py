@@ -207,10 +207,19 @@ class FrameBuffer:
         self.durations_ms: list[int] = []
 
     def snap(self, page, *, duration_ms: int | None = None) -> None:
-        self.pngs.append(page.screenshot(type="png", full_page=False))
-        self.durations_ms.append(
-            int(duration_ms) if duration_ms is not None else self.frame_ms
-        )
+        last_err: Exception | None = None
+        for attempt in range(5):
+            try:
+                self.pngs.append(page.screenshot(type="png", full_page=False))
+                self.durations_ms.append(
+                    int(duration_ms) if duration_ms is not None else self.frame_ms
+                )
+                return
+            except Exception as err:
+                last_err = err
+                time.sleep(0.15 * (attempt + 1))
+        assert last_err is not None
+        raise last_err
 
     def add_png(self, data: bytes, *, duration_ms: int | None = None) -> None:
         self.pngs.append(data)

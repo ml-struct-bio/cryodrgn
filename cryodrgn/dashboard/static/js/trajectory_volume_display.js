@@ -2163,7 +2163,7 @@
     // is still fetching — keep the loading overlay instead.
     if (!this._volumeReadyAt(focus)) {
       if (!this._explicitJobStatusBusy && !this.volumeGenerationBusy) {
-        this.setJobStatus("Loading volume\u2026", true);
+        this.setJobStatus("Rendering VTK volumes\u2026", true);
       }
       if (this.viewportEl) this.viewportEl.hidden = false;
       this._syncChrome();
@@ -2183,7 +2183,7 @@
     // enabled; stale paints abort when vtkFocusIndex / _vtkPaintGen diverge.
     this._vtkPaintGen = (this._vtkPaintGen || 0) + 1;
     var paintGen = this._vtkPaintGen;
-    this.setJobStatus("Loading volume\u2026", true);
+    this.setJobStatus("Rendering VTK volumes\u2026", true);
     if (this.viewportEl) this.viewportEl.hidden = false;
     this._syncChrome();
     return this._ensureRaycastView().then(function (view) {

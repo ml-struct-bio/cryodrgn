@@ -1282,6 +1282,8 @@
       else hideTrajVolPopoutModalDom();
     };
     trajVolDisplay.setVtkBundleUrl(TRAJ_VTK_BUNDLE_URL);
+    // Automation / GIF recorders: programmatic VTK orbit (headless mouse drag is unreliable).
+    window.__cryoTrajVolDisplay = trajVolDisplay;
     selectTrajVolumeBackend(defaultVolumeBackend());
     syncTrajectoryVolumeChrome();
     syncTrajVolBottomRegion();

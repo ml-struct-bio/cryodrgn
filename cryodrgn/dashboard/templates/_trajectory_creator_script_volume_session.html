@@ -2096,7 +2096,19 @@
     var decodeJobId = ctx.decodeJobId || newDecodeJobId();
     var decodeCount = ctx.decodeCount != null ? ctx.decodeCount : indices.length;
     var partialDecode = !!ctx.partialDecode;
-    var renderBackend = "vtk";
+    // Prefer the live radio, but never spin up VTK WebGL during a ChimeraX
+    // Decode+Render: hydrate on 2D slice instead, then onRenderStart flips to
+    // ChimeraX. Creating vtk.js mid-decode exhausts headless WebGL contexts
+    // before the user (or demo GIF) can open the VTK backend.
+    var preferredBackend = (typeof currentVolumeRenderBackend === "function"
+      ? currentVolumeRenderBackend()
+      : "vtk");
+    preferredBackend = String(preferredBackend || "vtk").toLowerCase();
+    if (preferredBackend !== "vtk" && preferredBackend !== "slice"
+        && preferredBackend !== "chimerax") {
+      preferredBackend = "vtk";
+    }
+    var renderBackend = preferredBackend === "chimerax" ? "slice" : preferredBackend;
     var payload = buildTrajectoryVolumesApiPayload({
       decodeIndices: partialDecode ? indices : null,
       decodeJobTotal: decodeCount,
@@ -2116,7 +2128,14 @@
       initialPhase: "decode"
     });
     if (trajVolDisplay) {
-      trajVolDisplay.setBackend(renderBackend);
+      // Keep radios aligned with the decode hydrate backend so
+      // currentVolumeRenderBackend() (radio-based) starts the MRC cache
+      // hydrate on slice/VTK rather than skipping it while ChimeraX is checked.
+      if (typeof selectTrajVolumeBackend === "function") {
+        selectTrajVolumeBackend(renderBackend);
+      } else {
+        trajVolDisplay.setBackend(renderBackend);
+      }
       trajVolDisplay.setChimeraxRendering(false);
       setVolumeViewerJobStatus(
         typeof decodingVolumesBusyMessage === "function"
@@ -2897,17 +2916,19 @@
               : "."), false);
           updateTrajectoryScatterPlotStatus();
           syncDirectModeVolumePendingOverlay();
-          // VTK / 2D: keep the loading chrome up and hydrate every decoded slot
-          // from the MRC cache (path-aligned), then paint — same role as the
-          // ChimeraX PNG pass after Decode+Render. Start hydrate before the
-          // label refresh so residual debt cannot flash (e.g. "… 4 volumes").
+          // Always hydrate interactive blobs from the MRC cache after decode so
+          // a later VTK switch has volume_b64 even when Decode+Render lands on
+          // ChimeraX (PNG-only) first. Prefer the live interactive radio; fall
+          // back to 2D slice so we do not construct vtk.js during hydrate.
           var liveBackend = currentVolumeRenderBackend();
-          var hydrateInteractive = (liveBackend === "vtk" || liveBackend === "slice")
-            && res && res.cacheId
+          var hydrateBackend = (liveBackend === "vtk" || liveBackend === "slice")
+            ? liveBackend
+            : "slice";
+          var hydrateInteractive = res && res.cacheId
             && typeof fetchTrajectoryVolumesFromCache === "function";
           var hydrateStarted = false;
           if (hydrateInteractive) {
-            hydrateStarted = !!fetchTrajectoryVolumesFromCache(liveBackend);
+            hydrateStarted = !!fetchTrajectoryVolumesFromCache(hydrateBackend);
           }
           if (!hydrateStarted) {
             trajectoryVolumeFetchInFlight = false;
@@ -3027,6 +3048,16 @@
             }
           }
           applySessionVolumeDisplay("chimerax", { coords: res && res.coords });
+          // Decode temporarily sets trajVolDisplay.backend to "vtk"; restore
+          // ChimeraX so the preview is shown after a combined Decode+Render.
+          if (typeof selectTrajVolumeBackend === "function") {
+            selectTrajVolumeBackend("chimerax");
+          } else if (trajVolDisplay && typeof trajVolDisplay.setBackend === "function") {
+            trajVolDisplay.setBackend("chimerax");
+            if (typeof trajVolDisplay._renderCurrent === "function") {
+              trajVolDisplay._renderCurrent();
+            }
+          }
           if (typeof syncDirectTraceEndpointVolumesInViewer === "function") {
             syncDirectTraceEndpointVolumesInViewer({ userInitiated: true });
           } else if (typeof applyManualInterpolatedVolumeSliderDisplay === "function") {

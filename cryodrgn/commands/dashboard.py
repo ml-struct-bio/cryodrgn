@@ -165,6 +165,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     )
     view.add_argument(
         "--trajectory-creator",
+        "--traj",
         action="store_true",
         help="open the trajectory creator instead of the launch menu",
     )

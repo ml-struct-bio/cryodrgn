@@ -388,24 +388,6 @@
     return this._xy.map(function (pt) { return cloneXy(pt); });
   };
 
-  TrajectoryVolumeState.prototype.setSlotXy = function (i, xy) {
-    i = Math.floor(Number(i));
-    if (!Number.isFinite(i) || i < 0) return this;
-    while (this._xy.length <= i) this._xy.push(null);
-    while (this._ids.length <= i) this._ids.push(null);
-    while (this._volumes.length <= i) this._volumes.push(null);
-    while (this._images.length <= i) this._images.push(null);
-    this._xy[i] = cloneXy(xy);
-    if (this._volumes[i]) {
-      this._volumes[i] = stampVolGeometry(
-        this._volumes[i],
-        this._xy[i],
-        pathParamT(i, this._ids.length)
-      );
-    }
-    return this;
-  };
-
   /**
    * Latent XY where slot media was decoded (vol.traj_xy), if any.
    * Distinct from live path ``_xy`` after nearest-snap / drag.
@@ -1659,69 +1641,6 @@
     return this.permute(perm);
   };
 
-  TrajectoryVolumeState.prototype.insertSlot = function (index, id) {
-    index = Math.max(0, Math.min(this._ids.length, Math.floor(Number(index)) || 0));
-    this._ids.splice(index, 0, asId(id));
-    this._volumes.splice(index, 0, null);
-    this._images.splice(index, 0, null);
-    this._xy.splice(index, 0, null);
-    this._meta.splice(index, 0, cloneMeta(null, id, null));
-    this._match.splice(index, 0, {
-      matched: true,
-      labelId: asId(id),
-      plot_row: null
-    });
-    var nextStale = {};
-    for (var key in this._stale) {
-      if (!this._stale[key]) continue;
-      var src = Math.floor(Number(key));
-      nextStale[src >= index ? src + 1 : src] = true;
-    }
-    this._stale = nextStale;
-    this._emit("insert");
-    return this;
-  };
-
-  TrajectoryVolumeState.prototype.removeSlots = function (indices) {
-    var remove = {};
-    (indices || []).forEach(function (i) {
-      i = Math.floor(Number(i));
-      if (Number.isFinite(i) && i >= 0) remove[i] = true;
-    });
-    var ids = [];
-    var vols = [];
-    var imgs = [];
-    var xys = [];
-    var metas = [];
-    var matches = [];
-    var stale = {};
-    var newIdx = 0;
-    for (var i = 0; i < this._ids.length; i++) {
-      if (remove[i]) continue;
-      ids.push(this._ids[i]);
-      vols.push(this._volumes[i] || null);
-      imgs.push(this._images[i] || null);
-      xys.push(this._xy[i] || null);
-      metas.push(cloneMeta(this._meta[i], this._ids[i], this._volumes[i]));
-      matches.push(cloneMatch(this._match[i] || {
-        matched: true,
-        labelId: this._ids[i] || null,
-        plot_row: null
-      }));
-      if (this._stale[i]) stale[newIdx] = true;
-      newIdx++;
-    }
-    this._ids = ids;
-    this._volumes = vols;
-    this._images = imgs;
-    this._xy = xys;
-    this._meta = metas;
-    this._match = matches;
-    this._stale = stale;
-    this._emit("remove");
-    return this;
-  };
-
   TrajectoryVolumeState.prototype.clear = function () {
     this._ids = [];
     this._volumes = [];
@@ -1809,6 +1728,7 @@
     xyDist2: xyDist2,
     latentXyMatchEps2: latentXyMatchEps2,
     latentXyMatchAtol: latentXyMatchAtol,
-    xyMatchesLatent: xyMatchesLatent
+    xyMatchesLatent: xyMatchesLatent,
+    finiteInt: finiteInt
   };
 })(typeof window !== "undefined" ? window : this);

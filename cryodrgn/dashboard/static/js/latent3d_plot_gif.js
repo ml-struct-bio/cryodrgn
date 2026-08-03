@@ -45,51 +45,24 @@
     return vecAdd(vecAdd(vecScale(v, cos), vecScale(uxv, sin)), vecScale(u, udotv * (1 - cos)));
   }
 
-  function plotlyDefaultSceneCamera() {
+  /**
+   * Resolved camera: prefer ``CryoPlotlyScatter3dScene`` (WebGL scene camera),
+   * which is loaded before this script on the latent-3D page.
+   */
+  function resolveSceneCameraFromGd(gd) {
+    var P3S = global.CryoPlotlyScatter3dScene;
+    if (P3S && typeof P3S.resolveCameraFromGd === "function") {
+      var cam = P3S.resolveCameraFromGd(gd);
+      if (cam) return cam;
+      if (typeof P3S.plotlyDefaultSceneCamera === "function") {
+        return JSON.parse(JSON.stringify(P3S.plotlyDefaultSceneCamera()));
+      }
+    }
     return {
       up: { x: 0, y: 0, z: 1 },
       center: { x: 0, y: 0, z: 0 },
       eye: { x: 1.25, y: 1.25, z: 1.25 }
     };
-  }
-
-  function normalizeSceneCamera(partial) {
-    var d = plotlyDefaultSceneCamera();
-    if (!partial || typeof partial !== "object") {
-      return JSON.parse(JSON.stringify(d));
-    }
-    var up = partial.up && typeof partial.up === "object"
-      ? vecNorm(partial.up)
-      : d.up;
-    var center = partial.center && typeof partial.center === "object"
-      ? { x: +partial.center.x, y: +partial.center.y, z: +partial.center.z }
-      : d.center;
-    var eye = partial.eye && typeof partial.eye === "object"
-      ? { x: +partial.eye.x, y: +partial.eye.y, z: +partial.eye.z }
-      : d.eye;
-    return { up: up, center: center, eye: eye };
-  }
-
-  /**
-   * Resolved camera: Plotly often keeps the active camera only on ``gd._fullLayout.scene``,
-   * not on ``gd.layout.scene``, so reading layout alone fails on a fresh draw.
-   */
-  function resolveSceneCameraFromGd(gd) {
-    var raw = null;
-    try {
-      var flCam = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.camera;
-      if (flCam && typeof flCam === "object") raw = flCam;
-    } catch (e0) { /* ignore */ }
-    if (!raw) {
-      try {
-        raw = gd.layout && gd.layout.scene && gd.layout.scene.camera;
-      } catch (e1) { /* ignore */ }
-    }
-    try {
-      return JSON.parse(JSON.stringify(normalizeSceneCamera(raw)));
-    } catch (e2) {
-      return JSON.parse(JSON.stringify(plotlyDefaultSceneCamera()));
-    }
   }
 
   /**

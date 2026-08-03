@@ -1,10 +1,16 @@
 (function() {
   var PLOTLY = window.CryoPlotlyArrays;
-
-  function plotlyTraceLength(trace, key) {
-    if (!trace || !trace[key] || !PLOTLY) return 0;
-    return PLOTLY.length(trace[key]);
+  var SHARED = window.CryoLandscapeVolShared;
+  if (!SHARED) {
+    throw new Error("CryoLandscapeVolShared is required (load landscape_vol_shared.js first).");
   }
+  var postJson = SHARED.postJson;
+  var plotlyTraceLength = SHARED.plotlyTraceLength;
+  var normalizeViewDegrees = SHARED.normalizeViewDegrees;
+  var mat3Identity = SHARED.mat3Identity;
+  var mat3Mul = SHARED.mat3Mul;
+  var mat3ForAxisTurn = SHARED.mat3ForAxisTurn;
+  var shufflePick = SHARED.shufflePick;
 
   var gd = document.getElementById("volsketch");
   var plotStatusEl = document.getElementById("volsketch-plot-status");
@@ -626,48 +632,9 @@
     randomSelBtn.disabled = false;
   }
 
-  function normalizeViewDegrees(degrees) {
-    var d = Number(degrees);
-    if (!isFinite(d)) return 0;
-    d = d % 360;
-    if (Math.abs(d) < 1e-9) return 0;
-    return d;
-  }
-
   function viewRotationsAreActive() {
     var r = currentViewRotationPayload();
     return Math.abs(r.x) > 1e-9 || Math.abs(r.y) > 1e-9 || Math.abs(r.z) > 1e-9;
-  }
-
-  function mat3Identity() {
-    return [1, 0, 0, 0, 1, 0, 0, 0, 1];
-  }
-
-  function mat3Mul(a, b) {
-    return [
-      a[0] * b[0] + a[1] * b[3] + a[2] * b[6],
-      a[0] * b[1] + a[1] * b[4] + a[2] * b[7],
-      a[0] * b[2] + a[1] * b[5] + a[2] * b[8],
-      a[3] * b[0] + a[4] * b[3] + a[5] * b[6],
-      a[3] * b[1] + a[4] * b[4] + a[5] * b[7],
-      a[3] * b[2] + a[4] * b[5] + a[5] * b[8],
-      a[6] * b[0] + a[7] * b[3] + a[8] * b[6],
-      a[6] * b[1] + a[7] * b[4] + a[8] * b[7],
-      a[6] * b[2] + a[7] * b[5] + a[8] * b[8],
-    ];
-  }
-
-  function mat3ForAxisTurn(axis, degrees) {
-    var rad = (degrees * Math.PI) / 180;
-    var c = Math.cos(rad);
-    var s = Math.sin(rad);
-    if (axis === "x") {
-      return [1, 0, 0, 0, c, -s, 0, s, c];
-    }
-    if (axis === "y") {
-      return [c, 0, s, 0, 1, 0, -s, 0, c];
-    }
-    return [c, -s, 0, s, c, 0, 0, 0, 1];
   }
 
   function estimatedChimeraxViewMatrixText() {
@@ -820,17 +787,6 @@
       if (!isNaN(v)) s.add(v);
     }
     return Array.from(s).sort(function(a, b) { return a - b; });
-  }
-
-  function shufflePick(arr, k) {
-    var a = arr.slice();
-    for (var i = a.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var t = a[i];
-      a[i] = a[j];
-      a[j] = t;
-    }
-    return a.slice(0, k);
   }
 
   function resetVolMontageLabels() {
@@ -1123,24 +1079,6 @@
     if (!indices || !indices.length) return "";
     var sorted = indices.slice().sort(function(a, b) { return a - b; });
     return sorted.join(",");
-  }
-
-  function pointIndicesFromSelectEvent(ev) {
-    var selPts = baseTracePointsFromSelectedEvent(ev);
-    var indices = [];
-    var seen = {};
-    var pi;
-    for (pi = 0; pi < selPts.length; pi++) {
-      var pn = selPts[pi].pointNumber;
-      if (pn == null || pn < 0 || seen[pn]) continue;
-      seen[pn] = true;
-      indices.push(pn);
-    }
-    if (indices.length) return indices;
-    var trace = gd && gd.data && gd.data[0];
-    var sp = trace && trace.selectedpoints;
-    if (sp && sp.length) return sp.slice();
-    return [];
   }
 
   /**
@@ -1894,19 +1832,6 @@
     setAnimateStatus("", false, false);
     scheduleAutoGif("selection");
   });
-
-  function postJson(url, body) {
-    return fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body || {}),
-    }).then(function(r) {
-      return r.json().then(function(j) {
-        if (!r.ok) throw new Error(j.error || r.status);
-        return j;
-      });
-    });
-  }
 
   document.querySelectorAll('input[name="volsketch-gif-mode"]').forEach(function(radio) {
     radio.addEventListener("change", function() {

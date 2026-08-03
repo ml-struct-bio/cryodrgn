@@ -14,6 +14,10 @@
   "use strict";
 
   function finiteInt(v, fallback) {
+    var U = global.CryoTrajectoryVolumeStateUtils;
+    if (U && typeof U.finiteInt === "function") {
+      return U.finiteInt(v, fallback);
+    }
     var n = Math.floor(Number(v));
     return Number.isFinite(n) ? n : (fallback || 0);
   }

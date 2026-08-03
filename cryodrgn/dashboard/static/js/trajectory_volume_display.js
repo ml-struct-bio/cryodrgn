@@ -2031,10 +2031,6 @@
     this._renderInteractive();
   };
 
-  TrajectoryVolumeDisplay.prototype._stepChimeraxFocus = function (delta) {
-    this._stepReadyFocus(delta);
-  };
-
   TrajectoryVolumeDisplay.prototype._cycleVtkFocus = function (delta) {
     if (this._volumeNavSuspended()) return;
     if (this.backend === "chimerax" || this.backend === "vtk") {
@@ -2409,12 +2405,6 @@
     this.expandedBelow = false;
     this.expandedHostEl.hidden = true;
   };
-  TrajectoryVolumeDisplay.prototype._rememberViewportHome = function () {
-    if (!this.viewportEl || this._viewportHomeParent) return;
-    this._viewportHomeParent = this.viewportEl.parentElement;
-    this._viewportHomeNext = this.viewportEl.nextSibling;
-  };
-
   TrajectoryVolumeDisplay.prototype._rememberControlsHome = function () {
     if (!this.controlsDockEl || this._controlsHomeParent) return;
     this._controlsHomeParent = this.controlsDockEl.parentElement;

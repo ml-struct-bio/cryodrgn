@@ -7,8 +7,7 @@
 "use strict";
 
 const {
-  VolumeState, VolumeStateUtils, Session, Mutations, Path, Display,
-  DirectTraceUiState, assert, elStub
+  Display, assert
 } = require("./_harness.js");
 
 // Display freezes one ChimeraX view snapshot for a render batch.

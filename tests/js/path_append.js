@@ -7,8 +7,7 @@
 "use strict";
 
 const {
-  VolumeState, VolumeStateUtils, Session, Mutations, Path, Display,
-  DirectTraceUiState, assert, elStub
+  VolumeState, Session, Path, assert
 } = require("./_harness.js");
 
 // Add-random must append waypoints, not splice into a stale densified polyline.

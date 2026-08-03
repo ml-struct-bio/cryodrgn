@@ -11,36 +11,6 @@
     return Math.max(lo, Math.min(hi, v));
   }
 
-  function trilinearSample(vol, d, x, y, z) {
-    if (x < 0 || y < 0 || z < 0 || x > d - 1 || y > d - 1 || z > d - 1) {
-      return 0;
-    }
-    var x0 = Math.floor(x);
-    var y0 = Math.floor(y);
-    var z0 = Math.floor(z);
-    var x1 = Math.min(x0 + 1, d - 1);
-    var y1 = Math.min(y0 + 1, d - 1);
-    var z1 = Math.min(z0 + 1, d - 1);
-    var xd = x - x0;
-    var yd = y - y0;
-    var zd = z - z0;
-    var i000 = vol[x0 * d * d + y0 * d + z0];
-    var i100 = vol[x1 * d * d + y0 * d + z0];
-    var i010 = vol[x0 * d * d + y1 * d + z0];
-    var i110 = vol[x1 * d * d + y1 * d + z0];
-    var i001 = vol[x0 * d * d + y0 * d + z1];
-    var i101 = vol[x1 * d * d + y0 * d + z1];
-    var i011 = vol[x0 * d * d + y1 * d + z1];
-    var i111 = vol[x1 * d * d + y1 * d + z1];
-    var c00 = i000 * (1 - xd) + i100 * xd;
-    var c01 = i001 * (1 - xd) + i101 * xd;
-    var c10 = i010 * (1 - xd) + i110 * xd;
-    var c11 = i011 * (1 - xd) + i111 * xd;
-    var c0 = c00 * (1 - yd) + c10 * yd;
-    var c1 = c01 * (1 - yd) + c11 * yd;
-    return c0 * (1 - zd) + c1 * zd;
-  }
-
   function rotationMatrix(yaw, pitch) {
     var cy = Math.cos(yaw);
     var sy = Math.sin(yaw);
@@ -51,20 +21,6 @@
       [sp * sy, cp, -sp * cy],
       [-cp * sy, sp, cp * cy],
     ];
-  }
-
-  function decodeFloat32Volume(b64, d) {
-    var binary = atob(b64);
-    var len = binary.length;
-    var bytes = new Uint8Array(len);
-    var chunk = 0x8000;
-    for (var offset = 0; offset < len; offset += chunk) {
-      var end = Math.min(offset + chunk, len);
-      for (var i = offset; i < end; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-    }
-    return new Float32Array(bytes.buffer);
   }
 
   /** Match particle explorer image grid meta band (see particle_explorer.css). */
@@ -78,6 +34,13 @@
   var VSLICE_DEPTH_STEP = 3;
 
   function VolumeSliceCanvas(opts) {
+    opts = opts || {};
+    var U = global.CryoVolume3dUtils;
+    if (!U || typeof U.decodeFloat32Volume !== "function"
+        || typeof U.trilinearSample !== "function") {
+      throw new Error("CryoVolume3dUtils (decodeFloat32Volume, trilinearSample) is required.");
+    }
+    this._volume3d = U;
     this.canvas = opts.canvas;
     this.onViewChange = opts.onViewChange || null;
     this.ctx = this.canvas.getContext("2d");
@@ -120,10 +83,6 @@
       this.layers[i].yaw = 0;
       this.layers[i].pitch = 0;
     }
-  };
-
-  VolumeSliceCanvas.prototype.isRotationLocked = function () {
-    return !!this.rotationLocked;
   };
 
   VolumeSliceCanvas.prototype.setRotationLocked = function (locked) {
@@ -181,15 +140,6 @@
     this.draw();
   };
 
-  VolumeSliceCanvas.prototype.gridSlotCapacity = function () {
-    if (this.fixedGridN > 0) {
-      return this.fixedGridN * this.fixedGridN;
-    }
-    var count = Math.max(1, this.layers.length);
-    var n = Math.max(1, Math.ceil(Math.sqrt(count)));
-    return n * n;
-  };
-
   VolumeSliceCanvas.prototype._gridLayout = function (layerCount) {
     var n;
     if (this.fixedGridN > 0) {
@@ -204,10 +154,6 @@
   VolumeSliceCanvas.prototype._cardBlockHeight = function (cellW) {
     var metaH = cellW * VSLICE_META_TOP_FRAC;
     return metaH + VSLICE_META_IMG_GAP + cellW + VSLICE_CELL_PAD_Y;
-  };
-
-  VolumeSliceCanvas.prototype.cardAspectRatio = function () {
-    return this._cardBlockHeight(1) / 1;
   };
 
   VolumeSliceCanvas.prototype._gridGap = function () {
@@ -452,10 +398,6 @@
     this.zoomBy(1 / 1.12);
   };
 
-  VolumeSliceCanvas.prototype.loadVolume = function (b64, d) {
-    this.setVolumes([{ b64: b64, d: d, id: "" }], true);
-  };
-
   VolumeSliceCanvas.prototype.setVolumes = function (volumeSpecs, resetView) {
     var specs = volumeSpecs || [];
     var prevById = {};
@@ -487,7 +429,7 @@
         yaw: yaw,
         pitch: pitch,
         d: d,
-        vol: decodeFloat32Volume(spec.b64, d),
+        vol: this._volume3d.decodeFloat32Volume(spec.b64, d),
         sliceData: null,
         sliceMin: 0,
         sliceMax: 1,
@@ -568,7 +510,7 @@
           var px = cx + scale * (R[0][0] * u + R[0][1] * v);
           var py = cy + scale * (R[1][0] * u + R[1][1] * v);
           var pz = cz + scale * (R[2][0] * u + R[2][1] * v);
-          var val = trilinearSample(layer.vol, d, px, py, pz);
+          var val = this._volume3d.trilinearSample(layer.vol, d, px, py, pz);
           var idx = j * d + i;
           layer.sliceData[idx] = val;
           if (val < minV) minV = val;

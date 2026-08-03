@@ -301,6 +301,7 @@
   global.CryoVolume3dUtils = {
     PLOT3D_TARGET_D: PLOT3D_TARGET_D,
     decodeFloat32Volume: decodeFloat32Volume,
+    trilinearSample: trilinearSample,
     downsampleVolumeBoxAverage: downsampleVolumeBoxAverage,
     downsampleVolumeTrilinear: downsampleVolumeTrilinear,
     volumePercentileSamples: volumePercentileSamples,

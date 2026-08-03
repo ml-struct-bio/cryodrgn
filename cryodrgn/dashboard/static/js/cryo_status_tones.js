@@ -13,12 +13,6 @@
       var s = asText(msg);
       el.classList.toggle("cryo-status-error", window.cryoIsErrorMessage(s));
     };
-    window.cryoSetStatus = function(el, msg) {
-      if (!el) return;
-      var s = asText(msg);
-      el.textContent = s;
-      window.cryoApplyStatusTone(el, s);
-    };
     window.cryoRefreshStatusTones = function(scope) {
       var root = scope || document;
       var nodes = root.querySelectorAll("[id*='status'], .status, .cryo-dash-legend-note, .cmd-copy-status");

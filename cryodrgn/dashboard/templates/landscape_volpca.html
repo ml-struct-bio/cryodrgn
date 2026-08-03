@@ -119,6 +119,7 @@
   {% endif %}
 </div>
 {% if not no_landscape %}
+<script src="{{ url_for('static', filename='js/landscape_vol_shared.js') }}"></script>
 <script src="{{ url_for('static', filename='js/landscape_volpca.js') }}"></script>
 {% endif %}
 {% endblock %}

@@ -7,8 +7,7 @@
 "use strict";
 
 const {
-  VolumeState, VolumeStateUtils, Session, Mutations, Path, Display,
-  DirectTraceUiState, assert, elStub
+  Session, Display, assert, elStub
 } = require("./_harness.js");
 
 // Nav/tick readiness must be one predicate (_slotTickReadyAt): a slot the page

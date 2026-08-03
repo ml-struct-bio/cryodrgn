@@ -30,16 +30,6 @@
     this._usedBytes = 0;
   }
 
-  RenderingHeap.prototype.maxBytes = function () {
-    return this._maxBytes;
-  };
-
-  RenderingHeap.prototype.setMaxBytes = function (n) {
-    this._maxBytes = Math.max(1024 * 1024, Math.floor(Number(n) || DEFAULT_MAX_BYTES));
-    this._evictToFit(0);
-    return this;
-  };
-
   RenderingHeap.prototype.usedBytes = function () {
     return this._usedBytes;
   };
@@ -60,12 +50,6 @@
     this._entries.delete(key);
     this._entries.set(key, entry);
     return entry.b64;
-  };
-
-  RenderingHeap.prototype.peek = function (key) {
-    key = String(key || "");
-    var entry = this._entries.get(key);
-    return entry ? entry.b64 : null;
   };
 
   RenderingHeap.prototype.put = function (key, b64) {
@@ -149,18 +133,5 @@
     if (this._usedBytes < 0) this._usedBytes = 0;
   };
 
-  RenderingHeap.prototype.stats = function () {
-    return {
-      entries: this._entries.size,
-      usedBytes: this._usedBytes,
-      maxBytes: this._maxBytes
-    };
-  };
-
   global.CryoTrajectoryRenderingHeap = RenderingHeap;
-  global.CryoTrajectoryRenderingHeapDefaults = {
-    MAX_BYTES: DEFAULT_MAX_BYTES,
-    estimateImageBytes: estimateImageBytes,
-    stripDataUrl: stripDataUrl
-  };
 })(typeof window !== "undefined" ? window : this);

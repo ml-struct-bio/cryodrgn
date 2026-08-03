@@ -289,6 +289,9 @@
 <script src="{{ url_for('static', filename='js/covariate_pkl_loader.js') }}"></script>
 <script src="{{ url_for('static', filename='js/cryo_covariate_selects.js') }}"></script>
 <script src="{{ url_for('static', filename='js/plotly_scatter3d_scene.js') }}"></script>
+{% if show_vol_landscape_quick_actions or show_landscape_vol_animations %}
+<script src="{{ url_for('static', filename='js/landscape_vol_shared.js') }}"></script>
+{% endif %}
 {% if show_vol_landscape_quick_actions %}
 <script src="{{ url_for('static', filename='js/latent3d_plot_gif.js') }}"></script>
 {% endif %}

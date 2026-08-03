@@ -7,8 +7,7 @@
 "use strict";
 
 const {
-  VolumeState, VolumeStateUtils, Session, Mutations, Path, Display,
-  DirectTraceUiState, assert, elStub
+  VolumeState, Session, Path, assert
 } = require("./_harness.js");
 
 // Waypoint rebuild keeps one anchor per selected volume, even when two volumes

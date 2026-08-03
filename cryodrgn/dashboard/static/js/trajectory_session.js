@@ -285,25 +285,9 @@
     return this;
   };
 
-  TrajectorySession.prototype.setPathHooks = function (hooks) {
-    this._pathHooks = Object.assign({}, this._pathHooks, hooks || {});
-    return this;
-  };
-
-  TrajectorySession.prototype.setPipelineHooks = function (hooks) {
-    if (this._pipeline) {
-      this._pipeline.hooks = Object.assign({}, this._pipeline.hooks, hooks || {});
-    }
-    return this;
-  };
-
   /**
    * Apply a PathMutation (or any object with ``apply(session)``).
    */
-  TrajectorySession.prototype.prepareForMutation = function () {
-    return this;
-  };
-
   TrajectorySession.prototype.dispatch = function (mutation, opts) {
     opts = opts || {};
     if (!mutation || typeof mutation.apply !== "function") {
@@ -347,12 +331,6 @@
     var M = global.CryoTrajectoryPathMutations;
     if (!M) return { ok: false, reason: "no-mutations" };
     return this.dispatch(M.rebuildFromSelection(opts));
-  };
-
-  TrajectorySession.prototype.alignVolumesToPath = function () {
-    var M = global.CryoTrajectoryPathMutations;
-    if (!M) return { ok: false, reason: "no-mutations" };
-    return this.dispatch(M.alignVolumes());
   };
 
   /**

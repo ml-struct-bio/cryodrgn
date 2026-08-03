@@ -516,10 +516,6 @@
     }
   };
 
-  CryoColorCovariateLegend.prototype.isDiscretePanelCollapsed = function () {
-    return !!this._discretePanelCollapsed;
-  };
-
   CryoColorCovariateLegend.prototype._updateRegionHeading = function () {
     var innerDiscreteHeading = this._mode === "discrete" && !!this._discreteToggleHeadingRow();
     if (this.regionHeadingEl) {
@@ -1150,32 +1146,6 @@
     window.addEventListener("mouseup", this._boundEndHistDrag, true);
     evt.preventDefault();
     evt.stopPropagation();
-  };
-
-  CryoColorCovariateLegend.prototype._applyDiscreteRowPaint = function (
-    labEl,
-    labelSpanEl,
-    countSpanEl,
-    hex
-  ) {
-    var hx = normalizeDiscreteLegendHex(hex);
-    if (!hx) return;
-    var dSt = discreteCardStyles(hx);
-    labEl.style.borderLeft = "";
-    labEl.style.backgroundColor = "";
-    labEl.style.border = "";
-    if (dSt && dSt.bg) {
-      labEl.style.backgroundColor = dSt.bg;
-      labEl.style.border = "1px solid " + dSt.borderColor;
-    }
-    if (labelSpanEl) {
-      if (dSt && dSt.labelColor) labelSpanEl.style.color = dSt.labelColor;
-      else labelSpanEl.style.color = "";
-    }
-    if (countSpanEl) {
-      if (dSt && dSt.countColor) countSpanEl.style.color = dSt.countColor;
-      else countSpanEl.style.color = "";
-    }
   };
 
   CryoColorCovariateLegend.prototype._closeDiscreteColorPopover = function (asCancel) {

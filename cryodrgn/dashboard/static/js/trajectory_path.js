@@ -76,10 +76,6 @@
     return String(this.store.trajectoryMode || "manual");
   };
 
-  TrajectoryPath.prototype.setMode = function (mode) {
-    this.store.trajectoryMode = String(mode || "manual");
-  };
-
   TrajectoryPath.prototype.getAnchorRows = function () {
     return this.store.anchorIndicesActive || null;
   };
@@ -178,10 +174,6 @@
     }
   });
 
-  TrajectoryPath.prototype.isWaypointMode = function () {
-    return this.getMode() === "manual";
-  };
-
   TrajectoryPath.prototype.isDirectTraceMode = function () {
     var mode = this.getMode();
     return mode === "direct" || mode === "nearest";
@@ -259,25 +251,6 @@
     }
   };
 
-  TrajectoryPath.prototype.toCoordsRequestFields = function () {
-    if (this.hasAnchors()) {
-      return {
-        anchor_indices: this.getAnchorRows().slice(),
-        has_anchors: true
-      };
-    }
-    var start = this.getStart();
-    var end = this.getEnd();
-    var fields = { has_anchors: false };
-    if (start && end) {
-      fields.start = start;
-      fields.end = end;
-    }
-    var editable = this.getEditableXY();
-    if (editable && editable.length >= 2) fields.traj_xy = editable.slice();
-    return fields;
-  };
-
   TrajectoryPath.prototype.reverse = function () {
     var rows = this.getAnchorRows();
     if (rows && rows.length >= 2) this.setAnchorRows(rows.slice().reverse());
@@ -309,14 +282,6 @@
     if (directIds && directIds.length >= 2) {
       this.store.directEndpointVolumeIds = directIds.slice().reverse();
     }
-  };
-
-  /**
-   * Double-click / pick entry point. Subclasses override.
-   * @returns {{ok:boolean, reason?:string}}
-   */
-  TrajectoryPath.prototype.addPointFromScatter = function (/* detail */) {
-    return { ok: false, reason: "unsupported" };
   };
 
   function rowMultisetKey(rows) {
@@ -544,10 +509,6 @@
   DirectTracePath.prototype = Object.create(TrajectoryPath.prototype);
   DirectTracePath.prototype.constructor = DirectTracePath;
   DirectTracePath.prototype.kind = "direct";
-
-  DirectTracePath.prototype.isNearest = function () {
-    return this.getMode() === "nearest";
-  };
 
   DirectTracePath.prototype.ensureEditablePolyline = function (nPoints) {
     nPoints = Math.max(2, parseInt(nPoints, 10) || 2);
@@ -827,31 +788,6 @@
     return { ok: true, added: added, pathN: rows.length };
   };
 
-  DirectTracePath.prototype.addPointFromScatter = function (detail) {
-    detail = detail || {};
-    return this.addCoordinate(detail.xy, {
-      nPoints: detail.nPoints,
-      nearestSegment: detail.nearestSegment !== false
-    });
-  };
-
-  DirectTracePath.prototype.onEndpointDrag = function (which, xy) {
-    var pt = cloneXY(xy);
-    if (!pt) return false;
-    var editable = this.getEditableXY();
-    if (which === "start") {
-      this.store.startXY = pt;
-      if (editable && editable.length) editable[0] = pt.slice();
-    } else if (which === "end") {
-      this.store.endXY = pt;
-      if (editable && editable.length) editable[editable.length - 1] = pt.slice();
-    } else {
-      return false;
-    }
-    if (editable) this.setEditableXY(editable);
-    return true;
-  };
-
   /* ── Waypoint / particle-set path ──────────────────────────────────── */
 
   function WaypointPath(store, hooks) {
@@ -864,10 +800,6 @@
 
   WaypointPath.prototype.getSelectedVolumeIds = function () {
     return this.store.manualSelectedVolIds || [];
-  };
-
-  WaypointPath.prototype.setSelectedVolumeIds = function (ids) {
-    this.store.manualSelectedVolIds = (ids || []).map(String);
   };
 
   WaypointPath.prototype.interpolationArmed = function () {
@@ -899,10 +831,6 @@
     this.store.lastLatentTrajectoryPointCount = 0;
   };
 
-  WaypointPath.prototype.anchorTraversalMode = function () {
-    return this.store.graphTraversalActive ? "graph" : "direct";
-  };
-
   /**
    * Add the hover / clicked particle as a custom waypoint (double-click in
    * choosing-waypoints mode).
@@ -929,25 +857,6 @@
     }
     this.disarmInterpolation();
     return this.rebuildFromSelection();
-  };
-
-  WaypointPath.prototype.addPointFromScatter = function (detail) {
-    detail = detail || {};
-    var row = detail.plotRow;
-    if (row == null && detail.hoverPlotRow != null) row = detail.hoverPlotRow;
-    return this.addParticleRow(row, detail);
-  };
-
-  WaypointPath.prototype.setAnchorsFromIndices = function (indices) {
-    var rows = cloneRowList(indices);
-    if (!rows || rows.length < 2) {
-      this.setAnchorRows(null);
-      return { ok: false, reason: "need_two_anchors" };
-    }
-    this.setAnchorRows(rows);
-    this.setEditableXY(null);
-    this.setSamplePlotRows(null);
-    return { ok: true, rows: rows };
   };
 
   /* ── helpers ───────────────────────────────────────────────────────── */

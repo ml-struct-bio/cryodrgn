@@ -7,8 +7,7 @@
 "use strict";
 
 const {
-  VolumeState, VolumeStateUtils, Session, Mutations, Path, Display,
-  DirectTraceUiState, assert, elStub
+  VolumeState, Session, Mutations, Path, assert
 } = require("./_harness.js");
 
 // Session + reverse mutation with waypoint store

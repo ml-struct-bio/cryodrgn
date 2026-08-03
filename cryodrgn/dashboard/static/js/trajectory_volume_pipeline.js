@@ -36,10 +36,6 @@
     return this._renderInFlight;
   };
 
-  VolumePipeline.prototype.activeJobId = function () {
-    return this._activeJobId;
-  };
-
   VolumePipeline.prototype._notify = function (eventName, detail) {
     var fn = this.hooks[eventName];
     if (typeof fn === "function") {

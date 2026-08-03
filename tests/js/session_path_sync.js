@@ -7,8 +7,7 @@
 "use strict";
 
 const {
-  VolumeState, VolumeStateUtils, Session, Mutations, Path, Display,
-  DirectTraceUiState, assert, elStub
+  VolumeState, Session, Path, DirectTraceUiState, assert
 } = require("./_harness.js");
 
 // Mixed PC + Other waypoints: syncVolumesToPath must keep 20 full-path slots,

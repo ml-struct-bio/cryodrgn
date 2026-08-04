@@ -11,6 +11,9 @@
   var mat3Mul = SHARED.mat3Mul;
   var mat3ForAxisTurn = SHARED.mat3ForAxisTurn;
   var shufflePick = SHARED.shufflePick;
+  var montageLabelAt = SHARED.montageLabelAt;
+  var validateViewMatrixText = SHARED.validateViewMatrixText;
+  var attachOverlayClock = SHARED.attachOverlayClock;
 
   var gd = document.getElementById("volsketch");
   var plotStatusEl = document.getElementById("volsketch-plot-status");
@@ -198,9 +201,6 @@
         hideCov();
         return;
       }
-      var rafRot = 0;
-      var bootRot = 0;
-      var startRot = null;
       function applyRotateFrameIdx(fi) {
         fi = Math.max(0, Math.min(frameTexts.length - 1, fi | 0));
         var covt = frameTexts[fi] != null ? String(frameTexts[fi]).trim() : "";
@@ -215,44 +215,18 @@
           hideCov();
         }
       }
-      function tickRotate(now) {
-        if (!wrap.isConnected) {
-          if (rafRot) cancelAnimationFrame(rafRot);
-          rafRot = 0;
-          return;
+      attachOverlayClock(wrap, {
+        frameDurationMs: fdRot,
+        totalFrames: totalRot,
+        cancelProp: "_volsketchCancelOverlay",
+        applyFrameIdx: applyRotateFrameIdx,
+        indexFromFrame: function (frameIdx) {
+          return Math.min(
+            frameTexts.length - 1,
+            Math.floor((frameIdx * frameTexts.length) / totalRot)
+          );
         }
-        if (startRot === null) startRot = now;
-        var elapsed = now - startRot;
-        var frameIdx = Math.floor(elapsed / fdRot) % totalRot;
-        var covIdx = Math.min(
-          frameTexts.length - 1,
-          Math.floor((frameIdx * frameTexts.length) / totalRot)
-        );
-        applyRotateFrameIdx(covIdx);
-        rafRot = requestAnimationFrame(tickRotate);
-      }
-      function beginRotateClock() {
-        applyRotateFrameIdx(0);
-        startRot = null;
-        bootRot = requestAnimationFrame(function() {
-          bootRot = 0;
-          rafRot = requestAnimationFrame(tickRotate);
-        });
-      }
-      wrap._volsketchCancelOverlay = function() {
-        if (bootRot) cancelAnimationFrame(bootRot);
-        if (rafRot) cancelAnimationFrame(rafRot);
-        bootRot = 0;
-        rafRot = 0;
-      };
-      var decRot = img.decode && img.decode();
-      if (decRot && typeof decRot.then === "function") {
-        decRot.then(beginRotateClock).catch(beginRotateClock);
-      } else if (img.complete) {
-        beginRotateClock();
-      } else {
-        img.addEventListener("load", beginRotateClock, { once: true });
-      }
+      }).startOnImage(img);
       return;
     }
     if (spec.style !== "cycle_segments") {
@@ -280,9 +254,6 @@
     }
     badge.hidden = false;
     var totalF = Math.max(1, parseInt(spec.total_frames, 10) || labels.length * fpv);
-    var rafId = 0;
-    var bootRaf = 0;
-    var startT = null;
     function applySegmentIdx(idx) {
       idx = Math.max(0, Math.min(labels.length - 1, idx | 0));
       badge.textContent = labels[idx] || "";
@@ -307,41 +278,15 @@
         volsketchResetBadgeChrome(covBadge);
       }
     }
-    function tick(now) {
-      if (!wrap.isConnected) {
-        if (rafId) cancelAnimationFrame(rafId);
-        rafId = 0;
-        return;
+    attachOverlayClock(wrap, {
+      frameDurationMs: fd,
+      totalFrames: totalF,
+      cancelProp: "_volsketchCancelOverlay",
+      applyFrameIdx: applySegmentIdx,
+      indexFromFrame: function (frameIdx) {
+        return Math.min(labels.length - 1, Math.floor(frameIdx / fpv));
       }
-      if (startT === null) startT = now;
-      var elapsed = now - startT;
-      var frameIdx = Math.floor(elapsed / fd) % totalF;
-      var idx = Math.min(labels.length - 1, Math.floor(frameIdx / fpv));
-      applySegmentIdx(idx);
-      rafId = requestAnimationFrame(tick);
-    }
-    function beginClock() {
-      applySegmentIdx(0);
-      startT = null;
-      bootRaf = requestAnimationFrame(function() {
-        bootRaf = 0;
-        rafId = requestAnimationFrame(tick);
-      });
-    }
-    wrap._volsketchCancelOverlay = function() {
-      if (bootRaf) cancelAnimationFrame(bootRaf);
-      if (rafId) cancelAnimationFrame(rafId);
-      bootRaf = 0;
-      rafId = 0;
-    };
-    var dec = img.decode && img.decode();
-    if (dec && typeof dec.then === "function") {
-      dec.then(beginClock).catch(beginClock);
-    } else if (img.complete) {
-      beginClock();
-    } else {
-      img.addEventListener("load", beginClock, { once: true });
-    }
+    }).startOnImage(img);
   }
 
   var GIF_MODE_DESC = {
@@ -363,9 +308,56 @@
     return el ? el.value : "disabled";
   }
 
-  function animationsEnabled() {
-    return currentGifMode() !== "disabled";
-  }
+  var viewGif = {
+    viewRotations: { x: 0, y: 0, z: 0 },
+    lastChimeraxViewMatrix: "",
+    chimeraxViewMatrixUnavailable: false,
+    appliedViewMatrix: "",
+    viewMatrixInputDirty: false,
+    viewMatrixFieldFocused: false,
+    landscapeAnimInFlight: false,
+    lastAnimToken: null,
+    lastBatchMode: null
+  };
+  var viewGifHooks = {
+    getGifMode: function () { return currentGifMode(); },
+    getSelectedVols: function () { return selectedVols; },
+    getMeta: function () { return META; },
+    clearPreviewGrid: function () { clearVolsketchPreviewGrid(); },
+    cancelPendingGifWork: function () { cancelPendingGifWork(); },
+    scheduleAutoGif: function (reason) { scheduleAutoGif(reason); },
+    syncAnimOutputControls: function () { syncAnimOutputControls(); }
+  };
+  var viewGifControls = SHARED.createViewGifControls({
+    state: viewGif,
+    els: {
+      animateStatusEl: animateStatusEl,
+      animateProgressEl: animateProgressEl,
+      saveGifBtn: saveGifBtn,
+      randomSelBtn: randomSelBtn,
+      previewGrid: previewGrid,
+      viewRotateRow: viewRotateRow,
+      viewRotateAngleEl: viewRotateAngleEl,
+      viewMatrixInputEl: viewMatrixInputEl,
+      viewMatrixApplyBtn: viewMatrixApplyBtn,
+      viewRotateBtns: viewRotateBtns
+    },
+    hooks: viewGifHooks
+  });
+  var syncSaveGifButton = viewGifControls.syncSaveGifButton;
+  var syncViewRotationControls = viewGifControls.syncViewRotationControls;
+  var setAnimateStatus = viewGifControls.setAnimateStatus;
+  var showAnimBusySelectionMsg = viewGifControls.showAnimBusySelectionMsg;
+  var clearAnimPreviewState = viewGifControls.clearAnimPreviewState;
+  var finishSelectionWithoutAnimation = viewGifControls.finishSelectionWithoutAnimation;
+  var maxSelectable = viewGifControls.maxSelectable;
+  var syncRandomSelButton = viewGifControls.syncRandomSelButton;
+  var applyViewMatrixFromField = viewGifControls.applyViewMatrixFromField;
+  var applyViewRotation = viewGifControls.applyViewRotation;
+  var clearAppliedViewMatrix = viewGifControls.clearAppliedViewMatrix;
+  var syncViewMatrixField = viewGifControls.syncViewMatrixField;
+  var animationsEnabled = viewGifControls.animationsEnabled;
+  var currentViewRotationPayload = viewGifControls.currentViewRotationPayload;
 
   function cancelPendingGifWork() {
     if (debounceGifTimer) {
@@ -373,43 +365,7 @@
       debounceGifTimer = null;
     }
     gifReqGen++;
-    landscapeAnimInFlight = false;
-  }
-
-  function clearAnimPreviewState() {
-    clearVolsketchPreviewGrid();
-    lastAnimToken = null;
-    lastBatchMode = null;
-    lastChimeraxViewMatrix = "";
-    chimeraxViewMatrixUnavailable = false;
-    clearAppliedViewMatrix();
-    viewMatrixInputDirty = false;
-    syncViewMatrixField();
-  }
-
-  function showAnimBusySelectionMsg() {
-    setAnimateStatus(
-      "Wait for ChimeraX to finish the current animation preview before changing the selection.",
-      false,
-      true
-    );
-  }
-
-  function finishSelectionWithoutAnimation(reason) {
-    cancelPendingGifWork();
-    if (!selectedVols.size) {
-      clearAnimPreviewState();
-      setAnimateStatus("", false, false);
-    } else if (reason === "gif_mode") {
-      clearAnimPreviewState();
-      setAnimateStatus(
-        "Animation disabled — volume selection still updates the plot.",
-        false,
-        false
-      );
-    }
-    syncSaveGifButton();
-    syncAnimOutputControls();
+    viewGif.landscapeAnimInFlight = false;
   }
 
   function syncAnimOutputControls() {
@@ -417,8 +373,8 @@
     syncGifFramesVisibility();
     syncPreviewRegion();
     if (randomSelBtn && META) {
-      randomSelBtn.disabled = landscapeAnimInFlight;
-      if (landscapeAnimInFlight) {
+      randomSelBtn.disabled = viewGif.landscapeAnimInFlight;
+      if (viewGif.landscapeAnimInFlight) {
         randomSelBtn.title = "Wait for ChimeraX to finish the current animation preview.";
       } else {
         randomSelBtn.removeAttribute("title");
@@ -483,116 +439,11 @@
   var volSelectionOverlayTraceAdded = false;
   /** Sketch volume id → plot trace point index (rebuilt after each scatter load). */
   var volIdToPointIndex = {};
-  var lastAnimToken = null;
-  var lastBatchMode = null;
   var clickTimer = null;
   var clickLastVol = null;
   var debounceGifTimer = null;
   var gifReqGen = 0;
   var debouncedGifReason = "selection";
-  var viewRotations = { x: 0, y: 0, z: 0 };
-  var lastChimeraxViewMatrix = "";
-  var chimeraxViewMatrixUnavailable = false;
-  var appliedViewMatrix = "";
-  var viewMatrixInputDirty = false;
-  var viewMatrixFieldFocused = false;
-  /** True while a generate_animations request is in flight (disable save until rerender completes). */
-  var landscapeAnimInFlight = false;
-
-  function syncSaveGifButton() {
-    if (!saveGifBtn) return;
-    if (!animationsEnabled()) {
-      saveGifBtn.disabled = true;
-      saveGifBtn.title = "Enable Cycle or Rotate animation output to render GIF previews.";
-      syncAnimOutputControls();
-      return;
-    }
-    var hasPreviews = previewGrid && previewGrid.children.length > 0;
-    var canSave = !!lastAnimToken && hasPreviews && !landscapeAnimInFlight;
-    saveGifBtn.disabled = !canSave;
-    if (canSave) {
-      saveGifBtn.removeAttribute("title");
-    } else if (landscapeAnimInFlight) {
-      saveGifBtn.title = "Available after ChimeraX finishes rendering the current previews.";
-    } else {
-      saveGifBtn.title = "Select volumes and wait for GIF previews to finish rendering.";
-    }
-    syncAnimOutputControls();
-  }
-
-  function syncViewRotationControls() {
-    if (!animationsEnabled()) {
-      var offHint = "Enable Cycle or Rotate animation output to render GIF previews.";
-      if (viewRotateRow) {
-        viewRotateRow.classList.add("is-disabled");
-        viewRotateRow.title = offHint;
-      }
-      if (viewRotateAngleEl) {
-        viewRotateAngleEl.disabled = true;
-        viewRotateAngleEl.title = offHint;
-      }
-      viewRotateBtns.forEach(function(btn) {
-        btn.disabled = true;
-        btn.title = offHint;
-      });
-      if (viewMatrixApplyBtn) {
-        viewMatrixApplyBtn.disabled = true;
-        viewMatrixApplyBtn.title = offHint;
-      }
-      if (viewMatrixInputEl) {
-        viewMatrixInputEl.disabled = true;
-        viewMatrixInputEl.title = offHint;
-      }
-      return;
-    }
-    var hasLoadedPreview = !!(
-      lastAnimToken
-      && previewGrid
-      && previewGrid.children.length > 0
-      && !landscapeAnimInFlight
-    );
-    var hint = hasLoadedPreview
-      ? "Rotate the loaded animation preview by the entered angle."
-      : "Load an animation preview before rotating the view.";
-    if (viewRotateRow) {
-      viewRotateRow.classList.toggle("is-disabled", !hasLoadedPreview);
-      viewRotateRow.title = hint;
-    }
-    if (viewRotateAngleEl) {
-      viewRotateAngleEl.disabled = !hasLoadedPreview;
-      viewRotateAngleEl.title = hint;
-    }
-    viewRotateBtns.forEach(function(btn) {
-      btn.disabled = !hasLoadedPreview;
-      btn.title = hint;
-    });
-    if (viewMatrixApplyBtn) {
-      viewMatrixApplyBtn.disabled = !hasLoadedPreview;
-      viewMatrixApplyBtn.title = hasLoadedPreview
-        ? "Re-render previews using the view matrix in the field."
-        : hint;
-    }
-    if (viewMatrixInputEl) {
-      viewMatrixInputEl.disabled = !hasLoadedPreview;
-      viewMatrixInputEl.title = hint;
-    }
-  }
-
-  /** A–Z omitting I, O, U — matches particle explorer / montage_cell_label. */
-  var SAFE_LETTERS = (function() {
-    var out = [];
-    for (var c = 65; c <= 90; c++) {
-      if (c !== 73 && c !== 79 && c !== 85) out.push(String.fromCharCode(c));
-    }
-    return out;
-  })();
-
-  function montageLabelAt(idx) {
-    if (idx < SAFE_LETTERS.length) return SAFE_LETTERS[idx];
-    var j = idx - SAFE_LETTERS.length;
-    return SAFE_LETTERS[Math.floor(j / SAFE_LETTERS.length)]
-      + SAFE_LETTERS[j % SAFE_LETTERS.length];
-  }
 
   /** Vol index as in ``vol_NNN.mrc`` (``:03d`` in Python). */
   function volSketchFilenameIndex(v) {
@@ -605,155 +456,6 @@
     if (!plotStatusEl) return;
     plotStatusEl.textContent = msg || "";
     plotStatusEl.style.color = isErr ? "var(--error, #b42318)" : "";
-  }
-
-  function setAnimateStatus(msg, showProgress, isErr) {
-    if (!animateStatusEl) return;
-    animateStatusEl.textContent = msg || "";
-    animateStatusEl.style.color = isErr ? "var(--error, #b42318)" : "";
-    if (animateProgressEl) {
-      animateProgressEl.hidden = !showProgress || !!isErr;
-      if (showProgress && !isErr) {
-        animateProgressEl.setAttribute("aria-busy", "true");
-      } else {
-        animateProgressEl.removeAttribute("aria-busy");
-      }
-    }
-  }
-
-  function maxSelectable() {
-    return META && META.n_volumes ? META.n_volumes : 10000;
-  }
-
-  function syncRandomSelButton() {
-    if (!randomSelBtn || !META || META.chimerax_cpus == null) return;
-    var n = Math.max(1, Number(META.chimerax_cpus));
-    randomSelBtn.textContent = "Choose " + n + " volume" + (n === 1 ? "" : "s") + " at random";
-    randomSelBtn.disabled = false;
-  }
-
-  function viewRotationsAreActive() {
-    var r = currentViewRotationPayload();
-    return Math.abs(r.x) > 1e-9 || Math.abs(r.y) > 1e-9 || Math.abs(r.z) > 1e-9;
-  }
-
-  function estimatedChimeraxViewMatrixText() {
-    var m = mat3Identity();
-    ["x", "y", "z"].forEach(function(axis) {
-      var deg = normalizeViewDegrees(viewRotations[axis] || 0);
-      if (Math.abs(deg) > 1e-9) {
-        m = mat3Mul(m, mat3ForAxisTurn(axis, deg));
-      }
-    });
-    var nums = [
-      m[0], m[1], m[2], 0,
-      m[3], m[4], m[5], 0,
-      m[6], m[7], m[8], 0,
-    ];
-    return "camera " + nums.map(function(n) {
-      return Number(n).toFixed(6);
-    }).join(",");
-  }
-
-  function currentViewRotationPayload() {
-    return {
-      x: normalizeViewDegrees(viewRotations.x),
-      y: normalizeViewDegrees(viewRotations.y),
-      z: normalizeViewDegrees(viewRotations.z),
-    };
-  }
-
-  function viewRotationSummary() {
-    var r = currentViewRotationPayload();
-    return "requested view turns X " + r.x.toFixed(1)
-      + "°, Y " + r.y.toFixed(1)
-      + "°, Z " + r.z.toFixed(1) + "°";
-  }
-
-  function currentViewMatrixDisplayText() {
-    if (lastChimeraxViewMatrix) return lastChimeraxViewMatrix;
-    if (viewRotationsAreActive()) return estimatedChimeraxViewMatrixText();
-    return "";
-  }
-
-  function syncViewMatrixField() {
-    if (!viewMatrixInputEl) return;
-    if (viewMatrixFieldFocused || viewMatrixInputDirty) return;
-    var text = currentViewMatrixDisplayText();
-    if (chimeraxViewMatrixUnavailable && !text) {
-      viewMatrixInputEl.placeholder = "ChimeraX view matrix not reported for this render.";
-    } else if (!text) {
-      viewMatrixInputEl.placeholder = (
-        "camera n1,n2,... (12 numbers; available after animation loads)"
-      );
-    } else {
-      viewMatrixInputEl.placeholder = "";
-    }
-    viewMatrixInputEl.value = text;
-  }
-
-  function validateViewMatrixText(text) {
-    var raw = String(text || "").trim();
-    if (!raw) {
-      return { ok: false, msg: "Enter a ChimeraX view matrix (12 numbers)." };
-    }
-    var body = raw.toLowerCase().indexOf("camera") === 0 ? raw.slice(6).trim() : raw;
-    var nums = body.match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/g);
-    if (!nums || nums.length < 12) {
-      return {
-        ok: false,
-        msg: "View matrix must contain 12 numbers (optionally prefixed with camera).",
-      };
-    }
-    return { ok: true, text: raw };
-  }
-
-  function clearAppliedViewMatrix() {
-    appliedViewMatrix = "";
-  }
-
-  function applyViewMatrixFromField() {
-    if (!animationsEnabled()) {
-      setAnimateStatus("Enable Cycle or Rotate animation output to render GIF previews.", false, true);
-      return;
-    }
-    if (!viewMatrixInputEl) return;
-    var check = validateViewMatrixText(viewMatrixInputEl.value);
-    if (!check.ok) {
-      setAnimateStatus(check.msg, false, true);
-      return;
-    }
-    appliedViewMatrix = check.text;
-    viewMatrixInputDirty = false;
-    syncViewMatrixField();
-    setAnimateStatus("Applying custom ChimeraX view matrix.", false, false);
-    if (selectedVols.size > 0) {
-      scheduleAutoGif("view_matrix");
-    } else {
-      syncSaveGifButton();
-    }
-  }
-
-  function applyViewRotation(axis) {
-    if (!animationsEnabled()) {
-      setAnimateStatus("Enable Cycle or Rotate animation output to render GIF previews.", false, true);
-      return;
-    }
-    var deg = viewRotateAngleEl ? Number(viewRotateAngleEl.value) : NaN;
-    if (!isFinite(deg)) {
-      setAnimateStatus("Enter a finite rotation angle in degrees.", false, true);
-      return;
-    }
-    clearAppliedViewMatrix();
-    viewMatrixInputDirty = false;
-    viewRotations[axis] = normalizeViewDegrees(Number(viewRotations[axis] || 0) + deg);
-    syncViewMatrixField();
-    setAnimateStatus("Updated " + viewRotationSummary() + ".", false, false);
-    if (selectedVols.size > 0) {
-      scheduleAutoGif("view_rotation");
-    } else {
-      syncSaveGifButton();
-    }
   }
 
   function customDataRowAsArray(row) {
@@ -1347,7 +1049,7 @@
   }
 
   function toggleVol(v) {
-    if (landscapeAnimInFlight) {
+    if (viewGif.landscapeAnimInFlight) {
       showAnimBusySelectionMsg();
       return;
     }
@@ -1394,7 +1096,7 @@
     }
     var vols = Array.from(selectedVols).sort(function(a,b){ return a-b; });
     if (!vols.length) {
-      landscapeAnimInFlight = false;
+      viewGif.landscapeAnimInFlight = false;
       clearAnimPreviewState();
       setAnimateStatus("", false, false);
       syncSaveGifButton();
@@ -1402,9 +1104,9 @@
     }
     var myGen = ++gifReqGen;
     var epochAtRequest = volSelectionEpoch;
-    landscapeAnimInFlight = true;
-    lastChimeraxViewMatrix = "";
-    chimeraxViewMatrixUnavailable = false;
+    viewGif.landscapeAnimInFlight = true;
+    viewGif.lastChimeraxViewMatrix = "";
+    viewGif.chimeraxViewMatrixUnavailable = false;
     syncSaveGifButton();
     syncViewMatrixField();
     var cpus = META && META.chimerax_cpus != null ? Number(META.chimerax_cpus) : 1;
@@ -1429,30 +1131,30 @@
       chimerax_cpus: cpus,
       color_mode: colorSel.value,
     };
-    if (appliedViewMatrix) {
-      animPayload.view_matrix = appliedViewMatrix;
+    if (viewGif.appliedViewMatrix) {
+      animPayload.view_matrix = viewGif.appliedViewMatrix;
     } else {
       animPayload.view_rotations = currentViewRotationPayload();
     }
     if (
       reason !== "color"
       && currentGifMode() === "cycle"
-      && lastAnimToken
-      && lastBatchMode === "rotate_each"
+      && viewGif.lastAnimToken
+      && viewGif.lastBatchMode === "rotate_each"
     ) {
-      animPayload.reuse_rotate_keyframes_token = lastAnimToken;
+      animPayload.reuse_rotate_keyframes_token = viewGif.lastAnimToken;
     }
     postJson("/api/landscape_volpca/generate_animations", animPayload).then(function(j) {
       if (myGen !== gifReqGen) return;
-      landscapeAnimInFlight = false;
-      lastAnimToken = j.token;
-      lastBatchMode = j.batch_mode != null ? j.batch_mode : null;
-      lastChimeraxViewMatrix = j.view_matrix != null ? String(j.view_matrix).trim() : "";
-      if (!lastChimeraxViewMatrix && j.items && j.items.length && j.items[0].view_matrix != null) {
-        lastChimeraxViewMatrix = String(j.items[0].view_matrix).trim();
+      viewGif.landscapeAnimInFlight = false;
+      viewGif.lastAnimToken = j.token;
+      viewGif.lastBatchMode = j.batch_mode != null ? j.batch_mode : null;
+      viewGif.lastChimeraxViewMatrix = j.view_matrix != null ? String(j.view_matrix).trim() : "";
+      if (!viewGif.lastChimeraxViewMatrix && j.items && j.items.length && j.items[0].view_matrix != null) {
+        viewGif.lastChimeraxViewMatrix = String(j.items[0].view_matrix).trim();
       }
-      chimeraxViewMatrixUnavailable = !lastChimeraxViewMatrix;
-      viewMatrixInputDirty = false;
+      viewGif.chimeraxViewMatrixUnavailable = !viewGif.lastChimeraxViewMatrix;
+      viewGif.viewMatrixInputDirty = false;
       syncViewMatrixField();
       var ds = j.duration_s != null ? Number(j.duration_s) : NaN;
       var doneMsg = !isNaN(ds)
@@ -1509,8 +1211,8 @@
       syncSaveGifButton();
     }).catch(function(e) {
       if (myGen !== gifReqGen) return;
-      landscapeAnimInFlight = false;
-      chimeraxViewMatrixUnavailable = false;
+      viewGif.landscapeAnimInFlight = false;
+      viewGif.chimeraxViewMatrixUnavailable = false;
       syncViewMatrixField();
       setAnimateStatus(String(e), false, true);
       syncSaveGifButton();
@@ -1622,7 +1324,7 @@
   }
 
   function handleVolSketchPlotlySelected(ev, fromLassoBox) {
-    if (landscapeAnimInFlight) {
+    if (viewGif.landscapeAnimInFlight) {
       showAnimBusySelectionMsg();
       return;
     }
@@ -1692,7 +1394,7 @@
         clearTimeout(clickTimer);
         clickTimer = null;
         clickLastVol = null;
-        if (landscapeAnimInFlight) {
+        if (viewGif.landscapeAnimInFlight) {
           showAnimBusySelectionMsg();
           return;
         }
@@ -1852,14 +1554,14 @@
   });
   if (viewMatrixInputEl) {
     viewMatrixInputEl.addEventListener("focus", function() {
-      viewMatrixFieldFocused = true;
+      viewGif.viewMatrixFieldFocused = true;
     });
     viewMatrixInputEl.addEventListener("blur", function() {
-      viewMatrixFieldFocused = false;
+      viewGif.viewMatrixFieldFocused = false;
       syncViewMatrixField();
     });
     viewMatrixInputEl.addEventListener("input", function() {
-      viewMatrixInputDirty = true;
+      viewGif.viewMatrixInputDirty = true;
     });
   }
   if (viewMatrixApplyBtn) {
@@ -1869,7 +1571,7 @@
 
   if (randomSelBtn) {
     randomSelBtn.addEventListener("click", function() {
-      if (landscapeAnimInFlight) {
+      if (viewGif.landscapeAnimInFlight) {
         showAnimBusySelectionMsg();
         return;
       }
@@ -1883,10 +1585,10 @@
         debounceGifTimer = null;
       }
       gifReqGen++;
-      landscapeAnimInFlight = false;
+      viewGif.landscapeAnimInFlight = false;
       clearVolsketchPreviewGrid();
-      lastAnimToken = null;
-      lastBatchMode = null;
+      viewGif.lastAnimToken = null;
+      viewGif.lastBatchMode = null;
       setAnimateStatus("", false, false);
       syncSaveGifButton();
       function applyRandomPickAndHighlight() {
@@ -1910,7 +1612,7 @@
   }
 
   document.getElementById("volsketch-save-gif").addEventListener("click", function() {
-    if (!lastAnimToken) {
+    if (!viewGif.lastAnimToken) {
       setAnimateStatus("Select volumes and wait for previews to finish rendering.", false, true);
       return;
     }
@@ -1920,7 +1622,7 @@
     );
     if (custom === null) return;
     setAnimateStatus("Saving…", true, false);
-    var body = { token: lastAnimToken };
+    var body = { token: viewGif.lastAnimToken };
     if (custom && custom.trim()) body.out_dir = custom.trim();
     postJson("/api/landscape_volpca/save_animations", body)
       .then(function(j) {

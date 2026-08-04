@@ -448,6 +448,10 @@
       } else if (renderTurns.length) {
         body.view_turns = renderTurns;
       }
+      if (typeof trajColorPayloadFields === "function") {
+        // Colour fields only — server maps analyze volume ids to covariate colours.
+        Object.assign(body, trajColorPayloadFields());
+      }
       fetch("{{ url_for('api_volume_viewer_analyze_volumes_chimerax_batch') }}", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -836,6 +840,9 @@
         }
         syncDirectModeVolumePendingOverlay();
         updateGenerateVolumesButtonLabel();
+        if (typeof noteTrajVolumeCovariateColorSignatureApplied === "function") {
+          noteTrajVolumeCovariateColorSignatureApplied();
+        }
         return;
       }
       renderChimeraxVolumeGallery(lastVolumePayload);
@@ -865,11 +872,18 @@
     }
     syncDirectModeVolumePendingOverlay();
     if (!isManualTraversalMode()) updateGenerateVolumesButtonLabel();
+    if (backend === "chimerax"
+        && typeof noteTrajVolumeCovariateColorSignatureApplied === "function") {
+      noteTrajVolumeCovariateColorSignatureApplied();
+    }
   }
 
   function onTrajVolumeBackendChange(backend) {
     backend = String(backend || "slice").toLowerCase();
     volumeBackendUserSet = true;
+    if (typeof syncTrajVolumeColorCovariateControl === "function") {
+      syncTrajVolumeColorCovariateControl();
+    }
     if (trajVolDisplay && backend !== "chimerax") {
       trajVolDisplay.setChimeraxRendering(false);
     }

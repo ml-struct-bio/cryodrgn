@@ -359,6 +359,30 @@
     margin-top: 0.35rem;
     flex: 0 0 auto;
   }
+  .cryo-traj-vol-color-covariate-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nav-bg, #243b53);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .cryo-traj-vol-color-covariate-wrap input[type="checkbox"] {
+    margin: 0;
+    accent-color: var(--nav-bg, #243b53);
+  }
+  .cryo-traj-vol-color-covariate-wrap.is-disabled,
+  .cryo-traj-vol-color-covariate-wrap:has(input:disabled) {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .cryo-traj-vol-color-covariate-text {
+    line-height: 1.2;
+  }
   .cryo-traj-action-btn {
     width: 100%;
     display: block;

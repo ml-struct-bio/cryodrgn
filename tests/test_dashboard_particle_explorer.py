@@ -810,6 +810,34 @@ class TestParticleExplorerVolumeGeneration:
         )
         assert len(pngs) == 3
         assert token
+        seen_colors: list[str | None] = []
+
+        def _fake_cycle_colors(views, chimerax_cpus=1):
+            from PIL import Image
+
+            paths = []
+            for view in views:
+                seen_colors.append(view.volume_color)
+                Image.new("RGB", (4, 4)).save(view.out_png)
+                paths.append(view.out_png)
+            return (
+                paths,
+                "camera matrix" if views and views[0].report_view_matrix else None,
+            )
+
+        monkeypatch.setattr(
+            "cryodrgn.dashboard.particle_explorer.render_landscape_cycle_static_views",
+            _fake_cycle_colors,
+        )
+        pngs_colored, _tok = generate_trajectory_volume_pngs(
+            dashboard_experiment,
+            z_traj,
+            chimerax_cpus=2,
+            volume_colors=["#ff0000", None, "#00ff00"],
+            pipeline=False,
+        )
+        assert len(pngs_colored) == 3
+        assert seen_colors == ["#ff0000", None, "#00ff00"]
         pngs2, _vm = generate_trajectory_volume_pngs(
             dashboard_experiment,
             z_traj,

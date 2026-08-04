@@ -14,6 +14,8 @@ import tempfile
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, wait
+from typing import Sequence
+
 import numpy as np
 from cryodrgn.dashboard import chimerax_animation as cx
 from cryodrgn.dashboard.data import DashboardExperiment
@@ -746,6 +748,25 @@ def generate_trajectory_volume_b64_list(
         raise
 
 
+def _normalize_volume_color_list(
+    volume_colors: Sequence[str | None] | None,
+    n: int,
+) -> list[str | None] | None:
+    """Pad / trim optional per-volume colours to length ``n`` (``None`` = ChimeraX default)."""
+    if volume_colors is None or n < 1:
+        return None
+    out: list[str | None] = []
+    for i in range(n):
+        if i >= len(volume_colors) or volume_colors[i] is None:
+            out.append(None)
+            continue
+        s = str(volume_colors[i]).strip()
+        out.append(s or None)
+    if not any(c is not None for c in out):
+        return None
+    return out
+
+
 def _chimerax_png_bytes_from_mrc_paths(
     vol_files: list[str],
     *,
@@ -753,6 +774,7 @@ def _chimerax_png_bytes_from_mrc_paths(
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
+    volume_colors: Sequence[str | None] | None = None,
     progress_token: str | None = None,
     rerender: bool = False,
 ) -> tuple[list[bytes], str | None]:
@@ -764,6 +786,7 @@ def _chimerax_png_bytes_from_mrc_paths(
     level = resolve_chimerax_volume_level(vol_files[0], volume_level)
     cc = max(1, min(int(chimerax_cpus), 32))
     n_total = len(vol_files)
+    colors = _normalize_volume_color_list(volume_colors, n_total)
 
     def _render(png_dir: str) -> tuple[list[str], str | None]:
         views = [
@@ -771,6 +794,7 @@ def _chimerax_png_bytes_from_mrc_paths(
                 mrc_path=vf,
                 out_png=os.path.join(png_dir, f"cell_{i}.png"),
                 volume_level=level,
+                volume_color=(colors[i] if colors is not None else None),
                 view_turns=view_turns,
                 view_matrix_camera=view_matrix_camera,
                 report_view_matrix=(i == 0),
@@ -809,6 +833,7 @@ def rerender_chimerax_pngs_from_volume_cache(
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
+    volume_colors: Sequence[str | None] | None = None,
     progress_token: str | None = None,
 ) -> tuple[list[bytes], str | None]:
     """Re-render ChimeraX PNGs from a prior trajectory/montage decode cache."""
@@ -820,6 +845,7 @@ def rerender_chimerax_pngs_from_volume_cache(
         view_matrix_camera=view_matrix_camera,
         view_turns=view_turns,
         volume_level=volume_level,
+        volume_colors=volume_colors,
         progress_token=progress_token,
         rerender=True,
     )
@@ -894,6 +920,7 @@ def _pipelined_decode_and_chimerax_pngs(
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
+    volume_colors: Sequence[str | None] | None = None,
     progress_token: str | None = None,
     trajectory_slot_indices: list[int] | None = None,
     n_trajectory_total: int | None = None,
@@ -911,6 +938,7 @@ def _pipelined_decode_and_chimerax_pngs(
     )
     if len(slot_indices) != n_total:
         raise ValueError("trajectory_slot_indices length must match z_values rows.")
+    colors = _normalize_volume_color_list(volume_colors, n_total)
     n_partial_ui = (
         int(n_trajectory_total) if n_trajectory_total is not None else n_total
     )
@@ -966,6 +994,7 @@ def _pipelined_decode_and_chimerax_pngs(
     def _render_one(idx: int, mrc_path: str) -> tuple[int, bytes, str | None]:
         nonlocal shared_view_matrix_camera, view_matrix, framing_bootstrap_claimed
         out_png = os.path.join(png_dir, f"cell_{idx}.png")
+        vol_color = colors[idx] if colors is not None else None
         is_bootstrap = False
         if shared_view_matrix_camera is None:
             with framing_lock:
@@ -978,6 +1007,7 @@ def _pipelined_decode_and_chimerax_pngs(
                 out_png,
                 dpi=100,
                 volume_level=iso_level,
+                volume_color=vol_color,
                 view_turns=view_turns,
                 view_matrix_camera=None,
                 report_view_matrix=True,
@@ -1009,6 +1039,7 @@ def _pipelined_decode_and_chimerax_pngs(
             out_png,
             dpi=100,
             volume_level=iso_level,
+            volume_color=vol_color,
             view_turns=use_turns,
             view_matrix_camera=use_camera,
             report_view_matrix=False,
@@ -1127,6 +1158,7 @@ def generate_trajectory_volume_pngs(
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
+    volume_colors: Sequence[str | None] | None = None,
     progress_token: str | None = None,
     pipeline: bool | None = None,
     trajectory_slot_indices: list[int] | None = None,
@@ -1167,6 +1199,7 @@ def generate_trajectory_volume_pngs(
                     view_matrix_camera=view_matrix_camera,
                     view_turns=view_turns,
                     volume_level=volume_level,
+                    volume_colors=volume_colors,
                     progress_token=progress_token,
                     trajectory_slot_indices=trajectory_slot_indices,
                     n_trajectory_total=n_trajectory_total,
@@ -1191,6 +1224,7 @@ def generate_trajectory_volume_pngs(
                 view_matrix_camera=view_matrix_camera,
                 view_turns=view_turns,
                 volume_level=volume_level,
+                volume_colors=volume_colors,
                 progress_token=progress_token,
                 rerender=False,
             )

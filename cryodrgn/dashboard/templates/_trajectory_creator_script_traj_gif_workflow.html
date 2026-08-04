@@ -1591,7 +1591,10 @@
 
   function trajColorPayloadFields() {
     var colorCol = sc.value || "none";
-    var fields = { color: colorCol };
+    var fields = {
+      color: colorCol,
+      color_volumes: trajVolumeCovariateColoringEnabled()
+    };
     if (colorCol !== "none" && !trajColorByIsDiscrete()) {
       fields.palette = selectedTrajPalette();
     }
@@ -1599,6 +1602,59 @@
       fields.discrete_label_colors = Object.assign({}, trajDiscreteColorOverrides);
     }
     return fields;
+  }
+
+  function trajVolumeColorCovariateCheckbox() {
+    return document.getElementById("traj-vol-color-covariate");
+  }
+
+  function trajVolumeCovariateColoringEnabled() {
+    var el = trajVolumeColorCovariateCheckbox();
+    if (!el) return true;
+    return !!el.checked;
+  }
+
+  function trajVolumeColorsForApiPayload(slotIndices) {
+    if (!trajVolumeCovariateColoringEnabled()) return null;
+    if (!sc.value || sc.value === "none") return null;
+    var n = 0;
+    if (Array.isArray(slotIndices) && slotIndices.length) {
+      n = slotIndices.length;
+    } else if (trajMarkerColors && trajMarkerColors.length) {
+      n = trajMarkerColors.length;
+    } else if (trajPlotRows && trajPlotRows.length) {
+      n = trajPlotRows.length;
+    } else if (typeof currentVolumeCount === "function") {
+      n = Math.max(0, Math.floor(Number(currentVolumeCount())) || 0);
+    }
+    if (n < 1) return null;
+    var colors = [];
+    var any = false;
+    for (var i = 0; i < n; i++) {
+      var ti = Array.isArray(slotIndices) && slotIndices.length
+        ? Math.floor(Number(slotIndices[i]))
+        : i;
+      var col = (typeof trajCovariateColorAtIndex === "function")
+        ? trajCovariateColorAtIndex(ti, null)
+        : null;
+      if (col != null && String(col)) {
+        colors.push(String(col));
+        any = true;
+      } else {
+        colors.push(null);
+      }
+    }
+    return any ? colors : null;
+  }
+
+  function appendTrajVolumeColorPayloadFields(payload, opts) {
+    opts = opts || {};
+    payload = payload || {};
+    Object.assign(payload, trajColorPayloadFields());
+    var colors = trajVolumeColorsForApiPayload(opts.slotIndices || null);
+    if (colors) payload.volume_colors = colors;
+    else delete payload.volume_colors;
+    return payload;
   }
 
   function shouldRefetchTrajectoryColorsOnCovariateChange() {
@@ -1610,6 +1666,9 @@
       trajMarkerColors = null;
       if (typeof scheduleTrajGlyphOverlaySync === "function") scheduleTrajGlyphOverlaySync();
       else if (typeof syncTrajGlyphOverlay === "function") syncTrajGlyphOverlay();
+      if (typeof scheduleTrajVolumeCovariateColorRerender === "function") {
+        scheduleTrajVolumeCovariateColorRerender();
+      }
       return true;
     }
     var rows = (trajPlotRows && trajPlotRows.length >= 2)
@@ -1622,6 +1681,9 @@
     });
     if (typeof scheduleTrajGlyphOverlaySync === "function") scheduleTrajGlyphOverlaySync();
     else if (typeof syncTrajGlyphOverlay === "function") syncTrajGlyphOverlay();
+    if (typeof scheduleTrajVolumeCovariateColorRerender === "function") {
+      scheduleTrajVolumeCovariateColorRerender();
+    }
     return true;
   }
 
@@ -1633,6 +1695,9 @@
       return;
     }
     syncTrajGlyphOverlay();
+    if (typeof scheduleTrajVolumeCovariateColorRerender === "function") {
+      scheduleTrajVolumeCovariateColorRerender();
+    }
   }
 
   function trajCovariateColoringActive() {

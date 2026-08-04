@@ -863,6 +863,7 @@ def analyze_volumes_chimerax_batch_payload(
     view_matrix_camera: str | None = None,
     view_turns: list[tuple[str, float]] | None = None,
     volume_level: float | None = None,
+    volume_colors: list[str | None] | None = None,
 ) -> dict:
     """Render ChimeraX PNGs from pre-generated analyze ``.mrc`` files (no GPU decode)."""
     catalog = discover_analyze_volume_catalog(exp)
@@ -878,6 +879,12 @@ def analyze_volumes_chimerax_batch_payload(
 
     level = resolve_chimerax_volume_level(entries[0]["path"], volume_level)
     cc = max(1, min(int(chimerax_cpus), 32))
+    colors = None
+    if volume_colors is not None:
+        colors = list(volume_colors)
+        while len(colors) < len(entries):
+            colors.append(None)
+        colors = colors[: len(entries)]
     attempts: list[tuple[str | None, list[tuple[str, float]] | None]] = []
     if view_turns:
         attempts.append((None, list(view_turns)))
@@ -898,6 +905,7 @@ def analyze_volumes_chimerax_batch_payload(
                     mrc_path=entry["path"],
                     out_png=os.path.join(png_dir, f"cell_{i}.png"),
                     volume_level=level,
+                    volume_color=(colors[i] if colors is not None else None),
                     view_turns=attempt_turns,
                     view_matrix_camera=attempt_vm,
                     report_view_matrix=(i == 0),

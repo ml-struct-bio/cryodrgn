@@ -1375,6 +1375,150 @@ def attach_trajectory_marker_colors(
             payload["traj_marker_colors"] = marker_colors
 
 
+def request_wants_volume_covariate_colors(data: dict | None) -> bool:
+    """Whether ChimeraX volumes should follow the scatter colour covariate.
+
+    Defaults to on. Explicit falsy values (``false``, ``0``, ``off``, …) disable
+    colouring so ChimeraX keeps its default ``cornflowerblue``.
+    """
+    if not isinstance(data, dict) or "color_volumes" not in data:
+        return True
+    raw = data.get("color_volumes")
+    if isinstance(raw, str):
+        return raw.strip().lower() not in ("0", "false", "no", "off", "")
+    return bool(raw)
+
+
+def chimerax_volume_colors_for_slots(
+    marker_colors: list[str | None] | None,
+    slot_indices: list[int] | tuple[int, ...] | None = None,
+) -> list[str | None] | None:
+    """Align full-path marker colours onto decode / cache slot order.
+
+    Returns ``None`` when colouring is inactive or every slot lacks a colour
+    (ChimeraX then uses its default). Sparse ``None`` entries likewise fall back
+    per volume.
+    """
+    if not marker_colors:
+        return None
+    if slot_indices is None:
+        colors = list(marker_colors)
+    else:
+        colors = []
+        n = len(marker_colors)
+        for s in slot_indices:
+            si = int(s)
+            if 0 <= si < n:
+                colors.append(marker_colors[si])
+            else:
+                colors.append(None)
+    if not any(c is not None and str(c).strip() for c in colors):
+        return None
+    return colors
+
+
+def resolve_request_chimerax_volume_colors(
+    e: DashboardExperiment,
+    data: dict,
+    *,
+    traj_rows: list[int] | None = None,
+    traj_particle_indices: list[int | None] | None = None,
+    slot_indices: list[int] | tuple[int, ...] | None = None,
+    marker_colors: list[str | None] | None = None,
+) -> list[str | None] | None:
+    """Resolve per-volume ChimeraX colours from a dashboard request body."""
+    if not request_wants_volume_covariate_colors(data):
+        return None
+    raw_explicit = data.get("volume_colors")
+    if isinstance(raw_explicit, list) and raw_explicit:
+        explicit: list[str | None] = []
+        for c in raw_explicit:
+            if c is None:
+                explicit.append(None)
+            else:
+                s = str(c).strip()
+                explicit.append(s or None)
+        if slot_indices is not None and len(explicit) != len(slot_indices):
+            # Client sent full-path colours; align onto cache / decode slots.
+            return chimerax_volume_colors_for_slots(explicit, slot_indices)
+        if any(c is not None for c in explicit):
+            return explicit
+        return None
+    colors = marker_colors
+    if colors is None:
+        color_col = str(data.get("color") or "none")
+        continuous_palette = data.get("palette")
+        discrete_label_colors = None
+        raw_dlc = data.get("discrete_label_colors")
+        if isinstance(raw_dlc, dict):
+            discrete_label_colors = {
+                str(k): str(v) for k, v in raw_dlc.items() if v is not None
+            }
+        if traj_rows:
+            colors = trajectory_marker_colors_for_rows(
+                e,
+                [int(r) for r in traj_rows],
+                color_col,
+                continuous_palette=continuous_palette,
+                discrete_label_colors=discrete_label_colors,
+            )
+        elif traj_particle_indices:
+            colors = trajectory_marker_colors_for_particle_indices(
+                e,
+                traj_particle_indices,
+                color_col,
+                continuous_palette=continuous_palette,
+                discrete_label_colors=discrete_label_colors,
+            )
+    return chimerax_volume_colors_for_slots(colors, slot_indices)
+
+
+def analyze_volume_covariate_colors(
+    e: DashboardExperiment,
+    vol_ids: list[str],
+    color_col: str | None,
+    *,
+    continuous_palette: str | None = None,
+    discrete_label_colors: dict[str, str] | None = None,
+) -> list[str | None] | None:
+    """Per-analyze-catalog-volume hex colours from nearest-particle plot rows."""
+    if not vol_ids or not color_col or color_col == "none":
+        return None
+    if color_col not in e.plot_df.columns:
+        return None
+    from cryodrgn.dashboard.volume_slice_viewer import discover_analyze_volume_markers
+
+    markers = discover_analyze_volume_markers(e)
+    by_id = {str(m.get("vol_id")): m for m in markers}
+    out: list[str | None] = [None] * len(vol_ids)
+    batch_rows: list[int] = []
+    batch_pos: list[int] = []
+    n_plot = len(e.plot_df)
+    for i, vid in enumerate(vol_ids):
+        marker = by_id.get(str(vid))
+        if marker is None or marker.get("plot_row") is None:
+            continue
+        pr = int(marker["plot_row"])
+        if pr < 0 or pr >= n_plot:
+            continue
+        batch_rows.append(pr)
+        batch_pos.append(i)
+    if not batch_rows:
+        return None
+    batch_colors = _marker_colors_for_plot_rows(
+        e,
+        batch_rows,
+        color_col,
+        continuous_palette=continuous_palette,
+        discrete_label_colors=discrete_label_colors,
+    )
+    for j, pos in enumerate(batch_pos):
+        out[pos] = batch_colors[j]
+    if not any(c is not None for c in out):
+        return None
+    return out
+
+
 def trajectory_shared_json_payload(
     e: DashboardExperiment,
     z_traj: np.ndarray,

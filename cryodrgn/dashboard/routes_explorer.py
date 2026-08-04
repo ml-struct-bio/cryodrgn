@@ -101,6 +101,10 @@ from cryodrgn.dashboard.route_helpers import (
     default_embedding_xy_cols,
     discrete_color_columns_for_exp,
 )
+from cryodrgn.dashboard.trajectory import (
+    analyze_volume_covariate_colors,
+    request_wants_volume_covariate_colors,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -633,6 +637,27 @@ def api_volume_viewer_analyze_volumes_chimerax_batch():
         iso_level = parse_iso_level_from_request(data)
     except ValueError as err:
         return jsonify(error=str(err)), 400
+    volume_colors = None
+    if request_wants_volume_covariate_colors(data):
+        try:
+            discrete_label_colors = _parse_optional_discrete_label_colors(
+                data.get("discrete_label_colors")
+            )
+        except ValueError as err:
+            return jsonify(error=str(err)), 400
+        raw_explicit = data.get("volume_colors")
+        if isinstance(raw_explicit, list) and raw_explicit:
+            volume_colors = [
+                (None if c is None else (str(c).strip() or None)) for c in raw_explicit
+            ]
+        else:
+            volume_colors = analyze_volume_covariate_colors(
+                e,
+                vol_ids,
+                str(data.get("color") or "none"),
+                continuous_palette=data.get("palette"),
+                discrete_label_colors=discrete_label_colors,
+            )
     try:
         payload = analyze_volumes_chimerax_batch_payload(
             e,
@@ -641,6 +666,7 @@ def api_volume_viewer_analyze_volumes_chimerax_batch():
             view_matrix_camera=view_matrix_camera,
             view_turns=view_turns,
             volume_level=iso_level,
+            volume_colors=volume_colors,
         )
         return jsonify(payload)
     except EnvironmentError as err:

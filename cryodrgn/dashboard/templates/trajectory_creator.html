@@ -405,6 +405,13 @@
           <input type="radio" name="traj-vol-backend" id="traj-vol-backend-slice" value="slice" />
           <label for="traj-vol-backend-slice">2D slice</label>
         </div>
+        <label id="traj-vol-color-covariate-wrap" class="cryo-traj-vol-color-covariate-wrap"
+          for="traj-vol-color-covariate"
+          title="Colour ChimeraX volumes using the scatterplot colour covariate. When no covariate is chosen, ChimeraX uses its default colour.">
+          <input type="checkbox" id="traj-vol-color-covariate" checked
+            aria-label="Colour ChimeraX volumes by scatterplot colour covariate" />
+          <span class="cryo-traj-vol-color-covariate-text">Colour by covariate</span>
+        </label>
         <button type="button" class="btn btn-secondary cryo-traj-vol-popout-btn" id="btn-traj-vol-dock-below"
           title="Open ChimeraX volume gallery in a popup window" aria-pressed="false"
           hidden>Pop out viewer</button>

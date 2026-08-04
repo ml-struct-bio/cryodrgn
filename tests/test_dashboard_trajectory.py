@@ -27,6 +27,7 @@ from cryodrgn.dashboard.trajectory import (
     _round_direct_mode_traj_xy,
     _snap_points_to_nearest_particles,
     _xy_already_on_particle,
+    chimerax_volume_colors_for_slots,
     order_anchor_indices_for_direct_path,
     order_points_noncrossing_path_heuristic,
     order_points_shortest_noncrossing_path,
@@ -46,10 +47,13 @@ from cryodrgn.dashboard.trajectory import (
     parse_trajectory_request_body,
     plot_df_rows_for_dataset_indices,
     random_dataset_indices,
+    request_wants_volume_covariate_colors,
+    resolve_request_chimerax_volume_colors,
     resolve_trajectory_decode_plan,
     trajectory_anchor_mode_params,
     trajectory_anchor_payload_from_indices,
     trajectory_default_xy_cols,
+    trajectory_marker_colors_for_rows,
     trajectory_plot_axis_columns,
     validate_trajectory_plot_axes,
     z_traj_to_savetxt_str,
@@ -226,6 +230,72 @@ class TestDashboardTrajectoryCoords:
             c is None or (isinstance(c, str) and c.startswith("#")) for c in colors
         )
         assert any(isinstance(c, str) and c.startswith("#") for c in colors)
+
+    def test_request_wants_volume_covariate_colors_defaults_on(self) -> None:
+        assert request_wants_volume_covariate_colors({}) is True
+        assert request_wants_volume_covariate_colors(None) is True
+        assert request_wants_volume_covariate_colors({"color_volumes": True}) is True
+        assert request_wants_volume_covariate_colors({"color_volumes": False}) is False
+        assert request_wants_volume_covariate_colors({"color_volumes": "off"}) is False
+        assert request_wants_volume_covariate_colors({"color_volumes": "0"}) is False
+
+    def test_chimerax_volume_colors_for_slots_aligns_sparse_path(self) -> None:
+        colors = ["#111111", None, "#333333", "#444444"]
+        assert chimerax_volume_colors_for_slots(colors, [0, 2]) == [
+            "#111111",
+            "#333333",
+        ]
+        assert chimerax_volume_colors_for_slots(None) is None
+        assert chimerax_volume_colors_for_slots([None, None]) is None
+
+    def test_resolve_request_chimerax_volume_colors_honours_toggle(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        color_col = next(
+            (
+                c
+                for c in dashboard_experiment.numeric_columns
+                if c in dashboard_experiment.plot_df.columns
+            ),
+            None,
+        )
+        if color_col is None:
+            pytest.skip("experiment has no numeric color column")
+        rows = [0, min(1, len(dashboard_experiment.plot_df) - 1)]
+        marker = trajectory_marker_colors_for_rows(
+            dashboard_experiment, rows, color_col, continuous_palette="Viridis"
+        )
+        assert marker is not None
+        off = resolve_request_chimerax_volume_colors(
+            dashboard_experiment,
+            {"color": color_col, "color_volumes": False, "palette": "Viridis"},
+            traj_rows=rows,
+            marker_colors=marker,
+        )
+        assert off is None
+        on = resolve_request_chimerax_volume_colors(
+            dashboard_experiment,
+            {"color": color_col, "palette": "Viridis"},
+            traj_rows=rows,
+            marker_colors=marker,
+        )
+        assert on is not None
+        assert any(c is not None and str(c).startswith("#") for c in on)
+        none_cov = resolve_request_chimerax_volume_colors(
+            dashboard_experiment,
+            {"color": "none"},
+            traj_rows=rows,
+        )
+        assert none_cov is None
+        explicit = resolve_request_chimerax_volume_colors(
+            dashboard_experiment,
+            {
+                "color": color_col,
+                "volume_colors": ["#abcdef", "#123456", "#ffffff"],
+            },
+            slot_indices=[0, 2],
+        )
+        assert explicit == ["#abcdef", "#ffffff"]
 
     def test_anchor_driven_trajectory(
         self, flask_client, dashboard_experiment: DashboardExperiment

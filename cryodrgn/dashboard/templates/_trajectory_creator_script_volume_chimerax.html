@@ -1282,6 +1282,113 @@
     return payload;
   }
 
+  var trajVolColorCovariateEl = document.getElementById("traj-vol-color-covariate");
+  var trajVolColorCovariateWrap = document.getElementById("traj-vol-color-covariate-wrap");
+  var trajVolumeCovariateColorRerenderTimer = null;
+  var trajVolumeCovariateColorSignature = "";
+
+  function trajVolumeCovariateColorStateSignature() {
+    var colorCol = (sc && sc.value) ? String(sc.value) : "none";
+    var enabled = (typeof trajVolumeCovariateColoringEnabled === "function")
+      ? trajVolumeCovariateColoringEnabled()
+      : true;
+    var pal = (typeof selectedTrajPalette === "function") ? selectedTrajPalette() : "";
+    var overrides = "";
+    if (typeof trajDiscreteColorOverridesActive === "function"
+        && trajDiscreteColorOverridesActive()
+        && trajDiscreteColorOverrides) {
+      try {
+        overrides = JSON.stringify(trajDiscreteColorOverrides);
+      } catch (errSig) {
+        overrides = String(Object.keys(trajDiscreteColorOverrides).length);
+      }
+    }
+    return [enabled ? "1" : "0", colorCol, pal, overrides].join("|");
+  }
+
+  function noteTrajVolumeCovariateColorSignatureApplied() {
+    trajVolumeCovariateColorSignature = trajVolumeCovariateColorStateSignature();
+  }
+
+  function syncTrajVolumeColorCovariateControl() {
+    if (!trajVolColorCovariateEl) return;
+    var hasCovariate = !!(sc && sc.value && sc.value !== "none");
+    var backend = (typeof currentVolumeRenderBackend === "function")
+      ? currentVolumeRenderBackend()
+      : "chimerax";
+    var chimeraxActive = backend === "chimerax";
+    trajVolColorCovariateEl.disabled = !chimeraxActive;
+    if (trajVolColorCovariateWrap) {
+      trajVolColorCovariateWrap.classList.toggle("is-disabled", !chimeraxActive);
+      trajVolColorCovariateWrap.title = !chimeraxActive
+        ? "Switch to the ChimeraX backend to colour volumes by the scatterplot covariate."
+        : (hasCovariate
+          ? "Colour ChimeraX volumes using the scatterplot colour covariate."
+          : "No colour covariate selected — ChimeraX will use its default colour.");
+    }
+  }
+
+  function scheduleTrajVolumeCovariateColorRerender() {
+    syncTrajVolumeColorCovariateControl();
+    var nextSig = trajVolumeCovariateColorStateSignature();
+    if (nextSig === trajVolumeCovariateColorSignature) return;
+    if (trajVolumeCovariateColorRerenderTimer != null) {
+      window.clearTimeout(trajVolumeCovariateColorRerenderTimer);
+      trajVolumeCovariateColorRerenderTimer = null;
+    }
+    trajVolumeCovariateColorRerenderTimer = window.setTimeout(function() {
+      trajVolumeCovariateColorRerenderTimer = null;
+      maybeRerenderTrajVolumesForCovariateColor(nextSig);
+    }, 180);
+  }
+
+  function maybeRerenderTrajVolumesForCovariateColor(pendingSig) {
+    syncTrajVolumeColorCovariateControl();
+    var sig = pendingSig || trajVolumeCovariateColorStateSignature();
+    if (sig === trajVolumeCovariateColorSignature) return;
+    var backend = (typeof currentVolumeRenderBackend === "function")
+      ? currentVolumeRenderBackend()
+      : "";
+    if (backend !== "chimerax") {
+      trajVolumeCovariateColorSignature = sig;
+      return;
+    }
+    var hasCache = !!(typeof lastTrajectoryVolumeCacheId !== "undefined"
+      && lastTrajectoryVolumeCacheId);
+    var hasCatalog = !!(typeof isManualTraversalMode === "function"
+      && isManualTraversalMode()
+      && manualSelectedVolIds
+      && manualSelectedVolIds.length >= 1
+      && typeof catalogAnchorRenderModeActive === "function"
+      && catalogAnchorRenderModeActive());
+    if (!hasCache && !hasCatalog) {
+      trajVolumeCovariateColorSignature = sig;
+      return;
+    }
+    if (typeof trajectoryChimeraxViewRerenderInFlight !== "undefined"
+        && trajectoryChimeraxViewRerenderInFlight) {
+      scheduleTrajVolumeCovariateColorRerender();
+      return;
+    }
+    trajVolumeCovariateColorSignature = sig;
+    if (hasCache && typeof rerenderTrajectoryChimeraxViews === "function") {
+      rerenderTrajectoryChimeraxViews(
+        "Updating ChimeraX volume colours\u2026"
+      );
+      return;
+    }
+    if (hasCatalog && typeof syncManualChimeraxDisplay === "function") {
+      syncManualChimeraxDisplay({ force: true, userInitiated: true });
+    }
+  }
+
+  if (trajVolColorCovariateEl) {
+    trajVolColorCovariateEl.addEventListener("change", function() {
+      scheduleTrajVolumeCovariateColorRerender();
+    });
+  }
+  syncTrajVolumeColorCovariateControl();
+
   var chimeraxGalleryObjectUrls = [];
   var lastChimeraxRenderViewMatrix = "";
   var lastChimeraxRenderViewTurns = [];
@@ -1631,6 +1738,13 @@
     };
     appendChimeraxIsoPayloadFields(payload, viewSnap);
     appendChimeraxViewPayloadFields(payload, viewSnap);
+    if (typeof appendTrajVolumeColorPayloadFields === "function") {
+      appendTrajVolumeColorPayloadFields(payload, {
+        slotIndices: (opts && opts.slotIndices) || null
+      });
+    } else if (typeof trajColorPayloadFields === "function") {
+      Object.assign(payload, trajColorPayloadFields());
+    }
     return fetch("{{ url_for('api_trajectory_volumes') }}", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3239,6 +3353,9 @@
       selectTrajVolumeBackend(preferredVolumeBackend());
     } else if (!hasVol) {
       ensureSliceBackendWhenVolumesMissing();
+    }
+    if (typeof syncTrajVolumeColorCovariateControl === "function") {
+      syncTrajVolumeColorCovariateControl();
     }
   }
 

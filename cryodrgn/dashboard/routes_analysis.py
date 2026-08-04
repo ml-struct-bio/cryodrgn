@@ -78,6 +78,7 @@ from cryodrgn.dashboard.trajectory import (
     parse_anchor_path_order,
     parse_trajectory_request_body,
     random_dataset_indices,
+    resolve_request_chimerax_volume_colors,
     trajectory_anchor_mode_params,
     trajectory_anchor_payload_from_indices,
     trajectory_axes_from_payload,
@@ -763,12 +764,33 @@ def api_trajectory_volumes():
                 iso_level = parse_iso_level_from_request(data)
             except ValueError as err:
                 return jsonify(error=str(err)), 400
+            volume_colors = None
+            try:
+                slot_indices = volume_cache_slot_indices(cache_token)
+            except ValueError:
+                slot_indices = ()
+            try:
+                discrete_label_colors = _parse_optional_discrete_label_colors(
+                    data.get("discrete_label_colors")
+                )
+            except ValueError as err:
+                return jsonify(error=str(err)), 400
+            # Re-parse into a mutable copy so colour helpers see validated overrides.
+            color_data = dict(data)
+            if discrete_label_colors is not None:
+                color_data["discrete_label_colors"] = discrete_label_colors
+            volume_colors = resolve_request_chimerax_volume_colors(
+                e,
+                color_data,
+                slot_indices=list(slot_indices) if slot_indices else None,
+            )
             blobs, vm = rerender_chimerax_pngs_from_volume_cache(
                 cache_token,
                 chimerax_cpus=cc,
                 view_matrix_camera=view_matrix_camera,
                 view_turns=view_turns,
                 volume_level=iso_level,
+                volume_colors=volume_colors,
                 progress_token=progress_token,
             )
             images = [base64.standard_b64encode(b).decode("ascii") for b in blobs]
@@ -781,10 +803,6 @@ def api_trajectory_volumes():
             # If we know the trajectory slot indices for each cached PNG,
             # return them so the frontend can re-align dense rerender
             # results back onto the full slider index space.
-            try:
-                slot_indices = volume_cache_slot_indices(cache_token)
-            except ValueError:
-                slot_indices = ()
             if slot_indices and len(slot_indices) == len(blobs):
                 payload["slot_indices"] = [int(i) for i in slot_indices]
             mrc_path = primary_mrc_path_from_volume_cache(cache_token)
@@ -842,6 +860,12 @@ def api_trajectory_volumes():
             iso_level = parse_iso_level_from_request(data)
         except ValueError as err:
             return jsonify(error=str(err)), 400
+        try:
+            discrete_label_colors = _parse_optional_discrete_label_colors(
+                data.get("discrete_label_colors")
+            )
+        except ValueError as err:
+            return jsonify(error=str(err)), 400
         payload = trajectory_shared_json_payload(
             e,
             z_traj,
@@ -853,9 +877,23 @@ def api_trajectory_volumes():
             ycol=p["ycol"],
             color_col=str(data.get("color") or "none"),
             continuous_palette=data.get("palette"),
+            discrete_label_colors=discrete_label_colors,
         )
         _add_direct_anchor_pidx(payload, p, z_traj, e)
         if render_backend == "chimerax":
+            color_data = dict(data)
+            if discrete_label_colors is not None:
+                color_data["discrete_label_colors"] = discrete_label_colors
+            volume_colors = resolve_request_chimerax_volume_colors(
+                e,
+                color_data,
+                traj_rows=(
+                    [int(r) for r in traj_rows] if traj_rows is not None else None
+                ),
+                traj_particle_indices=payload.get("traj_particle_indices"),
+                slot_indices=(list(decode_slot_indices) if partial_decode else None),
+                marker_colors=payload.get("traj_marker_colors"),
+            )
             blobs, cache_token = generate_trajectory_volume_pngs(
                 e,
                 z_decode,
@@ -863,6 +901,7 @@ def api_trajectory_volumes():
                 view_matrix_camera=view_matrix_camera,
                 view_turns=view_turns,
                 volume_level=iso_level,
+                volume_colors=volume_colors,
                 progress_token=progress_token,
                 trajectory_slot_indices=(
                     decode_slot_indices if partial_decode else None

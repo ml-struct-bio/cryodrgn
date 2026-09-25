@@ -18,6 +18,7 @@ from collections import Counter, OrderedDict
 import logging
 import torch
 from typing import Optional, Tuple, Union
+from scipy.spatial.transform import Rotation
 from cryodrgn import fft
 from cryodrgn.source import ImageSource, StarfileSource, parse_star
 from cryodrgn.masking import spherical_window_mask
@@ -173,6 +174,8 @@ class TiltSeriesData(ImageDataset):
         expected_res=None,
         dose_per_tilt=None,
         angle_per_tilt=None,
+        tilt_axis_angle=0.0,
+        stack_tilts=False,
         **kwargs,
     ):
         # Note: ind is the indices of the *tilts*, not the particles
@@ -223,6 +226,8 @@ class TiltSeriesData(ImageDataset):
         self.random_tilts = random_tilts
         self.voltage = voltage
         self.dose_per_tilt = dose_per_tilt
+        self.stack_tilts = stack_tilts
+        self.subtomogram_averaging = bool(stack_tilts)
 
         # Assumes dose-symmetric tilt scheme
         # As implemented in Hagen, Wan, Briggs J. Struct. Biol. 2017
@@ -230,6 +235,25 @@ class TiltSeriesData(ImageDataset):
         if angle_per_tilt is not None:
             self.tilt_angles = angle_per_tilt * torch.ceil(self.tilt_numbers / 2)
             self.tilt_angles = self.tilt_angles.to(self.device)
+
+        # Particle pose is expanded across the dose-symmetric scheme. The tilt axis
+        # is not exactly Y; see the cryoDRGN-AI pose-consistency notes.
+        self.tilt_rots = None
+        if angle_per_tilt is not None:
+            tilt_scheme = [
+                angle_per_tilt
+                * np.ceil(i / 2.0)
+                * (((np.floor(i / 2.0) + 1) % 2) * 2.0 - 1.0)
+                for i in range(self.ntilts)
+            ]
+            tilt_rots = [
+                Rotation.from_euler(
+                    "zyz",
+                    [tilt_axis_angle * np.pi / 180.0, t * np.pi / 180.0, 0.0],
+                ).as_matrix()
+                for t in tilt_scheme
+            ]
+            self.tilt_rots = torch.tensor(np.stack(tilt_rots)).float()
 
     def __len__(self):
         return self.Np
@@ -253,13 +277,29 @@ class TiltSeriesData(ImageDataset):
         r_images, f_images = self._process(
             self.src.images(tilt_indices).to(self.device)
         )
+        if self.stack_tilts:
+            f_images = f_images.reshape(-1, self.ntilts, *f_images.shape[-2:])
+            r_images = r_images.reshape(-1, self.ntilts, *r_images.shape[-2:])
 
         return {
             "y": f_images,
             "y_real": r_images,
-            "tilt_index": tilt_indices,
+            "tilt_index": torch.as_tensor(tilt_indices, dtype=torch.long),
             "index": index,
         }
+
+    def get_tilting_func(self):
+        """Expand a particle rotation across the dose-symmetric tilt scheme."""
+        if self.tilt_rots is None:
+            raise ValueError(
+                "angle_per_tilt is required to build the subtomogram tilt scheme."
+            )
+
+        def tilting_func(rots):
+            tilts = self.tilt_rots.to(rots.device)
+            return torch.sum(tilts[..., None] * rots[..., None, None, :, :], -2)
+
+        return tilting_func
 
     @classmethod
     def parse_particle_tilt(

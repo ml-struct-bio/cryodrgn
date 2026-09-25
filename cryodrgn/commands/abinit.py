@@ -512,6 +512,57 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Indicate that the dataset does not contain translations.",
     )
 
+    group = parser.add_argument_group("Subtomogram averaging")
+    group.add_argument(
+        "--subtomogram-averaging",
+        action="store_true",
+        help="Treat particles as tilt series and run ab initio subtomogram averaging.",
+    )
+    group.add_argument(
+        "--n-tilts",
+        type=int,
+        default=11,
+        help="Number of tilts kept per particle (default: %(default)s).",
+    )
+    group.add_argument(
+        "--dose-per-tilt",
+        type=float,
+        default=None,
+        help="Dose per tilt in e-/A^2. Required for subtomogram averaging.",
+    )
+    group.add_argument(
+        "--angle-per-tilt",
+        type=float,
+        default=None,
+        help="Angle between consecutive tilts, in degrees. "
+        "Required for subtomogram averaging.",
+    )
+    group.add_argument(
+        "--n-tilts-pose-search",
+        type=int,
+        default=None,
+        help="Number of tilts used during pose search " "(default: --n-tilts).",
+    )
+    group.add_argument(
+        "--average-over-tilts",
+        action="store_true",
+        help="Average the kept tilts before pose search.",
+    )
+    group.add_argument(
+        "--tilt-axis-angle",
+        type=float,
+        default=0.0,
+        help="Angle between the vertical axis and the tilt axis, in degrees "
+        "(default: %(default)s).",
+    )
+    group.add_argument(
+        "--no-dose-exposure-correction",
+        dest="dose_exposure_correction",
+        action="store_false",
+        help="Do not apply dose and tilt-angle exposure filters to predicted slices.",
+    )
+    parser.set_defaults(dose_exposure_correction=True)
+
     parser.add_argument(
         "--norm",
         type=float,
@@ -682,19 +733,76 @@ class ModelTrainer:
                 f"Manually overriding data normalization: (mean, std) = {data_norm}"
             )
 
-        self.data = dataset.ImageDataset(
-            self.configs.particles,
-            norm=data_norm,
-            keepreal=True,
-            invert_data=self.configs.invert_data,
-            ind=self.index,
-            window_r=self.configs.window_radius_gt_real,
-            max_threads=self.configs.max_threads,
-            lazy=self.configs.lazy,
-            datadir=self.configs.datadir,
-        )
-        self.n_particles_dataset = self.data.N
-        self.n_tilts_dataset = self.data.N
+        if self.configs.subtomogram_averaging:
+            if (
+                self.configs.dose_per_tilt is None
+                or self.configs.angle_per_tilt is None
+            ):
+                raise ValueError(
+                    "dose_per_tilt and angle_per_tilt must both be specified "
+                    "for subtomogram averaging."
+                )
+            if self.configs.use_conf_encoder:
+                raise ValueError(
+                    "A conformation encoder is not implemented for "
+                    "subtomogram averaging."
+                )
+            if self.configs.t_extent != 0.0:
+                raise ValueError(
+                    "Translation search is not implemented for subtomogram "
+                    "averaging; set --t-extent 0."
+                )
+            if self.configs.n_tilts_pose_search is None:
+                self.configs.n_tilts_pose_search = self.configs.n_tilts
+            if self.configs.n_tilts_pose_search > self.configs.n_tilts:
+                raise ValueError(
+                    "n_tilts_pose_search must be smaller than or equal to n_tilts."
+                )
+            if (
+                self.configs.average_over_tilts
+                and self.configs.n_tilts_pose_search % 2 == 0
+            ):
+                raise ValueError(
+                    "n_tilts_pose_search must be odd to use --average-over-tilts."
+                )
+            self.logger.info(
+                "Subtomogram averaging with "
+                f"{self.configs.n_tilts} tilts "
+                f"({self.configs.n_tilts_pose_search} used in pose search)"
+            )
+            self.data = dataset.TiltSeriesData(
+                self.configs.particles,
+                ntilts=self.configs.n_tilts,
+                ind=self.index,
+                dose_per_tilt=self.configs.dose_per_tilt,
+                angle_per_tilt=self.configs.angle_per_tilt,
+                tilt_axis_angle=self.configs.tilt_axis_angle,
+                stack_tilts=True,
+                norm=data_norm,
+                keepreal=True,
+                invert_data=self.configs.invert_data,
+                window_r=self.configs.window_radius_gt_real,
+                max_threads=self.configs.max_threads,
+                lazy=True,
+                datadir=self.configs.datadir,
+            )
+            self.n_particles_dataset = self.data.Np
+            self.n_tilts_dataset = self.data.N
+        else:
+            self.configs.n_tilts_pose_search = 1
+            self.data = dataset.ImageDataset(
+                self.configs.particles,
+                norm=data_norm,
+                keepreal=True,
+                invert_data=self.configs.invert_data,
+                ind=self.index,
+                window_r=self.configs.window_radius_gt_real,
+                max_threads=self.configs.max_threads,
+                lazy=self.configs.lazy,
+                datadir=self.configs.datadir,
+            )
+            self.n_particles_dataset = self.data.N
+            self.n_tilts_dataset = self.data.N
         self.resolution = self.data.D
 
         # Load contrast transfer function parameters, if given
@@ -709,6 +817,11 @@ class ModelTrainer:
                 ctf_params = ctf_params[self.index]
 
             assert ctf_params.shape == (self.n_tilts_dataset, 8)
+            if self.configs.subtomogram_averaging:
+                ctf_params = np.concatenate(
+                    (ctf_params, self.data.ctfscalefactor.reshape(-1, 1)), axis=1
+                )
+                self.data.voltage = float(ctf_params[0, 4])
             self.ctf_params = torch.tensor(ctf_params)
             self.ctf_params = self.ctf_params.to(self.device)
 
@@ -768,7 +881,13 @@ class ModelTrainer:
             "t_xshift": self.configs.t_x_shift,
             "t_yshift": self.configs.t_y_shift,
             "no_trans_search_at_pose_search": self.configs.no_trans_search_at_pose_search,
-            "tilting_func": None,
+            "n_tilts_pose_search": self.configs.n_tilts_pose_search,
+            "tilting_func": (
+                self.data.get_tilting_func()
+                if self.configs.subtomogram_averaging
+                else None
+            ),
+            "average_over_tilts": self.configs.average_over_tilts,
         }
 
         # CNN
@@ -825,6 +944,7 @@ class ModelTrainer:
             ps_params=ps_params,
             verbose_time=self.configs.verbose_time,
             pretrain_with_gt_poses=False,
+            n_tilts_pose_search=self.configs.n_tilts_pose_search,
         )
 
         # Initialization from a checkpoint saved to file from a previous training run
@@ -1271,7 +1391,10 @@ class ModelTrainer:
 
         y_gt = in_dict["y"]
         ind = in_dict["index"]
-        in_dict["tilt_index"] = in_dict["index"]
+        if "tilt_index" not in in_dict or in_dict["tilt_index"] is None:
+            in_dict["tilt_index"] = in_dict["index"]
+        else:
+            in_dict["tilt_index"] = in_dict["tilt_index"].reshape(-1)
         ind_tilt = in_dict["tilt_index"]
         self.total_batch_count += 1
         batch_size = len(y_gt)
@@ -1435,6 +1558,10 @@ class ModelTrainer:
 
         start_time_ctf = time.time()
         ctf_local = self.get_ctfs_at(in_dict["tilt_index"])
+        if self.configs.subtomogram_averaging:
+            ctf_local = ctf_local.reshape(
+                -1, self.configs.n_tilts, *ctf_local.shape[1:]
+            )
 
         if self.configs.verbose_time:
             torch.cuda.synchronize()
@@ -1468,6 +1595,10 @@ class ModelTrainer:
                 self.model.conf_table.eval()
 
         in_dict["ctf"] = ctf_local
+        if self.configs.subtomogram_averaging:
+            in_dict["tilt_index"] = in_dict["tilt_index"].reshape(
+                *in_dict["y"].shape[0:2]
+            )
         if self.n_prcs > 1:
             self.model.module.pose_only = self.pose_only
             self.model.module.use_point_estimates = self.use_point_estimates
@@ -1510,6 +1641,18 @@ class ModelTrainer:
         latent_variables_dict = out_dict
         y_pred = out_dict["y_pred"]
         y_gt_processed = out_dict["y_gt_processed"]
+        if self.configs.subtomogram_averaging and self.configs.dose_exposure_correction:
+            tilt_index = (
+                in_dict["tilt_index"].reshape(-1).to(self.data.tilt_numbers.device)
+            )
+            dose_filters = self.data.get_dose_filters(
+                tilt_index,
+                self.lattice,
+                self.ctf_params[0, 0],
+            ).reshape(*y_pred.shape[:2], -1)
+            y_pred = y_pred * dose_filters[..., self.output_mask.binary_mask].to(
+                y_pred.device
+            )
 
         return latent_variables_dict, y_pred, y_gt_processed
 
@@ -1727,6 +1870,14 @@ def main(args: argparse.Namespace) -> None:
         n_kept_poses=args.nkeptposes,
         base_healpy=args.base_healpy,
         no_trans=args.no_trans,
+        subtomogram_averaging=args.subtomogram_averaging,
+        n_tilts=args.n_tilts,
+        dose_per_tilt=args.dose_per_tilt,
+        angle_per_tilt=args.angle_per_tilt,
+        n_tilts_pose_search=args.n_tilts_pose_search,
+        average_over_tilts=args.average_over_tilts,
+        tilt_axis_angle=args.tilt_axis_angle,
+        dose_exposure_correction=args.dose_exposure_correction,
         seed=args.seed,
         norm=args.norm,
         initial_conf=args.initial_conf,

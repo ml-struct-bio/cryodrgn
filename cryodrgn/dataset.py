@@ -207,15 +207,20 @@ class TiltSeriesData(ImageDataset):
         self.ctfscalefactor = np.asarray(
             star_df["_rlnCtfScalefactor"], dtype=np.float32
         )
+        rank_proxy, rank_column = self._tilt_rank_proxy(star_df)
         self.tilt_numbers = np.zeros(self.N)
-        for ind in self.particles:
-            sort_idxs = self.ctfscalefactor[ind].argsort()
-            ranks = np.empty_like(sort_idxs)
+        for i, ind in enumerate(self.particles):
+            # Rank 0 is the first image of the series (lowest dose, when known).
+            # The kept stack is that order, not the order of rows in the star file.
+            sort_idxs = rank_proxy[ind].argsort()
+            ranks = np.empty(len(ind), dtype=int)
             ranks[sort_idxs[::-1]] = np.arange(len(ind))
             self.tilt_numbers[ind] = ranks
+            self.particles[i] = ind[np.argsort(ranks)]
 
         self.tilt_numbers = torch.tensor(self.tilt_numbers).to(self.device)
         logger.info(f"Loaded {self.N} tilts for {self.Np} particles")
+        logger.info(f"Tilt order within each particle follows {rank_column}")
         counts = Counter(group_name)
         unique_counts = set(counts.values())
         logger.info(f"{unique_counts} tilts per particle")
@@ -229,31 +234,82 @@ class TiltSeriesData(ImageDataset):
         self.stack_tilts = stack_tilts
         self.subtomogram_averaging = bool(stack_tilts)
 
-        # Assumes dose-symmetric tilt scheme
-        # As implemented in Hagen, Wan, Briggs J. Struct. Biol. 2017
+        # Geometric tilt of dose-rank i. Positive steps come in pairs before the
+        # matching negative pair: 0, +a, +2a, -a, -2a, +3a, +4a, ...
+        # That is the schedule whose magnitudes match _rlnAngleTilt on the
+        # purified-yeast tilt series. The Hagen alternation (0, +a, -a, +2a, -2a)
+        # assigns those images to the wrong projection direction.
         self.tilt_angles = None
-        if angle_per_tilt is not None:
-            self.tilt_angles = angle_per_tilt * torch.ceil(self.tilt_numbers / 2)
-            self.tilt_angles = self.tilt_angles.to(self.device)
-
-        # Particle pose is expanded across the dose-symmetric scheme. The tilt axis
-        # is not exactly Y; see the cryoDRGN-AI pose-consistency notes.
         self.tilt_rots = None
+        self.tilt_scheme_angles = None
         if angle_per_tilt is not None:
-            tilt_scheme = [
-                angle_per_tilt
-                * np.ceil(i / 2.0)
-                * (((np.floor(i / 2.0) + 1) % 2) * 2.0 - 1.0)
-                for i in range(self.ntilts)
-            ]
+            rank_np = self.tilt_numbers.detach().cpu().numpy().astype(int)
+            full_scheme = self._paired_tilt_scheme(
+                int(rank_np.max()) + 1, angle_per_tilt
+            )
+            self.tilt_angles = torch.tensor(
+                np.abs(full_scheme)[rank_np], dtype=torch.float32, device=self.device
+            )
+            tilt_scheme = self._paired_tilt_scheme(self.ntilts, angle_per_tilt)
+            logger.info(
+                "Tilt scheme (deg, dose order): %s",
+                np.array2string(np.asarray(tilt_scheme), precision=2),
+            )
             tilt_rots = [
-                Rotation.from_euler(
-                    "zyz",
-                    [tilt_axis_angle * np.pi / 180.0, t * np.pi / 180.0, 0.0],
-                ).as_matrix()
-                for t in tilt_scheme
+                self.tilt_rotation_matrix(tilt_axis_angle, t) for t in tilt_scheme
             ]
             self.tilt_rots = torch.tensor(np.stack(tilt_rots)).float()
+            self.tilt_scheme_angles = torch.tensor(tilt_scheme).float()
+
+    @staticmethod
+    def tilt_rotation_matrix(tilt_axis_angle_deg: float, tilt_deg: float) -> np.ndarray:
+        """Extrinsic ZYZ rotation: tilt axis, then stage angle, then zero.
+
+        This is the convention used by the March 2026 drgnai trainer and by
+        RELION. Intrinsic ``zyz`` agrees with it only at zero stage tilt. With
+        a tilt axis near -100 degrees the two differ by about 1.5 degrees per
+        degree of stage tilt, which sends pose search to a different orientation.
+        """
+        return Rotation.from_euler(
+            "ZYZ",
+            [
+                tilt_axis_angle_deg * np.pi / 180.0,
+                float(tilt_deg) * np.pi / 180.0,
+                0.0,
+            ],
+        ).as_matrix()
+
+    @staticmethod
+    def _tilt_rank_proxy(star_df):
+        """Value whose descending order is dose order. Lowest dose gets rank 0."""
+        if "_rlnMicrographPreExposure" in star_df.columns:
+            # Negate so the smallest accumulated dose sorts last in argsort and
+            # therefore receives rank 0.
+            proxy = -np.asarray(star_df["_rlnMicrographPreExposure"], dtype=np.float32)
+            return proxy, "_rlnMicrographPreExposure (ascending dose)"
+        if "_rlnCtfBfactor" in star_df.columns:
+            proxy = np.asarray(star_df["_rlnCtfBfactor"], dtype=np.float32)
+            return proxy, "_rlnCtfBfactor"
+        if "_rlnCtfScalefactor" in star_df.columns:
+            proxy = np.asarray(star_df["_rlnCtfScalefactor"], dtype=np.float32)
+            return proxy, "_rlnCtfScalefactor"
+        raise ValueError(
+            "Cannot order tilts: the star file has none of "
+            "_rlnMicrographPreExposure, _rlnCtfBfactor, or _rlnCtfScalefactor."
+        )
+
+    @staticmethod
+    def _paired_tilt_scheme(n_tilts: int, angle_per_tilt: float) -> list[float]:
+        """0, +a, +2a, -a, -2a, +3a, +4a, -3a, -4a, ... truncated to ``n_tilts``."""
+        if n_tilts <= 0:
+            return []
+        tilt = [0.0]
+        step = float(angle_per_tilt)
+        k = step
+        while len(tilt) < n_tilts:
+            tilt.extend([k, k + step, -k, -(k + step)])
+            k += 2.0 * step
+        return tilt[:n_tilts]
 
     def __len__(self):
         return self.Np
@@ -399,7 +455,14 @@ class TiltSeriesData(ImageDataset):
         critical_exp = torch.mul(critical_exp, scale_factor * 0.245)
         return torch.add(critical_exp, 2.81)
 
-    def get_dose_filters(self, tilt_index, lattice, Apix):
+    def get_dose_filters(self, tilt_index, lattice, Apix, *, apply_tilt_cosine=True):
+        """Grant–Grigorieff exposure filter, one weight per Fourier pixel.
+
+        ``apply_tilt_cosine`` multiplies the filter by ``cos(alpha)``. The tilt
+        VAE uses that extra scale. Subtomogram ``abinit`` does not: the March
+        2026 trainer's filter is the exposure term alone, and the pose-search
+        score has to use the same weights as the training residual.
+        """
         D = lattice.D
 
         N = len(tilt_index)
@@ -420,10 +483,12 @@ class TiltSeriesData(ImageDataset):
 
         freq_correction = torch.exp(-0.5 * cd_tile / ce_tile)
         freq_correction = torch.mul(freq_correction, oe_mask)
-        angle_correction = torch.cos(self.tilt_angles[tilt_index] * np.pi / 180)
-        ac_tile = torch.repeat_interleave(angle_correction, D * D).view(N, -1)
+        if apply_tilt_cosine:
+            angle_correction = torch.cos(self.tilt_angles[tilt_index] * np.pi / 180)
+            ac_tile = torch.repeat_interleave(angle_correction, D * D).view(N, -1)
+            freq_correction = torch.mul(freq_correction, ac_tile)
 
-        return torch.mul(freq_correction, ac_tile).float()
+        return freq_correction.float()
 
     def optimal_exposure(self, freq):
         return 2.51284 * self.critical_exposure(freq)

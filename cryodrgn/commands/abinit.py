@@ -242,7 +242,24 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--lr-pose-table",
         type=float,
         default=1e-3,
-        help="Learning rate for the pose table optimizer (default: %(default)s).",
+        help="Learning rate for the pose table (default: %(default)s). "
+        "Single-particle runs use this for both rotations and translations "
+        "unless --lr-rot-table or --lr-trans-table is set. "
+        "Ignored for subtomogram averaging.",
+    )
+    group.add_argument(
+        "--lr-rot-table",
+        type=float,
+        default=None,
+        help="Pose-table learning rate for rotations. "
+        "Default: 1e-5 for subtomogram averaging, otherwise --lr-pose-table.",
+    )
+    group.add_argument(
+        "--lr-trans-table",
+        type=float,
+        default=None,
+        help="Pose-table learning rate for translations. "
+        "Default: 1e-2 for subtomogram averaging, otherwise --lr-pose-table.",
     )
     group.add_argument(
         "--lr-conf-table",
@@ -1012,13 +1029,36 @@ class ModelTrainer:
         ](hyper_volume_params, lr=self.configs.lr)
         self.optimizer_types["hypervolume"] = self.configs.hypervolume_optimizer_type
 
-        # Pose table
+        # Pose table. These rates are used only by the SGD pose-table step.
+        # Pose search does not read them. Single-particle defaults keep both
+        # groups at --lr-pose-table. Subtomogram averaging defaults to 1e-5
+        # and 1e-2.
         if self.configs.epochs_sgd > 0:
             pose_table = self.model.pose_table
-            pose_table_params = [{"params": list(pose_table.parameters())}]
-            self.optimizers["pose_table"] = self.optim_types[
-                self.configs.pose_table_optimizer_type
-            ](pose_table_params, lr=self.configs.lr_pose_table)
+            if getattr(pose_table, "table_trans", None) is not None:
+                pose_table_params = [
+                    {
+                        "params": [pose_table.table_s2s2],
+                        "lr": self.configs.lr_rot_table,
+                    },
+                    {
+                        "params": [pose_table.table_trans],
+                        "lr": self.configs.lr_trans_table,
+                    },
+                ]
+                self.optimizers["pose_table"] = self.optim_types[
+                    self.configs.pose_table_optimizer_type
+                ](pose_table_params)
+                self.logger.info(
+                    "Pose-table learning rates: rotation "
+                    f"{self.configs.lr_rot_table}, translation "
+                    f"{self.configs.lr_trans_table}"
+                )
+            else:
+                pose_table_params = [{"params": list(pose_table.parameters())}]
+                self.optimizers["pose_table"] = self.optim_types[
+                    self.configs.pose_table_optimizer_type
+                ](pose_table_params, lr=self.configs.lr_rot_table)
             self.optimizer_types["pose_table"] = self.configs.pose_table_optimizer_type
 
         # Z-latent-space conformations
@@ -1183,6 +1223,9 @@ class ModelTrainer:
         # Activating Automatic Mixed Precision (AMP) model training through `torch.amp`
         if self.configs.amp:
             self.logger.info("Using Automatic Mixed Precision training via torch.amp")
+            self.logger.info(
+                "Pose search uses the same torch.amp autocast as pretraining and SGD"
+            )
 
             if self.configs.pose_table_optimizer_type == "lbfgs":
                 raise ValueError("AMP is not compatible with the lbfgs optimizer!")
@@ -1851,6 +1894,20 @@ class ModelTrainer:
 
 
 def main(args: argparse.Namespace) -> None:
+    # Unset rotation and translation rates follow --lr-pose-table, so a
+    # single-particle run keeps both at 1e-3. Subtomogram averaging keeps
+    # the March rates unless a flag overrides one of them.
+    if args.subtomogram_averaging:
+        if args.lr_rot_table is None:
+            args.lr_rot_table = 1e-5
+        if args.lr_trans_table is None:
+            args.lr_trans_table = 1e-2
+    else:
+        if args.lr_rot_table is None:
+            args.lr_rot_table = args.lr_pose_table
+        if args.lr_trans_table is None:
+            args.lr_trans_table = args.lr_pose_table
+
     # Build configs dict from args similar to TrainingConfigurations
     cfg = dict(
         particles=args.particles,
@@ -1880,6 +1937,8 @@ def main(args: argparse.Namespace) -> None:
         conf_encoder_optimizer_type=args.conf_encoder_optimizer_type,
         lr=args.lr,
         lr_pose_table=args.lr_pose_table,
+        lr_rot_table=args.lr_rot_table,
+        lr_trans_table=args.lr_trans_table,
         lr_conf_table=args.lr_conf_table,
         lr_conf_encoder=args.lr_conf_encoder,
         wd=args.wd,
@@ -1957,13 +2016,7 @@ def main(args: argparse.Namespace) -> None:
     trainer = ModelTrainer(args.outdir, cfg)
     trainer.train()
 
-    # Homogeneous models have no latent to embed. Volume and pose files are
-    # already written during training.
-    if args.do_analysis and args.zdim == 0:
-        logging.getLogger(__name__).info(
-            "Skipping analysis for homogeneous reconstruction (zdim=0)"
-        )
-    elif args.do_analysis:
+    if args.do_analysis:
         anlz_cfgs = {
             "workdir": args.outdir,
             "epoch": trainer.epoch,

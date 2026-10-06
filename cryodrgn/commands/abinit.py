@@ -147,13 +147,18 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--epochs-pose-search",
         type=int,
         default=None,
-        help="Number of epochs to train for pose search (default: %(default)s)",
+        help="Number of pose-search epochs after pretraining "
+        "(default: %(default)s). This is the number of passes, not a label "
+        "shared with the standalone drgnai epoch counter.",
     )
     group.add_argument(
         "--n-imgs-pose-search",
         type=int,
         default=None,
-        help="Number of images to train for pose search (default: %(default)s)",
+        help="Image budget for pose search. Overrides --epochs-pose-search. "
+        "The budget is converted as n_imgs // n_particles + 1, so 150000 "
+        "images and 9842 particles is 16 search epochs, the March 2026 "
+        "yeast schedule (default: %(default)s).",
     )
     group.add_argument(
         "--epochs-sgd",
@@ -171,7 +176,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--pose-only-phase",
         type=int,
         default=0,
-        help="Number of epochs to train for pose only phase (default: %(default)s)",
+        help="Keep conformations fixed until this many images have been seen "
+        "(default: %(default)s). Ignored for homogeneous reconstruction.",
     )
     group.add_argument(
         "--no-shuffle",
@@ -201,7 +207,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--no-amp",
         action="store_false",
         dest="amp",
-        help="Disable automatic mixed precision (torch.amp).",
+        help="Disable automatic mixed precision for pretraining, pose search, "
+        "and SGD (torch.amp).",
     )
     group.add_argument(
         "--batch-size-hps",
@@ -235,7 +242,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--lr-pose-table",
         type=float,
         default=1e-3,
-        help="Learning rate for the pose table optimizer (default: %(default)s)",
+        help="Learning rate for the pose table optimizer (default: %(default)s).",
     )
     group.add_argument(
         "--lr-conf-table",
@@ -559,9 +566,16 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--no-dose-exposure-correction",
         dest="dose_exposure_correction",
         action="store_false",
-        help="Do not apply dose and tilt-angle exposure filters to predicted slices.",
+        help="Do not apply the Grant-Grigorieff dose filter to predicted slices.",
     )
-    parser.set_defaults(dose_exposure_correction=True)
+    group.add_argument(
+        "--no-dose-exposure-pose-search",
+        dest="dose_exposure_pose_search",
+        action="store_false",
+        help="Score pose search with the undosed CTF. By default the search "
+        "uses the same Grant-Grigorieff weights as the training residual.",
+    )
+    parser.set_defaults(dose_exposure_correction=True, dose_exposure_pose_search=True)
 
     parser.add_argument(
         "--norm",
@@ -747,11 +761,6 @@ class ModelTrainer:
                     "A conformation encoder is not implemented for "
                     "subtomogram averaging."
                 )
-            if self.configs.t_extent != 0.0:
-                raise ValueError(
-                    "Translation search is not implemented for subtomogram "
-                    "averaging; set --t-extent 0."
-                )
             if self.configs.n_tilts_pose_search is None:
                 self.configs.n_tilts_pose_search = self.configs.n_tilts
             if self.configs.n_tilts_pose_search > self.configs.n_tilts:
@@ -869,6 +878,10 @@ class ModelTrainer:
             self.configs.epochs_sgd = self.num_epochs - self.epochs_pose_search
         else:
             self.num_epochs = self.epochs_pose_search + self.configs.epochs_sgd
+        self.logger.info(
+            f"Pose search will run for {self.epochs_pose_search} epochs "
+            f"after pretraining, then {self.configs.epochs_sgd} SGD epochs."
+        )
 
         ps_params = {
             "l_min": self.configs.l_start,
@@ -888,6 +901,14 @@ class ModelTrainer:
                 else None
             ),
             "average_over_tilts": self.configs.average_over_tilts,
+            "tilt_scheme_angles": (
+                self.data.tilt_scheme_angles
+                if self.configs.subtomogram_averaging
+                else None
+            ),
+            "tilt_rots": (
+                self.data.tilt_rots if self.configs.subtomogram_averaging else None
+            ),
         }
 
         # CNN
@@ -993,7 +1014,8 @@ class ModelTrainer:
 
         # Pose table
         if self.configs.epochs_sgd > 0:
-            pose_table_params = [{"params": list(self.model.pose_table.parameters())}]
+            pose_table = self.model.pose_table
+            pose_table_params = [{"params": list(pose_table.parameters())}]
             self.optimizers["pose_table"] = self.optim_types[
                 self.configs.pose_table_optimizer_type
             ](pose_table_params, lr=self.configs.lr_pose_table)
@@ -1099,6 +1121,8 @@ class ModelTrainer:
         self.first_switch_to_point_estimates_conf = True
 
         if self.configs.load is not None:
+            # A checkpoint saved at the end of pose search still has an
+            # uninitialized pose table. Initialize it on the first SGD epoch.
             if self.start_epoch > self.epochs_pose_search:
                 self.first_switch_to_point_estimates = False
             self.first_switch_to_point_estimates_conf = False
@@ -1206,6 +1230,12 @@ class ModelTrainer:
             self.predicted_rots, self.predicted_trans = utils.load_pkl(
                 self.configs.load_poses
             )
+            # Pose files store shifts as a fraction of the box. The pose table
+            # and the Hartley phase ramp use pixels.
+            if self.predicted_trans is not None:
+                self.predicted_trans = (
+                    np.asarray(self.predicted_trans) * self.resolution
+                )
         else:
             self.predicted_rots = (
                 np.eye(3).reshape(1, 3, 3).repeat(self.n_tilts_dataset, axis=0)
@@ -1418,8 +1448,9 @@ class ModelTrainer:
         for key in self.optimized_modules:
             self.optimizers[key].zero_grad()
 
-        # Forward pass
-        if self.scaler is not None and not self.is_in_pose_search_step:
+        # Forward pass. Pose search uses the same autocast as pretraining and
+        # SGD. --no-amp leaves the scaler unset and skips it for every step.
+        if self.scaler is not None:
             amp_mode = torch.cuda.amp.autocast()
         else:
             amp_mode = contextlib.nullcontext()
@@ -1595,6 +1626,24 @@ class ModelTrainer:
                 self.model.conf_table.eval()
 
         in_dict["ctf"] = ctf_local
+        if (
+            self.configs.subtomogram_averaging
+            and self.configs.dose_exposure_pose_search
+            and self.is_in_pose_search_step
+            and ctf_local is not None
+        ):
+            tilt_index = (
+                in_dict["tilt_index"].reshape(-1).to(self.data.tilt_numbers.device)
+            )
+            dose_filters = self.data.get_dose_filters(
+                tilt_index,
+                self.lattice,
+                self.ctf_params[0, 0],
+                apply_tilt_cosine=False,
+            )
+            in_dict["dose_filter"] = dose_filters.reshape(ctf_local.shape).to(
+                ctf_local.device
+            )
         if self.configs.subtomogram_averaging:
             in_dict["tilt_index"] = in_dict["tilt_index"].reshape(
                 *in_dict["y"].shape[0:2]
@@ -1649,6 +1698,7 @@ class ModelTrainer:
                 tilt_index,
                 self.lattice,
                 self.ctf_params[0, 0],
+                apply_tilt_cosine=False,
             ).reshape(*y_pred.shape[:2], -1)
             y_pred = y_pred * dose_filters[..., self.output_mask.binary_mask].to(
                 y_pred.device
@@ -1722,7 +1772,11 @@ class ModelTrainer:
                 pickle.dump(self.predicted_rots, f)
         else:
             with open(out_pose, "wb") as f:
-                pickle.dump((self.predicted_rots, self.predicted_trans), f)
+                # Fraction of the box, matching standalone drgnai. In-memory
+                # shifts stay in pixels for the pose table.
+                out_trans = np.array(self.predicted_trans, copy=True)
+                out_trans /= self.resolution
+                pickle.dump((self.predicted_rots, out_trans), f)
 
         if self.configs.zdim > 0:
             out_conf = os.path.join(self.outdir, f"z.{self.epoch}.pkl")
@@ -1878,6 +1932,7 @@ def main(args: argparse.Namespace) -> None:
         average_over_tilts=args.average_over_tilts,
         tilt_axis_angle=args.tilt_axis_angle,
         dose_exposure_correction=args.dose_exposure_correction,
+        dose_exposure_pose_search=args.dose_exposure_pose_search,
         seed=args.seed,
         norm=args.norm,
         initial_conf=args.initial_conf,
@@ -1902,7 +1957,13 @@ def main(args: argparse.Namespace) -> None:
     trainer = ModelTrainer(args.outdir, cfg)
     trainer.train()
 
-    if args.do_analysis:
+    # Homogeneous models have no latent to embed. Volume and pose files are
+    # already written during training.
+    if args.do_analysis and args.zdim == 0:
+        logging.getLogger(__name__).info(
+            "Skipping analysis for homogeneous reconstruction (zdim=0)"
+        )
+    elif args.do_analysis:
         anlz_cfgs = {
             "workdir": args.outdir,
             "epoch": trainer.epoch,

@@ -268,6 +268,7 @@ class DrgnAI(nn.Module):
             R: [batch_size(, n_tilts), 3, 3]
             t: [batch_size(, n_tilts), 2]
             tilt_index: [batch_size( * n_tilts)]
+            dose_filter: (optional) [batch_size(, n_tilts), D, D]
         ctf: [batch_size(, n_tilts), D, D]
 
         output: dict
@@ -327,13 +328,20 @@ class DrgnAI(nn.Module):
         # use pose search
         elif self.is_in_pose_search_step:
             self.hypervolume.eval()
+            # Score orientations with the same dose weights the training loss
+            # applies to the predicted slices. An undosed CTF picks a pose
+            # that does not minimize that residual.
+            ctf_search = ctf
+            dose_filter = in_dict.get("dose_filter")
+            if dose_filter is not None and ctf is not None:
+                ctf_search = ctf * dose_filter
             rot, trans = pose_search.opt_theta_trans(
                 self,
                 in_dict["y"],
                 self.lattice,
                 self.ps_params,
                 z=z,
-                ctf_i=ctf,
+                ctf_i=ctf_search,
                 gt_trans=in_dict["t"]
                 if not self.no_trans and self.use_gt_trans
                 else None,

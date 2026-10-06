@@ -61,7 +61,6 @@ def translate_images(images, shifts, l_current, lattice, freqs2d):
     batch_size = images.shape[0]
     mask = lattice.get_circular_mask(radius=l_current).to(images.device)
     images = images.reshape(batch_size, -1)[:, mask]
-
     return lattice.translate_ht(images, shifts, mask=mask)
 
 
@@ -437,9 +436,8 @@ def opt_theta_trans(
     apply_tilting_scheme = False
     if images.ndim == 4:
         subtomogram_averaging = True
-        assert (
-            ps_params["t_extent"] == 0.0
-        )  # translations cannot be searched over when tilts are jointly optimized
+        # One in-plane shift is searched per particle and projected onto the
+        # tilt scheme. Independent per-tilt shifts are refined later by SGD.
         tilts = images[
             :, : ps_params["n_tilts_pose_search"]
         ]  # [batch_size, n_tilts, D, D]
@@ -496,9 +494,18 @@ def opt_theta_trans(
 
     if z is not None:
         base_rot = base_rot.expand(batch_size, *base_rot.shape)
+    search_shared_shift = (
+        subtomogram_averaging
+        and apply_tilting_scheme
+        and ps_params["t_extent"] > 1e-6
+        and gt_trans_selected is None
+    )
+    # One (tx, ty) is scored against every tilt and then copied. Do not
+    # foreshorten tx by cos(alpha): that is a different shift on each image.
+    init_shifts = base_shifts
     loss = eval_grid(
         model,
-        translate_images(tilts, base_shifts, l_current, lattice, freqs2d),
+        translate_images(tilts, init_shifts, l_current, lattice, freqs2d),
         base_rot,
         lattice,
         coords,
@@ -553,6 +560,9 @@ def opt_theta_trans(
         tiltsb = tilts.reshape(-1, n_tilts, *tilts.shape[-2:])[keep_b].reshape(
             -1, *tilts.shape[-2:]
         )
+        trans_img = trans
+        if search_shared_shift and n_tilts > 1:
+            trans_img = torch.repeat_interleave(trans, n_tilts, dim=0)
         ctfb = (
             ctf_selected.reshape(-1, n_tilts, *ctf_selected.shape[-2:])[keep_b].reshape(
                 -1, *ctf_selected.shape[-2:]
@@ -562,7 +572,7 @@ def opt_theta_trans(
         )
         loss = eval_grid(
             model,
-            translate_images(tiltsb, trans, l_current, lattice, freqs2d),
+            translate_images(tiltsb, trans_img, l_current, lattice, freqs2d),
             rot,
             lattice,
             coords,
@@ -606,6 +616,11 @@ def opt_theta_trans(
         # which is a property of the dataset for now.
         # We should instead create a TiltingScheme object from the dataset,
         # make it an attribute of the model and pass it as an argument to the pose search function.
-        best_trans = best_trans.reshape(-1, n_tilts_out, 2)
+        if search_shared_shift:
+            best_trans = best_trans.reshape(batch_size, 2)[:, None, :].repeat(
+                1, n_tilts_out, 1
+            )
+        else:
+            best_trans = best_trans.reshape(-1, n_tilts_out, 2)
 
     return best_rot, best_trans

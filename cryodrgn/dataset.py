@@ -29,6 +29,31 @@ from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSamp
 logger = logging.getLogger(__name__)
 
 
+def _ht2_center_numpy(img: np.ndarray) -> np.ndarray:
+    """Centered Hartley transform used for drgnai's scale factor.
+
+    The NumPy path recenters with ``ifftshift`` before the FFT. The training
+    transform uses ``fftshift`` on the GPU. Those two conventions differ by one
+    pixel when the box is even, so the scale factor has to follow the NumPy path.
+    """
+    centered = np.fft.fftshift(
+        np.fft.fft2(np.fft.ifftshift(img, axes=(-1, -2))), axes=(-1, -2)
+    )
+    return centered.real - centered.imag
+
+
+def _symmetrize_ht_numpy(ht: np.ndarray) -> np.ndarray:
+    if ht.ndim == 2:
+        ht = ht.reshape(1, *ht.shape)
+    resolution = ht.shape[-1]
+    sym = np.empty((ht.shape[0], resolution + 1, resolution + 1), dtype=ht.dtype)
+    sym[:, 0:-1, 0:-1] = ht
+    sym[:, -1, :] = sym[:, 0, :]
+    sym[:, :, -1] = sym[:, :, 0]
+    sym[:, -1, -1] = sym[:, 0, 0]
+    return sym
+
+
 class ImageDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -59,10 +84,11 @@ class ImageDataset(torch.utils.data.Dataset):
         self.N = self.src.n
         self.D = ny + 1  # after symmetrization
         self.invert_data = invert_data
+        self.device = device
 
         if window:
             self.window = spherical_window_mask(D=ny, in_rad=window_r, out_rad=0.99).to(
-                device
+                self.device
             )
         else:
             self.window = None
@@ -71,7 +97,6 @@ class ImageDataset(torch.utils.data.Dataset):
         norm_real = self.estimate_normalization_real()
         self.norm_real = [float(x) for x in norm_real]
         self.norm = [float(x) for x in norm]
-        self.device = device
         self.lazy = lazy
 
         if np.issubdtype(self.src.dtype, np.integer):
@@ -81,15 +106,17 @@ class ImageDataset(torch.utils.data.Dataset):
         n = min(n, self.N) if n is not None else self.N
         indices = range(0, self.N, self.N // n)  # FIXME: what if the data is not IID??
 
-        imgs = torch.stack([fft.ht2_center(img) for img in self.src.images(indices)])
+        # Population standard deviation (NumPy's ddof=0) of a NumPy Hartley transform
+        samples = [
+            _ht2_center_numpy(np.asarray(img)) for img in self.src.images(indices)
+        ]
+        imgs = _symmetrize_ht_numpy(np.stack(samples))
         if self.invert_data:
             imgs *= -1
+        std = float(np.std(imgs))
+        logger.info("Normalizing HT by {} +/- {} (NumPy population std)".format(0, std))
 
-        imgs = fft.symmetrize_ht(imgs)
-        norm = (0, torch.std(imgs))
-        logger.info("Normalizing HT by {} +/- {}".format(*norm))
-
-        return norm
+        return (0, std)
 
     def estimate_normalization_real(self, n=1000):
         n = min(n, self.N) if n is not None else self.N
@@ -302,13 +329,15 @@ class TiltSeriesData(ImageDataset):
     def _paired_tilt_scheme(n_tilts: int, angle_per_tilt: float) -> list[float]:
         """0, +a, +2a, -a, -2a, +3a, +4a, -3a, -4a, ... truncated to ``n_tilts``."""
         if n_tilts <= 0:
-            return []
+            return list()
+
         tilt = [0.0]
         step = float(angle_per_tilt)
         k = step
         while len(tilt) < n_tilts:
             tilt.extend([k, k + step, -k, -(k + step)])
             k += 2.0 * step
+
         return tilt[:n_tilts]
 
     def __len__(self):
@@ -401,12 +430,13 @@ class TiltSeriesData(ImageDataset):
     def tilts_to_particles(cls, tilts_to_particles, tilts):
         particles = [tilts_to_particles[i] for i in tilts]
         particles = np.array(sorted(set(particles)))
+
         return particles
 
     def get_tilt(self, index):
         return super().__getitem__(index)
 
-    def get_tilt_particle(self, index) -> int:
+    def get_tilt_particle(self, index) -> Union[int, None]:
         """Get the particle index for a given tilt index."""
         for p_i, p_tilts in enumerate(self.particles):
             if index in p_tilts:
@@ -432,6 +462,7 @@ class TiltSeriesData(ImageDataset):
                 i = (len(tilt_idx) - self.ntilts) // 2
                 tilt_mask[i : i + self.ntilts] = True
             tilt_masks.append(tilt_mask)
+
         tilt_masks = np.concatenate(tilt_masks)
         selected_images = images[tilt_masks]
         selected_tilt_indices = cat_tilt_indices[tilt_masks]
@@ -453,6 +484,7 @@ class TiltSeriesData(ImageDataset):
             scale_factor = 0.75
         critical_exp = torch.pow(freq, -1.665)
         critical_exp = torch.mul(critical_exp, scale_factor * 0.245)
+
         return torch.add(critical_exp, 2.81)
 
     def get_dose_filters(self, tilt_index, lattice, Apix, *, apply_tilt_cosine=True):

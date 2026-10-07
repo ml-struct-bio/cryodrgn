@@ -811,6 +811,7 @@ class ModelTrainer:
                 max_threads=self.configs.max_threads,
                 lazy=True,
                 datadir=self.configs.datadir,
+                device=self.device,
             )
             self.n_particles_dataset = self.data.Np
             self.n_tilts_dataset = self.data.N
@@ -826,6 +827,7 @@ class ModelTrainer:
                 max_threads=self.configs.max_threads,
                 lazy=self.configs.lazy,
                 datadir=self.configs.datadir,
+                device=self.device,
             )
             self.n_particles_dataset = self.data.N
             self.n_tilts_dataset = self.data.N
@@ -1107,6 +1109,16 @@ class ModelTrainer:
                 self.optimizers[key].load_state_dict(
                     checkpoint["optimizers_state_dict"][key]
                 )
+
+        # The Hartley transform runs in the dataset on this device. CUDA
+        # tensors cannot be built inside DataLoader worker processes.
+        if self.device.type == "cuda" and self.configs.num_workers > 0:
+            self.logger.info(
+                "Hartley transform is on "
+                f"{self.device}; using --num-workers 0 "
+                f"instead of {self.configs.num_workers}."
+            )
+            self.configs.num_workers = 0
 
         # Data loaders used to iterated over training batches of input images
         self.data_generator_pose_search = self.make_dataloader(

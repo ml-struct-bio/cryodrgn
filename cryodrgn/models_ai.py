@@ -298,8 +298,14 @@ class DrgnAI(nn.Module):
             # amortized inference
             elif not self.use_point_estimates_conf:
                 y_real = self.process_y_real(in_dict)
-                particles_real = y_real.mean(1) if y_real.ndim == 5 else y_real
-                conf_features = self.conf_cnn(particles_real)
+                # A tilt stack arrives as [batch, n_tilts, 1, H, W]. The
+                # encoder is the single-particle CNN, so it runs on each tilt
+                # and the feature maps are averaged. One particle keeps one
+                # latent. Averaging the images themselves mixes view directions.
+                if y_real.ndim == 5:
+                    conf_features = self.conf_cnn(y_real).mean(1)
+                else:
+                    conf_features = self.conf_cnn(y_real)
                 conf_dict = self.conf_regressor(conf_features)
             # latent optimization
             else:

@@ -773,17 +773,14 @@ class ModelTrainer:
                     "dose_per_tilt and angle_per_tilt must both be specified "
                     "for subtomogram averaging."
                 )
-            if self.configs.use_conf_encoder:
-                raise ValueError(
-                    "A conformation encoder is not implemented for "
-                    "subtomogram averaging."
-                )
+
             if self.configs.n_tilts_pose_search is None:
                 self.configs.n_tilts_pose_search = self.configs.n_tilts
             if self.configs.n_tilts_pose_search > self.configs.n_tilts:
                 raise ValueError(
                     "n_tilts_pose_search must be smaller than or equal to n_tilts."
                 )
+
             if (
                 self.configs.average_over_tilts
                 and self.configs.n_tilts_pose_search % 2 == 0
@@ -791,6 +788,7 @@ class ModelTrainer:
                 raise ValueError(
                     "n_tilts_pose_search must be odd to use --average-over-tilts."
                 )
+
             self.logger.info(
                 "Subtomogram averaging with "
                 f"{self.configs.n_tilts} tilts "

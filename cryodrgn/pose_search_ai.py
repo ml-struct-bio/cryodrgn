@@ -177,8 +177,13 @@ def compute_err(
             y_hat = []
             if n_in_planes > 1:  # first step
                 x = x.reshape(-1, nq, n_in_planes * n_tilts, *x.shape[-2:])
+                shared = z is not None and x.shape[0] == 1 and z.shape[0] > 1
                 for chunk_idx in range(n_in_planes * n_tilts):
-                    y = model.eval_on_slice(x[:, :, chunk_idx], z=z)
+                    if shared:  # one positional encoding for the batch, z per particle
+                        xc = x[0, :, chunk_idx]  # [nq, npts, 3]
+                        y = model.hypervolume.forward_shared(xc.reshape(-1, 3), z).reshape(z.shape[0], nq, -1)
+                    else:
+                        y = model.eval_on_slice(x[:, :, chunk_idx], z=z)
                     y = y.float()  # [b, nq, npts]
                     if z is None:
                         y = y.expand(batch_size, -1, -1)
@@ -492,7 +497,10 @@ def opt_theta_trans(
     l_current = get_l(0, res, ps_params)
     rot = None
 
-    if z is not None:
+    # On the tilt path the base grid's coordinates stay shared by the batch (not copied per particle): compute_err
+    # evaluates them with HyperVolume.forward_shared, one positional encoding for the batch and z per particle.
+    # Single-particle images and --average-over-tilts keep one copy of the grid per particle.
+    if z is not None and not (apply_tilting_scheme and hasattr(model.hypervolume, "forward_shared")):
         base_rot = base_rot.expand(batch_size, *base_rot.shape)
     search_shared_shift = (
         subtomogram_averaging

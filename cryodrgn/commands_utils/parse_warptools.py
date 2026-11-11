@@ -1,5 +1,9 @@
 """Parse WarpTools subtomogram STAR files into cryoDRGN-compatible 2D rows.
 
+Like parse_relion, the output has a single particle table with optics values in
+each row. Each particle uses its own optics group. Supply the image box size and
+pixel size when running parse_star.
+
 WarpTools/RELION5 2D stacks are often CTF-premultiplied
 (``rlnCtfDataAreCtfPremultiplied``); disable CTF correction in cryoDRGN when
 that flag is set.
@@ -64,10 +68,9 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--image-size",
         type=int,
-        help=(
-            "Box size of the cropped particle images in pixels. Defaults to "
-            "rlnImageSize from the particles optics table."
-        ),
+        # Retain compatibility with existing invocations. The flat output uses
+        # parse_relion's optics columns; box size is supplied to parse_star.
+        help=argparse.SUPPRESS,
     )
 
 
@@ -389,8 +392,6 @@ def _expand_one_particle(
         extra_columns={
             "rlnOriginalParticle": idx + 1,
             "rlnRandomSubset": row.get("rlnRandomSubset", 1),
-            "rlnImagePixelSize": image_pixel_size,
-            "rlnImageSize": optics_info["image_size"],
             "rlnDetectorPixelSize": image_pixel_size,
             "rlnVoltage": optics_row["rlnVoltage"],
             "rlnSphericalAberration": optics_row["rlnSphericalAberration"],
@@ -435,14 +436,6 @@ def main(args: argparse.Namespace) -> None:
                     "rlnImagePixelSize",
                     args.image_pixel_size,
                     "--image-pixel-size",
-                )
-            ),
-            "image_size": int(
-                _get_optics_value(
-                    optics_row,
-                    "rlnImageSize",
-                    args.image_size,
-                    "--image-size",
                 )
             ),
         }

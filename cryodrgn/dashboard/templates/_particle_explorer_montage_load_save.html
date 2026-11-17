@@ -481,10 +481,13 @@
   }
 
   function wireUpPlotlyEvents() {
-    if (plotlyEventsWired) return;
-    plotlyEventsWired = true;
+    /* Each redraw replaces the traces, so the highlight trace is re-added every time
+       (guarded by highlightTraceAdded, which loadPlot resets). The gd.on handlers below
+       survive Plotly.react / newPlot, so they are attached once for the page's lifetime. */
     ensureHighlightTrace();
     bindScatterRegionPlotPostRenderChipsOnce();
+    if (plotlyEventsWired) return;
+    plotlyEventsWired = true;
     gd.on("plotly_click", function(ev) {
       if (!ev.points || !ev.points.length) return;
       var pt = ev.points[0];
@@ -763,7 +766,6 @@
     }
     cancelLassoSelectionDebounce();
     cancelPendingHighlightRestyle();
-    plotlyEventsWired = false;
     if (axesChanged) initializeExplorerView();
     else loadPlot(axesChanged);
   }

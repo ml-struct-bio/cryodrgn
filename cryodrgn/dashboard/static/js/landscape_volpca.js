@@ -1350,7 +1350,13 @@
     scheduleAutoGif("selection");
   }
 
+  /* Plotly.react / restyle keep the gd.on listeners; only Plotly.purge drops them. Bind once,
+     and again only after a purge, or every colour change stacks another set of handlers. */
+  var plotEventsBound = false;
+
   function bindPlotEvents() {
+    if (plotEventsBound) return;
+    plotEventsBound = true;
     gd.on("plotly_selecting", function() {
       volLassoBoxGestureActive = true;
       beginVolsketchLassoDimmingGesture();
@@ -1444,6 +1450,7 @@
             return Plotly.react(gd, fig.data, fig.layout, plotOpts);
           }
           Plotly.purge(gd);
+          plotEventsBound = false;
           return Plotly.newPlot(gd, fig.data, fig.layout, plotOpts);
         }
 

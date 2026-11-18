@@ -96,13 +96,81 @@ def numeric_array_to_plotly_hex(
         t_fin = np.full(n_fin, 0.5, dtype=np.float64)
     else:
         t_fin = np.clip((vals[finite] - vmin) / span, 0.0, 1.0)
-    # One batched colorscale sample (~40× faster than per-point calls at 120k).
-    hex_fin = [
-        plotly_color_to_hex(c) for c in sample_colorscale(plotly_cs, t_fin.tolist())
-    ]
+    hex_fin = _sample_colorscale_hex(plotly_cs, t_fin)
     out = np.full(n, "#9ca3af", dtype=object)
     out[finite] = hex_fin
     return out.tolist()
+
+
+def _sample_colorscale_hex_reference(plotly_cs: str, t: np.ndarray) -> list[str]:
+    """Plotly's own ``sample_colorscale`` (one Python-level colour parse per point)."""
+    return [plotly_color_to_hex(c) for c in sample_colorscale(plotly_cs, t.tolist())]
+
+
+_COLORSCALE_STOPS_CACHE: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+
+def _colorscale_stops(plotly_cs: str) -> tuple[np.ndarray, np.ndarray]:
+    """``(positions, rgb fractions)`` of a named Plotly colorscale, as Plotly parses them."""
+    hit = _COLORSCALE_STOPS_CACHE.get(plotly_cs)
+    if hit is None:
+        from _plotly_utils import colors as pc
+
+        colorscale = pc.get_colorscale(plotly_cs)
+        scale = np.asarray(pc.colorscale_to_scale(colorscale), dtype=np.float64)
+        tuples = pc.validate_colors(
+            pc.colorscale_to_colors(colorscale), colortype="tuple"
+        )
+        hit = (scale, np.asarray(tuples, dtype=np.float64))
+        _COLORSCALE_STOPS_CACHE[plotly_cs] = hit
+    return hit
+
+
+def _sample_colorscale_hex(plotly_cs: str, t: np.ndarray) -> list[str]:
+    """Vectorized ``sample_colorscale`` → ``#rrggbb``, identical to Plotly's result.
+
+    Plotly interpolates linearly between the two neighbouring stops in 0–1 RGB
+    fractions, multiplies by 255 and rounds half-to-even on the *decimal string*
+    of the product. The array version below does the same arithmetic in float64;
+    the few components that land within 1e-6 of a ``.5`` boundary are rounded
+    with Plotly's own decimal routine so the outcome cannot differ.
+    """
+    t = np.asarray(t, dtype=np.float64)
+    if t.size == 0:
+        return []
+    try:
+        scale, cols = _colorscale_stops(plotly_cs)
+        hi = np.searchsorted(scale, t, side="left")
+        if int(hi.max()) >= scale.size:
+            raise ValueError("sample point above the colorscale range")
+        lo = hi - 1  # -1 wraps to the last stop, as Python indexing does in Plotly
+        interp = (t - scale[lo]) / (scale[hi] - scale[lo])
+        low_c = cols[lo]
+        diff = cols[hi] - low_c
+        comp = (low_c + interp[:, None] * diff) * 255.0
+        if not np.isfinite(comp).all():
+            raise ValueError("non-finite colour component")
+        rounded = np.rint(comp)
+        near_tie = np.abs(np.abs(comp - np.floor(comp)) - 0.5) < 1e-6
+        if near_tie.any():
+            import decimal
+
+            one = decimal.Decimal("1")
+            for r, c in zip(*np.nonzero(near_tie)):
+                rounded[r, c] = int(
+                    decimal.Decimal(str(float(comp[r, c]))).quantize(
+                        one, rounding=decimal.ROUND_HALF_EVEN
+                    )
+                )
+        rgb = rounded.astype(np.int64)
+        if rgb.min() < 0 or rgb.max() > 255:
+            raise ValueError("colour component out of range")
+        packed = (rgb[:, 0] << 16) | (rgb[:, 1] << 8) | rgb[:, 2]
+        uniq, inv = np.unique(packed, return_inverse=True)
+        table = np.asarray([f"#{int(u):06x}" for u in uniq], dtype=object)
+        return table[inv].tolist()
+    except Exception:
+        return _sample_colorscale_hex_reference(plotly_cs, t)
 
 
 def _lower_legend_entry_label(lower_color_col: str, u: Any) -> str:

@@ -23,6 +23,13 @@ from cryodrgn.dashboard.covariate_labels import (
     landscape_vol_pc_column_pretty_label,
 )
 from cryodrgn.dashboard.data import DashboardExperiment
+from cryodrgn.dashboard.figure_columns import (
+    G5Text,
+    NullableFloats,
+    Rows,
+    base_key,
+    encode_figure_columns,
+)
 from cryodrgn.dashboard.palette_config import (
     mpl_cmap_for_palette,
     normalize_continuous_palette,
@@ -204,6 +211,20 @@ def _dashboard_scatter3d_glyph_visual_scale(
     )
 
 
+def _continuous_hover_prefix_missing(
+    color_col: str,
+    vol_pc_explained_variance_ratio: np.ndarray | None = None,
+) -> tuple[str, str]:
+    """``(prefix, missing)`` strings of the continuous covariate hover line."""
+    cov_label = landscape_vol_pc_column_pretty_label(
+        color_col,
+        vol_pc_explained_variance_ratio,
+    )
+    if cov_label == color_col:
+        cov_label = covariate_display_name(color_col)
+    return f"{cov_label}: ", f"{cov_label}: —"
+
+
 def _scatter_color_hover_texts(
     sub: pd.DataFrame,
     color_col: str,
@@ -216,35 +237,25 @@ def _scatter_color_hover_texts(
     Continuous mode uses ``name: value``.
     """
     ser = sub[color_col]
-    n = len(sub)
-    out: list[str] = []
     if discrete_trace:
-        for i in range(n):
-            v = ser.iloc[i]
-            if pd.isna(v):
-                out.append("(missing)")
-            elif color_col == "labels":
-                out.append(f"kmeans={_lower_legend_entry_label('labels', v)}")
-            else:
-                out.append(str(v))
-    else:
-        cov_label = landscape_vol_pc_column_pretty_label(
-            color_col,
-            vol_pc_explained_variance_ratio,
-        )
-        if cov_label == color_col:
-            cov_label = covariate_display_name(color_col)
-        # Vectorized formatting: matches Python's ``{fv:.5g}`` (general format).
-        color_vals = pd.to_numeric(ser, errors="coerce").to_numpy(
-            dtype=np.float64, copy=False
-        )
-        finite_mask = np.isfinite(color_vals)
-        prefix = f"{cov_label}: "
-        missing = f"{cov_label}: —"
-        formatted = np.char.mod("%.5g", color_vals)
-        out_arr = np.where(finite_mask, np.char.add(prefix, formatted), missing)
-        out = out_arr.tolist()
-    return out
+        # One string per distinct value, then a vectorized lookup (the table has
+        # ~1e5 rows but only a handful of categories).
+        uniques = ser[~ser.isna()].unique()
+        if color_col == "labels":
+            text_by_val = {
+                u: f"kmeans={_lower_legend_entry_label('labels', u)}" for u in uniques
+            }
+        else:
+            text_by_val = {u: str(u) for u in uniques}
+        mapped = ser.map(text_by_val).astype(object)
+        return mapped.where(~ser.isna().to_numpy(), "(missing)").tolist()
+    prefix, missing = _continuous_hover_prefix_missing(
+        color_col, vol_pc_explained_variance_ratio
+    )
+    color_vals = pd.to_numeric(ser, errors="coerce").to_numpy(
+        dtype=np.float64, copy=False
+    )
+    return G5Text(prefix, missing, color_vals).to_list()
 
 
 def scatter_json(
@@ -260,9 +271,18 @@ def scatter_json(
     marker_opacity: float = 0.35,
     continuous_palette: str | None = None,
     discrete_label_colors: dict[str, str] | None = None,
-) -> str:
+    wire: str = "figure",
+    have: str | None = None,
+) -> str | bytes:
+    """2-D scatter figure for the explorer / trajectory pages.
+
+    ``wire="figure"`` returns Plotly figure JSON. ``wire="columns"`` returns the
+    same figure in the compact format of :mod:`cryodrgn.dashboard.figure_columns`
+    (``have`` is the ``base_key`` the client already holds, if any).
+    """
     plotly_cs = normalize_continuous_palette(continuous_palette)
     marker_opacity = float(max(0.0, min(1.0, marker_opacity)))
+    columns = wire == "columns"
 
     sub, row_indices = _subsample(exp.plot_df, max_points, seed=0)
     idx_arr = sub["index"].to_numpy()
@@ -276,6 +296,12 @@ def scatter_json(
         and _lower_color_series_is_discrete(exp.plot_df[color_col])
     )
 
+    # ``customdata`` columns: dataset index, table row, then covariate key / value and
+    # the hover line. Kept as separate columns so the compact wire format can send
+    # each once; stacked into rows for plain figure JSON.
+    cd_cols: list[Any] = [idx_arr, row_arr]
+    cd_names: list[str] = ["index", "row"]
+    color_vals: np.ndarray | None = None
     if discrete_trace:
         hex_colors, fk_list = _scatter_discrete_marker_arrays(
             exp.plot_df,
@@ -288,8 +314,8 @@ def scatter_json(
             opacity=marker_opacity,
             color=hex_colors,
         )
-        fk_arr = np.asarray(fk_list, dtype=object)
-        customdata = np.column_stack([idx_arr, row_arr, fk_arr])
+        cd_cols.append(np.asarray(fk_list, dtype=object))
+        cd_names.append("fk")
     elif color_col and color_col != "none" and color_col in sub.columns:
         marker = dict(
             size=marker_size,
@@ -297,27 +323,44 @@ def scatter_json(
             color=sub[color_col],
             colorscale=plotly_cs,
         )
+        if columns:
+            # Figure JSON carries the palette as explicit stops (Plotly expands the
+            # name on validation); do the same without validating the point arrays.
+            marker["colorscale"] = [
+                list(stop)
+                for stop in go.scattergl.Marker(colorscale=plotly_cs).colorscale
+            ]
         color_vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
             dtype=np.float64, copy=False
         )
-        finite_mask = np.isfinite(color_vals)
-        disp = color_vals.astype(object)
-        disp[~finite_mask] = None
-        customdata = np.column_stack([idx_arr, row_arr, disp])
+        if columns:
+            cd_cols.append(NullableFloats(color_vals))
+        else:
+            finite_mask = np.isfinite(color_vals)
+            disp = color_vals.astype(object)
+            disp[~finite_mask] = None
+            cd_cols.append(disp)
+        cd_names.append("value")
     else:
         marker = dict(size=marker_size, opacity=marker_opacity, color="#4a5568")
-        customdata = np.column_stack([idx_arr, row_arr])
 
     has_cov_color = bool(color_col and color_col != "none" and color_col in sub.columns)
     # Scattergl does not reliably show ``hovertext`` in ``hovertemplate``;
     # put the covariate line in ``customdata`` so the second line renders in WebGL too.
     if has_cov_color:
         cc = cast(str, color_col)
-        hov2 = np.asarray(
-            _scatter_color_hover_texts(sub, cc, discrete_trace=bool(discrete_trace)),
-            dtype=object,
-        ).reshape(-1, 1)
-        customdata = np.column_stack([customdata, hov2])
+        if columns and not discrete_trace and color_vals is not None:
+            cd_cols.append(G5Text(*_continuous_hover_prefix_missing(cc), color_vals))
+        else:
+            cd_cols.append(
+                np.asarray(
+                    _scatter_color_hover_texts(
+                        sub, cc, discrete_trace=bool(discrete_trace)
+                    ),
+                    dtype=object,
+                )
+            )
+        cd_names.append("hover")
         hover_kwargs: dict[str, Any] = dict(
             hovertemplate=(
                 "particle: %{customdata[0]}<br>" "%{customdata[3]}<extra></extra>"
@@ -329,12 +372,10 @@ def scatter_json(
     # Scattergl can leave Plotly.react() pending on some GPUs;
     # SVG Scatter is unusably slow at dashboard point caps (~1e5+).
     # The explorer client uses ``plotly_afterplot`` plus a timeout.
-    trace_cls = go.Scattergl if use_webgl else go.Scatter
-    sc = trace_cls(
+    trace_kw: dict[str, Any] = dict(
         x=sub[xcol],
         y=sub[ycol],
         mode="markers",
-        customdata=customdata,
         marker=marker,
         **hover_kwargs,
     )
@@ -412,6 +453,27 @@ def scatter_json(
     if layout_meta:
         layout_kw["meta"] = layout_meta
 
+    if columns:
+        # Layout through Plotly (template expansion, validation of a few small
+        # attributes); the per-point arrays never pass through ``go`` validation.
+        fig = go.Figure()
+        fig.update_layout(**layout_kw)
+        return encode_figure_columns(
+            fig.to_plotly_json()["layout"],
+            dict(
+                type="scattergl" if use_webgl else "scatter",
+                customdata=Rows(cd_cols, cd_names, base=("index", "row")),
+                **trace_kw,
+            ),
+            n_points=len(sub),
+            key=base_key(
+                "2d", exp.workdir, exp.epoch, len(exp.plot_df), xcol, ycol, max_points
+            ),
+            have=have,
+        )
+
+    trace_cls = go.Scattergl if use_webgl else go.Scatter
+    sc = trace_cls(customdata=np.column_stack(cd_cols), **trace_kw)
     fig = go.Figure(sc)
     fig.update_layout(**layout_kw)
     return _plotly_to_json(fig)
@@ -466,8 +528,13 @@ def scatter3d_z_json(
     scene_axis_titles: tuple[str, str, str] | None = None,
     vol_pc_explained_variance_ratio: np.ndarray | None = None,
     volume_landscape_3d_style: bool = False,
-) -> str:
+    wire: str = "figure",
+    have: str | None = None,
+) -> str | bytes:
     """Interactive 3D scatter of three latent ``z*`` columns.
+
+    ``wire="columns"`` returns the figure in the compact format of
+    :mod:`cryodrgn.dashboard.figure_columns` instead of Plotly figure JSON.
 
     Pass ``plot_df`` to use an alternate table
     (e.g. ``analyze_landscape_full`` sampled rows)
@@ -498,6 +565,7 @@ def scatter3d_z_json(
     stay stable while toggling the colour legend.
     """
     plotly_cs = normalize_continuous_palette(continuous_palette)
+    columns = wire == "columns"
     df_all = exp.plot_df if plot_df is None else plot_df
     df = df_all
     if xyz_axes_allowed is not None:
@@ -623,28 +691,33 @@ def scatter3d_z_json(
         # inserting the colour covariate *after* the centroid column broke that
         # contract and made circling depend on colour values.
         parts: list[np.ndarray] = [row_cd]
+        cd_names = ["row"]
         cov_cd_idx: int | None = None
         if has_cov_color:
             if discrete_trace:
                 parts.append(np.asarray(fk_list, dtype=object))
+                cd_names.append("fk")
             else:
                 parts.append(
                     pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
                         dtype=np.float64, copy=False
                     )
                 )
+                cd_names.append("value")
             cov_cd_idx = len(parts) - 1
         if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
             parts.append(
                 np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
             )
+            cd_names.append("centroid")
         nv_cd_idx: int | None = None
         if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
             parts.append(
                 np.asarray(sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL], dtype=np.int64)
             )
+            cd_names.append("nearest_vol")
             nv_cd_idx = len(parts) - 1
-        customdata = np.column_stack(parts) if len(parts) > 1 else row_cd.reshape(-1, 1)
+        cd_cols: list[Any] = list(parts)
         hov = "particle: %{customdata[0]}"
         if has_cov_color and cov_cd_idx is not None:
             cc = cast(str, color_col)
@@ -662,31 +735,48 @@ def scatter3d_z_json(
         hover_kwargs_3d = dict(hovertemplate=hov + "<extra></extra>")
     else:
         idx_cd = sub["index"].to_numpy()
+        cd_cols = [idx_cd, row_cd]
+        cd_names = ["index", "row"]
+        color_vals_3d: np.ndarray | None = None
         if discrete_trace:
-            fk_arr = np.asarray(fk_list, dtype=object)
-            customdata = np.column_stack([idx_cd, row_cd, fk_arr])
+            cd_cols.append(np.asarray(fk_list, dtype=object))
+            cd_names.append("fk")
         elif has_cov_color:
-            color_vals = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
+            color_vals_3d = pd.to_numeric(sub[color_col], errors="coerce").to_numpy(
                 dtype=np.float64, copy=False
             )
-            finite_mask = np.isfinite(color_vals)
-            disp_cd = color_vals.astype(object)
-            disp_cd[~finite_mask] = None
-            customdata = np.column_stack([idx_cd, row_cd, disp_cd])
-        else:
-            customdata = np.column_stack([idx_cd, row_cd])
+            if columns:
+                cd_cols.append(NullableFloats(color_vals_3d))
+            else:
+                finite_mask = np.isfinite(color_vals_3d)
+                disp_cd = color_vals_3d.astype(object)
+                disp_cd[~finite_mask] = None
+                cd_cols.append(disp_cd)
+            cd_names.append("value")
         if has_cov_color:
             cc = cast(str, color_col)
-            hov2_3d = np.asarray(
-                _scatter_color_hover_texts(
-                    sub,
-                    cc,
-                    discrete_trace=bool(discrete_trace),
-                    vol_pc_explained_variance_ratio=vol_pc_explained_variance_ratio,
-                ),
-                dtype=object,
-            ).reshape(-1, 1)
-            customdata = np.column_stack([customdata, hov2_3d])
+            if columns and color_vals_3d is not None:
+                cd_cols.append(
+                    G5Text(
+                        *_continuous_hover_prefix_missing(
+                            cc, vol_pc_explained_variance_ratio
+                        ),
+                        color_vals_3d,
+                    )
+                )
+            else:
+                cd_cols.append(
+                    np.asarray(
+                        _scatter_color_hover_texts(
+                            sub,
+                            cc,
+                            discrete_trace=bool(discrete_trace),
+                            vol_pc_explained_variance_ratio=vol_pc_explained_variance_ratio,
+                        ),
+                        dtype=object,
+                    )
+                )
+            cd_names.append("hover")
             hover_kwargs_3d = dict(
                 hovertemplate=(
                     "particle: %{customdata[0]}<br>" "%{customdata[3]}<extra></extra>"
@@ -699,11 +789,12 @@ def scatter3d_z_json(
         if VOL_LANDSCAPE_NEAREST_SKETCH_VOL in sub.columns:
             nv = np.asarray(sub[VOL_LANDSCAPE_NEAREST_SKETCH_VOL], dtype=np.int64)
             if VOL_LANDSCAPE_IS_SKETCH_CENTROID in sub.columns:
-                cd_cent = np.asarray(
-                    sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64
+                cd_cols.append(
+                    np.asarray(sub[VOL_LANDSCAPE_IS_SKETCH_CENTROID], dtype=np.int64)
                 )
-                customdata = np.column_stack([customdata, cd_cent])
-            customdata = np.column_stack([customdata, nv])
+                cd_names.append("centroid")
+            cd_cols.append(nv)
+            cd_names.append("nearest_vol")
 
     # Match the volume-selection overlay
     # (``latent3d_landscape_vol_animations.js``): keep
@@ -724,12 +815,11 @@ def scatter3d_z_json(
             family="system-ui, Segoe UI, sans-serif",
         )
 
-    sc = go.Scatter3d(
+    trace_kw: dict[str, Any] = dict(
         x=sub[xcol],
         y=sub[ycol],
         z=sub[zcol],
         mode=scatter3d_mode,
-        customdata=customdata,
         marker=marker,
         **scatter3d_extras,
         **hover_kwargs_3d,
@@ -769,7 +859,15 @@ def scatter3d_z_json(
     x_title, y_title, z_title = (
         scene_axis_titles if scene_axis_titles is not None else (xcol, ycol, zcol)
     )
-    fig = go.Figure(sc)
+    if columns:
+        fig = go.Figure()
+    else:
+        customdata = (
+            np.column_stack(cd_cols)
+            if len(cd_cols) > 1
+            else np.asarray(cd_cols[0]).reshape(-1, 1)
+        )
+        fig = go.Figure(go.Scatter3d(customdata=customdata, **trace_kw))
     scene_kw: dict[str, Any] = dict(
         aspectmode="data",
         bgcolor="rgba(250,248,244,0.95)",
@@ -818,6 +916,34 @@ def scatter3d_z_json(
         meta=plot_meta,
         hoverlabel=dict(font=hoverlabel_font_3d, align="left"),
     )
+    if columns:
+        return encode_figure_columns(
+            fig.to_plotly_json()["layout"],
+            dict(
+                type="scatter3d",
+                customdata=Rows(
+                    cd_cols,
+                    cd_names,
+                    base=("index", "row", "centroid", "nearest_vol"),
+                ),
+                **trace_kw,
+            ),
+            n_points=len(sub),
+            key=base_key(
+                "3d",
+                exp.workdir,
+                exp.epoch,
+                plot_df is None,
+                len(df_all),
+                xcol,
+                ycol,
+                zcol,
+                max_points,
+                bool(no_subsample),
+                bool(volume_landscape_3d_style),
+            ),
+            have=have,
+        )
     return _plotly_to_json(fig)
 
 

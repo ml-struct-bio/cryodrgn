@@ -2209,16 +2209,11 @@
     }
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
-        fetch("{{ url_for('api_scatter') }}?" + q)
-          .then(function(r) {
-            return r.text().then(function(text) {
-              var j;
-              try { j = JSON.parse(text); }
-              catch (e) { throw new Error("Scatter API did not return JSON"); }
-              if (!r.ok) throw new Error(j.error || r.statusText);
-              return j;
-            });
-          })
+        /* Compact column format: a colour-only change downloads just the colour. */
+        CryoFigureColumns.fetchFigure(
+          "{{ url_for('api_scatter') }}?" + q, null, "explorer-scatter",
+          "Scatter API did not return JSON"
+        )
           .then(function(fig) {
             fig.layout.title = "";
             fig.layout.margin = Object.assign({}, fig.layout.margin || {}, {

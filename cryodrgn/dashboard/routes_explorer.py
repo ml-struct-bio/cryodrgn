@@ -35,6 +35,7 @@ from cryodrgn.dashboard.context import (
 )
 from cryodrgn.dashboard.covariate_pkl import merge_covariate_pkl
 from cryodrgn.dashboard.data import DashboardExperiment
+from cryodrgn.dashboard.figure_columns import MIMETYPE as FIGURE_COLUMNS_MIMETYPE
 from cryodrgn.dashboard.covariate_labels import landscape_vol_pc_column_pretty_label
 from cryodrgn.dashboard.landscape_full_3d import (
     LANDSCAPE_FULL_3D_LEAD_HTML,
@@ -119,6 +120,27 @@ def _scatter3d_no_subsample_for_discrete_gif_frame(
         return False
     keys = color_filter.get("keys") or ()
     return len(tuple(keys)) == 1
+
+
+def _figure_wire_kwargs(source: object) -> dict[str, object]:
+    """``wire`` / ``have`` scatter options from query args or a JSON body.
+
+    ``wire=columns`` asks for the compact column format instead of figure JSON;
+    ``have`` is the ``base_key`` of the coordinate columns the client still holds.
+    """
+    get = getattr(source, "get")
+    wire = str(get("wire") or "figure").strip().lower()
+    if wire != "columns":
+        return {}
+    have = get("have")
+    return {"wire": "columns", "have": str(have) if have else None}
+
+
+def _figure_response(payload: str | bytes) -> Response:
+    """Figure JSON, or the binary column format when the builder returned bytes."""
+    if isinstance(payload, bytes):
+        return Response(payload, mimetype=FIGURE_COLUMNS_MIMETYPE)
+    return Response(payload, mimetype="application/json")
 
 
 def _landscape_full_vol_pc_explained_variance(
@@ -779,11 +801,12 @@ def api_scatter():
             marker_opacity=marker_opacity,
             continuous_palette=request.args.get("palette"),
             discrete_label_colors=discrete_label_colors,
+            **_figure_wire_kwargs(request.args),
         )
     except Exception as err:
         logger.exception("scatter plot failed")
         return jsonify(error=str(err)), 500
-    return Response(js, mimetype="application/json")
+    return _figure_response(js)
 
 
 def latent_3d_page():
@@ -905,13 +928,14 @@ def api_scatter3d_z():
                 color_filter=color_filter,
                 discrete_label_colors=discrete_label_colors,
                 no_subsample=no_sub,
+                **_figure_wire_kwargs(payload),
             )
         except ValueError as err:
             return jsonify(error=str(err)), 400
         except Exception as err:
             logger.exception("3D latent space visualizer failed")
             return jsonify(error=str(err)), 500
-        return Response(js, mimetype="application/json")
+        return _figure_response(js)
 
     xcol = request.args.get("x", "z0")
     ycol = request.args.get("y", "z1")
@@ -927,13 +951,14 @@ def api_scatter3d_z():
             zcol,
             None if ccol == "none" else ccol,
             continuous_palette=request.args.get("palette"),
+            **_figure_wire_kwargs(request.args),
         )
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:
         logger.exception("3D latent space visualizer failed")
         return jsonify(error=str(err)), 500
-    return Response(js, mimetype="application/json")
+    return _figure_response(js)
 
 
 def api_scatter3d_z_landscape_full():
@@ -1015,13 +1040,14 @@ def api_scatter3d_z_landscape_full():
                 vol_pc_explained_variance_ratio=evr,
                 volume_landscape_3d_style=True,
                 no_subsample=no_sub,
+                **_figure_wire_kwargs(payload),
             )
         except ValueError as err:
             return jsonify(error=str(err)), 400
         except Exception as err:
             logger.exception("3D volume landscapes scatter failed")
             return jsonify(error=str(err)), 500
-        return Response(js, mimetype="application/json")
+        return _figure_response(js)
 
     xcol = request.args.get("x", d0)
     ycol = request.args.get("y", d1)
@@ -1043,13 +1069,14 @@ def api_scatter3d_z_landscape_full():
             scene_axis_titles=_vol_landscape_scene_titles(xcol, ycol, zcol),
             vol_pc_explained_variance_ratio=evr,
             volume_landscape_3d_style=True,
+            **_figure_wire_kwargs(request.args),
         )
     except ValueError as err:
         return jsonify(error=str(err)), 400
     except Exception as err:
         logger.exception("3D volume landscapes scatter failed")
         return jsonify(error=str(err)), 500
-    return Response(js, mimetype="application/json")
+    return _figure_response(js)
 
 
 def api_latent3d_preview_png():

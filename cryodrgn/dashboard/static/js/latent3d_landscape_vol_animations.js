@@ -382,18 +382,6 @@
     return !!(eye && typeof eye === "object");
   }
 
-  /** Merge pointerdown snapshot (pre Plotly double-click camera reset) with a live read. */
-  function mergeSnapsPreferPointerdown(pd, live) {
-    if (!pd || typeof pd !== "object") return live;
-    if (!live || typeof live !== "object") return pd;
-    return {
-      camera: pd.camera || live.camera,
-      xrange: pd.xrange || live.xrange,
-      yrange: pd.yrange || live.yrange,
-      zrange: pd.zrange || live.zrange,
-    };
-  }
-
   function _hexToRgb(hex) {
     var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || "").trim());
     if (!m) return null;
@@ -1200,52 +1188,15 @@
         }
         return Promise.resolve();
       }
-      if (typeof P3S.scheduleEnforceCamera === "function") {
-        return new Promise(function(res) {
-          P3S.scheduleEnforceCamera(gd, pin, function() {
-            if (typeof onDone === "function") {
-              try {
-                onDone();
-              } catch (eDone) { /* ignore */ }
-            }
-            res();
-          });
+      return new Promise(function(res) {
+        P3S.scheduleEnforceCamera(gd, pin, function() {
+          if (typeof onDone === "function") {
+            try {
+              onDone();
+            } catch (eDone) { /* ignore */ }
+          }
+          res();
         });
-      }
-      if (typeof P3S.scheduleRestoreCameraOnly === "function") {
-        return new Promise(function(res) {
-          P3S.scheduleRestoreCameraOnly(gd, pin, function() {
-            if (typeof onDone === "function") {
-              try {
-                onDone();
-              } catch (eDone) { /* ignore */ }
-            }
-            res();
-          });
-        });
-      }
-      if (typeof P3S.scheduleRestore === "function") {
-        return new Promise(function(res) {
-          P3S.scheduleRestore(gd, pin, function() {
-            if (typeof onDone === "function") {
-              try {
-                onDone();
-              } catch (eDone) { /* ignore */ }
-            }
-            res();
-          });
-        });
-      }
-      var p = typeof P3S.restoreCameraOnly === "function"
-        ? P3S.restoreCameraOnly(gd, pin)
-        : P3S.restore(gd, pin);
-      var chain = p && typeof p.then === "function" ? p.catch(function() {}) : Promise.resolve();
-      return chain.then(function() {
-        if (typeof onDone === "function") {
-          try {
-            onDone();
-          } catch (eDone) { /* ignore */ }
-        }
       });
     }
 
@@ -1265,7 +1216,30 @@
           patch["scene.camera"] = camPin.camera;
         }
       }
+      /* Relaying out ``scene.annotations`` makes Plotly rebuild the whole scene, and this
+         runs more than once per redraw. Skip it when the scene already carries exactly
+         these letters (most often: none) and the camera would not change either. */
+      if (sceneAnnotationsAlreadyShown(anns)) {
+        delete patch["scene.annotations"];
+        if (typeof P3S.pruneSceneRelayoutPatch === "function") {
+          patch = P3S.pruneSceneRelayoutPatch(gd, patch);
+        }
+        if (!Object.keys(patch).length) return Promise.resolve();
+      }
       return Plotly.relayout(gd, patch).catch(function() {});
+    }
+
+    /** True when ``gd``'s scene already holds exactly the annotations ``anns``. */
+    function sceneAnnotationsAlreadyShown(anns) {
+      try {
+        var cur = (gd.layout && gd.layout.scene && gd.layout.scene.annotations) || [];
+        var full = (gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene.annotations) || [];
+        if (cur.length !== anns.length || full.length !== anns.length) return false;
+        if (!anns.length) return true;
+        return JSON.stringify(cur) === JSON.stringify(anns);
+      } catch (eAnn) {
+        return false;
+      }
     }
 
     function refreshSelectionHighlight() {
@@ -1408,7 +1382,6 @@
         scheduleAutoGif("selection", hp);
       }
     }
-
 
     /**
      * Optional ``plotHighlightPromise``: when passed (volume selection paths), ``runAutoGif``
@@ -1632,7 +1605,12 @@
         && Plotly.relayout
         && typeof P3S.disableSceneSelectionRelayoutPatch === "function"
       ) {
-        Plotly.relayout(gd, P3S.disableSceneSelectionRelayoutPatch()).catch(function() {});
+        /* A no-op when the scene is already in orbit mode with nothing selected. */
+        if (typeof P3S.relayoutSceneIfNeeded === "function") {
+          P3S.relayoutSceneIfNeeded(gd, P3S.disableSceneSelectionRelayoutPatch());
+        } else {
+          Plotly.relayout(gd, P3S.disableSceneSelectionRelayoutPatch()).catch(function() {});
+        }
       }
       function recordVolAnimPointerdownScene() {
         try {
@@ -1645,59 +1623,6 @@
         } catch (ePd) { /* ignore */ }
       }
       gd.addEventListener("pointerdown", recordVolAnimPointerdownScene, true);
-      gd.on("plotly_doubleclick", function(ev) {
-        // Plotly's own scatter3d double-click can clobber the scene camera + annotation text.
-        // We restore the camera from the pointerdown snapshot; for cases where our
-        // click-timer double-click detection doesn't fire (e.g. some points),
-        // we optionally attempt the toggle here too.
-        var s = mergeSnapsPreferPointerdown(
-          volAnimPointerdownSnap,
-          typeof P3S.getPinnedSnap === "function" ? P3S.getPinnedSnap(gd) : null
-        );
-        var pt = ev && ev.points && ev.points.length ? ev.points[0] : null;
-        var shouldTryToggle = !!pt;
-        var v = NaN;
-        var fromPointNumber = pt ? pt.pointNumber : null;
-        if (shouldTryToggle) {
-          try {
-            v = volFromPoint(gd, pt);
-          } catch (eCd) {
-            v = NaN;
-          }
-          shouldTryToggle = !isNaN(v);
-        }
-
-        function maybeToggleAfterRestore() {
-          if (!shouldTryToggle) return;
-          if (volSelectionBlockedForAdd(v)) {
-            showAnimBusySelectionMsg();
-            return;
-          }
-          ignorePlotlyClickUntilMs = Date.now() + 900;
-          beginVolAnimSelectionOverlay();
-          toggleVol(v, fromPointNumber);
-        }
-
-        // If we don't have a snapshot yet, we can still try toggling.
-        if (!s) {
-          if (shouldTryToggle) requestAnimationFrame(maybeToggleAfterRestore);
-          return;
-        }
-
-        var restoreFn = typeof P3S.restoreCameraOnly === "function"
-          ? P3S.restoreCameraOnly
-          : P3S.restore;
-        restoreFn(gd, s);
-        requestAnimationFrame(function() {
-          restoreFn(gd, s);
-          setTimeout(function() {
-            restoreFn(gd, s);
-            maybeToggleAfterRestore();
-            volAnimPointerdownSnap = null;
-            volAnimPointerdownAt = 0;
-          }, 0);
-        });
-      });
       gd.on("plotly_click", function(ev) {
         if (!layoutHasVolAnim(gd)) return;
         if (!ev || !ev.points || !ev.points.length) return;
@@ -1733,7 +1658,7 @@
         .then(function(r) { return r.json(); })
         .then(function(j) {
           if (!j.ok) {
-            setAnimateStatus(j.error || "Meta failed", true);
+            setAnimateStatus(j.error || "Meta failed", false, true);
             if (randomSelBtn) {
               randomSelBtn.disabled = true;
               randomSelBtn.textContent = "Choose volumes at random";
@@ -1746,7 +1671,7 @@
           if (cb) cb();
         })
         .catch(function(e) {
-          setAnimateStatus(String(e), true);
+          setAnimateStatus(String(e), false, true);
           if (randomSelBtn) {
             randomSelBtn.disabled = true;
             randomSelBtn.textContent = "Choose volumes at random";

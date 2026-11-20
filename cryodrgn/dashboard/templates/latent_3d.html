@@ -407,20 +407,6 @@
     return !!(pin && Date.now() < until);
   }
 
-  function latent3dRestoreLoadScenePin() {
-    var pin = gd._cryoLatent3dLoadScenePin || latent3dLoadScenePin;
-    if (!pin || !P3S) {
-      return Promise.resolve();
-    }
-    if (typeof P3S.restorePinnedView === "function") {
-      return P3S.restorePinnedView(gd, pin).catch(function() {});
-    }
-    if (typeof P3S.restoreCameraOnly !== "function") {
-      return Promise.resolve();
-    }
-    return P3S.restoreCameraOnly(gd, pin).catch(function() {});
-  }
-
   function latent3dGetScenePin() {
     if (P3S && typeof P3S.getPinnedSnap === "function") {
       var pinned = P3S.getPinnedSnap(gd);
@@ -453,91 +439,6 @@
 
   var latent3dCameraWatchdogTimer = null;
 
-  function latent3dActiveScenePin() {
-    if (latent3dSceneHoldActive()) {
-      var loadPin = gd._cryoLatent3dLoadScenePin || latent3dLoadScenePin;
-      var pinned = null;
-      if (P3S && typeof P3S.getPinnedSnap === "function") {
-        pinned = P3S.getPinnedSnap(gd);
-      }
-      if (pinned && latent3dSceneSnapHasCamera(pinned)) {
-        if (
-          !loadPin
-          || !latent3dSceneSnapHasCamera(loadPin)
-          || !P3S
-          || typeof P3S.cameraEyeDiffers !== "function"
-          || P3S.cameraEyeDiffers(loadPin, pinned)
-        ) {
-          return pinned;
-        }
-      }
-      if (loadPin && latent3dSceneSnapHasCamera(loadPin)) return loadPin;
-    }
-    if (gd._cryoLatent3dLoadScenePin) return gd._cryoLatent3dLoadScenePin;
-    return latent3dGetScenePin();
-  }
-
-  function latent3dRelayoutIsUserCameraOrbit(ed) {
-    if (!ed || typeof ed !== "object") return false;
-    return Object.keys(ed).some(function(k) {
-      if (k === "scene.camera") return true;
-      return /^scene\.camera(\.|$)/i.test(k);
-    });
-  }
-
-  function latent3dCameraWatchdog() {
-    if (P3S && typeof P3S.isRestoring === "function" && P3S.isRestoring(gd)) return;
-    var pin = latent3dActiveScenePin();
-    if (!pin || !P3S || typeof P3S.snapshot !== "function" || typeof P3S.cameraEyeDiffers !== "function") {
-      return;
-    }
-    if (!gd._fullLayout || !gd._fullLayout.scene) return;
-    var live = P3S.snapshot(gd);
-    if (!live || !P3S.cameraEyeDiffers(pin, live)) return;
-    if (
-      latent3dSceneHoldActive()
-      && overlay
-      && overlay.classList.contains("cryo-plot-rendering-overlay--show")
-    ) {
-      return;
-    }
-    if (latent3dSceneHoldActive()) {
-      if (typeof P3S.restorePinnedView === "function") {
-        P3S.restorePinnedView(gd, pin);
-      } else {
-        P3S.restoreCameraOnly(gd, pin);
-      }
-      return;
-    }
-    if (latent3dCameraWatchdogTimer) clearTimeout(latent3dCameraWatchdogTimer);
-    latent3dCameraWatchdogTimer = setTimeout(function() {
-      latent3dCameraWatchdogTimer = null;
-      if (P3S.isRestoring(gd)) return;
-      var pin2 = latent3dActiveScenePin();
-      if (!pin2) return;
-      var live2 = P3S.snapshot(gd);
-      if (!live2 || !P3S.cameraEyeDiffers(pin2, live2)) return;
-      if (typeof P3S.restorePinnedView === "function") {
-        P3S.restorePinnedView(gd, pin2);
-      } else {
-        P3S.restoreCameraOnly(gd, pin2);
-      }
-    }, 0);
-  }
-
-  function latent3dOnPlotlyRelayout(ed) {
-    if (latent3dRelayoutIsUserCameraOrbit(ed)) {
-      if (
-        !(P3S && typeof P3S.isRestoring === "function" && P3S.isRestoring(gd))
-        && !latent3dSceneHoldActive()
-      ) {
-        setTimeout(latent3dPersistSceneAfterUserOrbit, 40);
-      }
-      return;
-    }
-    latent3dCameraWatchdog();
-  }
-
   function latent3dPlotlyConfig() {
     var cfg = {
       responsive: false,
@@ -565,11 +466,27 @@
     var patch = P3S && typeof P3S.disableSceneSelectionRelayoutPatch === "function"
       ? P3S.disableSceneSelectionRelayoutPatch()
       : { "scene.dragmode": "orbit", selections: [] };
+    /* Already orbiting with nothing selected (the usual case): this relayout would
+       only make Plotly rebuild the whole scene, so it is skipped. */
+    if (P3S && typeof P3S.relayoutSceneIfNeeded === "function") {
+      return P3S.relayoutSceneIfNeeded(gd, patch);
+    }
     return Plotly.relayout(gd, patch).catch(function() {});
   }
 
   function latent3dApplyFigurePreservingScene(fig, sceneSnap, sameAxes) {
     var pin = latent3dCloneScenePin(sceneSnap) || sceneSnap;
+    /* The pin was taken before the figure was requested. If the user has orbited while
+       it was on its way, keep the view that is on screen now. */
+    if (pin && P3S && typeof P3S.snapIsStale === "function" && P3S.snapIsStale(gd, pin)) {
+      var liveSnap = null;
+      try { liveSnap = P3S.snapshot(gd); } catch (eLiveSnap) { /* ignore */ }
+      if (latent3dSceneSnapHasCamera(liveSnap)) {
+        pin = sameAxes || typeof P3S.cameraOnlySnap !== "function"
+          ? liveSnap
+          : P3S.cameraOnlySnap(liveSnap) || liveSnap;
+      }
+    }
     var hasLivePlot = gd && gd.data && gd.data[0] && gd._fullLayout && gd._fullLayout.scene;
     var viewPin = pin;
     if (
@@ -621,6 +538,9 @@
         return cCoords
           .then(function() {
             if (!axisPatch || !Object.keys(axisPatch).length) return;
+            if (typeof P3S.relayoutSceneIfNeeded === "function") {
+              return P3S.relayoutSceneIfNeeded(gd, axisPatch);
+            }
             return Plotly.relayout(gd, axisPatch).catch(function() {});
           })
           .then(finishRedraw);
@@ -636,8 +556,17 @@
       }
     }
     var pReact = Plotly.react(gd, fig.data, fig.layout, latent3dPlotlyConfig());
-    var chainR = pReact && typeof pReact.then === "function" ? pReact.catch(function() {}) : Promise.resolve();
+    var reactDrew = true;
+    var chainR = pReact && typeof pReact.then === "function"
+      ? pReact.catch(function() { reactDrew = false; })
+      : Promise.resolve();
     return chainR.then(function() {
+      /* The server sends no axis limits, so Plotly has just autoranged the scene. Fix the
+         axes to the limits now shown (no redraw): Plotly forgets an autorange result as
+         soon as it re-derives the layout, and a view snapshot would then pin a placeholder. */
+      if (reactDrew && P3S && typeof P3S.pinAutorangedSceneAxes === "function") {
+        try { P3S.pinAutorangedSceneAxes(gd); } catch (ePinAx) { /* ignore */ }
+      }
       return latent3dDisableSceneLasso().then(finishRedraw);
     });
   }
@@ -699,28 +628,14 @@
       }
       return Promise.resolve();
     }
-    if (typeof P3S.scheduleEnforceCamera === "function") {
-      return new Promise(function(res) {
-        P3S.scheduleEnforceCamera(gd, pin, function() {
-          if (typeof onDone === "function") {
-            try { onDone(); } catch (eDone) { /* ignore */ }
-          }
-          res();
-        });
+    return new Promise(function(res) {
+      P3S.scheduleEnforceCamera(gd, pin, function() {
+        if (typeof onDone === "function") {
+          try { onDone(); } catch (eDone) { /* ignore */ }
+        }
+        res();
       });
-    }
-    if (typeof P3S.scheduleRestoreCameraOnly === "function") {
-      return new Promise(function(res) {
-        P3S.scheduleRestoreCameraOnly(gd, pin, function() {
-          latent3dCommitScenePin(pin);
-          if (typeof onDone === "function") {
-            try { onDone(); } catch (eDone) { /* ignore */ }
-          }
-          res();
-        });
-      });
-    }
-    return Promise.resolve();
+    });
   }
 
   function latent3dPersistSceneAfterUserOrbit() {
@@ -740,32 +655,9 @@
     } catch (eSnap) { /* ignore */ }
   }
 
-  function latent3dOnPlotlyAfterplot() {
-    var rendering = !!(overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show"));
-    if (latent3dSceneHoldActive() && !rendering) {
-      var loadPin = gd._cryoLatent3dLoadScenePin || latent3dLoadScenePin;
-      var liveAfter = null;
-      try {
-        if (P3S && typeof P3S.snapshot === "function") liveAfter = P3S.snapshot(gd);
-      } catch (eAp) { /* ignore */ }
-      if (
-        liveAfter
-        && latent3dSceneSnapHasCamera(liveAfter)
-        && loadPin
-        && latent3dSceneSnapHasCamera(loadPin)
-        && P3S
-        && typeof P3S.cameraEyeDiffers === "function"
-        && P3S.cameraEyeDiffers(loadPin, liveAfter)
-      ) {
-        /* User orbited during scene hold (e.g. while ChimeraX GIFs render) — keep live view. */
-      } else {
-        latent3dRestoreLoadScenePin();
-      }
-    }
-    latent3dCameraWatchdog();
-  }
-
   if (gd) {
+    /* Lets the view-pinning helpers stand back while the user is orbiting. */
+    if (P3S && typeof P3S.trackUserInput === "function") P3S.trackUserInput(gd);
     gd.addEventListener("pointerup", function() {
       if (overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
       setTimeout(latent3dPersistSceneAfterUserOrbit, 40);
@@ -774,10 +666,6 @@
       if (overlay && overlay.classList.contains("cryo-plot-rendering-overlay--show")) return;
       setTimeout(latent3dPersistSceneAfterUserOrbit, 40);
     }, true);
-    if (typeof gd.on === "function") {
-      gd.on("plotly_relayout", latent3dOnPlotlyRelayout);
-      gd.on("plotly_afterplot", latent3dOnPlotlyAfterplot);
-    }
   }
 
   var latent3dResizeRestoreTimer = null;
@@ -1276,6 +1164,12 @@
       sceneSnap = latent3dLoadScenePin;
     } else {
       sceneSnap = latent3dCaptureScenePinPreferLive();
+      /* Other axes than the plot on screen: carry the orbit over, but not the axis limits,
+         which belong to the columns being replaced. Pinning them made the new columns
+         inherit the old ranges (cutting off points beyond them). */
+      if (!latent3dSameAxesAsLast && P3S && typeof P3S.cameraOnlySnap === "function") {
+        sceneSnap = P3S.cameraOnlySnap(sceneSnap);
+      }
       if (latent3dSceneSnapHasCamera(sceneSnap)) {
         latent3dCommitScenePin(sceneSnap);
         latent3dBeginSceneHold(sceneSnap, 12000);

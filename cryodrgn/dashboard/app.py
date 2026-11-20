@@ -7,11 +7,19 @@ static/template paths, and URL wiring.
 
 from __future__ import annotations
 
+import logging
 import os
+import secrets
+import signal
 import uuid
 
 from flask import Flask
 
+from cryodrgn.dashboard.access import (
+    access_url,
+    install_access_control,
+    new_access_token,
+)
 from cryodrgn.dashboard.bundled_plotly import bundled_plotly_js
 from cryodrgn.dashboard.command_builder_cli_help import jinja_arg_display_name
 from cryodrgn.dashboard.command_builder_data import (
@@ -32,6 +40,7 @@ from cryodrgn.dashboard.context import (
     inject_meta_command_builder_only,
 )
 from cryodrgn.dashboard.data import discover_analyzed_workdirs, list_z_epochs
+from cryodrgn.dashboard.tempdirs import sweep_stale_tempdirs
 
 # Scatter caps: re-exported for tests that
 # use ``from cryodrgn.dashboard import app`` (logic in route_helpers).
@@ -174,8 +183,13 @@ def create_app(
     filter_plot_inds: str | None = None,
     cpus: int = 4,
     discovery_root: str | None = None,
+    access_token: str | None = None,
 ) -> Flask:
-    """Construct the Flask app: config, discovery mode, ``before_request``, routes."""
+    """Construct the Flask app: config, discovery mode, ``before_request``, routes.
+
+    With ``access_token`` every request but those for package files must carry it
+    (:mod:`cryodrgn.dashboard.access`); ``cryodrgn dashboard`` always passes one.
+    """
     app = Flask(
         __name__,
         template_folder=_TEMPLATE_DIR,
@@ -192,8 +206,10 @@ def create_app(
     app.jinja_env.filters["arg_display_name"] = jinja_arg_display_name
     app.jinja_env.filters["arg_show_display_name"] = arg_show_display_name
     app.config["PRELOAD_CPUS"] = max(1, cpus)
-    app.secret_key = os.environ.get(
-        "CRYODRGN_DASHBOARD_SECRET", "cryodrgn-dashboard-dev-key"
+    # Signs the session cookie. It used to default to a constant, with which anyone
+    # could forge a session (and so point the dashboard at another run folder).
+    app.secret_key = os.environ.get("CRYODRGN_DASHBOARD_SECRET") or secrets.token_hex(
+        32
     )
     # Invalidates Flask session epoch when the dashboard process restarts so CLI
     # ``--epoch`` matches the first load (see :func:`resolve_epoch`).
@@ -229,6 +245,8 @@ def create_app(
     app.config["DASHBOARD_DISCOVERY_BOOT_ID"] = (
         str(uuid.uuid4()) if command_builder_only and discovered else None
     )
+    if access_token:
+        install_access_control(app, access_token)
     app.before_request(bind_dashboard_exp)
 
     if command_builder_only:
@@ -263,6 +281,30 @@ def create_app(
     return app
 
 
+def _exit_cleanly_on_termination_signals() -> None:
+    """Turn SIGTERM / SIGHUP into a normal interpreter exit.
+
+    Their default action ends the process without running ``atexit`` hooks, which
+    is what removes the temporary volume folders and stops the virtual display.
+    Ctrl-C already exits normally. A signal that is being ignored stays ignored,
+    so a dashboard started under ``nohup`` still survives a hangup.
+    """
+
+    def _exit(signum, _frame) -> None:
+        raise SystemExit(128 + signum)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            if signal.getsignal(sig) is signal.SIG_DFL:
+                signal.signal(sig, _exit)
+        except (ValueError, OSError):
+            # Not the main thread, or the platform does not allow it.
+            pass
+
+
 def run_server(
     workdir: str | None,
     epoch: int = -1,
@@ -273,8 +315,19 @@ def run_server(
     debug: bool = False,
     cpus: int = 4,
     discovery_root: str | None = None,
+    access_token: str | None = None,
 ) -> None:
-    """Entry point for ``cryodrgn dashboard``: threaded Werkzeug development server."""
+    """Entry point for ``cryodrgn dashboard``: threaded Werkzeug development server.
+
+    Without ``access_token`` a new one is made and the link that carries it is logged.
+    """
+    sweep_stale_tempdirs()
+    _exit_cleanly_on_termination_signals()
+    if not access_token:
+        access_token = new_access_token()
+        logging.getLogger(__name__).warning(
+            "Dashboard link: %s", access_url(host, port, "/", access_token)
+        )
     app = create_app(
         workdir=workdir,
         epoch=epoch,
@@ -282,6 +335,7 @@ def run_server(
         filter_plot_inds=plot_inds,
         cpus=cpus,
         discovery_root=discovery_root,
+        access_token=access_token,
     )
 
     app.run(host=host, port=port, debug=debug, threaded=True)

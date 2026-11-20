@@ -11,6 +11,11 @@ $ cryodrgn dashboard 00_trainvae --epoch 30 --port 8080
 $ cryodrgn dashboard 00_trainvae --image-viewer
 $ cryodrgn dashboard 00_trainvae --particle --filter-max 10000
 $ cryodrgn dashboard experiments/   # parent folder: discover analyzed run subfolders
+
+The command prints the dashboard's link and opens it. The link carries an access token
+that changes with every launch (``CRYODRGN_DASHBOARD_TOKEN`` fixes it): other users of the
+machine can reach the port, but not the dashboard. When the dashboard runs on a remote
+node, forward the port (``ssh -L 5050:localhost:5050 <node>``) and open the printed link.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ import argparse
 import logging
 import webbrowser
 from threading import Timer
+from cryodrgn.dashboard.access import access_url, new_access_token
 from cryodrgn.dashboard.data import list_z_epochs
 from cryodrgn.dashboard.app import run_server
 
@@ -250,10 +256,21 @@ def main(args: argparse.Namespace) -> None:
         "/",
     )
 
+    access_token = new_access_token()
+    link = access_url(args.host, args.port, initial_path, access_token)
+    # Printed whatever the verbosity: the link is the only way in.
+    print(f"cryoDRGN dashboard: {link}", flush=True)
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"Listening on {args.host}: anyone who can reach this machine and has the "
+            "link can use the dashboard, and the connection is not encrypted.",
+            flush=True,
+        )
+
     if not args.no_browser:
 
         def _open() -> None:
-            webbrowser.open(f"http://{args.host}:{args.port}{initial_path}")
+            webbrowser.open(link)
 
         Timer(1.0, _open).start()
 
@@ -292,4 +309,5 @@ def main(args: argparse.Namespace) -> None:
         debug=args.debug,
         cpus=args.cpus,
         discovery_root=discovery_root,
+        access_token=access_token,
     )

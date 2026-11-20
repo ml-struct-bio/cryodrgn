@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import functools
 import io
-import re
-from typing import Any, cast
+import json
+import threading
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, cast
 
+import matplotlib
 import matplotlib.colors as mcolors
+import matplotlib.image as mimage
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from PIL import Image
 from seaborn.distributions import (
     _freedman_diaconis_bins,  # type: ignore[attr-defined]
 )
@@ -25,13 +32,12 @@ from cryodrgn.dashboard.palette_config import (
 from cryodrgn.dashboard.plots_color_covariate import (
     _continuous_series_stats,
     _lower_color_series_is_discrete,
-    covariate_row_filter_key,
+    _scatter_discrete_marker_arrays,
     plot_df_color_filter_mask,
 )
 from cryodrgn.dashboard.plots_figure_utils import (
     _UPPER_SCATTER_BLUE,
     _axes_cell_bboxes,
-    _dashboard_chimerax_colors,
     _DASHBOARD_CREAM,
     _pair_grid_axis_lim_padded,
     _pair_grid_square_xy_limits,
@@ -69,69 +75,95 @@ def _pair_jointplot_hex_gridsize(x: np.ndarray, y: np.ndarray) -> int:
     return max(int(np.mean([xb, yb])), 1)
 
 
+def _pair_grid_geometry(zdim: int) -> dict[str, float]:
+    """Figure size (inches) and subplot margins (figure fractions) of the pair grid."""
+    inch_per = max(2.45, min(3.35, 13.0 / max(zdim, 1)))
+    left, right = _PAIR_GRID_LEFT, _PAIR_GRID_RIGHT
+    # Extra headroom for the enlarged top edge labels.
+    top, bottom = min(_PAIR_GRID_TOP, 0.955), _PAIR_GRID_BOTTOM
+    grid_side_in = inch_per * zdim
+    return {
+        "inch_per": inch_per,
+        "left": left,
+        "right": right,
+        "top": top,
+        "bottom": bottom,
+        "fig_w": grid_side_in / (right - left),
+        "fig_h": grid_side_in / (top - bottom),
+    }
+
+
+def _new_pair_grid_figure(
+    zdim: int,
+    cell_limits: Callable[[int, int], tuple[tuple[float, float], tuple[float, float]]],
+) -> tuple[Any, np.ndarray]:
+    """Figure and ``zdim`` × ``zdim`` empty axes, laid out as in the delivered PNG.
+
+    ``cell_limits(i, j)`` gives the x and y limits of the cell in row ``i``, column
+    ``j``. Call inside :func:`ezlab_matplotlib_rc`.
+    """
+    geom = _pair_grid_geometry(zdim)
+    with sns.axes_style(
+        "white",
+        rc={"axes.facecolor": _DASHBOARD_CREAM, "figure.facecolor": _DASHBOARD_CREAM},
+    ):
+        fig, axes = plt.subplots(
+            zdim,
+            zdim,
+            figsize=(geom["fig_w"], geom["fig_h"]),
+            squeeze=False,
+            constrained_layout=False,
+        )
+    fig.patch.set_facecolor(_DASHBOARD_CREAM)
+    for i in range(zdim):
+        for j in range(zdim):
+            ax = axes[i, j]
+            ax.set_xticks([])
+            ax.set_yticks([])
+            xl, yl = cell_limits(i, j)
+            ax.set_xlim(xl[0], xl[1])
+            ax.set_ylim(yl[0], yl[1])
+            # Equal data aspect without shrinking panels unevenly
+            # (``box`` gives ragged cell sizes).
+            ax.set_aspect("equal", adjustable="datalim")
+            ax.set_box_aspect(1)
+            ax.set_facecolor(_DASHBOARD_CREAM)
+            is_diag = i == j
+            for spine in ax.spines.values():
+                spine.set_linewidth(2.1 if is_diag else 1.05)
+                spine.set_color("#334e68" if is_diag else "#5a6b7a")
+    fig.subplots_adjust(
+        left=geom["left"],
+        right=geom["right"],
+        top=geom["top"],
+        bottom=geom["bottom"],
+        wspace=_PAIR_CELL_WSPACE,
+        hspace=_PAIR_CELL_HSPACE,
+    )
+    return fig, axes
+
+
 def pair_grid_skeleton_placeholder_layout(
     zdim: int,
 ) -> list[dict[str, float]]:
     """Cell bboxes for the HTML skeleton before the first PNG loads.
 
-    Mirrors the Matplotlib grid setup in :func:`pair_grid_png` (figure size, per-axis
-    ``set_aspect`` / ``set_box_aspect``, spine widths, ``subplots_adjust``) so
-    normalized axes positions match the delivered PNG. Uses symmetric axis limits
-    instead of real data so ``adjustable=\"datalim\"`` matches typical behaviour.
+    Uses the figure of :func:`pair_grid_png` with symmetric axis limits instead of
+    real data, so ``adjustable="datalim"`` behaves as it typically does there.
     """
     if zdim < 1:
         return []
-    inch_per = max(2.45, min(3.35, 13.0 / max(zdim, 1)))
-    left_m = _PAIR_GRID_LEFT
-    top_m = min(_PAIR_GRID_TOP, 0.955)
-    bottom_m = _PAIR_GRID_BOTTOM
-    right_axes = _PAIR_GRID_RIGHT
-    w_frac = right_axes - left_m
-    h_frac = top_m - bottom_m
-    grid_side_in = inch_per * zdim
-    fig_w = grid_side_in / w_frac
-    fig_h = grid_side_in / h_frac
+    return [dict(c) for c in _pair_grid_skeleton_cells(int(zdim))]
+
+
+@functools.lru_cache(maxsize=8)
+def _pair_grid_skeleton_cells(zdim: int) -> tuple[dict[str, float], ...]:
+    # Building the figure takes about 0.3 s; the page asks on every visit.
     with ezlab_matplotlib_rc():
-        with sns.axes_style(
-            "white",
-            rc={
-                "axes.facecolor": _DASHBOARD_CREAM,
-                "figure.facecolor": _DASHBOARD_CREAM,
-            },
-        ):
-            fig, axes = plt.subplots(
-                zdim,
-                zdim,
-                figsize=(fig_w, fig_h),
-                squeeze=False,
-                constrained_layout=False,
-            )
-        fig.patch.set_facecolor(_DASHBOARD_CREAM)
-        for i in range(zdim):
-            for j in range(zdim):
-                ax = axes[i, j]
-                ax.set_xticks([])
-                ax.set_yticks([])
-                ax.set_xlim(-6.0, 6.0)
-                ax.set_ylim(-6.0, 6.0)
-                ax.set_aspect("equal", adjustable="datalim")
-                ax.set_box_aspect(1)
-                ax.set_facecolor(_DASHBOARD_CREAM)
-                is_diag = i == j
-                for spine in ax.spines.values():
-                    spine.set_linewidth(2.1 if is_diag else 1.05)
-                    spine.set_color("#334e68" if is_diag else "#5a6b7a")
-        fig.subplots_adjust(
-            left=left_m,
-            right=right_axes,
-            top=top_m,
-            bottom=bottom_m,
-            wspace=_PAIR_CELL_WSPACE,
-            hspace=_PAIR_CELL_HSPACE,
-        )
+        fig, axes = _new_pair_grid_figure(zdim, lambda i, j: ((-6.0, 6.0), (-6.0, 6.0)))
         cells = _axes_cell_bboxes(np.asarray(axes))
         plt.close(fig)
-    return cells
+    return tuple(cells)
 
 
 def pair_grid_margin_fractions_for_js() -> dict[str, float]:
@@ -157,17 +189,8 @@ def pair_grid_figure_aspect_ratio(zdim: int) -> float:
     """
     if zdim < 1:
         return 1.0
-    inch_per = max(2.45, min(3.35, 13.0 / max(zdim, 1)))
-    left_m = _PAIR_GRID_LEFT
-    top_m = min(_PAIR_GRID_TOP, 0.955)
-    bottom_m = _PAIR_GRID_BOTTOM
-    right_axes = _PAIR_GRID_RIGHT
-    w_frac = right_axes - left_m
-    h_frac = top_m - bottom_m
-    grid_side_in = inch_per * zdim
-    fig_w = grid_side_in / w_frac
-    fig_h = grid_side_in / h_frac
-    return float(fig_w / fig_h) if fig_h > 0 else 1.0
+    geom = _pair_grid_geometry(zdim)
+    return float(geom["fig_w"] / geom["fig_h"]) if geom["fig_h"] > 0 else 1.0
 
 
 _EDGE_LABEL_COLOR = "#243b53"
@@ -301,6 +324,177 @@ def _draw_pair_grid_diagonal_legends(
         )
 
 
+@functools.lru_cache(maxsize=64)
+def _marker_footprint(diameter_px: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Pixel offsets and covered fractions of a round marker centred on a pixel.
+
+    The fractions are what an anti-aliased renderer gives a disc of this diameter
+    (8 × 8 samples per pixel); pixels covered by less than 1% are left out.
+    """
+    radius = diameter_px / 2.0
+    k = int(np.ceil(radius + 0.5))
+    sub = (np.arange(8) + 0.5) / 8.0 - 0.5
+    offs = np.arange(-k, k + 1)
+    sx = (offs[:, None] + sub[None, :]).ravel()  # sample positions along one axis
+    inside = (sx[:, None] ** 2 + sx[None, :] ** 2) <= radius * radius
+    n = offs.size
+    frac = inside.reshape(n, 8, n, 8).mean(axis=(1, 3))  # [row offset, column offset]
+    dy, dx = np.meshgrid(offs, offs, indexing="ij")
+    keep = frac > 0.01
+    return dx[keep].astype(np.intp), dy[keep].astype(np.intp), frac[keep]
+
+
+def _panel_pixels(ax: Any) -> dict[str, float] | None:
+    """Data limits and output-pixel box of ``ax``, as the PNG will lay them out."""
+    ax.apply_aspect()
+    bb = ax.get_window_extent()
+    (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
+    c0, c1 = int(np.floor(bb.x0)), int(np.ceil(bb.x1))
+    r0, r1 = int(np.floor(bb.y0)), int(np.ceil(bb.y1))
+    if c1 <= c0 or r1 <= r0 or x1 == x0 or y1 == y0:
+        return None
+    return {
+        "x0": x0,
+        "x1": x1,
+        "y0": y0,
+        "y1": y1,
+        "bx0": bb.x0,
+        "by0": bb.y0,
+        "bw": bb.width,
+        "bh": bb.height,
+        "c0": c0,
+        "c1": c1,
+        "r0": r0,
+        "r1": r1,
+    }
+
+
+def _composite_points(
+    px: dict[str, float],
+    x: np.ndarray,
+    y: np.ndarray,
+    colour: tuple,
+    alpha: float,
+    size_pt2: float,
+    dpi: float,
+) -> np.ndarray:
+    """RGBA image (straight alpha) of a scatter, for the pixel box ``px`` of a panel.
+
+    Replaces Matplotlib drawing each of tens of thousands of markers as a path in each
+    of up to 64 panels, which took about 9 of the 10 s of a pair grid. Each point covers
+    the pixels of its marker (``s`` is the marker area in points², so the diameter is
+    ``sqrt(s)`` points), with the anti-aliased fraction at the rim, and each pixel
+    composites the points over it in drawing order, the last on top, as Matplotlib's
+    renderer does: a point adds its colour with opacity ``a = alpha * covered
+    fraction``, times the transparency ``1 - a`` of each point drawn after it there.
+    Points are snapped to pixel centres.
+
+    ``colour`` is ``("one", rgb)``, ``("lut", codes, lut)`` (a palette index per point)
+    or ``("rgb", rgb_per_point)``. Points with a non-finite position or colour are not
+    drawn (Matplotlib's "bad" colour). Pure NumPy, so panels can run in threads.
+    """
+    width, height = int(px["c1"] - px["c0"]), int(px["r1"] - px["r0"])
+    n_pix = width * height
+    kind = colour[0]
+    ok = np.isfinite(x) & np.isfinite(y)
+    if kind == "rgb":
+        ok &= np.all(np.isfinite(colour[1]), axis=1)
+    img = np.zeros((n_pix, 4), dtype=np.float32)
+    n = int(np.count_nonzero(ok))
+    if n == 0:
+        return img.reshape(height, width, 4)
+    sx = px["bw"] / (px["x1"] - px["x0"])
+    sy = px["bh"] / (px["y1"] - px["y0"])
+    col = np.floor(px["bx0"] + (x[ok] - px["x0"]) * sx).astype(np.intp) - int(px["c0"])
+    row = (int(px["r1"]) - 1) - np.floor(px["by0"] + (y[ok] - px["y0"]) * sy).astype(
+        np.intp
+    )
+    dx, dy, frac = _marker_footprint(round(float(np.sqrt(size_pt2)) * dpi / 72.0, 3))
+    n_off = dx.size
+    cols = (col[:, None] + dx[None, :]).ravel()
+    rows = (row[:, None] - dy[None, :]).ravel()
+    inside = (cols >= 0) & (cols < width) & (rows >= 0) & (rows < height)
+    pix = (rows * width + cols)[inside]
+    # Entries go point after point, i.e. in drawing order; each is one marker pixel.
+    offset = np.tile(np.arange(n_off, dtype=np.int16), n)[inside]
+    opacity_of = np.minimum(alpha * frac, 1.0 - 1e-12)
+    log_keep_of = np.log1p(-opacity_of)
+    cover = 1.0 - np.exp(np.bincount(pix, weights=log_keep_of[offset], minlength=n_pix))
+    img[:, 3] = cover
+    if kind == "one":
+        img[:, :3] = colour[1]
+        return img.reshape(height, width, 4)
+    point = np.repeat(np.arange(n, dtype=np.int32), n_off)[inside]
+    # Sorting pixel * m + entry groups entries by pixel and keeps their drawing order
+    # (several times faster than a stable argsort; the key carries both parts back).
+    m = pix.size
+    key = pix.astype(np.int64) * m + np.arange(m, dtype=np.int64)
+    key.sort()
+    pix_sorted, entry = np.divmod(key, m)
+    off_sorted = offset[entry]
+    log_keep = np.cumsum(log_keep_of[off_sorted])
+    group_last = np.cumsum(np.bincount(pix_sorted, minlength=n_pix)) - 1
+    # Transparency of everything drawn after each entry on its pixel.
+    weight = opacity_of[off_sorted] * np.exp(
+        log_keep[group_last[pix_sorted]] - log_keep
+    )
+    point_sorted = point[entry]
+    if kind == "lut":
+        codes, lut = colour[1][ok], colour[2]
+        k = lut.shape[0]
+        per_code = np.bincount(
+            pix_sorted * k + codes[point_sorted], weights=weight, minlength=n_pix * k
+        )
+        acc = per_code.reshape(n_pix, k) @ lut
+    else:
+        rgb = colour[1][ok]
+        acc = np.stack(
+            [
+                np.bincount(
+                    pix_sorted,
+                    weights=weight * np.ascontiguousarray(rgb[:, c])[point_sorted],
+                    minlength=n_pix,
+                )
+                for c in range(3)
+            ],
+            axis=1,
+        )
+    covered = cover > 0
+    img[covered, :3] = acc[covered] / cover[covered, None]
+    return img.reshape(height, width, 4)
+
+
+def _add_points_image(ax: Any, px: dict[str, float], img: np.ndarray) -> None:
+    """Place ``img`` (from :func:`_composite_points`) on its panel, pixel for pixel."""
+    image = mimage.AxesImage(ax, interpolation="nearest", origin="upper")
+    image.set_data(img)
+    dx = (px["x1"] - px["x0"]) / px["bw"]
+    dy = (px["y1"] - px["y0"]) / px["bh"]
+    image.set_extent(
+        (
+            px["x0"] + (px["c0"] - px["bx0"]) * dx,
+            px["x0"] + (px["c1"] - px["bx0"]) * dx,
+            px["y0"] + (px["r0"] - px["by0"]) * dy,
+            px["y0"] + (px["r1"] - px["by0"]) * dy,
+        )
+    )
+    image.set_zorder(1)  # where the scatter collection used to be
+    ax.add_image(image)
+    ax.set_xlim(px["x0"], px["x1"])
+    ax.set_ylim(px["y0"], px["y1"])
+
+
+def _colormap_rgb(cmap_name: Any, values: np.ndarray, vmin: float, vmax: float):
+    """Per-value RGB ``(n, 3)`` as ``scatter(c=values, cmap, vmin, vmax)`` would draw.
+
+    Non-finite values come out as NaN, which :func:`_composite_points` skips.
+    """
+    cmap = matplotlib.colormaps[cmap_name] if isinstance(cmap_name, str) else cmap_name
+    rgb = cmap(mcolors.Normalize(vmin=vmin, vmax=vmax)(values))[:, :3]
+    rgb[~np.isfinite(values)] = np.nan
+    return rgb
+
+
 def pair_grid_png(
     exp: DashboardExperiment,
     lower_color_col: str,
@@ -311,10 +505,15 @@ def pair_grid_png(
     continuous_palette: str | None = None,
     color_filter: dict[str, Any] | None = None,
     discrete_label_colors: dict[str, str] | None = None,
+    workers: int = 1,
 ) -> tuple[bytes, list[dict[str, float]]]:
     """z_dim × z_dim Matplotlib grid (square cells).
 
-    Upper hex matches ``sns.jointplot(..., kind=\"hex\")``.
+    Lower panels: latent pairs coloured by ``lower_color_col``; diagonal: the 2-D
+    embedding coloured by that latent dimension; upper: latent pairs in one colour, or
+    hexbin densities that match ``sns.jointplot(..., kind="hex")``. Points are drawn by
+    :func:`_composite_points`, one panel per thread on up to ``workers`` threads
+    (the result does not depend on ``workers``).
 
     Returns PNG bytes and per-cell axis bboxes in figure coordinates
     (for HTML overlay alignment).
@@ -367,54 +566,19 @@ def pair_grid_png(
         sparse_a=0.88,
     )
     raw_color = df[lower_color_col]
-    discrete = _lower_color_series_is_discrete(raw_color)
-
-    point_colors: list[str] | None = None
-    cvals_plot: np.ndarray | None = None
-    cmin: float | None = None
-    cmax: float | None = None
-
-    if discrete:
-        raw_full_color = full_df[lower_color_col]
-        _, uniques_f = pd.factorize(raw_full_color, sort=True)
-        if len(uniques_f) == 0:
+    if _lower_color_series_is_discrete(raw_color):
+        if not bool(full_df[lower_color_col].notna().any()):
             raise ValueError(
                 f"Lower-triangle color column `{lower_color_col}` has no values."
             )
-        pal = _dashboard_chimerax_colors(max(len(uniques_f), 1))
-
-        def _discrete_hex_for_key(fk: str, palette_idx: int) -> str:
-            override = discrete_label_colors.get(fk) if discrete_label_colors else None
-            if isinstance(override, str) and re.match(
-                r"^#[0-9a-fA-F]{6}$", override.strip()
-            ):
-                return override.strip().lower()
-            return pal[palette_idx % len(pal)]
-
-        # Stable colours keyed like the legend API — never re-factorize the filtered
-        # subset (that would remap the sole remaining category to palette slot 0).
-        stable_hex_by_key: dict[str, str] = {}
-        for idx, u in enumerate(uniques_f):
-            if pd.isna(u):
-                continue
-            fk = covariate_row_filter_key(lower_color_col, u)
-            stable_hex_by_key[fk] = _discrete_hex_for_key(fk, idx)
-
-        if bool(raw_full_color.isna().any()):
-            fk_na = "__na__"
-            ov_na = discrete_label_colors.get(fk_na) if discrete_label_colors else None
-            if isinstance(ov_na, str) and re.match(r"^#[0-9a-fA-F]{6}$", ov_na.strip()):
-                stable_hex_by_key[fk_na] = ov_na.strip().lower()
-            else:
-                stable_hex_by_key[fk_na] = "#aab4bf"
-
-        point_colors = []
-        for u in raw_color.to_numpy(dtype=object):
-            if pd.isna(u):
-                point_colors.append(stable_hex_by_key.get("__na__", "#aab4bf"))
-            else:
-                fk = covariate_row_filter_key(lower_color_col, u)
-                point_colors.append(stable_hex_by_key.get(fk, "#aab4bf"))
+        # Stable colours keyed like the legend API, from the unfiltered table: never
+        # re-factorize the filtered subset (that would remap its categories).
+        point_hex, _ = _scatter_discrete_marker_arrays(
+            full_df, df, lower_color_col, discrete_label_colors
+        )
+        codes, hexes = pd.factorize(pd.Series(point_hex, dtype=object))
+        lut = np.array([mcolors.to_rgb(h) for h in hexes], dtype=np.float64)
+        lower_colour: tuple = ("lut", codes.astype(np.int64), lut)
     else:
         if bool(pd.to_numeric(raw_color, errors="coerce").isna().all()):
             raise ValueError(
@@ -425,193 +589,105 @@ def pair_grid_png(
         color_num = cast(pd.Series, pd.to_numeric(raw_color, errors="coerce"))
         cvals = np.asarray(color_num, dtype=np.float64)
         cvals_plot = np.where(np.isfinite(cvals), cvals, 0.5 * (cmin + cmax))
+        lower_colour = ("rgb", _colormap_rgb(mpl_cmap, cvals_plot, cmin, cmax))
 
     emb = (diagonal_emb or "pc").lower()
     if emb == "umap":
         if exp.umap is None or "UMAP1" not in df.columns or "UMAP2" not in df.columns:
             raise ValueError("UMAP embedding is not available for this run.")
-        emb_x = df["UMAP1"].to_numpy(dtype=np.float64)
-        emb_y = df["UMAP2"].to_numpy(dtype=np.float64)
-        emb_x_lim = _pair_grid_axis_lim_padded(full_df["UMAP1"])
-        emb_y_lim = _pair_grid_axis_lim_padded(full_df["UMAP2"])
+        emb_x_col, emb_y_col = "UMAP1", "UMAP2"
     elif emb == "pc":
         if "PC1" not in df.columns or "PC2" not in df.columns:
             raise ValueError("PCA components PC1/PC2 are not available.")
-        emb_x = df["PC1"].to_numpy(dtype=np.float64)
-        emb_y = df["PC2"].to_numpy(dtype=np.float64)
-        emb_x_lim = _pair_grid_axis_lim_padded(full_df["PC1"])
-        emb_y_lim = _pair_grid_axis_lim_padded(full_df["PC2"])
+        emb_x_col, emb_y_col = "PC1", "PC2"
     else:
         raise ValueError("diagonal_emb must be 'pc' or 'umap'.")
+    emb_x = df[emb_x_col].to_numpy(dtype=np.float64)
+    emb_y = df[emb_y_col].to_numpy(dtype=np.float64)
+    emb_x_lim = _pair_grid_axis_lim_padded(full_df[emb_x_col])
+    emb_y_lim = _pair_grid_axis_lim_padded(full_df[emb_y_col])
 
     upper = (upper_style or "scatter").lower()
     if upper not in ("scatter", "hex"):
         raise ValueError("upper_style must be 'scatter' or 'hex'.")
 
+    def cell_limits(i: int, j: int):
+        # Frozen to the unfiltered table, so legend selections only subset points.
+        if i == j:
+            return _pair_grid_square_xy_limits(emb_x_lim, emb_y_lim)
+        return _pair_grid_square_xy_limits(z_axis_lim[j], z_axis_lim[i])
+
+    z_values = [df[zc].to_numpy(dtype=np.float64) for zc in zcols]
+    upper_rgb = np.asarray(mcolors.to_rgb(_UPPER_SCATTER_BLUE), dtype=np.float64)
+
     with ezlab_matplotlib_rc():
         hex_cmap = _pair_jointplot_hex_cmap()
-
-        inch_per = max(2.45, min(3.35, 13.0 / max(zdim, 1)))
-        left_m = _PAIR_GRID_LEFT
-        # Reserve extra headroom for enlarged top edge labels.
-        top_m = min(_PAIR_GRID_TOP, 0.955)
-        bottom_m = _PAIR_GRID_BOTTOM
-        right_axes = _PAIR_GRID_RIGHT
-
-        w_frac = right_axes - left_m
-        h_frac = top_m - bottom_m
-        grid_side_in = inch_per * zdim
-        fig_w = grid_side_in / w_frac
-        fig_h = grid_side_in / h_frac
-
-        with sns.axes_style(
-            "white",
-            rc={
-                "axes.facecolor": _DASHBOARD_CREAM,
-                "figure.facecolor": _DASHBOARD_CREAM,
-            },
-        ):
-            fig, axes = plt.subplots(
-                zdim,
-                zdim,
-                figsize=(fig_w, fig_h),
-                squeeze=False,
-                constrained_layout=False,
-            )
-        fig.patch.set_facecolor(_DASHBOARD_CREAM)
+        geom = _pair_grid_geometry(zdim)
+        fig, axes = _new_pair_grid_figure(zdim, cell_limits)
+        # Points are drawn at output resolution: lay the figure out at that dpi.
+        fig.set_dpi(dpi)
 
         diagonal_color_ranges: list[tuple[float, float] | None] = [None] * zdim
-
+        layers: list[tuple[Any, dict[str, float], tuple]] = []
         for i in range(zdim):
             for j in range(zdim):
                 ax = axes[i, j]
-                xi = df[zcols[j]].to_numpy(dtype=np.float64)
-                yi = df[zcols[i]].to_numpy(dtype=np.float64)
+                xi, yi = z_values[j], z_values[i]
                 if i == j:
-                    zi = df[zcols[i]].to_numpy(dtype=np.float64)
                     zi_full = full_df[zcols[i]].to_numpy(dtype=np.float64)
                     zm_full = np.isfinite(zi_full)
-                    z_scatter_kw: dict[str, Any] = {}
-                    if np.any(zm_full):
-                        zmin_g = float(np.min(zi_full[zm_full]))
-                        zmax_g = float(np.max(zi_full[zm_full]))
-                        if zmax_g <= zmin_g:
-                            zmax_g = zmin_g + 1e-9
-                        diagonal_color_ranges[i] = (zmin_g, zmax_g)
-                        z_scatter_kw["vmin"] = zmin_g
-                        z_scatter_kw["vmax"] = zmax_g
-                    ax.scatter(
-                        emb_x,
-                        emb_y,
-                        c=zi,
-                        cmap=mpl_cmap,
-                        s=diag_s,
-                        alpha=diag_a,
-                        linewidths=0,
-                        rasterized=True,
-                        **z_scatter_kw,
-                    )
+                    if not np.any(zm_full):
+                        continue
+                    zmin_g = float(np.min(zi_full[zm_full]))
+                    zmax_g = float(np.max(zi_full[zm_full]))
+                    if zmax_g <= zmin_g:
+                        zmax_g = zmin_g + 1e-9
+                    diagonal_color_ranges[i] = (zmin_g, zmax_g)
+                    diag_rgb = _colormap_rgb(mpl_cmap, z_values[i], zmin_g, zmax_g)
+                    points = (emb_x, emb_y, ("rgb", diag_rgb), diag_a, diag_s)
+                elif i < j and upper == "hex":
+                    mxy = np.isfinite(xi) & np.isfinite(yi)
+                    xh, yh = xi[mxy], yi[mxy]
+                    if xh.size:
+                        try:
+                            gs = _pair_jointplot_hex_gridsize(xh, yh)
+                            ax.hexbin(xh, yh, gridsize=gs, cmap=hex_cmap)
+                        except ZeroDivisionError:
+                            gs = int(np.clip(22 + np.sqrt(max(n_pts, 1)), 30, 75))
+                            ax.hexbin(xh, yh, gridsize=gs, cmap=hex_cmap, mincnt=1)
+                        xl, yl = cell_limits(i, j)
+                        ax.set_xlim(xl[0], xl[1])
+                        ax.set_ylim(yl[0], yl[1])
+                    continue
                 elif i < j:
-                    if upper == "hex":
-                        mxy = np.isfinite(xi) & np.isfinite(yi)
-                        xh, yh = xi[mxy], yi[mxy]
-                        if xh.size == 0:
-                            pass
-                        else:
-                            try:
-                                gs = _pair_jointplot_hex_gridsize(xh, yh)
-                                ax.hexbin(xh, yh, gridsize=gs, cmap=hex_cmap)
-                            except ZeroDivisionError:
-                                ax.hexbin(
-                                    xh,
-                                    yh,
-                                    gridsize=int(
-                                        np.clip(22 + np.sqrt(max(n_pts, 1)), 30, 75)
-                                    ),
-                                    cmap=hex_cmap,
-                                    mincnt=1,
-                                )
-                    else:
-                        ax.scatter(
-                            xi,
-                            yi,
-                            c=_UPPER_SCATTER_BLUE,
-                            s=up_scatter_s,
-                            alpha=up_scatter_a,
-                            linewidths=0,
-                            rasterized=True,
-                        )
+                    points = (xi, yi, ("one", upper_rgb), up_scatter_a, up_scatter_s)
                 else:
-                    if discrete:
-                        assert point_colors is not None
-                        ax.scatter(
-                            xi,
-                            yi,
-                            c=point_colors,
-                            s=lo_s,
-                            alpha=lo_a,
-                            linewidths=0,
-                            rasterized=True,
-                        )
-                    else:
-                        assert (
-                            cvals_plot is not None
-                            and cmin is not None
-                            and cmax is not None
-                        )
-                        ax.scatter(
-                            xi,
-                            yi,
-                            c=cvals_plot,
-                            cmap=mpl_cmap,
-                            vmin=cmin,
-                            vmax=cmax,
-                            s=lo_s,
-                            alpha=lo_a,
-                            linewidths=0,
-                            rasterized=True,
-                        )
+                    points = (xi, yi, lower_colour, lo_a, lo_s)
+                px = _panel_pixels(ax)
+                if px is not None:
+                    layers.append((ax, px, points))
 
-                ax.set_xticks([])
-                ax.set_yticks([])
-                # Freeze axes to the unfiltered table so legend selections
-                # only subset points.
-                if i == j:
-                    xl, yl = _pair_grid_square_xy_limits(emb_x_lim, emb_y_lim)
-                    ax.set_xlim(xl[0], xl[1])
-                    ax.set_ylim(yl[0], yl[1])
-                else:
-                    xl, yl = _pair_grid_square_xy_limits(z_axis_lim[j], z_axis_lim[i])
-                    ax.set_xlim(xl[0], xl[1])
-                    ax.set_ylim(yl[0], yl[1])
-                # Equal data aspect without shrinking panels unevenly
-                # (``box`` gives ragged cell sizes).
-                ax.set_aspect("equal", adjustable="datalim")
-                ax.set_box_aspect(1)
-                ax.set_facecolor(_DASHBOARD_CREAM)
-                is_diag = i == j
-                for spine in ax.spines.values():
-                    spine.set_linewidth(2.1 if is_diag else 1.05)
-                    spine.set_color("#334e68" if is_diag else "#5a6b7a")
+        def composite(layer: tuple) -> np.ndarray:
+            _, px, (x, y, colour, alpha, size) = layer
+            return _composite_points(px, x, y, colour, alpha, size, dpi)
 
-        fig.subplots_adjust(
-            left=left_m,
-            right=right_axes,
-            top=top_m,
-            bottom=bottom_m,
-            wspace=_PAIR_CELL_WSPACE,
-            hspace=_PAIR_CELL_HSPACE,
-        )
+        if workers > 1 and len(layers) > 1:
+            with ThreadPoolExecutor(max_workers=min(workers, len(layers))) as pool:
+                images = list(pool.map(composite, layers))
+        else:
+            images = [composite(layer) for layer in layers]
+        for (ax, px, _), img in zip(layers, images):
+            _add_points_image(ax, px, img)
 
-        label_fs = max(11.0, min(16.0, 4.9 * inch_per / 3.05))
+        label_fs = max(11.0, min(16.0, 4.9 * geom["inch_per"] / 3.05))
         _draw_pair_grid_edge_labels(
             fig,
             axes,
             zdim=zdim,
-            left_m=left_m,
-            top_m=top_m,
-            bottom_m=bottom_m,
-            right_axes=right_axes,
+            left_m=geom["left"],
+            top_m=geom["top"],
+            bottom_m=geom["bottom"],
+            right_axes=geom["right"],
             fontsize=label_fs * 1.5,
         )
         _draw_pair_grid_diagonal_legends(
@@ -623,18 +699,58 @@ def pair_grid_png(
         )
 
         cell_layout = _axes_cell_bboxes(np.asarray(axes))
-
-        buf = io.BytesIO()
-        # Full figure bbox (no tight crop) so figure fractions match
-        # PNG pixels for the overlay.
-        fig.savefig(
-            buf,
-            format="png",
-            dpi=dpi,
-            facecolor=_DASHBOARD_CREAM,
-            edgecolor="none",
-            pad_inches=0,
-        )
+        png = _opaque_figure_png(fig)
         plt.close(fig)
-        buf.seek(0)
-        return buf.getvalue(), cell_layout
+        return png, cell_layout
+
+
+def _opaque_figure_png(fig: Any, compress_level: int = 3) -> bytes:
+    """The whole figure (no tight crop, so figure fractions match PNG pixels for the
+    overlay) as an RGB PNG at the figure's dpi.
+
+    Same pixels as ``savefig(format="png")`` with the figure's own facecolor, without
+    its always-opaque alpha channel; ``compress_level`` 3 instead of Pillow's 6 saves
+    0.2 s per grid for 10% more bytes.
+    """
+    fig.canvas.draw()
+    rgb = np.asarray(fig.canvas.buffer_rgba())[..., :3]
+    buf = io.BytesIO()
+    Image.fromarray(np.ascontiguousarray(rgb)).save(
+        buf, format="png", compress_level=compress_level
+    )
+    return buf.getvalue()
+
+
+# Recent pair grids by request: switching back and "Save PNG" reuse them instead of
+# rendering again. Columns of ``plot_df`` never change once loaded (covariates loaded
+# later get new names), so the experiment object and the request identify the image.
+_PAIR_GRID_CACHE: "OrderedDict[tuple, tuple[bytes, list[dict[str, float]]]]" = (
+    OrderedDict()
+)
+_PAIR_GRID_CACHE_LOCK = threading.Lock()
+_PAIR_GRID_CACHE_SIZE = 8
+
+
+def pair_grid_png_cached(
+    exp: DashboardExperiment, **kwargs: Any
+) -> tuple[bytes, list[dict[str, float]]]:
+    """:func:`pair_grid_png`, remembering the last few results (about 2-4 MB each)."""
+    # ``workers`` changes how fast, not what: leave it out of the key.
+    request = {k: v for k, v in kwargs.items() if k != "workers"}
+    key = (
+        id(exp),
+        exp.workdir,
+        int(exp.epoch),
+        json.dumps(request, sort_keys=True, default=str),
+    )
+    with _PAIR_GRID_CACHE_LOCK:
+        hit = _PAIR_GRID_CACHE.get(key)
+        if hit is not None:
+            _PAIR_GRID_CACHE.move_to_end(key)
+            return hit[0], [dict(c) for c in hit[1]]
+    png, cells = pair_grid_png(exp, **kwargs)
+    with _PAIR_GRID_CACHE_LOCK:
+        _PAIR_GRID_CACHE[key] = (png, [dict(c) for c in cells])
+        while len(_PAIR_GRID_CACHE) > _PAIR_GRID_CACHE_SIZE:
+            _PAIR_GRID_CACHE.popitem(last=False)
+    return png, cells

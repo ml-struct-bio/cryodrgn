@@ -8,13 +8,18 @@
   <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='favicon.png') }}"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  {# Match E.Z. Lab (https://ezlab.princeton.edu/) — Barlow + Roboto in main.css #}
-  <link
-    href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
-    rel="stylesheet"/>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
-    rel="stylesheet"/>
+  {# Match E.Z. Lab (https://ezlab.princeton.edu/) — Barlow + Roboto in main.css.
+     The font stylesheets are fetched without blocking rendering (media="print" until
+     loaded): a browser that cannot reach fonts.googleapis.com shows the page at once
+     in the fallback fonts instead of a blank page until the request gives up. #}
+  {% for font_css in [
+    "https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap",
+    "https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap",
+  ] %}
+  <link rel="preload" as="style" href="{{ font_css }}"/>
+  <link rel="stylesheet" href="{{ font_css }}" media="print" onload="this.media='all'"/>
+  <noscript><link rel="stylesheet" href="{{ font_css }}"/></noscript>
+  {% endfor %}
   <script src="{{ url_for('bundled_plotly_js') }}" charset="utf-8"></script>
   <script src="{{ url_for('static', filename='js/plotly_array_utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/cryo_figure_columns.js') }}"></script>

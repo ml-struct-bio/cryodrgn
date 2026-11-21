@@ -13,23 +13,45 @@
       });
     }
 
-    function cryoPostWorkdir(wd) {
-      fetch(cfg.setWorkdirUrl, {
+    /**
+     * POST a switch of run folder or epoch and reload on success. On failure the page
+     * stays on its data, so the menu goes back to its value and the reason is shown;
+     * it used to keep the new value over the old data, silently.
+     */
+    function cryoPostSwitch(url, body, what, menu) {
+      var previous = menu ? menu.getAttribute("data-cryo-current") : null;
+      function fail(reason) {
+        if (menu && previous !== null) menu.value = previous;
+        console.error("[cryodrgn] switching " + what + " failed", reason);
+        window.alert("Could not switch " + what + ": " + reason);
+      }
+      fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workdir: wd ? wd : null })
+        body: JSON.stringify(body)
       })
         .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
         .then(function(res) {
-          if (res.ok && res.j.ok) window.location.reload();
+          if (res.ok && res.j.ok) {
+            window.location.reload();
+            return;
+          }
+          fail((res.j && res.j.error) || "the server refused it.");
         })
-        .catch(function() {});
+        .catch(function(err) {
+          fail(String((err && err.message) || err || "the request failed."));
+        });
+    }
+
+    function cryoPostWorkdir(wd, menu) {
+      cryoPostSwitch(cfg.setWorkdirUrl, { workdir: wd ? wd : null }, "the run folder", menu);
     }
 
     var wdSel = document.getElementById("dash-workdir");
     if (wdSel) {
+      wdSel.setAttribute("data-cryo-current", wdSel.value);
       wdSel.addEventListener("change", function() {
-        cryoPostWorkdir(String(this.value || "").trim());
+        cryoPostWorkdir(String(this.value || "").trim(), wdSel);
       });
     }
 
@@ -151,21 +173,11 @@
 
     var sel = document.getElementById("dash-epoch");
     if (sel && sel.options.length > 1) {
+      sel.setAttribute("data-cryo-current", sel.value);
       sel.addEventListener("change", function() {
         var v = parseInt(this.value, 10);
         if (isNaN(v)) return;
-        fetch(cfg.setEpochUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ epoch: v })
-        })
-          .then(function(r) {
-            return r.json().then(function(j) { return { ok: r.ok, j: j }; });
-          })
-          .then(function(res) {
-            if (res.ok && res.j.ok) window.location.reload();
-          })
-          .catch(function() {});
+        cryoPostSwitch(cfg.setEpochUrl, { epoch: v }, "the epoch", sel);
       });
     }
   })();

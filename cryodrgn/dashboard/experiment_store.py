@@ -8,6 +8,9 @@ and :meth:`ExperimentStore.clear_preloads_for_experiment`.
 """
 
 from __future__ import annotations
+
+import threading
+
 from cryodrgn.dashboard.data import DashboardExperiment, list_z_epochs, load_experiment
 
 ExperimentKey = tuple[str, int, int]
@@ -25,6 +28,7 @@ class ExperimentStore:
         self.preloads: dict[PreloadKey, PreloadValue] = {}
         self.traj_graph_neighbors: dict[TrajGraphKey, TrajGraphValue] = {}
         self._epochs_by_workdir: dict[str, list[int]] = {}
+        self._load_lock = threading.Lock()
 
     def get_experiment(
         self,
@@ -34,11 +38,16 @@ class ExperimentStore:
     ) -> DashboardExperiment:
         """Return a cached experiment, loading from disk on first access."""
         key: ExperimentKey = (workdir, int(epoch), int(kmeans))
-        if key not in self.experiments:
-            self.experiments[key] = load_experiment(
-                workdir, epoch=int(epoch), kmeans=int(kmeans)
-            )
-        return self.experiments[key]
+        exp = self.experiments.get(key)
+        if exp is None:
+            # The server is threaded and a page fires several requests at once; without
+            # the lock each of them would read the run from disk and redo the PCA.
+            with self._load_lock:
+                exp = self.experiments.get(key)
+                if exp is None:
+                    exp = load_experiment(workdir, epoch=int(epoch), kmeans=int(kmeans))
+                    self.experiments[key] = exp
+        return exp
 
     def epochs_for_workdir(self, workdir: str) -> list[int]:
         """Epochs with both ``z.N.pkl`` and ``analyze.N/`` (memoised per workdir)."""

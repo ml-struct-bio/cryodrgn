@@ -6,7 +6,13 @@ import base64
 import os
 import pickle
 import re
+import shutil
+import signal
+import subprocess
+import sys
 import tempfile
+import threading
+import time
 import numpy as np
 import pytest
 
@@ -622,6 +628,85 @@ class TestExperimentStore:
         assert a is b
         assert len(EXPERIMENT_STORE.experiments) == 1
 
+    def test_concurrent_first_requests_load_the_run_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        dashboard_experiment: DashboardExperiment,
+    ) -> None:
+        """A page fires several requests at once; only one of them may load."""
+        from cryodrgn.dashboard import experiment_store as store_mod
+
+        calls: list[tuple] = []
+
+        def _slow_load(workdir, epoch=-1, kmeans=-1):
+            calls.append((workdir, epoch, kmeans))
+            time.sleep(0.2)
+            return dashboard_experiment
+
+        monkeypatch.setattr(store_mod, "load_experiment", _slow_load)
+        store = store_mod.ExperimentStore()
+        n_requests = 8
+        start = threading.Barrier(n_requests)
+        got: list[DashboardExperiment] = []
+
+        def _request() -> None:
+            start.wait()
+            got.append(store.get_experiment("/some/run", 3, -1))
+
+        threads = [threading.Thread(target=_request) for _ in range(n_requests)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert calls == [("/some/run", 3, -1)]
+        assert len(got) == n_requests
+        assert all(e is dashboard_experiment for e in got)
+
+    def test_failed_load_is_not_cached_and_does_not_block_the_next_request(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        dashboard_experiment: DashboardExperiment,
+    ) -> None:
+        from cryodrgn.dashboard import experiment_store as store_mod
+
+        outcomes: list = [ValueError("no analysis yet"), dashboard_experiment]
+
+        def _load(workdir, epoch=-1, kmeans=-1):
+            out = outcomes.pop(0)
+            if isinstance(out, Exception):
+                raise out
+            return out
+
+        monkeypatch.setattr(store_mod, "load_experiment", _load)
+        store = store_mod.ExperimentStore()
+        with pytest.raises(ValueError, match="no analysis yet"):
+            store.get_experiment("/some/run", 3, -1)
+        assert store.experiments == {}
+        assert store.get_experiment("/some/run", 3, -1) is dashboard_experiment
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/static/css/cryo_dashboard.css",
+            "/static/js/cryo_figure_columns.js",
+            "/static/favicon.png",
+            "/vendor/plotly.min.js",
+        ],
+    )
+    def test_static_files_are_served_without_loading_the_run(
+        self, flask_client, monkeypatch: pytest.MonkeyPatch, path: str
+    ) -> None:
+        """Stylesheets and scripts must not wait behind (or start) a load."""
+
+        def _refuse(*_args, **_kwargs):
+            raise AssertionError("a static file request loaded the experiment")
+
+        monkeypatch.setattr(EXPERIMENT_STORE, "get_experiment", _refuse)
+        r = flask_client.get(path)
+        assert r.status_code == 200, path
+        assert len(r.data) > 0
+        r.close()
+
     def test_clear_preloads_for_experiment_is_scoped(
         self, dashboard_experiment: DashboardExperiment
     ) -> None:
@@ -889,6 +974,46 @@ class TestIndexTemplateNavLinks:
         assert "analyze_landscape" in body
 
 
+class TestFontStylesheetsDoNotBlockRendering:
+    """A browser that cannot reach Google Fonts must still paint the page at once.
+
+    A plain ``<link rel="stylesheet">`` in ``<head>`` holds back the first paint
+    until the request answers or gives up, which is seconds on a cluster node
+    without outside network access.
+    """
+
+    @pytest.mark.parametrize("path", ["/", "/explorer", "/command-builder"])
+    def test_font_stylesheets_are_loaded_without_blocking(
+        self, flask_client, path: str
+    ) -> None:
+        html = flask_client.get(path).get_data(as_text=True)
+        head = html.split("</head>", 1)[0]
+        scripted = re.sub(r"<noscript>.*?</noscript>", "", head, flags=re.S)
+        font_sheets = [
+            tag
+            for tag in re.findall(r"<link\b[^>]*>", scripted)
+            if "fonts.googleapis.com/css" in tag and 'rel="stylesheet"' in tag
+        ]
+        assert len(font_sheets) == 2, font_sheets
+        for tag in font_sheets:
+            # Fetched as a print stylesheet (non-blocking), switched on when loaded.
+            assert 'media="print"' in tag, tag
+            assert "onload=\"this.media='all'\"" in tag, tag
+
+    def test_fonts_still_load_without_javascript(self, flask_client) -> None:
+        html = flask_client.get("/").get_data(as_text=True)
+        fallbacks = re.findall(r"<noscript>(.*?)</noscript>", html, flags=re.S)
+        font_fallbacks = [f for f in fallbacks if "fonts.googleapis.com/css" in f]
+        assert len(font_fallbacks) == 2
+        for tag in font_fallbacks:
+            assert 'rel="stylesheet"' in tag and "media=" not in tag
+
+    def test_both_font_families_are_still_requested(self, flask_client) -> None:
+        html = flask_client.get("/").get_data(as_text=True)
+        for family in ("family=Barlow:", "family=Roboto:"):
+            assert family in html, family
+
+
 class TestCommandBuilderOnlyMode:
     def test_builder_only_index_renders(self, dashboard_workdir: str) -> None:
         app = dash_app.create_app(workdir=None)
@@ -953,8 +1078,436 @@ class TestDiscreteCovariateLegendContracts:
         )
 
 
+@pytest.fixture
+def private_tempdir(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """An empty system temp directory, with no dashboard root made in it yet.
+
+    The root this test process already holds is only forgotten for the duration
+    of the test, not deleted: other dashboard modules keep folders inside it.
+    """
+    from cryodrgn.dashboard import tempdirs
+
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp))
+    monkeypatch.setattr(tempdirs, "_root", None)
+    monkeypatch.setattr(tempdirs, "_root_pid", None)
+    return tmp
+
+
+class TestDashboardTempdirs:
+    """Decoded volumes go under one per-process folder that is removed at exit."""
+
+    def test_folders_are_created_under_one_root_per_process(
+        self, private_tempdir
+    ) -> None:
+        from cryodrgn.dashboard import tempdirs
+
+        a = tempdirs.make_tempdir("cryodrgn_explorer_mrc_")
+        b = tempdirs.make_tempdir("cryodrgn_trajectory_mrc_")
+        root = tempdirs.session_root()
+        assert os.path.dirname(root) == str(private_tempdir)
+        assert os.path.basename(root).startswith(
+            f"cryodrgn_dashboard_{tempdirs._host_tag()}_{os.getpid()}_"
+        )
+        assert tempdirs._ROOT_RE.match(os.path.basename(root))
+        assert os.path.dirname(a) == root
+        assert os.path.dirname(b) == root
+        assert os.path.basename(a).startswith("cryodrgn_explorer_mrc_")
+        assert a != b and os.path.isdir(a) and os.path.isdir(b)
+        assert os.listdir(private_tempdir) == [os.path.basename(root)]
+
+    def test_removing_the_root_deletes_its_folders_and_a_new_one_is_made_on_demand(
+        self, private_tempdir
+    ) -> None:
+        from cryodrgn.dashboard import tempdirs
+
+        folder = tempdirs.make_tempdir("cryodrgn_explorer_mrc_")
+        with open(os.path.join(folder, "vol_000.mrc"), "wb") as fh:
+            fh.write(b"volume")
+        root = tempdirs.session_root()
+        tempdirs.remove_session_root()
+        assert not os.path.exists(root)
+        assert os.listdir(private_tempdir) == []
+
+        again = tempdirs.make_tempdir("cryodrgn_explorer_mrc_")
+        assert os.path.isdir(again)
+        assert tempdirs.session_root() != root
+
+    def test_root_deleted_by_someone_else_is_made_again(self, private_tempdir) -> None:
+        from cryodrgn.dashboard import tempdirs
+
+        root = tempdirs.session_root()
+        shutil.rmtree(root)
+        assert os.path.isdir(tempdirs.make_tempdir("cryodrgn_explorer_mrc_"))
+
+    def test_only_the_process_that_made_the_root_removes_it(
+        self, private_tempdir, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A forked worker inherits the parent's root and must leave it in place."""
+        from cryodrgn.dashboard import tempdirs
+
+        root = tempdirs.session_root()
+        monkeypatch.setattr(tempdirs, "_root_pid", os.getpid() + 1)
+        tempdirs.remove_session_root()
+        assert os.path.isdir(root)
+
+    @staticmethod
+    def _pid_of_a_finished_process() -> int:
+        proc = subprocess.Popen([sys.executable, "-c", "pass"])
+        proc.wait()
+        return proc.pid
+
+    @staticmethod
+    def _folder(parent, name: str, *, age_s: float = 0.0, file_age_s=None) -> str:
+        """A folder with one file in it, last modified ``age_s`` seconds ago."""
+        path = parent / name
+        path.mkdir()
+        fl = path / "vol_000.mrc"
+        fl.write_bytes(b"volume")
+        now = time.time()
+        file_age_s = age_s if file_age_s is None else file_age_s
+        os.utime(fl, (now - file_age_s, now - file_age_s))
+        os.utime(path, (now - age_s, now - age_s))
+        return str(path)
+
+    def test_sweep_removes_what_dead_dashboards_left_and_nothing_else(
+        self, private_tempdir
+    ) -> None:
+        from cryodrgn.dashboard import tempdirs
+
+        tmp = private_tempdir
+        host = tempdirs._host_tag()
+        dead = self._pid_of_a_finished_process()
+        day = 24 * 3600.0
+
+        dead_root = self._folder(tmp, f"cryodrgn_dashboard_{host}_{dead}_k3x9")
+        old_volumes = [
+            self._folder(tmp, "cryodrgn_explorer_mrc_old", age_s=2 * day),
+            self._folder(tmp, "cryodrgn_trajectory_mrc_old", age_s=2 * day),
+        ]
+        kept = [
+            # A dashboard that is still running (this process).
+            self._folder(tmp, f"cryodrgn_dashboard_{host}_{os.getpid()}_k3x9"),
+            # Same pid number on another machine sharing the temp directory.
+            self._folder(tmp, f"cryodrgn_dashboard_another-node_{dead}_k3x9"),
+            # Volume folders of earlier releases that may still be in use.
+            self._folder(tmp, "cryodrgn_explorer_mrc_recent", age_s=3600.0),
+            self._folder(
+                tmp, "cryodrgn_explorer_mrc_busy", age_s=2 * day, file_age_s=60.0
+            ),
+            # Not the dashboard's.
+            self._folder(tmp, "cryodrgn_smoke_cache", age_s=30 * day),
+            self._folder(tmp, "some_other_tool", age_s=30 * day),
+        ]
+        stray_file = tmp / f"cryodrgn_dashboard_{host}_{dead}_file"
+        stray_file.write_text("not a folder")
+
+        removed = tempdirs.sweep_stale_tempdirs()
+        assert sorted(removed) == sorted([dead_root, *old_volumes])
+        for path in removed:
+            assert not os.path.exists(path), path
+        for path in [*kept, str(stray_file)]:
+            assert os.path.exists(path), path
+
+        # Nothing is left to remove the second time.
+        assert tempdirs.sweep_stale_tempdirs() == []
+
+    def test_sweep_leaves_other_users_folders_alone(
+        self, private_tempdir, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cryodrgn.dashboard import tempdirs
+
+        host = tempdirs._host_tag()
+        dead = self._pid_of_a_finished_process()
+        root = self._folder(private_tempdir, f"cryodrgn_dashboard_{host}_{dead}_k3x9")
+        old = self._folder(
+            private_tempdir, "cryodrgn_explorer_mrc_old", age_s=2 * 24 * 3600.0
+        )
+        my_uid = os.getuid()
+        monkeypatch.setattr(tempdirs.os, "getuid", lambda: my_uid + 1)
+        assert tempdirs.sweep_stale_tempdirs() == []
+        assert os.path.isdir(root) and os.path.isdir(old)
+
+    def test_sweep_of_a_missing_temp_directory_is_a_no_op(self, tmp_path) -> None:
+        from cryodrgn.dashboard import tempdirs
+
+        assert tempdirs.sweep_stale_tempdirs(str(tmp_path / "missing")) == []
+
+
+_SIGNAL_TEST_CHILD = """
+import signal
+import sys
+
+from cryodrgn.dashboard import app as dash_app
+from cryodrgn.dashboard import tempdirs
+
+# A child inherits ignored signals, and the tests may themselves be running under
+# ``nohup``: set what each case needs instead of relying on what was inherited.
+signal.signal(signal.SIGTERM, signal.SIG_DFL)
+signal.signal(
+    signal.SIGHUP,
+    # "hangup-ignored" is what a process started under ``nohup`` inherits.
+    signal.SIG_IGN if sys.argv[1] == "hangup-ignored" else signal.SIG_DFL,
+)
+dash_app._exit_cleanly_on_termination_signals()
+print(tempdirs.make_tempdir("cryodrgn_explorer_mrc_"), flush=True)
+for line in sys.stdin:
+    print("still running", flush=True)
+"""
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="needs POSIX signals")
+class TestDashboardExitCleanup:
+    """A terminated dashboard must still run the hooks that remove its temp files."""
+
+    def test_handlers_replace_only_the_default_action(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        dispositions = {signal.SIGTERM: signal.SIG_DFL, signal.SIGHUP: signal.SIG_IGN}
+        installed: dict = {}
+        monkeypatch.setattr(signal, "getsignal", lambda sig: dispositions[sig])
+        monkeypatch.setattr(
+            signal, "signal", lambda sig, handler: installed.update({sig: handler})
+        )
+        dash_app._exit_cleanly_on_termination_signals()
+        assert set(installed) == {signal.SIGTERM}
+        with pytest.raises(SystemExit) as exit_info:
+            installed[signal.SIGTERM](signal.SIGTERM, None)
+        assert exit_info.value.code == 128 + signal.SIGTERM
+
+    @staticmethod
+    def _start_child(tmp_dir, mode: str) -> subprocess.Popen:
+        """Start a process that sets itself up the way ``run_server`` does."""
+        import cryodrgn
+
+        # The child must import the code under test, installed or not.
+        pkg_parent = os.path.dirname(
+            os.path.dirname(os.path.abspath(cryodrgn.__file__))
+        )
+        env = dict(os.environ)
+        env["TMPDIR"] = str(tmp_dir)
+        env["PYTHONPATH"] = os.pathsep.join(
+            p for p in (pkg_parent, env.get("PYTHONPATH", "")) if p
+        )
+        return subprocess.Popen(
+            [sys.executable, "-c", _SIGNAL_TEST_CHILD, mode],
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+
+    def test_terminated_process_removes_its_temp_folders(self, tmp_path) -> None:
+        """SIGTERM and SIGHUP exit through ``atexit``; an ignored SIGHUP stays ignored."""
+        cases = {
+            "terminated": ("default", signal.SIGTERM),
+            "hung up": ("default", signal.SIGHUP),
+            "hung up under nohup": ("hangup-ignored", signal.SIGHUP),
+        }
+        procs: dict[str, subprocess.Popen] = {}
+        try:
+            # Importing the dashboard takes seconds: start the children together.
+            for name, (mode, _sig) in cases.items():
+                tmp_dir = tmp_path / name.replace(" ", "_")
+                tmp_dir.mkdir()
+                procs[name] = self._start_child(tmp_dir, mode)
+            folders = {}
+            for name, proc in procs.items():
+                folders[name] = proc.stdout.readline().strip()
+                assert os.path.isdir(folders[name]), name
+
+            for name in ("terminated", "hung up"):
+                sig = cases[name][1]
+                procs[name].send_signal(sig)
+                assert procs[name].wait(timeout=60) == 128 + sig, name
+                assert not os.path.exists(os.path.dirname(folders[name])), name
+
+            # The hangup is ignored, as ``nohup`` asks, and the folders stay ...
+            survivor = procs["hung up under nohup"]
+            survivor.send_signal(signal.SIGHUP)
+            survivor.stdin.write("are you there?\n")
+            survivor.stdin.flush()
+            assert survivor.stdout.readline().strip() == "still running"
+            assert os.path.isdir(folders["hung up under nohup"])
+            # ... until the process is terminated.
+            survivor.send_signal(signal.SIGTERM)
+            assert survivor.wait(timeout=60) == 128 + signal.SIGTERM
+            assert not os.path.exists(os.path.dirname(folders["hung up under nohup"]))
+        finally:
+            for proc in procs.values():
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+                for stream in (proc.stdin, proc.stdout):
+                    if stream is not None:
+                        stream.close()
+
+
+class TestAccessToken:
+    """Each launch has a token; without it the dashboard answers nobody.
+
+    127.0.0.1 is reachable by every user of a shared node, and endpoints unpickle and
+    write files at paths taken from the request.
+    """
+
+    TOKEN = "test-token-123"
+
+    @pytest.fixture
+    def app(self, dashboard_workdir: str):
+        return dash_app.create_app(workdir=dashboard_workdir, access_token=self.TOKEN)
+
+    def test_pages_and_apis_refuse_requests_without_the_token(self, app) -> None:
+        client = app.test_client()
+        page = client.get("/explorer")
+        assert page.status_code == 403
+        assert "access link" in page.get_data(as_text=True)
+        api = client.get("/api/scatter?x=z0&y=z1")
+        assert api.status_code == 403
+        assert "access link" in api.get_json()["error"]
+
+    def test_a_wrong_token_is_refused(self, app) -> None:
+        client = app.test_client()
+        assert client.get("/?token=wrong").status_code == 403
+        client.set_cookie(app.config["DASHBOARD_ACCESS_COOKIE"], "wrong")
+        assert client.get("/").status_code == 403
+        assert client.get("/", headers={"X-Cryodrgn-Token": "wrong"}).status_code == 403
+
+    def test_the_link_trades_its_token_for_a_cookie(self, app) -> None:
+        client = app.test_client()
+        r = client.get(f"/explorer?token={self.TOKEN}&x=z0")
+        assert r.status_code == 302
+        assert r.headers["Location"] == "/explorer?x=z0", "the token leaves the URL"
+        cookie = r.headers["Set-Cookie"]
+        assert cookie.startswith(app.config["DASHBOARD_ACCESS_COOKIE"] + "=")
+        assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
+        assert client.get("/").status_code == 200
+
+    def test_scripts_can_send_the_token_as_a_header_or_on_api_calls(self, app) -> None:
+        client = app.test_client()
+        header = {"X-Cryodrgn-Token": self.TOKEN}
+        assert client.get("/", headers=header).status_code == 200
+        r = client.get(f"/api/scatter?x=z0&y=z1&token={self.TOKEN}")
+        assert r.status_code == 200, "an API call with the token is answered directly"
+
+    def test_package_files_need_no_token(self, app) -> None:
+        client = app.test_client()
+        assert client.get("/static/js/cryo_status_tones.js").status_code == 200
+        assert client.get("/vendor/plotly.min.js").status_code == 200
+
+    def test_a_refused_request_does_not_load_the_run(
+        self, app, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cryodrgn.dashboard import context as dash_context
+
+        loads = []
+        real = dash_context.EXPERIMENT_STORE.get_experiment
+        monkeypatch.setattr(
+            dash_context.EXPERIMENT_STORE,
+            "get_experiment",
+            lambda *a, **k: loads.append(a) or real(*a, **k),
+        )
+        assert app.test_client().get("/explorer").status_code == 403
+        assert loads == []
+
+    def test_two_dashboards_keep_their_own_cookies(
+        self, dashboard_workdir: str
+    ) -> None:
+        """Browsers share cookies between the ports of one host."""
+        a = dash_app.create_app(workdir=dashboard_workdir, access_token="one")
+        b = dash_app.create_app(workdir=dashboard_workdir, access_token="two")
+        for key in ("DASHBOARD_ACCESS_COOKIE", "SESSION_COOKIE_NAME"):
+            assert a.config[key] != b.config[key]
+
+    def test_the_session_key_is_not_a_constant(
+        self, dashboard_workdir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("CRYODRGN_DASHBOARD_SECRET", raising=False)
+        a = dash_app.create_app(workdir=dashboard_workdir)
+        b = dash_app.create_app(workdir=dashboard_workdir)
+        assert a.secret_key != b.secret_key
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_SECRET", "fixed")
+        assert dash_app.create_app(workdir=dashboard_workdir).secret_key == "fixed"
+
+    def test_the_command_prints_and_opens_the_link_it_passes_on(
+        self,
+        dashboard_workdir: str,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        import argparse
+
+        from cryodrgn.commands import dashboard as dash_cli
+
+        monkeypatch.delenv("CRYODRGN_DASHBOARD_TOKEN", raising=False)
+        called: dict = {}
+        monkeypatch.setattr(dash_cli, "run_server", lambda **kw: called.update(kw))
+        parser = argparse.ArgumentParser()
+        dash_cli.add_args(parser)
+        dash_cli.main(parser.parse_args([dashboard_workdir, "--no-browser", "--traj"]))
+        token = called["access_token"]
+        assert len(token) >= 24
+        out = capsys.readouterr().out
+        assert f"http://127.0.0.1:5050/trajectory?token={token}" in out
+
+        monkeypatch.setenv("CRYODRGN_DASHBOARD_TOKEN", "bookmarked")
+        dash_cli.main(parser.parse_args([dashboard_workdir, "--no-browser"]))
+        assert called["access_token"] == "bookmarked"
+
+    @pytest.mark.parametrize(
+        "host, path, expected",
+        [
+            ("127.0.0.1", "/", "http://127.0.0.1:5050/?token=t%2Bu"),
+            ("0.0.0.0", "/explorer", "http://127.0.0.1:5050/explorer?token=t%2Bu"),
+            ("::1", "/", "http://[::1]:5050/?token=t%2Bu"),
+            ("node7", "/a?b=1", "http://node7:5050/a?b=1&token=t%2Bu"),
+        ],
+    )
+    def test_access_url(self, host: str, path: str, expected: str) -> None:
+        from cryodrgn.dashboard.access import access_url
+
+        assert access_url(host, 5050, path, "t+u") == expected
+
+
 class TestChimeraxAnimation:
     """Unified ChimeraX rotation GIF helpers (``cryodrgn.dashboard.chimerax_animation``)."""
+
+    @pytest.fixture(autouse=True)
+    def _forget_offscreen_failures(self):
+        """A remembered ``--offscreen`` failure is process-wide: reset it per test."""
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        def _forget() -> None:
+            cx._OFFSCREEN_UNAVAILABLE.clear()
+            os.environ.pop(cx._OFFSCREEN_UNAVAILABLE_ENV, None)
+
+        _forget()
+        yield
+        _forget()
+
+    @pytest.mark.parametrize(
+        "colour, expected",
+        [
+            ("#1f77b4", "#1f77b4"),
+            ("1f77b4", "#1f77b4"),
+            ("ff5500", "#ff5500"),
+            ("#abc", "#abc"),
+            ("cornflowerblue", "cornflowerblue"),
+            ("rgb(31, 119, 180)", "#1f77b4"),
+            ("rgba(31,119,180,0.5)", "#1f77b480"),
+            ("", "cornflowerblue"),
+            ("red; open /etc/passwd", "cornflowerblue"),
+            ("#ff0000; close", "cornflowerblue"),
+            ("rgb(1,2,3); exit", "cornflowerblue"),
+        ],
+    )
+    def test_volume_colours_cannot_add_chimerax_commands(
+        self, colour: str, expected: str
+    ) -> None:
+        """Colours come from the request and are written into a ChimeraX script."""
+        from cryodrgn.dashboard.chimerax_animation import chimerax_volume_color_spec
+
+        assert chimerax_volume_color_spec(colour) == expected
 
     def test_explorer_rotation_gif_frames_default(self) -> None:
         from cryodrgn.dashboard.chimerax_animation import explorer_rotation_gif_frames
@@ -1171,6 +1724,95 @@ class TestChimeraxAnimation:
         assert "--offscreen" not in seen[1]["cmd"]
         assert seen[1]["env"] is not None
         assert seen[1]["env"].get("DISPLAY") == ":91"
+
+    @staticmethod
+    def _fake_chimerax(monkeypatch, *, offscreen_works: bool) -> list[dict]:
+        """Replace the ChimeraX launch; return the list its calls are recorded in."""
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        monkeypatch.setenv("CHIMERAX_PATH", "/opt/ChimeraX")
+        monkeypatch.delenv("CRYODRGN_CHIMERAX_XVFB", raising=False)
+        monkeypatch.setenv("DISPLAY", ":99")
+        monkeypatch.setattr(cx, "_ensure_shared_xvfb_display", lambda: ":91")
+        seen: list[dict] = []
+
+        class _Proc:
+            def __init__(self, err: str):
+                self.returncode = 0
+                self.stdout = ""
+                self.stderr = err
+
+        def _fake_run(cmd, **kwargs):
+            seen.append({"cmd": cmd, "env": kwargs.get("env")})
+            if "--offscreen" in cmd and not offscreen_works:
+                return _Proc(
+                    "LimitationError: Unable to save images because "
+                    "OpenGL rendering is not available"
+                )
+            return _Proc("")
+
+        monkeypatch.setattr(cx.subprocess, "run", _fake_run)
+        return seen
+
+    def test_offscreen_failure_is_paid_once_per_executable(self, monkeypatch) -> None:
+        """Each failed ``--offscreen`` attempt costs a whole ChimeraX launch."""
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        seen = self._fake_chimerax(monkeypatch, offscreen_works=False)
+        cx.run_chimerax_cmds(["save /tmp/x.png", "exit"])
+        assert ["--offscreen" in s["cmd"] for s in seen] == [True, False]
+
+        seen.clear()
+        cx.run_chimerax_cmds(["save /tmp/y.png", "exit"])
+        cx.run_chimerax_cmds(["save /tmp/z.png", "exit"])
+        assert ["--offscreen" in s["cmd"] for s in seen] == [False, False]
+        assert all(s["env"].get("DISPLAY") == ":91" for s in seen)
+
+        # Another executable is still tried with --offscreen first.
+        monkeypatch.setenv("CHIMERAX_PATH", "/opt/OtherChimeraX")
+        seen.clear()
+        cx.run_chimerax_cmds(["save /tmp/w.png", "exit"])
+        assert ["--offscreen" in s["cmd"] for s in seen] == [True, False]
+        assert "/opt/OtherChimeraX" in seen[0]["cmd"]
+
+    def test_working_offscreen_mode_keeps_being_used(self, monkeypatch) -> None:
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        seen = self._fake_chimerax(monkeypatch, offscreen_works=True)
+        cx.run_chimerax_cmds(["save /tmp/x.png", "exit"])
+        cx.run_chimerax_cmds(["save /tmp/y.png", "exit"])
+        assert ["--offscreen" in s["cmd"] for s in seen] == [True, True]
+        assert not cx._OFFSCREEN_UNAVAILABLE
+        assert cx._OFFSCREEN_UNAVAILABLE_ENV not in os.environ
+
+    def test_offscreen_failure_reaches_workers_started_afterwards(
+        self, monkeypatch
+    ) -> None:
+        """Parallel renders run in worker processes, which inherit the environment."""
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        seen = self._fake_chimerax(monkeypatch, offscreen_works=False)
+        cx.run_chimerax_cmds(["save /tmp/x.png", "exit"])
+        assert os.environ[cx._OFFSCREEN_UNAVAILABLE_ENV] == "/opt/ChimeraX"
+
+        # A process that starts with the variable set has seen no failure itself.
+        cx._OFFSCREEN_UNAVAILABLE.clear()
+        seen.clear()
+        cx.run_chimerax_cmds(["save /tmp/y.png", "exit"])
+        assert ["--offscreen" in s["cmd"] for s in seen] == [False]
+        assert cx._offscreen_known_unavailable("/opt/OtherChimeraX") is False
+
+    def test_forcing_offscreen_overrides_a_remembered_failure(
+        self, monkeypatch
+    ) -> None:
+        """``CRYODRGN_CHIMERAX_XVFB=0`` is the user's explicit choice."""
+        from cryodrgn.dashboard import chimerax_animation as cx
+
+        seen = self._fake_chimerax(monkeypatch, offscreen_works=True)
+        cx._remember_offscreen_unavailable("/opt/ChimeraX")
+        monkeypatch.setenv("CRYODRGN_CHIMERAX_XVFB", "0")
+        cx.run_chimerax_cmds(["save /tmp/x.png", "exit"])
+        assert ["--offscreen" in s["cmd"] for s in seen] == [True]
 
 
 class TestDashboardModules:

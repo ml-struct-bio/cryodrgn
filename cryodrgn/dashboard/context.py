@@ -344,8 +344,18 @@ def get_dashboard_exp(app: Flask) -> DashboardExperiment:
     return EXPERIMENT_STORE.get_experiment(wd, ep, km)
 
 
+# Endpoints that serve files only: they read neither the experiment nor the session.
+STATIC_ASSET_ENDPOINTS = frozenset({"static", "bundled_plotly_js"})
+
+
 def bind_dashboard_exp() -> None:
-    """``before_request`` hook: attach the loaded experiment to ``flask.g``."""
+    """``before_request`` hook: attach the loaded experiment to ``flask.g``.
+
+    Static assets are skipped, so stylesheets and scripts neither wait for the
+    experiment to load nor trigger a load themselves.
+    """
+    if request.endpoint in STATIC_ASSET_ENDPOINTS:
+        return
     _sync_discovery_session_boot()
     _sync_session_chimerax_to_environ(current_app)
     wd = active_workdir(current_app)

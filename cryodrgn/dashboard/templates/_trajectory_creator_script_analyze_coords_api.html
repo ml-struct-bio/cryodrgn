@@ -1,8 +1,6 @@
 {# Trajectory analyze: path-order mutate, coords/volumes API, z-path save, GIF lock helpers #}
   function applyManualAnchorPathOrderPreview(order) {
-    var session = typeof activeTrajectorySession === "function"
-      ? activeTrajectorySession()
-      : null;
+    var session = activeTrajectorySession();
     var orderedRows = null;
     if (order === "preserve") {
       pendingOriginalCatalogIndexReorder = false;
@@ -22,8 +20,7 @@
         ? orderedRows
         : visitOrderAnchorPlotRows();
       session.setVisitOrderPath(order, rows || []);
-    } else if (orderedRows && orderedRows.length >= 2
-        && typeof reorderManualSelectionFromAnchorRows === "function") {
+    } else if (orderedRows && orderedRows.length >= 2) {
       if (order !== "preserve") reorderManualSelectionFromAnchorRows(orderedRows);
       anchorIndicesActive = orderedRows.slice();
       trajPlotRows = orderedRows.slice();
@@ -35,7 +32,7 @@
     syncManualAnchorsPreview({
       skipVolumeSync: true
     });
-    if (session && typeof syncManualVolumeSliderPreview === "function") {
+    if (session) {
       syncManualVolumeSliderPreview({ fromSession: true });
     } else if (trajectoryVolumeDisplayReorderPending) {
       finishAnchorPathOrderVolumePreserveIfPending();
@@ -54,8 +51,7 @@
         // Keep interiors; re-run interp after the server reorders anchors.
         syncManualSelectionToAnchors({
           forceInterp: true,
-          directLine: typeof manualDirectLineDensifyActive === "function"
-            && manualDirectLineDensifyActive(),
+          directLine: manualDirectLineDensifyActive(),
           snapVolume: !!manualParticleSnapPathActive
         });
       } else {
@@ -67,8 +63,7 @@
     }
     // Particle-set path in direct-trace: Exact permutation then local rebuild
     // restores catalog marker XY (coords fetch would snap to plot particles).
-    if (typeof particleSetDrivenDirectPath === "function"
-        && particleSetDrivenDirectPath()) {
+    if (particleSetDrivenDirectPath()) {
       fetchExactAnchorPermutation();
       return;
     }
@@ -88,8 +83,7 @@
       if (manualInterpolationArmed()) {
         syncManualSelectionToAnchors({
           forceInterp: true,
-          directLine: typeof manualDirectLineDensifyActive === "function"
-            && manualDirectLineDensifyActive(),
+          directLine: manualDirectLineDensifyActive(),
           snapVolume: !!manualParticleSnapPathActive
         });
       } else {
@@ -102,14 +96,20 @@
     // Particle-set path: local non-crossing tour + rebuildFromSelection keeps
     // catalog marker XY (choose-waypoints parity). Server coords fetch replaces
     // those coordinates with nearest-particle plot positions.
-    if (typeof particleSetDrivenDirectPath === "function"
-        && particleSetDrivenDirectPath()) {
+    if (particleSetDrivenDirectPath()) {
       applyManualAnchorPathOrderPreview("heuristic");
       finishAnchorPathOrderRequest("heuristic");
       setTrajStatus("", false);
       return;
     }
     fetchTrajectoryCoords({ anchorPathOrderChange: true });
+  }
+
+  function rememberTypedAnchorOrder(rows) {
+    var next = (rows || []).map(function(r) { return Number(r); }).filter(function(r) {
+      return isFinite(r);
+    });
+    typedAnchorOrder = next.length >= 2 ? next : null;
   }
 
   function requestPreserveAnchorPathOrder() {
@@ -119,14 +119,21 @@
     beginAnchorPathOrderVolumePreserve();
     pendingAnchorPathOrder = "preserve";
     syncAnchorPathOrderUI();
+    // Direct-tab typed anchors: Inexact and Exact replace the active list.
+    // The typed list is the original order. Restore it before this request
+    // so the server (and the volume remap) see that order, not the tour.
+    if (!isManualTraversalMode()
+        && typedAnchorOrder && typedAnchorOrder.length >= 2
+        && permutationFromListReorder(typedAnchorOrder, anchorIndicesActive || [])) {
+      anchorIndicesActive = typedAnchorOrder.slice();
+    }
     if (isManualTraversalMode()) {
       if (manualInterpolationArmed()) {
         applyOriginalCatalogIndexPathOrderNow();
         syncManualSelectionToAnchors({
           preserveOrder: true,
           forceInterp: true,
-          directLine: typeof manualDirectLineDensifyActive === "function"
-            && manualDirectLineDensifyActive(),
+          directLine: manualDirectLineDensifyActive(),
           snapVolume: !!manualParticleSnapPathActive
         });
         finishAnchorPathOrderRequest("preserve");
@@ -137,8 +144,7 @@
       return;
     }
     // Particle-set path in direct-trace: Original order locally (marker XY).
-    if (typeof particleSetDrivenDirectPath === "function"
-        && particleSetDrivenDirectPath()) {
+    if (particleSetDrivenDirectPath()) {
       applyManualAnchorPathOrderPreview("preserve");
       finishAnchorPathOrderRequest("preserve");
       return;
@@ -161,8 +167,7 @@
 
   function syncTraversalSettingsText() {
     var hasAnchors = hasAnchorIndices();
-    var particleSetDirect = typeof particleSetDrivenDirectPath === "function"
-      && particleSetDrivenDirectPath();
+    var particleSetDirect = particleSetDrivenDirectPath();
     syncTraversalModeLabels();
     syncTraversalAltButtons();
     syncPointsSelectorRange();
@@ -215,15 +220,15 @@
         : (trajectoryVolumesToGenerateCount() || currentVolumeCount());
       saveLabel = "Save " + n + " volumes";
     }
-    if (typeof CryoDashboardIcons !== "undefined"
-        && typeof CryoDashboardIcons.setSaveButtonLabel === "function") {
-      CryoDashboardIcons.setSaveButtonLabel(btnSaveVolumesEl, saveLabel);
-    } else {
-      btnSaveVolumesEl.textContent = saveLabel;
-    }
+    CryoDashboardIcons.setSaveButtonLabel(btnSaveVolumesEl, saveLabel);
   }
 
   function updateGenerateVolumesButtonLabel() {
+    // Called on nearly every decode / render state change: keep the locks current,
+    // and apply a scatter double-click that waited out the job.
+    syncPointsMenuBusyLock();
+    syncBusyActionLocks();
+    if (typeof flushQueuedScatterPick === "function") flushQueuedScatterPick();
     if (!btnGenerateVolumesEl) return;
     var busyDecode = trajectoryDecodeJobInFlight();
     var busyRender = trajectoryChimeraxJobInFlight()
@@ -247,16 +252,12 @@
         ? "Rendering\nvolume\u2026"
         : "Rendering\nvolumes\u2026";
     } else {
-      var debts = typeof trajectoryDecodeRenderDebts === "function"
-        ? trajectoryDecodeRenderDebts()
-        : null;
+      var debts = trajectoryDecodeRenderDebts();
       var decodeN = debts ? debts.decode : trajectoryVolumesToGenerateCount();
       if (decodeN == null || !Number.isFinite(decodeN)) decodeN = 0;
       var renderN = debts
         ? debts.render
-        : (typeof trajectoryVolumesOutstandingRenderCount === "function"
-          ? trajectoryVolumesOutstandingRenderCount()
-          : trajectoryVolumesToRenderCount());
+        : (trajectoryVolumesOutstandingRenderCount());
       if (renderN == null || !Number.isFinite(renderN)) renderN = 0;
       // Label shows outstanding debt. Do not zero decodeN when the action is
       // disabled — that made Reverse appear to change Decode/Render text.
@@ -280,29 +281,23 @@
     reconcileChimeraxRenderingFlag();
     if (trajectoryVolumeActionBusy()) return;
     if (!decodeRenderVolumesActionEnabled()) return;
-    var debts = typeof trajectoryDecodeRenderDebts === "function"
-      ? trajectoryDecodeRenderDebts()
-      : null;
+    var debts = trajectoryDecodeRenderDebts();
     var decodeN = debts ? debts.decode : trajectoryVolumesToGenerateCount();
     if (decodeN == null || !Number.isFinite(decodeN)) decodeN = 0;
     var renderN = debts
       ? debts.render
-      : (typeof trajectoryVolumesOutstandingRenderCount === "function"
-        ? trajectoryVolumesOutstandingRenderCount()
-        : trajectoryVolumesToRenderCount());
+      : (trajectoryVolumesOutstandingRenderCount());
     if (renderN == null || !Number.isFinite(renderN)) renderN = 0;
     var canDecode = generateVolumesActionEnabled() && decodeN > 0;
     // Interactive backends only decode; ChimeraX PNG batches stay ChimeraX-mode.
     var wantRender = renderN > 0
-      && !(typeof isInteractiveVolumeBackend === "function"
-        && isInteractiveVolumeBackend());
+      && !(isInteractiveVolumeBackend());
 
     function startCombinedRender() {
       if (!pendingCombinedRenderAfterDecode) return;
       updateGenerateVolumesButtonLabel();
       if (!(trajectoryVolumesToRenderCount() > 0
-          || (typeof trajectoryVolumesOutstandingRenderCount === "function"
-            && trajectoryVolumesOutstandingRenderCount() > 0)
+          || (trajectoryVolumesOutstandingRenderCount() > 0)
           || pendingCombinedRenderBatchTotal > 0)) {
         clearPendingCombinedRenderAfterDecode();
         updateGenerateVolumesButtonLabel();
@@ -311,9 +306,7 @@
       if (!requestManualWaypointVolumeRerender({ force: true })) {
         clearPendingCombinedRenderAfterDecode();
         updateGenerateVolumesButtonLabel();
-        if (typeof setTrajStatus === "function") {
-          setTrajStatus("Could not start ChimeraX rendering for the selected volumes.", false);
-        }
+        setTrajStatus("Could not start ChimeraX rendering for the selected volumes.", false);
       }
     }
 
@@ -336,7 +329,8 @@
             if (trajectoryChimeraxJobInFlight()) return;
             startCombinedRender();
           }, 0);
-        }).catch(function() {
+        }).catch(function(err) {
+          console.error("[cryodrgn] decode and render of trajectory volumes failed", err);
           clearPendingCombinedRenderAfterDecode();
           updateGenerateVolumesButtonLabel();
         });
@@ -353,9 +347,7 @@
       if (!requestManualWaypointVolumeRerender({ force: true })) {
         clearPendingCombinedRenderAfterDecode();
         updateGenerateVolumesButtonLabel();
-        if (typeof setTrajStatus === "function") {
-          setTrajStatus("Could not start ChimeraX rendering for the selected volumes.", false);
-        }
+        setTrajStatus("Could not start ChimeraX rendering for the selected volumes.", false);
       }
     }
   }
@@ -373,9 +365,7 @@
     if (!manualCatalogLoaded) return false;
     trajDecodeRenderChromeReady = true;
     reconcileChimeraxRenderingFlag();
-    if (typeof updateGenerateVolumesButtonLabel === "function") {
-      updateGenerateVolumesButtonLabel();
-    }
+    updateGenerateVolumesButtonLabel();
     return true;
   }
 
@@ -383,7 +373,7 @@
     opts = opts || {};
     var nextCacheId = String(cacheId || "");
     var clearingGenerated = !nextCacheId && !!lastTrajectoryVolumeCacheId;
-    if (clearingGenerated && typeof stashActiveChimeraxRenderingsToHeap === "function") {
+    if (clearingGenerated) {
       // Stash while cache / slot identities are still valid for heap keys.
       stashActiveChimeraxRenderingsToHeap();
     }
@@ -395,13 +385,9 @@
     // never detachedAt, or freely moved endpoints lose traj-vol tick labels.
     if (lastTrajectoryVolumeCacheId && !opts.partialDecode) {
       if (directTraceUi) {
-        if (typeof directTraceUi.clearStale === "function") directTraceUi.clearStale();
-        if (typeof directTraceUi.clearDragInvalidated === "function") {
-          directTraceUi.clearDragInvalidated();
-        }
-        if (typeof bindDirectTraceInvalidationAliases === "function") {
-          bindDirectTraceInvalidationAliases();
-        }
+        directTraceUi.clearStale();
+        directTraceUi.clearDragInvalidated();
+        bindDirectTraceInvalidationAliases();
       } else {
         trajVolumeStaleAt = {};
         dragVolumeInvalidated = {};
@@ -454,7 +440,7 @@
 
   function redrawTrajectoryOverlay() {
     if (!gd || !gd.data || !gd.data.length) return;
-    if (!isManualTraversalMode() && typeof ensureWaypointPathXYForOverlay === "function") {
+    if (!isManualTraversalMode()) {
       ensureWaypointPathXYForOverlay();
     }
     var pathXY = null;
@@ -466,7 +452,7 @@
     } else if (isManualTraversalMode() && manualTrajectoryHasInteriorSamples()) {
       pathXY = activeManualTrajectoryXY();
     }
-    if ((!pathXY || pathXY.length < 2) && typeof activeTrajectoryPathXY === "function") {
+    if ((!pathXY || pathXY.length < 2)) {
       var pathClassXY = activeTrajectoryPathXY();
       if (pathClassXY && (!expected || pathClassXY.length >= expected)) pathXY = pathClassXY;
     }
@@ -481,7 +467,7 @@
       removeOverlayTraces();
       return;
     }
-    var editablePathXY = typeof activeTrajectoryPathXY === "function" ? activeTrajectoryPathXY() : null;
+    var editablePathXY = activeTrajectoryPathXY();
     if (!hasAnchorIndices() && editablePathXY && editablePathXY.length >= 2) {
       drawEditableTrajectory(editablePathXY);
       return;
@@ -557,23 +543,19 @@
       anchorZ.push(marker.z.map(Number));
       anchorLabels.push(marker.label ? String(marker.label) : anchorIds[ai]);
     }
-    var nInterp = typeof readManualSnapNPoints === "function"
-      ? readManualSnapNPoints()
-      : 0;
+    var nInterp = readManualSnapNPoints();
     if (!Number.isFinite(nInterp) || nInterp < 1) return null;
     var densifyLive = !!(
-      (typeof manualInterpolationArmed === "function" && manualInterpolationArmed())
-      || (typeof manualVolumeSnapActive !== "undefined" && manualVolumeSnapActive)
-      || (typeof manualParticleSnapPathActive !== "undefined" && manualParticleSnapPathActive)
-      || (typeof graphTraversalActive !== "undefined" && graphTraversalActive)
+      (manualInterpolationArmed())
+      || manualVolumeSnapActive
+      || manualParticleSnapPathActive
+      || graphTraversalActive
       || (manualActiveCustomPlotRows && manualActiveCustomPlotRows.length)
     );
-    var expected = typeof expectedManualSnapPointCount === "function"
-      ? expectedManualSnapPointCount(anchorIds.length, nInterp)
-      : 0;
+    var expected = expectedManualSnapPointCount(anchorIds.length, nInterp);
     var pathXY = null;
     if (anchorTrajXY && anchorTrajXY.length >= 2) pathXY = anchorTrajXY;
-    else if (typeof activeTrajectoryPathXY === "function") pathXY = activeTrajectoryPathXY();
+    else pathXY = activeTrajectoryPathXY();
     var pathLen = pathXY && pathXY.length ? pathXY.length
       : (typeof lastLatentTrajectoryPointCount === "number"
         ? lastLatentTrajectoryPointCount
@@ -644,10 +626,7 @@
   function scrubNonParticleIdentityInZPayload(j, volIds) {
     if (!j) return j;
     volIds = volIds || (
-      typeof manualVolumeDisplayIdsForCurrentPath === "function"
-        ? manualVolumeDisplayIdsForCurrentPath()
-        : null
-    );
+      manualVolumeDisplayIdsForCurrentPath());
     if (!volIds || !volIds.length) return j;
     var zLenIn = j.z_traj ? j.z_traj.length : 0;
     // Compact PC catalog ids must not be packed onto a longer densified path.
@@ -707,16 +686,10 @@
   function buildCatalogTrajectoryZPayload() {
     var densified = buildDensifiedPcCatalogZPayload();
     if (densified) return densified;
-    if (typeof manualVolumeDisplayIdsForCurrentPath !== "function"
-        && !(manualSelectedVolIds && manualSelectedVolIds.length >= 2)) {
-      return null;
-    }
-    var ids = typeof manualVolumeDisplayIdsForCurrentPath === "function"
-      ? manualVolumeDisplayIdsForCurrentPath()
-      : manualSelectedVolIds.map(String);
+    var ids = manualVolumeDisplayIdsForCurrentPath();
     if (!ids || ids.length < 2) return null;
     var pathXY = null;
-    if (typeof activeTrajectoryPathXY === "function") pathXY = activeTrajectoryPathXY();
+    pathXY = activeTrajectoryPathXY();
     if ((!pathXY || pathXY.length !== ids.length) && anchorTrajXY
         && anchorTrajXY.length === ids.length) {
       pathXY = anchorTrajXY;
@@ -753,10 +726,8 @@
       var xy = null;
       if (pathXY && pathXY[i] && pathXY[i].length >= 2) {
         xy = [Number(pathXY[i][0]), Number(pathXY[i][1])];
-      } else if (typeof scatterXYForVolumeId === "function") {
+      } else {
         xy = scatterXYForVolumeId(key);
-      } else if (marker && marker.xy && marker.xy.length >= 2) {
-        xy = [Number(marker.xy[0]), Number(marker.xy[1])];
       }
       trajXy.push(xy && Number.isFinite(xy[0]) && Number.isFinite(xy[1]) ? xy : null);
     }
@@ -821,9 +792,7 @@
         ? anchorIndicesActive
         : null);
     var pathXY = null;
-    if (typeof activeTrajectoryPathXY === "function") {
-      pathXY = activeTrajectoryPathXY();
-    }
+    pathXY = activeTrajectoryPathXY();
     if ((!pathXY || pathXY.length < 2) && anchorTrajXY && anchorTrajXY.length >= 2) {
       pathXY = anchorTrajXY;
     }
@@ -877,8 +846,9 @@
         if (!res.ok || !res.j) return;
         applyTrajectoryZPanelFromPayload(res.j);
       })
-      .catch(function() {
+      .catch(function(err) {
         if (myId !== zPanelRequestId) return;
+        console.error("[cryodrgn] latent z request for the trajectory panel failed", err);
       });
   }
 
@@ -1081,8 +1051,8 @@
     scatterControlsCard.style.marginTop = "0px";
   }
 
-  if (plotlyStackEl && window.CryoResizeObserverUtils) {
-    window.CryoResizeObserverUtils.observeResize([plotlyStackEl], function() {
+  if (plotlyStackEl) {
+    CryoResizeObserverUtils.observeResize([plotlyStackEl], function() {
       window.requestAnimationFrame(function() {
         syncScatterControlsAlignment();
         applyTrajScatterLegendPosition();
@@ -1147,14 +1117,6 @@
 
   var DRAG_HANDLE_PX = 18;
 
-  function restyleLineAndHandles() {
-    if (!gd || !gd.data || gd.data.length < 3) return;
-    try {
-      if (gd.data.length > 3) Plotly.deleteTraces(gd, [3]);
-    } catch (e) {}
-    restyleTrajectoryLineOnly();
-  }
-
   function setTrajectoryModesLockedForAnchors(on) {
     // Keep signature for call sites; mode buttons now remain active with anchors loaded.
     syncTraversalModeButtonStates();
@@ -1216,9 +1178,7 @@
       }
       return;
     }
-    var on = typeof shouldShowRemoveIndicesButton === "function"
-      ? shouldShowRemoveIndicesButton()
-      : !!(anchorIndicesActive && anchorIndicesActive.length >= 2);
+    var on = shouldShowRemoveIndicesButton();
     if (on) {
       closeFileBrowser();
     }
@@ -1229,10 +1189,8 @@
   }
 
   function clearAnchorMode() {
-    var session = typeof activeTrajectorySession === "function"
-      ? activeTrajectorySession()
-      : null;
-    if (session && typeof session.clear === "function") {
+    var session = activeTrajectorySession();
+    if (session) {
       session.clear();
     }
     clearInteractiveAnchorState();
@@ -1243,6 +1201,7 @@
     // random registry so visit-order leftovers cannot rematerialize.
     manualCustomPlotRows = [];
     manualCustomPlotRowsDisplayOrder = [];
+    typedAnchorOrder = null;
     manualBootstrapDone = false;
     manualBootstrapPending = false;
     buildManualPickerRows();
@@ -1253,12 +1212,9 @@
   function onTrajectoryIndicesLoaded(res, loadOpts) {
     loadOpts = loadOpts || {};
     var preserveDirectLineXY = !!loadOpts.preserveDirectLineXY
-      || (typeof manualDirectLineDensifyActive === "function"
-        && manualDirectLineDensifyActive());
+      || (manualDirectLineDensifyActive());
     var preservedDirectXY = preserveDirectLineXY
-      && typeof snapshotManualDirectLinePathXY === "function"
-      ? snapshotManualDirectLinePathXY()
-      : null;
+      && snapshotManualDirectLinePathXY();
     if (isManualTraversalMode() && (manualVolumeSnapActive || manualParticleSnapPathActive)) {
       manualVolumeSnapActive = true;
       graphTraversalActive = false;
@@ -1329,7 +1285,7 @@
         trajectoryMode = res.mode === "graph" ? "direct" : res.mode;
       }
     }
-    if (nPointsEl) nPointsEl.disabled = false;
+    setNPointsDisabled("path", false);
     setTrajectoryModesLockedForAnchors(true);
     syncPointsSelectorRange();
     if (!shouldPreserveAnalyzeVolumeDisplayOnCoordsRefresh() && !isManualTraversalMode()) {
@@ -1348,8 +1304,7 @@
     if (isManualTraversalMode()) {
       syncManualInterpolatedScatterVisuals({ immediate: true });
       scheduleManualScatterTrajectorySync();
-      if (manualInterpolatedCatalogActive()
-          && typeof syncSessionVolumesToPath === "function") {
+      if (manualInterpolatedCatalogActive()) {
         syncSessionVolumesToPath({ seedCatalog: true });
       }
     } else {
@@ -1400,12 +1355,8 @@
           // onto the expanded waypoint path. Re-applying the compact PC1 catalog
           // here index-stamps {decoded:true} onto new interiors and under-counts
           // Decode vs Render (e.g. Decode 4 / render 9 after PC1×10 densify).
-          if (typeof syncManualVolumeScatterHighlight === "function") {
-            syncManualVolumeScatterHighlight();
-          }
-          if (typeof updateGenerateVolumesButtonLabel === "function") {
-            updateGenerateVolumesButtonLabel();
-          }
+          syncManualVolumeScatterHighlight();
+          updateGenerateVolumesButtonLabel();
         } else {
           refreshPreservedAnalyzeVolumeDisplay();
         }
@@ -1423,8 +1374,7 @@
       ingestManualCustomPlotRowsFromTrajectoryResponse(res, {
         preserveDirectLineXY: preserveDirectLineXY
       });
-      if (densifyPromotedToOther
-          && typeof scheduleManualParticleSetPickerRefresh === "function") {
+      if (densifyPromotedToOther) {
         scheduleManualParticleSetPickerRefresh();
       }
       snapVolumeFocusToActiveTick(lastDisplayedVolumeFocusIndex);
@@ -1453,10 +1403,6 @@
   }
 
   function makeLinearEditablePath(firstPt, lastPt, nPoints) {
-    if (!window.CryoTrajectoryPath
-        || typeof CryoTrajectoryPath.linearXYFromEndpoints !== "function") {
-      return null;
-    }
     return CryoTrajectoryPath.linearXYFromEndpoints(
       firstPt,
       lastPt,
@@ -1538,7 +1484,7 @@
     }
     // Keep path object's editable polyline in lockstep with page state so
     // getVolumeSlotIds / sampleCount see the new length immediately.
-    var trajPath = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+    var trajPath = activeTrajectoryPath();
     if (trajPath && typeof trajPath.setEditableXY === "function") {
       trajPath.setEditableXY(resampled);
     }
@@ -1642,13 +1588,13 @@
   });
   if (btnTrajManualVolume) {
     btnTrajManualVolume.addEventListener("click", function() {
-      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
+      if (trajectoryAddPointsBusy()) return;
       setManualInterpolationMode("volume");
     });
   }
   if (btnTrajManualGraph) {
     btnTrajManualGraph.addEventListener("click", function() {
-      if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
+      if (trajectoryAddPointsBusy()) return;
       setManualInterpolationMode("graph");
     });
   }
@@ -1696,40 +1642,6 @@
         });
     });
   }
-  function postTrajectoryIndices(url, statusMsg, errPrefix) {
-    closeFileBrowser();
-    resetAnchorPathOrderToDefault();
-    setTrajStatus(statusMsg, false);
-    if (isManualTraversalMode()) manualCustomPlotRowsRegisterPending = true;
-    var anchorMode = currentAnchorTraversalMode();
-    var nPointsReq = requestedAnchorNPoints(anchorMode);
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({
-        x: sx.value,
-        y: sy.value,
-        mode: anchorMode,
-        n_points: nPointsReq,
-        max_neighbors: currentMaxNeighbors(),
-        avg_neighbors: currentAvgNeighbors()
-      }, trajAnchorPathOrderFields()))
-    })
-      .then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
-      .then(function(res) {
-        if (!res.ok) {
-          manualCustomPlotRowsRegisterPending = false;
-          setTrajStatus(res.j.error || (errPrefix + " failed."), false);
-          return;
-        }
-        onTrajectoryIndicesLoaded(res.j);
-      })
-      .catch(function(err) {
-        manualCustomPlotRowsRegisterPending = false;
-        console.error(err);
-        setTrajStatus(errPrefix + " request failed.", false);
-      });
-  }
 
   function existingTrajectoryPlotRowsForAppend() {
     var seen = {};
@@ -1743,12 +1655,10 @@
       });
     }
     if (isManualTraversalMode() || directTraceTraversalMode()) {
-      if (typeof manualCatalogSelectedPlotRows === "function") {
-        pushRows(manualCatalogSelectedPlotRows());
-      }
+      pushRows(manualCatalogSelectedPlotRows());
       pushRows(manualActiveCustomPlotRows);
     }
-    if (typeof directTraceTraversalMode === "function" && directTraceTraversalMode()) {
+    if (directTraceTraversalMode()) {
       pushRows(directTraceLivePlotRowsForAppend());
     }
     pushRows(anchorIndicesActive);
@@ -1759,10 +1669,10 @@
   }
 
   function directTraceLivePlotRowsForAppend() {
-    if (typeof directTraceTraversalMode !== "function" || !directTraceTraversalMode()) {
+    if (!directTraceTraversalMode()) {
       return [];
     }
-    var path = typeof activeTrajectoryPath === "function" ? activeTrajectoryPath() : null;
+    var path = activeTrajectoryPath();
     if (!path || path.kind !== "direct" || typeof path._livePathRowsAndXY !== "function") {
       return [];
     }
@@ -1773,35 +1683,18 @@
 
   function finishRandomPlotRowAppendUi(opts) {
     opts = opts || {};
-    if (typeof expandManualVolumeDisplayAfterWaypointAppend === "function") {
-      expandManualVolumeDisplayAfterWaypointAppend({
-        priorSnapshot: opts.priorSnapshot || null
-      });
-    } else if (opts.session && typeof opts.session.syncVolumeCache === "function") {
-      opts.session.syncVolumeCache();
-    }
+    expandManualVolumeDisplayAfterWaypointAppend({
+      priorSnapshot: opts.priorSnapshot || null
+    });
     syncTraversalAltButtons();
     syncAnchorPathOrderUI();
-    if (typeof syncTrajReverseButton === "function") syncTrajReverseButton();
-    if (typeof updateGenerateVolumesButtonLabel === "function") {
-      updateGenerateVolumesButtonLabel();
-    }
+    syncTrajReverseButton();
+    updateGenerateVolumesButtonLabel();
     redrawTrajectoryOverlay();
-    if (typeof scheduleTrajGlyphOverlaySync === "function") {
-      scheduleTrajGlyphOverlaySync();
-    }
+    scheduleTrajGlyphOverlaySync();
     // Session append registers Other with skipPickerRebuild; refresh here for
     // choose-waypoints, direct-trace, and snap-to-nearest densify paths.
-    if (typeof scheduleManualParticleSetPickerRefresh === "function") {
-      scheduleManualParticleSetPickerRefresh();
-    } else if (typeof buildManualPickerRows === "function"
-        && (isManualTraversalMode()
-          || (typeof directTraceTraversalMode === "function" && directTraceTraversalMode())
-          || (manualCustomPlotRows && manualCustomPlotRows.length > 0))) {
-      requestAnimationFrame(function() {
-        buildManualPickerRows();
-      });
-    }
+    scheduleManualParticleSetPickerRefresh();
   }
 
   function appendRandomPlotRowsToTrajectory(addedRows) {
@@ -1809,14 +1702,12 @@
       return Number.isFinite(row) && row >= 0;
     });
     if (!addedRows.length) return false;
-    if (typeof ensureExistingWaypointsTrackedBeforeRandomAppend === "function") {
-      ensureExistingWaypointsTrackedBeforeRandomAppend();
-    }
+    ensureExistingWaypointsTrackedBeforeRandomAppend();
     resetAnchorPathOrderToDefault();
 
     var selectionDriven = isManualTraversalMode() || directTraceTraversalMode();
     var preAppendVolumeSnapshot = null;
-    if (selectionDriven && typeof expandManualVolumeDisplayAfterWaypointAppend === "function") {
+    if (selectionDriven) {
       var snapImgs = [];
       if (volumePayload() && Array.isArray(volumeImages())) {
         snapImgs = volumeImages().slice();
@@ -1826,22 +1717,25 @@
       preAppendVolumeSnapshot = {
         ids: (volumeDisplayIds() || []).slice(),
         vols: (volumeSlots() || []).slice(),
-        imgs: snapImgs
+        imgs: snapImgs,
+        // Direct-trace append keeps the current points in front and adds the
+        // new indices after them. Slot ids change (catalog / empty interiors
+        // become particle ids), so the later rematch must copy media by
+        // position for that prefix, not only by id.
+        preservePrefix: directTraceTraversalMode() && !isManualTraversalMode()
       };
     }
 
     if (selectionDriven) {
-      var session = typeof activeTrajectorySession === "function"
-        ? activeTrajectorySession()
-        : null;
-      if (!session && typeof ensureTrajectorySession === "function") {
+      var session = activeTrajectorySession();
+      if (!session) {
         session = ensureTrajectorySession();
       }
       if (session) {
         // Silent append: mutation already rebuilds waypoints + aligns slots.
         // Seed Session from the compact catalog first so alignToIds rematches
         // PC volumes and only Other slots stay undecoded (Decode 10, not 20).
-        if (isManualTraversalMode() && typeof resetManualInterpolationArmed === "function") {
+        if (isManualTraversalMode()) {
           resetManualInterpolationArmed();
         }
         var appended = session.appendPlotRows(addedRows, { silent: true });
@@ -1850,11 +1744,7 @@
         // then fall back to a server coords refresh.
         if ((!anchorTrajXY || anchorTrajXY.length < 2)
             && anchorIndicesActive && anchorIndicesActive.length >= 2) {
-          var repaired = typeof manualPathXYForOrderedAnchorRows === "function"
-            ? manualPathXYForOrderedAnchorRows(anchorIndicesActive)
-            : (typeof trajXYFromPlotRows === "function"
-              ? trajXYFromPlotRows(anchorIndicesActive)
-              : null);
+          var repaired = manualPathXYForOrderedAnchorRows(anchorIndicesActive);
           if (repaired && repaired.length === anchorIndicesActive.length) {
             anchorTrajXY = repaired;
           }
@@ -1864,16 +1754,13 @@
           session: session
         });
         if ((!anchorTrajXY || anchorTrajXY.length < 2)
-            && typeof fetchTrajectoryCoords === "function") {
+            && (!editableTrajXY || editableTrajXY.length < 2)) {
           fetchTrajectoryCoords({ preserveGeneratedVolumes: true });
         }
         return true;
       }
-      if (directTraceTraversalMode()
-          && typeof mergeManualCustomPlotRows === "function") {
-        var directPath = typeof activeTrajectoryPath === "function"
-          ? activeTrajectoryPath()
-          : null;
+      if (directTraceTraversalMode()) {
+        var directPath = activeTrajectoryPath();
         if (directPath && typeof directPath.appendParticleRows === "function") {
           mergeManualCustomPlotRows(addedRows, {
             activate: true,
@@ -1916,7 +1803,7 @@
     anchorTrajXY = null;
     editableTrajXY = null;
     trajPlotRows = null;
-    if (nPointsEl) nPointsEl.disabled = false;
+    setNPointsDisabled("path", false);
     setTrajectoryModesLockedForAnchors(true);
     updateGenerateVolumesButtonLabel();
     syncAnchorIndicesUI();
@@ -1925,7 +1812,7 @@
   }
 
   function addRandomIndicesToTrajectory() {
-    if (typeof trajectoryAddPointsBusy === "function" && trajectoryAddPointsBusy()) return;
+    if (trajectoryAddPointsBusy()) return;
     closeFileBrowser();
     var existing = existingTrajectoryPlotRowsForAppend();
     setTrajStatus("Sampling random indices\u2026", false);
@@ -1957,11 +1844,8 @@
         // so rebuildFromSelection / path overlays can resolve coordinates.
         if (res.j.xy && res.j.xy.length === (res.j.indices || res.j.anchor_indices || []).length) {
           var rawIdx = (res.j.indices || res.j.anchor_indices || []).map(Number);
-          if (typeof rememberPlotRowXYList === "function") {
-            rememberPlotRowXYList(rawIdx, res.j.xy);
-          }
-        } else if (res.j.xy && res.j.xy.length === added.length
-            && typeof rememberPlotRowXYList === "function") {
+          rememberPlotRowXYList(rawIdx, res.j.xy);
+        } else if (res.j.xy && res.j.xy.length === added.length) {
           rememberPlotRowXYList(added, res.j.xy);
         }
         if (!appendRandomPlotRowsToTrajectory(added)) return;
@@ -1976,37 +1860,12 @@
 
   function closeTrajAnchorManualModal() {
     if (!trajAnchorManualModal) return;
-    if (window.CryoDashModal) {
-      CryoDashModal.close(trajAnchorManualModal, { restoreFocus: btnAnchorManualOpen });
-    } else {
-      trajAnchorManualModal.hidden = true;
-      trajAnchorManualModal.setAttribute("aria-hidden", "true");
-      document.body.classList.remove("cryo-explorer-save-modal-open");
-      if (btnAnchorManualOpen) {
-        try { btnAnchorManualOpen.focus(); } catch (eFocus) { /* ignore */ }
-      }
-    }
+    CryoDashModal.close(trajAnchorManualModal, { restoreFocus: btnAnchorManualOpen });
   }
 
   function openTrajAnchorManualModal() {
     if (!trajAnchorManualModal) return;
-    if (window.CryoDashModal) {
-      CryoDashModal.open(trajAnchorManualModal, { focusEl: anchorIndicesManualEl });
-    } else {
-      trajAnchorManualModal.hidden = false;
-      trajAnchorManualModal.setAttribute("aria-hidden", "false");
-      document.body.classList.add("cryo-explorer-save-modal-open");
-      if (anchorIndicesManualEl) {
-        requestAnimationFrame(function() {
-          try {
-            anchorIndicesManualEl.focus();
-            if (typeof anchorIndicesManualEl.select === "function") {
-              anchorIndicesManualEl.select();
-            }
-          } catch (eFocus) { /* ignore */ }
-        });
-      }
-    }
+    CryoDashModal.open(trajAnchorManualModal, { focusEl: anchorIndicesManualEl });
   }
 
   function parseManualAnchorIndices(raw) {
@@ -2032,11 +1891,12 @@
     }
     resetAnchorPathOrderToDefault();
     anchorIndicesActive = parsed.slice();
+    rememberTypedAnchorOrder(parsed);
     anchorTrajXY = null;
     if (isManualTraversalMode()) {
       registerManualCustomPlotRows(parsed.slice(), true);
     }
-    if (nPointsEl) nPointsEl.disabled = false;
+    setNPointsDisabled("path", false);
     if (manualSnapNPointsEl) manualSnapNPointsEl.disabled = false;
     if (manualGraphNPointsEl) manualGraphNPointsEl.disabled = false;
     if (manualSnapNPointsEl && currentAnchorTraversalMode() === "direct") {
@@ -2086,12 +1946,6 @@
 
   var trajectoryVolumeDisplayReorderPending = false;
 
-  function reverseTrajectoryPathPoints(path) {
-    return path.slice().reverse().map(function(p) {
-      return [Number(p[0]), Number(p[1])];
-    });
-  }
-
   function volumeDisplaySlotCount(payload) {
     var n = 0;
     if (payload) {
@@ -2108,7 +1962,7 @@
       var fromDisplay = Math.floor(Number(trajVolDisplay.expectedVolumeCount));
       if (Number.isFinite(fromDisplay) && fromDisplay > 0) n = Math.max(n, fromDisplay);
     }
-    if (trajVolDisplay && typeof trajVolDisplay._volumeNavCount === "function") {
+    if (trajVolDisplay) {
       var navCount = Math.floor(Number(trajVolDisplay._volumeNavCount()));
       if (Number.isFinite(navCount) && navCount > 0) n = Math.max(n, navCount);
     }
@@ -2127,8 +1981,7 @@
 
   function remapTrajectoryVolumeStaleAt(perm) {
     if (!perm || perm.length < 2) return;
-    if (directTraceUi && typeof CryoDirectTraceUiState !== "undefined"
-        && CryoDirectTraceUiState.remapIndexFlags) {
+    if (directTraceUi) {
       var remapped = CryoDirectTraceUiState.remapIndexFlags(directTraceUi.staleAt(), perm);
       replaceTrajVolumeStaleMap(remapped);
       return;
@@ -2146,11 +1999,7 @@
         }
       }
     }
-    if (typeof replaceTrajVolumeStaleMap === "function") {
-      replaceTrajVolumeStaleMap(next);
-    } else {
-      trajVolumeStaleAt = next;
-    }
+    replaceTrajVolumeStaleMap(next);
   }
 
   function remapCacheSlotIndices(indices, perm) {
@@ -2208,9 +2057,7 @@
     if (!payload) return "";
     if (payload.ids && payload.ids[idx]) return "id:" + String(payload.ids[idx]);
     if (payload.images && payload.images[idx]) {
-      var img = typeof normalizeChimeraxImageB64 === "function"
-        ? normalizeChimeraxImageB64(payload.images[idx])
-        : payload.images[idx];
+      var img = normalizeChimeraxImageB64(payload.images[idx]);
       if (img) return "img:" + String(img).slice(0, 48);
     }
     if (payload.volumes && payload.volumes[idx] && payload.volumes[idx].volume_b64) {
@@ -2269,7 +2116,7 @@
 
   function shouldPreserveVolumesOnPathOrderChange() {
     if (hasGeneratedTrajectoryVolumes()) return true;
-    if (typeof trajectoryHasDisplayableVolumes === "function" && trajectoryHasDisplayableVolumes()) {
+    if (trajectoryHasDisplayableVolumes()) {
       return true;
     }
     return analyzeVolumeCatalogDisplayReady();
@@ -2304,16 +2151,16 @@
     var focusN = volumeDisplaySlotCount(displayPayload);
     if (focusN < 2 || perm.length !== focusN) return false;
     if (!hasGeneratedTrajectoryVolumes() && !analyzeVolumeCatalogDisplayReady()
-        && !(typeof trajectoryHasDisplayableVolumes === "function" && trajectoryHasDisplayableVolumes())) {
+        && !(trajectoryHasDisplayableVolumes())) {
       return false;
     }
     var prevFocus = currentVolumeFocusIndex();
     var vs = typeof volumeState === "function" ? volumeState() : null;
+    var subsetTrackedOnVolume = vs && typeof vs.subsetSlotIndices === "function"
+      && vs.subsetSlotIndices() && vs.subsetSlotIndices().length;
     if (vs && vs.slotCount() === focusN && typeof vs.permute === "function") {
       vs.permute(perm);
-      if (typeof syncVolumeCacheFromSession === "function") {
-        syncVolumeCacheFromSession(vs.snapshot());
-      }
+      syncVolumeCacheFromSession(vs.snapshot());
       if (hasGeneratedTrajectoryVolumes() || lastVolumePayload) {
         assignLastVolumePayloadFromSession(vs.toPayload());
       }
@@ -2324,7 +2171,7 @@
         displayPayload = lastVolumePayload;
       }
       var curPayload = volumePayload();
-      if (curPayload && typeof commitVolumePayload === "function") {
+      if (curPayload) {
         var reordered = reorderVolumePayloadFields(curPayload, perm);
         if (volumeSlots().length === focusN) {
           reordered.volumes = applyArrayPermutation(
@@ -2342,7 +2189,10 @@
         if (!displayPayload) displayPayload = volumePayload();
       }
     }
-    if (Array.isArray(lastTrajectoryVolumeCacheSlotIndices)
+    // permute() already moved the volume state's slot list, and the sync above
+    // copied it here. Remap the page list only when that state had none.
+    if (!subsetTrackedOnVolume
+        && Array.isArray(lastTrajectoryVolumeCacheSlotIndices)
         && lastTrajectoryVolumeCacheSlotIndices.length) {
       lastTrajectoryVolumeCacheSlotIndices = remapCacheSlotIndices(
         lastTrajectoryVolumeCacheSlotIndices,
@@ -2449,17 +2299,6 @@
     return completeAnchorPathOrderVolumePreserve();
   }
 
-  function reverseCacheSlotIndices(indices, n) {
-    if (!Array.isArray(indices) || !indices.length) return indices;
-    n = Math.max(0, Math.floor(Number(n)));
-    if (!n) return indices.slice();
-    return indices.map(function(idx) {
-      idx = Math.floor(Number(idx));
-      if (!Number.isFinite(idx) || idx < 0 || idx >= n) return idx;
-      return n - 1 - idx;
-    });
-  }
-
   function reorderVolumePayloadFields(payload, perm) {
     if (!payload || !perm || perm.length < 2) return payload;
     var n = perm.length;
@@ -2494,43 +2333,6 @@
     if (out.expected_volume_count != null) out.expected_volume_count = n;
     if (out.expectedVolumeCount != null) out.expectedVolumeCount = n;
     return out;
-  }
-
-  function reverseVolumePayloadFields(payload) {
-    var n = volumeDisplaySlotCount(payload);
-    if (n < 2) return payload;
-    return reorderVolumePayloadFields(payload, reversePermutation(n));
-  }
-
-  function volumeCountFromPayload(payload) {
-    if (!payload) return 0;
-    var imgs = chimeraxImagesFromPayload(payload);
-    if (imgs.length) return imgs.length;
-    if (payload.volumes && payload.volumes.length) return payload.volumes.length;
-    return 0;
-  }
-
-  function applyManualInterpolatedSeededVolumePayload(seeded, compactVols, pathLen) {
-    if (!seeded) return false;
-    pathLen = Math.max(0, Math.floor(Number(pathLen)));
-    var nextCount = seeded.expectedVolumeCount || seeded.volumes.length || pathLen;
-    var nAnchors = manualCatalogAnchorVolIdCount();
-    var ids = seeded.ids && seeded.ids.length === nextCount
-      ? seeded.ids.slice()
-      : buildExpandedManualVolumeDisplayIds(nAnchors, currentNPoints());
-    var ready = (compactVols && loadedManualVolumeCount(compactVols) > 0)
-      || seeded.volumes.some(function(v) { return !!v; })
-      || seeded.images.some(function(img) { return !!img; });
-    commitVolumePayload({
-      volumes: seeded.volumes.slice(),
-      ids: ids,
-      images: seeded.images.slice(),
-      expectedVolumeCount: nextCount
-    }, { ready: ready, clearStale: true });
-    applyManualInterpolatedVolumeSliderDisplay();
-    syncTrajVolBackendChrome();
-    syncDirectModeVolumePendingOverlay();
-    return true;
   }
 
   function compactManualAnchorVolumesFromSnapshot(snapPayload, nAnchors, nPoints, pathLen) {
@@ -2570,7 +2372,7 @@
     if (anchorTrajXY && anchorTrajXY.length >= 2) return true;
     if (trajPlotRows && trajPlotRows.length >= 2) return true;
     if (startXY && endXY) return true;
-    if (typeof latentTrajectoryPointCount === "function" && latentTrajectoryPointCount() >= 2) {
+    if (latentTrajectoryPointCount() >= 2) {
       return true;
     }
     if (hasGeneratedTrajectoryVolumes() && generatedTrajectoryVolumeCount >= 2) return true;
@@ -2579,7 +2381,7 @@
 
   function syncTrajReverseButton() {
     if (!btnReverseTraj) return;
-    var pathBusy = typeof trajectoryPathRecalcBusy === "function" && trajectoryPathRecalcBusy();
+    var pathBusy = trajectoryPathRecalcBusy();
     var ok = canReverseTrajectory() && !pathBusy;
     btnReverseTraj.disabled = !ok;
     if (pathBusy && canReverseTrajectory()) {
@@ -2595,9 +2397,7 @@
     if (!canReverseTrajectory()) return;
 
     var preserveVolumes = hasGeneratedTrajectoryVolumes();
-    var session = typeof activeTrajectorySession === "function"
-      ? activeTrajectorySession()
-      : null;
+    var session = activeTrajectorySession();
 
     if (isManualTraversalMode() && manualSelectedVolIds.length >= 2) {
       if (!session) {
@@ -2616,8 +2416,7 @@
         syncManualSelectionToAnchors({
           preserveOrder: true,
           forceInterp: true,
-          directLine: typeof manualDirectLineDensifyActive === "function"
-            && manualDirectLineDensifyActive(),
+          directLine: manualDirectLineDensifyActive(),
           snapVolume: !!manualParticleSnapPathActive
         });
       } else {
@@ -2626,14 +2425,10 @@
           syncManualVolumeScatterHighlight();
         }
         redrawTrajectoryOverlay();
-        if (typeof scheduleTrajGlyphOverlaySync === "function") {
-          scheduleTrajGlyphOverlaySync();
-        }
+        scheduleTrajGlyphOverlaySync();
         if (trajVolDisplay) {
           trajVolDisplay.setChimeraxRendering(false);
-          if (typeof trajVolDisplay._syncVolumeNavChrome === "function") {
-            trajVolDisplay._syncVolumeNavChrome();
-          }
+          trajVolDisplay._syncVolumeNavChrome();
         }
         updateGenerateVolumesButtonLabel();
       }
@@ -2642,29 +2437,24 @@
     }
 
     if (session) {
-      var reversePathN = typeof latentTrajectoryPointCount === "function"
-        ? latentTrajectoryPointCount()
-        : 0;
+      var reversePathN = latentTrajectoryPointCount();
       if (reversePathN < 2 && editableTrajXY && editableTrajXY.length >= 2) {
         reversePathN = editableTrajXY.length;
       }
       session.reverse();
       // Path polyline and volume slots reverse together; restamp so path_t /
       // traj_xy match the new indices before any chrome sync remaps by geometry.
-      if (editableTrajXY && editableTrajXY.length >= 2
-          && typeof stampTrajectoryVolumeGeometryOntoPath === "function") {
+      if (editableTrajXY && editableTrajXY.length >= 2) {
         stampTrajectoryVolumeGeometryOntoPath(editableTrajXY);
       }
-      if (typeof reverseDirectTraceInvalidationMaps === "function"
-          && isScatterDirectOrNearestMode() && reversePathN >= 2) {
+      if (isScatterDirectOrNearestMode() && reversePathN >= 2) {
         reverseDirectTraceInvalidationMaps(reversePathN);
-      } else if (typeof reverseTrajectoryVolumeStaleAt === "function" && reversePathN >= 2) {
+      } else if (reversePathN >= 2) {
         reverseTrajectoryVolumeStaleAt(reversePathN);
       }
       refreshManualCustomPlotRowsDisplayOrderFromTrajectory();
       redrawTrajectoryOverlay();
-      if (typeof syncDirectTraceVolumeChromeAfterPathMutation === "function"
-          && isScatterDirectOrNearestMode()) {
+      if (isScatterDirectOrNearestMode()) {
         syncDirectTraceVolumeChromeAfterPathMutation({
           forceExpand: true,
           redraw: false

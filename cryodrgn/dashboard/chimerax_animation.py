@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import atexit
 import html
+import logging
 import os
 import re
 import shlex
@@ -28,6 +29,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_GIF_FRAMES = 40
 DEFAULT_CHIMERAX_PARALLEL = 16
@@ -67,6 +70,14 @@ def rotation_turn_y_increments(gif_frames: int) -> list[float]:
     return [0.0 if i == 0 else step for i in range(n)]
 
 
+class ChimeraxUnavailableError(EnvironmentError):
+    """ChimeraX, or the display it needs to save images, is not available.
+
+    Routes answer it with ``need_chimerax`` (HTTP 503); any other ``OSError`` during a
+    render is a failure and is logged.
+    """
+
+
 def chimerax_path() -> str:
     """ChimeraX executable from ``CHIMERAX_PATH`` (process environment) or raise.
 
@@ -76,7 +87,7 @@ def chimerax_path() -> str:
     """
     p = os.environ.get("CHIMERAX_PATH", "").strip()
     if not p:
-        raise EnvironmentError(
+        raise ChimeraxUnavailableError(
             "CHIMERAX_PATH is not set. Set it to your ChimeraX executable "
             "(same as for cryodrgn-experiments pipelines), use the dashboard header "
             '"ChimeraX…" control if shown, or restart after exporting CHIMERAX_PATH.'
@@ -122,6 +133,26 @@ def _chimerax_opengl_unavailable(out: str, err: str) -> bool:
     )
 
 
+# ChimeraX executables whose ``--offscreen`` mode failed for lack of OpenGL. The
+# failure costs a full ChimeraX launch, so it is paid once per executable rather
+# than once per image. The environment variable hands the result to worker
+# processes started afterwards (parallel renders run in joblib workers).
+_OFFSCREEN_UNAVAILABLE: set[str] = set()
+_OFFSCREEN_UNAVAILABLE_ENV = "CRYODRGN_CHIMERAX_OFFSCREEN_UNAVAILABLE"
+
+
+def _offscreen_known_unavailable(cx: str) -> bool:
+    return (
+        cx in _OFFSCREEN_UNAVAILABLE
+        or os.environ.get(_OFFSCREEN_UNAVAILABLE_ENV, "") == cx
+    )
+
+
+def _remember_offscreen_unavailable(cx: str) -> None:
+    _OFFSCREEN_UNAVAILABLE.add(cx)
+    os.environ[_OFFSCREEN_UNAVAILABLE_ENV] = cx
+
+
 _SHARED_XVFB_LOCK = threading.Lock()
 _SHARED_XVFB_PROC: subprocess.Popen | None = None
 _SHARED_XVFB_DISPLAY: str | None = None
@@ -162,7 +193,7 @@ def _ensure_shared_xvfb_display() -> str:
             return _SHARED_XVFB_DISPLAY
         xvfb_bin = shutil.which("Xvfb")
         if not xvfb_bin:
-            raise EnvironmentError(
+            raise ChimeraxUnavailableError(
                 "ChimeraX image saves need OpenGL, but --offscreen/OSMesa is unavailable "
                 "on this host and Xvfb was not found on PATH. Install Xvfb "
                 "(e.g. xorg-x11-server-Xvfb), set a working DISPLAY, or set "
@@ -206,7 +237,7 @@ def _ensure_shared_xvfb_display() -> str:
             _SHARED_XVFB_DISPLAY = display
             atexit.register(_shutdown_shared_xvfb)
             return display
-        raise EnvironmentError(
+        raise ChimeraxUnavailableError(
             "Could not start Xvfb for ChimeraX rendering"
             + (f": {last_err}" if last_err else ".")
         )
@@ -236,20 +267,21 @@ def _chimerax_subprocess(
     )
 
 
-def run_chimerax_cmds(
-    cmds: list[str], *, catch_errors: bool = False
-) -> tuple[str, str]:
+def run_chimerax_cmds(cmds: list[str]) -> tuple[str, str]:
     """Run ChimeraX with semicolon-separated commands (offscreen or Xvfb).
 
     See ``pipelines/tile.py``. Limited by :data:`CHIMERAX_MAX_CONCURRENT_SLOTS`.
     When ``--offscreen`` fails for missing OpenGL, retries once under Xvfb
-    unless ``CRYODRGN_CHIMERAX_XVFB=0``.
+    unless ``CRYODRGN_CHIMERAX_XVFB=0``, and later calls for the same executable
+    go to Xvfb directly.
     """
     cx = chimerax_path()
     joined = " ; ".join(cmds)
     if _env_truthy_flag("CRYODRGN_CHIMERAX_XVFB") is False:
         attempts = [False]
     elif use_chimerax_xvfb():
+        attempts = [True]
+    elif _offscreen_known_unavailable(cx):
         attempts = [True]
     else:
         # Prefer --offscreen when DISPLAY is set; fall back to Xvfb on OpenGL failure.
@@ -267,13 +299,12 @@ def run_chimerax_cmds(
             if ok:
                 break
             if not xvfb and attempt_idx + 1 < len(attempts) and opengl_missing:
+                _remember_offscreen_unavailable(cx)
                 continue
             if opengl_missing and last_code == 0:
                 last_code = 70
             break
 
-    if catch_errors and last_err.strip():
-        raise RuntimeError(f"ChimeraX stderr:\n{last_err}\nstdout:\n{last_out}")
     if last_code != 0:
         hint = ""
         if _chimerax_opengl_unavailable(last_out, last_err):
@@ -323,16 +354,47 @@ def format_chimerax_view_matrix_display(camera_arg: str | None) -> str:
     return "camera " + str(camera_arg).strip()
 
 
+_DEFAULT_CHIMERAX_VOLUME_COLOR = "cornflowerblue"
+_HEX_COLOR_RE = re.compile(r"#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})")
+_BARE_HEX_COLOR_RE = re.compile(r"[0-9a-fA-F]{6}|[0-9a-fA-F]{8}")
+_RGB_COLOR_RE = re.compile(
+    r"rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*(?:,\s*([0-9.]+)\s*)?\)",
+    re.IGNORECASE,
+)
+_NAMED_COLOR_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
+
+
 def chimerax_volume_color_spec(color: str | None) -> str:
-    """Normalize Plotly hex or ChimeraX colour names for ``volume color``."""
+    """A ChimeraX ``volume color`` argument from a Plotly or CSS colour.
+
+    Accepts ``#rgb``/``#rrggbb`` (with or without alpha), bare ``rrggbb``, ``rgb()`` and
+    ``rgba()`` (as hex) and plain colour names. The colour comes from the request and is
+    written into a ChimeraX command script, where ``;`` would start another command, so
+    anything else is replaced by the default colour.
+    """
     s = (color or "").strip()
     if not s:
-        return "cornflowerblue"
-    if s.startswith("#"):
+        return _DEFAULT_CHIMERAX_VOLUME_COLOR
+    if _HEX_COLOR_RE.fullmatch(s):
         return s
-    if re.fullmatch(r"[0-9a-fA-F]{6}", s):
+    if _BARE_HEX_COLOR_RE.fullmatch(s):  # before names: "ff5500" is hex
         return "#" + s
-    return s
+    if _NAMED_COLOR_RE.fullmatch(s):
+        return s
+    m = _RGB_COLOR_RE.fullmatch(s)
+    if m:
+        rgb = [min(255, max(0, round(float(v)))) for v in m.groups()[:3]]
+        hexes = "".join(f"{v:02x}" for v in rgb)
+        if m.group(4) is not None:
+            alpha = float(m.group(4))
+            hexes += (
+                f"{min(255, max(0, round(alpha * 255 if alpha <= 1 else alpha))):02x}"
+            )
+        return "#" + hexes
+    logger.warning(
+        "Not a colour, using %s instead: %r", _DEFAULT_CHIMERAX_VOLUME_COLOR, s
+    )
+    return _DEFAULT_CHIMERAX_VOLUME_COLOR
 
 
 def _normalize_chimerax_turn_axis(axis_raw) -> str:
@@ -692,7 +754,7 @@ def render_static_png(
         report_view_matrix=report_view_matrix,
         view_matrix_log_path=matrix_log if report_view_matrix else None,
     )
-    out, err = run_chimerax_cmds(cmds, catch_errors=False)
+    out, err = run_chimerax_cmds(cmds)
     _mpl_retrim_png(out_png, dpi, corner_label=corner_label)
     if report_view_matrix:
         try:
@@ -1021,7 +1083,7 @@ def render_rotating_gif_single_session(
             view_matrix_camera=view_matrix_camera,
             report_view_matrix=report_view_matrix,
         )
-        out, err = run_chimerax_cmds(cmds, catch_errors=False)
+        out, err = run_chimerax_cmds(cmds)
         paths = [p for p, _, _ in frame_pngs]
         _retrim_rotation_pngs(
             paths,
@@ -1153,7 +1215,7 @@ def render_multi_volume_rotate_session(
                 )
             )
         cmds, matrix_log = chimerax_multi_volume_rotation_session_cmds(volumes, dpi)
-        out, err = run_chimerax_cmds(cmds, catch_errors=False)
+        out, err = run_chimerax_cmds(cmds)
         if matrix_log:
             view_matrix = _extract_chimerax_view_matrix_text(out, err, matrix_log)
         all_pngs = [png for _, _, fps in plans for png, _, _ in fps]

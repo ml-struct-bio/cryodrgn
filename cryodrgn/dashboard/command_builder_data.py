@@ -211,51 +211,6 @@ def _select(id: str, cli: list[str], choices: list[str], **extra: Any) -> Arg:
     return arg
 
 
-# Common argument groups shared across commands
-def _io_logging_group(prefix: str) -> Group:
-    """I/O & logging group shared across training commands."""
-    return _g(
-        "I/O & logging",
-        [
-            _text(f"{prefix}_load", ["--load"]),
-            _flag_false(f"{prefix}_no_analysis", ["--no-analysis"]),
-            _num(f"{prefix}_checkpoint", ["--checkpoint"], "1"),
-            _num(f"{prefix}_log_interval", ["--log-interval"], "1000"),
-            _flag(f"{prefix}_verbose", ["-v"]),
-            _num(f"{prefix}_seed", ["--seed"]),
-            _num(f"{prefix}_shuffle_seed", ["--shuffle-seed"]),
-        ],
-    )
-
-
-def _dataset_loading_group(prefix: str) -> Group:
-    """Dataset loading group shared across training commands."""
-    return _g(
-        "Dataset loading",
-        [
-            _flag(f"{prefix}_uninvert", ["--uninvert-data"]),
-            _flag_false(f"{prefix}_window", ["--no-window"]),
-            _num(f"{prefix}_window_r", ["--window-r"], "0.85"),
-            _text(f"{prefix}_ind", ["--ind"]),
-            _flag(f"{prefix}_lazy", ["--lazy"]),
-            _num(f"{prefix}_shuffler_size", ["--shuffler-size"], "0"),
-        ],
-    )
-
-
-def _pose_sgd_group(prefix: str) -> Group:
-    """Pose SGD group shared across training commands."""
-    return _g(
-        "Pose SGD",
-        [
-            _flag(f"{prefix}_pose_sgd", ["--do-pose-sgd"]),
-            _num(f"{prefix}_pretrain", ["--pretrain"], "1"),
-            _select(f"{prefix}_emb_type", ["--emb-type"], ["s2s2", "quat"]),
-            _num(f"{prefix}_pose_lr", ["--pose-lr"], "1e-4"),
-        ],
-    )
-
-
 ABINIT_GROUPS: list[Group] = [
     _g(
         "Checkpoint & seed",

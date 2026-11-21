@@ -86,20 +86,6 @@
     this.discreteCollapseHeading = opts.discreteCollapseHeading !== false;
     this._discretePanelCollapsed = false;
     this._discreteCollapseToggleBtn = null;
-    /**
-     * When true, category cells wrap in a grid and invert sits in a dedicated right column
-     * (legacy). Ignored when invertHeadingSlotEl is set.
-     */
-    this.discreteInvertAsideColumn =
-      opts.discreteInvertAsideColumn === true && !this.invertHeadingSlotEl;
-    /**
-     * When true, invert sits on its own final row spanning the toggle grid (legacy). Ignored when
-     * invertHeadingSlotEl is set or discreteInvertAsideColumn is true.
-     */
-    this.discreteInvertFooterRow =
-      opts.discreteInvertFooterRow === true
-      && !this.discreteInvertAsideColumn
-      && !this.invertHeadingSlotEl;
     this.invertBtn = opts.invertBtn;
     this.discreteCheckedDefault = opts.discreteCheckedDefault !== false;
     this.allDiscreteSelectedIsNull = opts.allDiscreteSelectedIsNull !== false;
@@ -178,16 +164,6 @@
     }
     if (this.invertBtn) {
       this.invertBtn.addEventListener("click", function () { self.invertDiscrete(); });
-    }
-    if (this.discreteSwitches) {
-      this.discreteSwitches.classList.toggle(
-        "cryo-color-discrete-switches--invert-aside",
-        !!this.discreteInvertAsideColumn
-      );
-      this.discreteSwitches.classList.toggle(
-        "cryo-color-discrete-switches--invert-footer-row",
-        !!this.discreteInvertFooterRow
-      );
     }
   }
 
@@ -1463,16 +1439,6 @@
     this._ensureDiscreteCollapseToggle();
     var cellsMount = this.discreteSwitches;
     var invertMount = this.discreteSwitches;
-    if (this.discreteInvertAsideColumn) {
-      var cellsWrap = document.createElement("div");
-      cellsWrap.className = "cryo-cc-discrete-cells-wrap";
-      var invertAside = document.createElement("div");
-      invertAside.className = "cryo-cc-discrete-invert-aside";
-      this.discreteSwitches.appendChild(cellsWrap);
-      this.discreteSwitches.appendChild(invertAside);
-      cellsMount = cellsWrap;
-      invertMount = invertAside;
-    }
     var col = this.getColorColumn();
     var ov =
       typeof this.getDiscreteColorOverrides === "function"
@@ -1687,10 +1653,6 @@
         this.invertHeadingSlotEl.hidden = true;
         this.invertHeadingSlotEl.setAttribute("aria-hidden", "true");
         invertMount = this.invertHeadingSlotEl;
-      } else if (this.discreteInvertAsideColumn) {
-        invertCell.classList.add("cryo-cc-discrete-cell--invert-aside");
-      } else if (this.discreteInvertFooterRow) {
-        invertCell.classList.add("cryo-cc-discrete-cell--invert-footer");
       }
 
       invertMount.appendChild(invertCell);
@@ -1704,7 +1666,6 @@
     var afterDiscreteLay = function () {
       self.fitDiscreteSwitchColumnWidths();
       self.fitDiscreteLegendScrollRegion();
-      self.measureDiscreteInvertAsideColumn();
       self.scheduleInvertTypographyFit();
       if (typeof self.onDiscreteLayout === "function") {
         self.onDiscreteLayout();
@@ -1741,9 +1702,7 @@
       this.discreteSwitches.style.removeProperty("--cryo-discrete-cell-min-h");
       return;
     }
-    var gridHost =
-      this.discreteSwitches.querySelector(".cryo-cc-discrete-cells-wrap") ||
-      this.discreteSwitches;
+    var gridHost = this.discreteSwitches;
     var regionRoot =
       this.discreteWrap ||
       this.discreteSwitches.closest("#color-discrete-wrap") ||
@@ -1818,9 +1777,7 @@
       this.discreteSwitches.style.removeProperty("max-height");
       return;
     }
-    var scrollHost =
-      this.discreteSwitches.querySelector(".cryo-cc-discrete-cells-wrap") ||
-      this.discreteSwitches;
+    var scrollHost = this.discreteSwitches;
     var regionRoot = this.discreteWrap;
     if (!regionRoot || regionRoot.hidden) {
       scrollHost.style.removeProperty("max-height");
@@ -1858,24 +1815,6 @@
       return;
     }
     scrollHost.style.maxHeight = Math.floor(available) + "px";
-  };
-
-  CryoColorCovariateLegend.prototype.measureDiscreteInvertAsideColumn = function () {
-    if (!this.discreteInvertAsideColumn || !this.discreteSwitches) return;
-    var wrap = this.discreteSwitches.querySelector(".cryo-cc-discrete-cells-wrap");
-    if (!wrap) return;
-    var probe = wrap.querySelector(".cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert)");
-    if (probe && probe.offsetWidth > 0 && probe.offsetHeight > 0) {
-      this.discreteSwitches.style.setProperty(
-        "--cryo-explorer-discrete-cell-w",
-        probe.offsetWidth + "px"
-      );
-      this.discreteSwitches.style.setProperty(
-        "--cryo-explorer-discrete-cell-h",
-        probe.offsetHeight + "px"
-      );
-    }
-    this.scheduleInvertTypographyFit();
   };
 
   CryoColorCovariateLegend.prototype.scheduleInvertTypographyFit = function () {

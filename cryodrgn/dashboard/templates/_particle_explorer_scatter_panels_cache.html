@@ -157,9 +157,7 @@
       && colorSelectionPanelBody
     ) {
       setExplorerPanelOpen(colorSelectionPanelToggle, colorSelectionPanelBody, true);
-      if (typeof syncParticleExplorerRowExpandForColorHist === "function") {
-        syncParticleExplorerRowExpandForColorHist();
-      }
+      syncParticleExplorerRowExpandForColorHist();
     }
     colorSelectionPanelWasActivated = colorAct;
 
@@ -650,12 +648,7 @@
       pctStr = (100 * frac).toFixed(1) + "%";
     }
     if (selPiePctEl) selPiePctEl.textContent = pctStr;
-    if (typeof applySelectionPieVisual === "function") {
-      applySelectionPieVisual(frac, pctStr);
-    } else if (selPieEl) {
-      selPieEl.style.setProperty("--sel-frac", String(frac));
-      selPieEl.title = pctStr + " of dataset particles selected";
-    }
+    applySelectionPieVisual(frac, pctStr);
     if (selCountRowEl) {
       var scatterHint = "";
       if (curtailed) {
@@ -1138,8 +1131,8 @@
   }
 
   var plotlyStackEl = gd && gd.parentElement;
-  if (montageAsideEl && window.CryoResizeObserverUtils) {
-    window.CryoResizeObserverUtils.observeResize(
+  if (montageAsideEl) {
+    CryoResizeObserverUtils.observeResize(
       [
         montageAsideEl,
         imageGridPanelShell,
@@ -1154,8 +1147,8 @@
       }
     );
   }
-  if (plotlyStackEl && window.CryoResizeObserverUtils) {
-    window.CryoResizeObserverUtils.observeResize(
+  if (plotlyStackEl) {
+    CryoResizeObserverUtils.observeResize(
       [plotlyStackEl],
       function() {
         window.requestAnimationFrame(function() {
@@ -1204,7 +1197,6 @@
   var selFbList = document.getElementById("sel-fb-list");
   var selFbPath = document.getElementById("sel-fb-path");
   var selFbUp = document.getElementById("sel-fb-up");
-  var selFbCancel = document.getElementById("sel-fb-cancel");
   var selFbSaveName = document.getElementById("sel-fb-save-name");
   var selFbSaveBtn = document.getElementById("sel-fb-save-btn");
   var selFbCurrentDir = null;

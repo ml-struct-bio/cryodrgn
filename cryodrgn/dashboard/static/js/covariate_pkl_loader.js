@@ -1,5 +1,6 @@
 /**
  * Shared UI for loading particle-indexed covariate numpy arrays from .pkl files.
+ * Uses CryoDashModal and CryoFileBrowser (cryo_file_browser.js, loaded by base.html).
  */
 (function(global) {
   "use strict";
@@ -49,12 +50,10 @@
     if (up) {
       up.addEventListener("click", function() {
         if (!self.currentDir) return;
-        self.loadDir(global.CryoFileBrowser
-          ? CryoFileBrowser.parentDir(self.currentDir)
-          : null);
+        self.loadDir(CryoFileBrowser.parentDir(self.currentDir));
       });
     }
-    if (this.panel && global.CryoDashModal) {
+    if (this.panel) {
       CryoDashModal.wire(this.panel, {
         closeAttr: "data-covariate-pkl-close",
         cancelId: "covariate-pkl-cancel",
@@ -63,39 +62,19 @@
           self._setStatus("", false);
         }
       });
-    } else if (this.panel) {
-      var cancel = byId("covariate-pkl-cancel");
-      if (cancel) {
-        cancel.addEventListener("click", function() { self.closeModal(); });
-      }
-      this.panel.querySelectorAll("[data-covariate-pkl-close]").forEach(function(el) {
-        el.addEventListener("click", function() { self.closeModal(); });
-      });
     }
   };
 
   CryoCovariatePklLoader.prototype.openModal = function() {
     if (!this.panel) return;
     this._setStatus("", false);
-    if (global.CryoDashModal) {
-      CryoDashModal.open(this.panel);
-    } else {
-      this.panel.hidden = false;
-      this.panel.setAttribute("aria-hidden", "false");
-      document.body.classList.add("cryo-explorer-save-modal-open");
-    }
+    CryoDashModal.open(this.panel);
     this.loadDir(null);
   };
 
   CryoCovariatePklLoader.prototype.closeModal = function() {
     if (!this.panel) return;
-    if (global.CryoDashModal) {
-      CryoDashModal.close(this.panel);
-    } else {
-      this.panel.hidden = true;
-      this.panel.setAttribute("aria-hidden", "true");
-      document.body.classList.remove("cryo-explorer-save-modal-open");
-    }
+    CryoDashModal.close(this.panel);
     this.currentDir = null;
     this._setStatus("", false);
   };
@@ -103,66 +82,16 @@
   CryoCovariatePklLoader.prototype.loadDir = function(dir) {
     var self = this;
     if (!this.listEl || !this.pathEl) return;
-    if (global.CryoFileBrowser) {
-      CryoFileBrowser.loadDir({
-        listUrl: this.opts.listFilesUrl || "",
-        dir: dir,
-        kinds: "pkl",
-        listEl: this.listEl,
-        pathEl: this.pathEl,
-        onDir: function(next) { self.loadDir(next); },
-        onFile: function(path) { self.loadFile(path); },
-        onLoaded: function(j) { self.currentDir = j.dir; }
-      });
-      return;
-    }
-    this.listEl.innerHTML = "<li class='cryo-file-browser-empty'>Loading\u2026</li>";
-    var listUrl = this.opts.listFilesUrl || "";
-    var q = "?kinds=pkl";
-    if (dir) q += "&dir=" + encodeURIComponent(dir);
-    fetch(listUrl + q)
-      .then(function(r) { return r.json(); })
-      .then(function(j) {
-        if (!j.ok) {
-          self.listEl.innerHTML =
-            "<li class='cryo-file-browser-empty'>" + (j.error || "Error") + "</li>";
-          return;
-        }
-        self.currentDir = j.dir;
-        self.pathEl.textContent = j.dir;
-        self.pathEl.title = j.dir;
-        self.listEl.innerHTML = "";
-        if (!j.entries || !j.entries.length) {
-          self.listEl.innerHTML =
-            "<li class='cryo-file-browser-empty'>No entries here</li>";
-          return;
-        }
-        j.entries.forEach(function(ent) {
-          var li = document.createElement("li");
-          var icon = document.createElement("span");
-          icon.className = "fb-icon";
-          icon.textContent = ent.type === "dir" ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
-          var name = document.createElement("span");
-          name.className = "fb-name";
-          name.textContent = ent.name;
-          li.appendChild(icon);
-          li.appendChild(name);
-          if (ent.type === "dir") {
-            li.addEventListener("click", function() {
-              self.loadDir(j.dir + "/" + ent.name);
-            });
-          } else {
-            li.addEventListener("click", function() {
-              self.loadFile(j.dir + "/" + ent.name);
-            });
-          }
-          self.listEl.appendChild(li);
-        });
-      })
-      .catch(function() {
-        self.listEl.innerHTML =
-          "<li class='cryo-file-browser-empty'>Could not list directory</li>";
-      });
+    CryoFileBrowser.loadDir({
+      listUrl: this.opts.listFilesUrl || "",
+      dir: dir,
+      kinds: "pkl",
+      listEl: this.listEl,
+      pathEl: this.pathEl,
+      onDir: function(next) { self.loadDir(next); },
+      onFile: function(path) { self.loadFile(path); },
+      onLoaded: function(j) { self.currentDir = j.dir; }
+    });
   };
 
   CryoCovariatePklLoader.prototype.loadFile = function(serverPath) {

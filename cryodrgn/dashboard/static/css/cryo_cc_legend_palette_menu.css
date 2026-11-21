@@ -159,8 +159,7 @@
 /* Discrete covariate legend (was injected from color_covariate_legend.js).   */
 /* -------------------------------------------------------------------------- */
 
-.cryo-cc-discrete-switches,
-.cryo-cc-discrete-cells-wrap {
+.cryo-cc-discrete-switches {
   --cryo-discrete-grid-gap-y: 0.24rem;
   --cryo-discrete-grid-gap-x: 0.36rem;
 }
@@ -358,49 +357,19 @@ button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:focus-visi
 
 .cryo-cc-discrete-switches::-webkit-scrollbar,
 .cryo-color-discrete-switches::-webkit-scrollbar,
-#color-discrete-switches::-webkit-scrollbar,
-.cryo-cc-discrete-cells-wrap::-webkit-scrollbar {
+#color-discrete-switches::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 
 .cryo-cc-discrete-switches::-webkit-scrollbar-thumb,
 .cryo-color-discrete-switches::-webkit-scrollbar-thumb,
-#color-discrete-switches::-webkit-scrollbar-thumb,
-.cryo-cc-discrete-cells-wrap::-webkit-scrollbar-thumb {
+#color-discrete-switches::-webkit-scrollbar-thumb {
   background: rgba(36, 59, 83, 0.38);
   border-radius: 999px;
 }
 
-.cryo-cc-discrete-switches.cryo-color-discrete-switches--invert-aside {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 0.28rem;
-  overflow: hidden;
-}
-
-.cryo-cc-discrete-cells-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
-  min-width: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(36, 59, 83, 0.42) rgba(36, 59, 83, 0.09);
-  box-sizing: border-box;
-  padding: 0.1rem 0.16rem 0.12rem 0.1rem;
-}
-
-.cryo-cc-discrete-invert-aside {
-  flex: 0 0 auto;
-  align-self: flex-start;
-}
-
 .cryo-cc-discrete-switches--pair-2col,
-.cryo-cc-discrete-cells-wrap,
 .cryo-color-discrete-switches,
 #color-discrete-switches.cryo-color-discrete-switches {
   display: grid;
@@ -422,7 +391,6 @@ button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:focus-visi
 }
 
 .cryo-cc-discrete-switches--pair-2col .cryo-cc-discrete-cell,
-.cryo-cc-discrete-cells-wrap .cryo-cc-discrete-cell,
 .cryo-color-discrete-switches .cryo-cc-discrete-cell,
 #color-discrete-switches .cryo-cc-discrete-cell {
   width: max-content;
@@ -434,9 +402,7 @@ button.cryo-cc-discrete-collapse-toggle.cryo-cc-discrete-toggle-title:focus-visi
   align-self: start;
 }
 
-.cryo-cc-discrete-cells-wrap
-  .cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert):not(.cryo-cc-discrete-cell--invert-heading),
-.cryo-cc-discrete-switches:not(.cryo-color-discrete-switches--invert-aside)
+.cryo-cc-discrete-switches
   > .cryo-cc-discrete-cell:not(.cryo-cc-discrete-cell--invert):not(.cryo-cc-discrete-cell--invert-heading) {
   min-height: var(--cryo-discrete-cell-min-h, auto);
 }

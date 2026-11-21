@@ -449,46 +449,6 @@
     var padPx = 2;
     var vertSlack = 6;
 
-    if (invertCell.classList.contains("cryo-cc-discrete-cell--invert-footer")) {
-      label.style.whiteSpace = "nowrap";
-      var phrase = raw.replace(/\s+/g, " ").trim();
-      var loF = 5;
-      var hiF = 144;
-      var bestF = loF;
-      try {
-        while (loF <= hiF) {
-          var midF = (loF + hiF) >> 1;
-          label.style.fontSize = midF + "px";
-          probe.style.fontSize = midF + "px";
-          probe.textContent = phrase;
-          var wOkF = probe.offsetWidth <= innerW + padPx;
-          var hOkF = label.scrollHeight <= innerH - slackF;
-          if (wOkF && hOkF) {
-            bestF = midF;
-            loF = midF + 1;
-          } else {
-            hiF = midF - 1;
-          }
-        }
-        label.style.fontSize = bestF + "px";
-        while (bestF > 5 && label.scrollHeight > innerH - slackF) {
-          bestF -= 1;
-          label.style.fontSize = bestF + "px";
-        }
-        probe.style.fontSize = bestF + "px";
-        probe.textContent = phrase;
-        while (bestF > 5 && probe.offsetWidth > innerW + padPx) {
-          bestF -= 1;
-          label.style.fontSize = bestF + "px";
-          probe.style.fontSize = bestF + "px";
-        }
-      } finally {
-        if (probe.parentNode) probe.parentNode.removeChild(probe);
-      }
-      label.style.whiteSpace = "";
-      return;
-    }
-
     var lines = raw.split("\n").map(function (ln) {
       return ln.replace(/\s+/g, " ").trim();
     }).filter(Boolean);

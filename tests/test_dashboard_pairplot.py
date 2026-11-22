@@ -226,6 +226,317 @@ class TestPairplotBrowserSmoke:
         out = dashboard_smoke_pairplot(playwright_page, dashboard_live_url)
         assert out["src_changed"]
 
+    def test_color_legend_fills_the_screen_with_the_menu_top_margin(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        """The right-hand legend is as tall as the screen, inset by the left menu's top gap."""
+        from tests.conftest import _dashboard_smoke_wait_pairplot_image
+
+        page = playwright_page
+        page.goto(f"{dashboard_live_url.rstrip('/')}/pairplot")
+        _dashboard_smoke_wait_pairplot_image(page, timeout_ms=60_000)
+        page.wait_for_function(
+            """() => {
+              var panel = document.getElementById('pair-color-legend-panel');
+              return panel && !panel.hidden && panel.getBoundingClientRect().height > 100;
+            }"""
+        )
+        box = page.evaluate(
+            """() => {
+              var card = document.getElementById('pair-controls-card');
+              var panel = document.getElementById('pair-color-legend-panel');
+              var cardTop = card.getBoundingClientRect().top;
+              var panelBox = panel.getBoundingClientRect();
+              return {
+                cardTop: cardTop,
+                panelTop: panelBox.top,
+                bottomGap: window.innerHeight - panelBox.bottom,
+                scrollY: window.scrollY || 0
+              };
+            }"""
+        )
+        assert box["scrollY"] == 0
+        assert abs(box["panelTop"] - box["cardTop"]) <= 2
+        assert abs(box["bottomGap"] - box["cardTop"]) <= 2
+        visible = page.evaluate(
+            """() => {
+              var sw = document.getElementById('pair-color-discrete-switches');
+              var panel = document.getElementById('pair-color-legend-panel');
+              var nodes = sw.querySelectorAll('.cryo-cc-discrete-cell');
+              var panelBox = panel.getBoundingClientRect();
+              var hidden = 0;
+              for (var i = 0; i < nodes.length; i++) {
+                var r = nodes[i].getBoundingClientRect();
+                var inside = r.height > 2
+                  && r.top >= panelBox.top - 1
+                  && r.bottom <= panelBox.bottom + 1
+                  && r.left >= panelBox.left - 1
+                  && r.right <= panelBox.right + 1;
+                if (!inside) hidden++;
+              }
+              var fits = sw.scrollHeight <= window.innerHeight - panelBox.top - 12;
+              return {n: nodes.length, hidden: hidden, fits: fits};
+            }"""
+        )
+        assert visible["n"] > 0
+        assert visible["fits"]
+        assert visible["hidden"] == 0
+        page.evaluate(
+            """() => {
+              var sw = document.getElementById('pair-color-discrete-switches');
+              var sample = sw.querySelector('.cryo-cc-discrete-cell');
+              for (var i = 0; i < 7; i++) {
+                var cell = sample.cloneNode(true);
+                cell.setAttribute('data-clone', '1');
+                sw.appendChild(cell);
+              }
+              window.dispatchEvent(new Event('resize'));
+            }"""
+        )
+        filled = page.evaluate(
+            """() => {
+              var sw = document.getElementById('pair-color-discrete-switches');
+              var panel = document.getElementById('pair-color-legend-panel');
+              var nodes = sw.querySelectorAll('.cryo-cc-discrete-cell');
+              var panelBox = panel.getBoundingClientRect();
+              var hidden = 0;
+              for (var i = 0; i < nodes.length; i++) {
+                var r = nodes[i].getBoundingClientRect();
+                var inside = r.height > 2
+                  && r.top >= panelBox.top - 1
+                  && r.bottom <= panelBox.bottom + 1
+                  && r.right <= panelBox.right + 1;
+                if (!inside) hidden++;
+              }
+              return {
+                n: nodes.length,
+                hidden: hidden,
+                scrolls: sw.scrollHeight > sw.clientHeight + 1
+              };
+            }"""
+        )
+        assert filled["n"] >= visible["n"]
+        assert filled["hidden"] == 0, filled
+        assert not filled["scrolls"], filled
+
+    def test_continuous_legend_uses_the_screen_height(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        """A continuous covariate histogram fills the legend down to the screen."""
+        from tests.conftest import _dashboard_smoke_wait_pairplot_image
+
+        page = playwright_page
+        page.goto(f"{dashboard_live_url.rstrip('/')}/pairplot")
+        _dashboard_smoke_wait_pairplot_image(page, timeout_ms=60_000)
+        page.click('input[name="color_cov"][value="znorm"]')
+        page.wait_for_function(
+            """() => {
+              var wrap = document.getElementById('pair-color-continuous-wrap');
+              var hist = document.getElementById('pair-color-hist');
+              return wrap && !wrap.hidden && hist
+                && hist.getBoundingClientRect().height > 160;
+            }"""
+        )
+        box = page.evaluate(
+            """() => {
+              var card = document.getElementById('pair-controls-card');
+              var row = document.querySelector('.cryo-dash-page--pairplot .cryo-dash-row');
+              var panel = document.getElementById('pair-color-legend-panel');
+              var hist = document.getElementById('pair-color-hist');
+              var footer = panel.querySelector('.cryo-cc-legend__footer--continuous');
+              var panelBox = panel.getBoundingClientRect();
+              var histBox = hist.getBoundingClientRect();
+              var footerTop = footer.getBoundingClientRect().top;
+              return {
+                rowTop: row.getBoundingClientRect().top,
+                cardTop: card.getBoundingClientRect().top,
+                panelTop: panelBox.top,
+                bottomGap: window.innerHeight - panelBox.bottom,
+                histGap: footerTop - histBox.bottom,
+                histH: histBox.height
+              };
+            }"""
+        )
+        assert abs(box["panelTop"] - box["rowTop"]) <= 2
+        assert box["cardTop"] - box["panelTop"] > 24
+        assert box["bottomGap"] <= 16
+        assert box["histH"] > 160
+        assert box["histGap"] <= 24
+
+
+class TestPairGridPointRaster:
+    """Pair-grid points are composited into images instead of drawn as 64 scatters.
+
+    That took a grid of 84k points from 10.6 s to 3.4 s (1.6 s on 4 threads). The
+    images must look like Matplotlib's scatter: same marker size and opacity, drawn in
+    the same order.
+    """
+
+    @staticmethod
+    def _render(mode: str, x, y, rgb, size: float, alpha: float) -> np.ndarray:
+        import matplotlib.pyplot as plt
+
+        from cryodrgn.dashboard.plots_pair_grid import (
+            _add_points_image,
+            _composite_points,
+            _panel_pixels,
+        )
+
+        fig = plt.figure(figsize=(2.5, 2.5), dpi=100)
+        ax = fig.add_axes((0, 0, 1, 1))
+        ax.set_xlim(-3, 3)
+        ax.set_ylim(-3, 3)
+        ax.set_axis_off()
+        px = _panel_pixels(ax)
+        if mode == "raster":
+            img = _composite_points(px, x, y, ("rgb", rgb), alpha, size, 100)
+            _add_points_image(ax, px, img)
+        else:
+            # Matplotlib with every point moved to the centre of its pixel, as the
+            # raster places them.
+            s = px["bw"] / 6.0
+            x = (np.floor(px["bx0"] + (x + 3) * s) + 0.5 - px["bx0"]) / s - 3
+            y = (np.floor(px["by0"] + (y + 3) * s) + 0.5 - px["by0"]) / s - 3
+            ax.scatter(x, y, c=rgb, s=size, alpha=alpha, linewidths=0)
+        fig.canvas.draw()
+        image = np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
+        plt.close(fig)
+        return image
+
+    @pytest.mark.parametrize(
+        "points, size, alpha", [(3000, 6.0, 0.3), (20000, 2.5, 0.2)]
+    )
+    def test_composites_like_matplotlib(self, points: int, size: float, alpha: float):
+        """Same marker area, rim and stacking as ``scatter``; only the snapping of
+        points to pixel centres differs (2-4 levels on average against unsnapped
+        Matplotlib, the same as unsnapped against snapped Matplotlib)."""
+        rng = np.random.default_rng(3)
+        x, y = rng.normal(size=points), rng.normal(size=points)
+        rgb = rng.random((points, 3))
+        mpl = self._render("matplotlib", x, y, rgb, size, alpha)
+        raster = self._render("raster", x, y, rgb, size, alpha)
+        diff = np.abs(mpl - raster)
+        assert diff.mean() < 1.0
+        assert np.percentile(diff, 99) <= 6
+
+    def test_points_drawn_later_are_on_top(self) -> None:
+        from cryodrgn.dashboard.plots_pair_grid import _composite_points
+
+        px = {
+            "x0": 0.0, "x1": 10.0, "y0": 0.0, "y1": 10.0,
+            "bx0": 0.0, "by0": 0.0, "bw": 10.0, "bh": 10.0,
+            "c0": 0, "c1": 10, "r0": 0, "r1": 10,
+        }  # fmt: skip
+        red, blue = [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]
+        x = y = np.array([5.5, 5.5])
+        size = 0.36  # at 72 dpi: 0.6 px across, 28% of one pixel
+        img = _composite_points(px, x, y, ("rgb", np.array([red, blue])), 0.5, size, 72)
+        top = _composite_points(px, x, y, ("rgb", np.array([blue, red])), 0.5, size, 72)
+        pixel = img[4, 5]
+        assert pixel[3] > 0
+        assert pixel[2] > pixel[0], "blue was drawn last"
+        assert top[4, 5][0] > top[4, 5][2], "red was drawn last"
+        # The palette-index path composites exactly like per-point colours.
+        lut = np.array([red, blue])
+        indexed = _composite_points(
+            px, x, y, ("lut", np.array([0, 1]), lut), 0.5, size, 72
+        )
+        assert np.allclose(indexed, img)
+
+    def test_marker_footprint_covers_the_marker_area(self) -> None:
+        from cryodrgn.dashboard.plots_pair_grid import _marker_footprint
+
+        for diameter in (0.8, 2.36, 2.64, 6.3):
+            _, _, frac = _marker_footprint(diameter)
+            assert frac.sum() == pytest.approx(np.pi * diameter**2 / 4, rel=0.05)
+
+    def test_threads_do_not_change_the_image(
+        self, dashboard_experiment: DashboardExperiment
+    ) -> None:
+        kw = dict(lower_color_col="labels", diagonal_emb="pc", upper_style="scatter")
+        one, _ = pair_grid_png(dashboard_experiment, **kw, workers=1)
+        four, _ = pair_grid_png(dashboard_experiment, **kw, workers=4)
+        assert one == four
+
+    def test_switching_back_and_saving_reuse_the_grid(
+        self, flask_client, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        from cryodrgn.dashboard import plots_pair_grid
+
+        renders = []
+        real = plots_pair_grid.pair_grid_png
+        monkeypatch.setattr(
+            plots_pair_grid,
+            "pair_grid_png",
+            lambda *a, **k: renders.append(k.get("upper_style")) or real(*a, **k),
+        )
+        monkeypatch.setattr(
+            plots_pair_grid,
+            "_PAIR_GRID_CACHE",
+            type(plots_pair_grid._PAIR_GRID_CACHE)(),
+        )
+        body = {"color_col": "znorm", "diagonal_emb": "pc", "upper_style": "scatter"}
+        first = flask_client.post("/api/pairplot", json=body).get_json()
+        flask_client.post("/api/pairplot", json={**body, "upper_style": "hex"})
+        again = flask_client.post("/api/pairplot", json=body).get_json()
+        assert again["png_b64"] == first["png_b64"]
+        saved = flask_client.post(
+            "/api/save_pairplot_png", json={**body, "filename": "reused.png"}
+        )
+        assert saved.status_code == 200
+        assert renders == ["scatter", "hex"], "the scatter grid was rendered once"
+
+
+class TestPairplotStaleReplies:
+    """A reply for settings the user has left behind must not reach the screen.
+
+    Hex, then straight back to Scatter: the hex image used to land under the Scatter
+    button, because going back to the image on screen sent no request.
+    """
+
+    pytestmark = pytest.mark.browser
+
+    def test_going_back_to_the_image_on_screen_drops_the_request_in_flight(
+        self, playwright_page, dashboard_live_url
+    ) -> None:
+        from tests.conftest import _dashboard_smoke_wait_pairplot_image
+
+        page = playwright_page
+        held = []
+
+        def hold_hex(route) -> None:
+            body = json.loads(route.request.post_data or "{}")
+            if body.get("upper_style") == "hex":
+                held.append(route)
+            else:
+                route.continue_()
+
+        page.route("**/api/pairplot", hold_hex)
+        try:
+            page.goto(f"{dashboard_live_url.rstrip('/')}/pairplot")
+            src0 = _dashboard_smoke_wait_pairplot_image(page, timeout_ms=60_000)
+            page.click('input[name="upper_style"][value="hex"]')
+            page.wait_for_timeout(300)
+            assert len(held) == 1, "the hex request must be in flight"
+            page.click('input[name="upper_style"][value="scatter"]')
+            page.wait_for_timeout(300)
+            try:
+                held[0].continue_()  # the page has aborted it; let it through anyway
+            except Exception:
+                pass
+            page.wait_for_timeout(2500)
+            state = page.evaluate(
+                """() => ({
+                  src: document.getElementById('pairplot').src,
+                  busy: document.getElementById('pairplot-viewport')
+                    .getAttribute('aria-busy')
+                })"""
+            )
+            assert state["src"] == src0, "the hex image replaced the scatter grid"
+            assert state["busy"] == "false"
+        finally:
+            page.unroute("**/api/pairplot")
+
 
 class TestPairplotColourChoiceConsistency:
     """Every entry in the pair-grid colour menu must render and describe itself.

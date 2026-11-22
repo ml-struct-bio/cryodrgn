@@ -31,6 +31,7 @@ from cryodrgn.dashboard.landscape_volpca import (
     save_landscape_animations,
 )
 from cryodrgn.dashboard.chimerax_animation import (
+    ChimeraxUnavailableError,
     chimerax_iso_response_fields,
     chimerax_view_matrix_camera_arg,
 )
@@ -55,7 +56,7 @@ from cryodrgn.dashboard.preload import particle_thumbnail_b64_from_row
 from cryodrgn.dashboard.plots import (
     pair_grid_figure_aspect_ratio,
     pair_grid_margin_fractions_for_js,
-    pair_grid_png,
+    pair_grid_png_cached,
     pair_grid_skeleton_placeholder_layout,
 )
 from cryodrgn.dashboard.route_helpers import (
@@ -157,7 +158,7 @@ def api_pairplot():
     except ValueError as err:
         return jsonify(error=str(err)), 400
     try:
-        png, cells = pair_grid_png(
+        png, cells = pair_grid_png_cached(
             e,
             lower_color_col=color_col,
             diagonal_emb=diagonal_emb,
@@ -165,6 +166,7 @@ def api_pairplot():
             continuous_palette=palette,
             color_filter=color_filter,
             discrete_label_colors=discrete_label_colors,
+            workers=int(current_app.config.get("PRELOAD_CPUS") or 1),
         )
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -201,7 +203,8 @@ def api_save_pairplot_png():
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, filename)
     try:
-        png, _ = pair_grid_png(
+        # The grid on screen was just made for the same request: usually cached.
+        png, _ = pair_grid_png_cached(
             e,
             lower_color_col=color_col,
             diagonal_emb=diagonal_emb,
@@ -209,6 +212,7 @@ def api_save_pairplot_png():
             continuous_palette=palette,
             color_filter=color_filter,
             discrete_label_colors=discrete_label_colors,
+            workers=int(current_app.config.get("PRELOAD_CPUS") or 1),
         )
         with open(out_path, "wb") as fh:
             fh.write(png)
@@ -960,7 +964,7 @@ def api_trajectory_volumes():
                 particle_thumbnail_b64_from_row(e, int(r)) for r in traj_rows
             ]
         return jsonify(payload)
-    except EnvironmentError as err:
+    except ChimeraxUnavailableError as err:
         return jsonify(error=str(err), need_chimerax=True), 503
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -1180,7 +1184,7 @@ def api_landscape_volpca_generate_animations():
             batch_mode=mode,
             view_matrix=view_matrix,
         )
-    except EnvironmentError as err:
+    except ChimeraxUnavailableError as err:
         return jsonify(error=str(err), need_chimerax=True), 503
     except ValueError as err:
         return jsonify(error=str(err)), 400

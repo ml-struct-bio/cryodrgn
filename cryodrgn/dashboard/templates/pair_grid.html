@@ -332,6 +332,9 @@
     max-width: 100%;
     align-self: stretch;
   }
+  .cryo-dash-row.cryo-dash-row--plot-triple > .pairplot-color-legend-aside {
+    justify-content: flex-start;
+  }
   .pairplot-color-legend-aside {
     flex: 0 0 auto;
     width: max-content;
@@ -351,12 +354,18 @@
     background: rgba(250, 248, 244, 0.85);
     width: max-content;
     max-width: 100%;
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-height: 0;
-    max-height: min(80vh, 80svh);
+    max-height: none;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: sticky;
+  }
+  /* The shared legend stylesheet caps this panel at 80% of the viewport. */
+  .cryo-dash-page--pairplot #pair-color-legend-panel:not([hidden]),
+  .cryo-dash-page--pairplot #pair-color-discrete-wrap.cryo-cc-discrete-wrap--show {
+    max-height: none;
   }
   .pairplot-color-legend-aside #pair-color-discrete-wrap.cryo-cc-discrete-wrap--show {
     flex: 1 1 auto;
@@ -414,6 +423,8 @@
     align-items: stretch;
     width: 100%;
     min-width: 0;
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .pairplot-color-legend-aside .pair-legend-continuous-stack {
     display: flex;
@@ -423,20 +434,27 @@
     width: var(--pair-legend-middle-w, max-content);
     max-width: 100%;
     min-width: min(10.5rem, 100%);
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .pairplot-color-legend-aside .pair-legend-middle-track--continuous {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
     gap: 0.35rem 0.4rem;
     padding-right: 0.15rem;
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .pairplot-color-legend-aside .pair-legend-middle-track--continuous #pair-color-hist {
     grid-column: 1 / -1;
     width: 100%;
+    height: 100%;
     min-width: 0;
+    min-height: 0;
   }
   .pairplot-color-legend-aside .cryo-cc-legend__footer--continuous {
     display: flex;
@@ -451,11 +469,12 @@
     margin-top: 0;
   }
   .pairplot-color-legend-aside #pair-color-hist.cryo-cc-hist--pair-vertical {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    min-height: 120px;
+    min-height: 0;
+    height: 100%;
     box-sizing: border-box;
     align-self: stretch;
   }
@@ -533,6 +552,9 @@
     /* --cryo-discrete-legend-w set from JS from pairplot viewport column width */
     width: var(--cryo-discrete-legend-w, 100%);
     max-width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
   }
   .cryo-cc-discrete-toggle-heading-row {
     display: none;
@@ -831,7 +853,17 @@
    * (avoids stale intrinsics after src change).
    */
   var pairplotImgIntrinsicStale = false;
+  /** Settings of the image on screen. */
   var lastPayload = null;
+  /**
+   * The request in flight, if any: its number (replies of older numbers are dropped),
+   * settings, abort handle, and the image it is loading (``nextUrl``, replacing
+   * ``prevUrl``) once its reply has arrived.
+   */
+  var pairRequestSeq = 0;
+  var pendingPayload = null;
+  var pendingAbort = null;
+  var pendingImage = null;
   var placeholderCells = {{ skeleton_placeholder_cells | tojson }};
   var pairplotFigAspect = {{ pairplot_fig_aspect | tojson }};
   var pairplotMarginFracs = {{ pairplot_margin_fractions | tojson }};
@@ -885,6 +917,77 @@
       "minmax(0," + sideW + "px) minmax(0,1fr) minmax(0," + legendW + "px)";
   }
 
+  /**
+   * The colour legend fills the screen. Its top lines up with the left menu
+   * card, and the gap under it equals that same distance from the top of the
+   * screen, measured with the page scrolled to the top so scrolling does not
+   * change the size.
+   */
+  function syncPairLegendScreenHeight() {
+    var card = document.getElementById("pair-controls-card");
+    var aside = document.querySelector(".pairplot-color-legend-aside");
+    var panel = document.getElementById("pair-color-legend-panel");
+    if (!card || !aside || !panel) return;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (vh < 1) return;
+    var scrollY = window.scrollY || window.pageYOffset || 0;
+    var margin = Math.max(0, Math.round(card.getBoundingClientRect().top + scrollY));
+    var asideTop = aside.getBoundingClientRect().top + scrollY;
+    var shift = Math.max(0, Math.round(margin - asideTop));
+    var height = Math.max(160, Math.round(vh - 2 * margin));
+    panel.style.marginTop = shift + "px";
+    panel.style.top = margin + "px";
+    panel.style.height = height + "px";
+    panel.style.maxHeight = height + "px";
+  }
+
+  /**
+   * A continuous legend starts at the top of the page content, not down at
+   * the left menu card, and runs to just above the bottom of the screen.
+   * The histogram fills that panel above its controls.
+   */
+  function fillPairContinuousLegendSpan() {
+    var panel = document.getElementById("pair-color-legend-panel");
+    var wrap = document.getElementById("pair-color-continuous-wrap");
+    var row = document.querySelector(".cryo-dash-page--pairplot .cryo-dash-row");
+    if (!panel || panel.hidden || !wrap || wrap.hidden || !row) return;
+    panel.style.marginTop = "0px";
+    var top = row.getBoundingClientRect().top;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var scrollY = window.scrollY || window.pageYOffset || 0;
+    var room = Math.max(160, Math.floor(vh - top - 12));
+    panel.style.top = Math.max(0, Math.round(top + scrollY)) + "px";
+    panel.style.height = room + "px";
+    panel.style.maxHeight = room + "px";
+  }
+
+  /**
+   * The symmetric screen height can be shorter than the k-means cells. When
+   * those cells fit between the legend's top and the bottom of the screen,
+   * grow the legend so every cell is on screen. A longer list still scrolls,
+   * inside a legend that uses the rest of the screen.
+   */
+  function growPairLegendForDiscreteCells() {
+    var panel = document.getElementById("pair-color-legend-panel");
+    var sw = document.getElementById("pair-color-discrete-switches");
+    var disc = document.getElementById("pair-color-discrete-wrap");
+    if (!panel || panel.hidden || !sw || !disc || disc.hidden) return;
+    if (!disc.classList.contains("cryo-cc-discrete-wrap--show")) return;
+    sw.style.maxHeight = "none";
+    var natural = sw.scrollHeight;
+    if (natural <= sw.clientHeight + 1) return;
+    var chrome = Math.max(0, panel.clientHeight - sw.clientHeight);
+    var needed = natural + chrome + 8;
+    var top = panel.getBoundingClientRect().top;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var room = Math.max(0, Math.floor(vh - top - 12));
+    var current = panel.clientHeight;
+    if (needed <= current || room <= current) return;
+    var next = Math.min(needed, room);
+    panel.style.height = next + "px";
+    panel.style.maxHeight = next + "px";
+  }
+
   function syncPairDiscreteLegendTargetWidth() {
     var panelLegend = document.getElementById("pair-color-legend-panel");
     var viewportCol = document.querySelector(".cryo-dash-page--pairplot .pairplot-viewport-col");
@@ -908,6 +1011,7 @@
   }
 
   function syncPairLegendMiddleWidth() {
+    syncPairLegendScreenHeight();
     syncPairDiscreteLegendTargetWidth();
     var panel = document.getElementById("pair-color-legend-panel");
     var sw = document.getElementById("pair-color-discrete-switches");
@@ -930,9 +1034,10 @@
       if (typeof pairColorLegend.fitDiscreteSwitchColumnWidths === "function") {
         pairColorLegend.fitDiscreteSwitchColumnWidths();
       }
-      if (typeof pairColorLegend.fitDiscreteLegendScrollRegion === "function") {
-        pairColorLegend.fitDiscreteLegendScrollRegion();
-      }
+      growPairLegendForDiscreteCells();
+      if (sw) void sw.offsetHeight;
+      growPairLegendForDiscreteCells();
+      if (sw) sw.style.maxHeight = "none";
       if (typeof pairColorLegend.scheduleInvertTypographyFit === "function") {
         pairColorLegend.scheduleInvertTypographyFit();
       }
@@ -952,24 +1057,16 @@
     if (!wrap || wrap.hidden) {
       return;
     }
-    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
-    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
-    if (vw < 1 || vh < 1) {
-      return;
-    }
+    syncPairLegendScreenHeight();
+    fillPairContinuousLegendSpan();
+    if (histEl.parentElement) void histEl.parentElement.offsetHeight;
     histEl.style.maxWidth = "";
-    var rect = histEl.getBoundingClientRect();
-    var targetBottom = vh * 0.9;
-    var padding = 6;
-    var h = Math.floor(targetBottom - rect.top - padding);
+    histEl.style.height = "100%";
+    histEl.style.minHeight = "0";
+    var track = histEl.parentElement;
+    var h = track ? track.clientHeight : 0;
     var minH = 120;
-    if (h < minH) {
-      h = minH;
-    }
-    var maxH = Math.floor(vh * 0.92);
-    if (h > maxH) {
-      h = maxH;
-    }
+    if (h < minH) h = minH;
     histEl.style.height = h + "px";
     histEl.style.minHeight = minH + "px";
     try {
@@ -1490,9 +1587,36 @@
   syncSkeletonBounds();
   syncControlsAlignment(placeholderCells);
 
+  /**
+   * Drop the request in flight: its reply is ignored, and an image it has started to
+   * load is swapped back for the one it was replacing.
+   */
+  function cancelPendingPairplot() {
+    pairRequestSeq++;
+    if (pendingAbort) {
+      try { pendingAbort.abort(); } catch (eAbort) { /* already settled */ }
+    }
+    pendingAbort = null;
+    pendingPayload = null;
+    if (pendingImage) {
+      el.onload = null;
+      el.onerror = null;
+      if (pendingImage.prevUrl) {
+        el.src = pendingImage.prevUrl;
+      } else {
+        el.removeAttribute("src");
+      }
+      pairplotObjectUrl = pendingImage.prevUrl || null;
+      URL.revokeObjectURL(pendingImage.nextUrl);
+      pendingImage = null;
+      pairplotImgIntrinsicStale = false;
+    }
+  }
+
   function draw() {
     var colorCol = checkedVal("color_cov");
     if (!colorCol || colorCol === "none") {
+      cancelPendingPairplot();
       status.textContent = "Pick a color covariate.";
       setPairLoading(false);
       lastPayload = null;
@@ -1513,8 +1637,24 @@
     status.textContent = "";
     var dirty = dirtyIndices(lastPayload, payload);
     if (dirty.length === 0) {
+      /* The image on screen already has these settings. A request still in flight is
+         for others (Hex, then straight back to Scatter): without dropping it, its image
+         would land under controls that no longer match it. */
+      if (pendingPayload) {
+        cancelPendingPairplot();
+        setPairLoading(false);
+        syncSkeletonBounds();
+        syncControlsAlignment(activeCellLayout);
+      }
       return;
     }
+    if (pendingPayload && dirtyIndices(pendingPayload, payload).length === 0) {
+      return; /* the request in flight is for exactly these settings */
+    }
+    cancelPendingPairplot();
+    var seq = ++pairRequestSeq;
+    pendingPayload = payload;
+    pendingAbort = typeof AbortController === "function" ? new AbortController() : null;
     var hasRenderableImg = !!(pairplotObjectUrl && el.complete && el.naturalWidth > 0);
     if (hasRenderableImg) {
       applyBusy(dirty);
@@ -1531,10 +1671,12 @@
     var skipHtmlEdgeLabels = hasRenderableImg;
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
+        if (seq !== pairRequestSeq) return;
         fetch("{{ url_for('api_pairplot') }}", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: pendingAbort ? pendingAbort.signal : undefined
         })
           .then(function(r) {
             return r.text().then(function(text) {
@@ -1558,6 +1700,8 @@
             });
           })
           .then(function(data) {
+            if (seq !== pairRequestSeq) return; /* superseded by a newer request */
+            pendingAbort = null;
             applyCellLayout(data.cells, {
               edgeLabels: !skipHtmlEdgeLabels
             });
@@ -1574,11 +1718,14 @@
             var nextUrl = URL.createObjectURL(blob);
             pairplotObjectUrl = nextUrl;
             pairplotImgIntrinsicStale = true;
+            pendingImage = { nextUrl: nextUrl, prevUrl: prevUrl };
             el.onload = function() {
               if (prevUrl) {
                 URL.revokeObjectURL(prevUrl);
               }
               el.onload = null;
+              pendingImage = null;
+              pendingPayload = null;
               pairplotImgIntrinsicStale = false;
               lastPayload = payload;
               setPairLoading(false);
@@ -1590,6 +1737,8 @@
             el.onerror = function() {
               el.onerror = null;
               el.onload = null;
+              pendingImage = null;
+              pendingPayload = null;
               URL.revokeObjectURL(nextUrl);
               pairplotObjectUrl = prevUrl || null;
               pairplotImgIntrinsicStale = false;
@@ -1606,6 +1755,9 @@
                next discrete toggle can look like a no-op (``dirtyIndices`` thinks nothing changed). */
           })
           .catch(function(e) {
+            if (seq !== pairRequestSeq) return; /* aborted or superseded */
+            pendingAbort = null;
+            pendingPayload = null;
             setPairLoading(false);
             status.textContent = e.message || "Failed.";
           });
@@ -1685,6 +1837,7 @@
   window.addEventListener("resize", syncSkeletonBounds);
   window.addEventListener("resize", function() {
     syncPairplotTripleGridColumns();
+    syncPairLegendScreenHeight();
     syncPairLegendMiddleWidth();
     syncControlsAlignment(activeCellLayout);
   });
@@ -1696,6 +1849,7 @@
       [stack, el, pairTripleRow],
       function() {
         syncPairplotTripleGridColumns();
+        syncPairLegendScreenHeight();
         syncPairLegendMiddleWidth();
         syncSkeletonBounds();
         syncControlsAlignment(activeCellLayout);
@@ -1705,6 +1859,7 @@
   requestAnimationFrame(function() {
     requestAnimationFrame(function() {
       syncPairplotTripleGridColumns();
+      syncPairLegendScreenHeight();
       syncPairLegendMiddleWidth();
     });
   });

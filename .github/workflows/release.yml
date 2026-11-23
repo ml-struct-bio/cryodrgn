@@ -14,15 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          check-latest: true
+
       - name: Upgrade setuptools/build
         run: |
           python3 -m venv myenv/
           myenv/bin/pip install setuptools --upgrade
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.9'
 
       - name: Release to pypi
         env:

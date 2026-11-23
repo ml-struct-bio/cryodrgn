@@ -28,7 +28,8 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.14"
+          check-latest: true
 
       - name: Install package (version from tag)
         run: |

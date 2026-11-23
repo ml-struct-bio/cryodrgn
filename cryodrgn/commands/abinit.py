@@ -90,8 +90,17 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--ind",
         type=os.path.abspath,
-        help="Path to indices (.pkl) or number of images to keep (first images kept). "
-        "Use full dataset if None.",
+        help="Filter by particle indices (.pkl). On a tilt series these are "
+        "particles, as elsewhere in cryoDRGN, and every tilt image of each "
+        "selected particle is kept. Use --tilt-ind to filter individual tilt "
+        "images. Ignored if None.",
+    )
+    group.add_argument(
+        "--tilt-ind",
+        type=os.path.abspath,
+        default=None,
+        help="Tilt-series ab initio only: filter by tilt-image indices (.pkl), "
+        "the previous meaning of --ind for this command. Ignored if None.",
     )
     group.add_argument(
         "--relion31",
@@ -656,6 +665,20 @@ class ModelTrainer:
             seed=self.configs.seed,
         )
 
+    @staticmethod
+    def _load_index_file(path: str | int | None, flag: str) -> np.ndarray | int | None:
+        """Load a particle or tilt-image index, or return an integer count."""
+        if path is None:
+            return None
+        if isinstance(path, (int, np.integer)):
+            return int(path)
+        if not os.path.exists(path):
+            raise ValueError(f"{flag} index file `{path}` does not exist!")
+        loaded = utils.load_pkl(path)
+        if isinstance(loaded, (int, np.integer)):
+            return int(loaded)
+        return np.asarray(loaded)
+
     def __init__(self, outdir: str, config_vals: dict[str, Any]) -> None:
         """Initialize model parameters and variables.
 
@@ -718,24 +741,29 @@ class ModelTrainer:
         self.device = torch.device("cuda:0" if self.use_cuda else "cpu")
         self.logger.info(f"Use cuda {self.use_cuda}")
 
-        # Load the index used to filter particles, if given
-        if self.configs.ind is not None:
-            if isinstance(self.configs.ind, int):
-                self.logger.info(f"Keeping {self.configs.ind} particles")
-                self.index = np.arange(self.configs.ind)
-
-            elif isinstance(self.configs.ind, str):
-                if not os.path.exists(self.configs.ind):
-                    raise ValueError(
-                        "Given subset index file "
-                        f"`{self.configs.ind}` does not exist!"
-                    )
-
-                self.logger.info(f"Filtering dataset with {self.configs.ind}")
-                self.index = utils.load_pkl(self.configs.ind)
-
-        else:
-            self.index = None
+        # --ind is particle indices, including on a tilt series. --tilt-ind
+        # keeps the older tilt-image index list for ab initio only.
+        ind_value = self._load_index_file(self.configs.ind, "--ind")
+        tilt_value = self._load_index_file(
+            getattr(self.configs, "tilt_ind", None), "--tilt-ind"
+        )
+        self.index = dataset.TiltSeriesData.image_indices_for_abinit(
+            self.configs.particles,
+            ind_value,
+            tilt_value,
+            warn=self.logger.warning,
+        )
+        if self.index is not None:
+            if tilt_value is not None:
+                self.logger.info(
+                    f"Filtering tilt series to {len(self.index)} tilt images "
+                    f"from {self.configs.tilt_ind}"
+                )
+            elif self.configs.ind is not None:
+                self.logger.info(
+                    f"Filtering dataset with {self.configs.ind} "
+                    f"({len(self.index)} images)"
+                )
 
         self.logger.info("Creating dataset")
         if self.configs.norm is None:
@@ -1136,6 +1164,7 @@ class ModelTrainer:
                 ctf=self.configs.ctf,
                 invert_data=self.configs.invert_data,
                 ind=self.configs.ind,
+                tilt_ind=getattr(self.configs, "tilt_ind", None),
                 datadir=self.configs.datadir,
             ),
             "lattice_args": dict(
@@ -1921,6 +1950,7 @@ def main(args: argparse.Namespace) -> None:
         ctf=args.ctf,
         datadir=args.datadir,
         ind=args.ind,
+        tilt_ind=args.tilt_ind,
         relion31=args.relion31,
         invert_data=args.invert_data,
         load=args.load,

@@ -417,6 +417,29 @@ class TiltSeriesData(ImageDataset):
 
         return particles_to_tilts, tilts_to_particles
 
+    @staticmethod
+    def indices_follow_tilt_images(
+        index: np.ndarray, particles_to_tilts: list[np.ndarray]
+    ) -> bool:
+        """True when ``index`` addresses tilt-image rows, not particles.
+
+        A particle list is no longer than the particle table and every value
+        lies in ``0 .. n_particles-1``. A tilt-image list is longer than the
+        particle table, or contains a row number past the last particle, while
+        still addressing rows of the tilt stack.
+        """
+        ind = np.asarray(index, dtype=np.int64).ravel()
+        n_particles = len(particles_to_tilts)
+        if ind.size == 0 or n_particles == 0:
+            return False
+        n_rows = int(sum(len(group) for group in particles_to_tilts))
+        addresses_rows = bool(np.all((ind >= 0) & (ind < n_rows)))
+        if not addresses_rows:
+            return False
+        if ind.size > n_particles or bool(np.any(ind >= n_particles)):
+            return True
+        return False
+
     @classmethod
     def particles_to_tilts(
         cls, particles_to_tilts: list[np.ndarray], particles: np.ndarray
@@ -425,6 +448,93 @@ class TiltSeriesData(ImageDataset):
         tilts = np.concatenate(tilts)
 
         return tilts
+
+    @classmethod
+    def tilt_groups(cls, particles_path: str) -> list[np.ndarray] | None:
+        """Particle-to-tilt-row groups, or ``None`` when this is not a tilt series."""
+        path = str(particles_path or "")
+        if not path.lower().endswith(".star"):
+            return None
+        try:
+            groups, _tilt_to_particle = cls.parse_particle_tilt(path)
+        except (OSError, ValueError):
+            return None
+        return groups or None
+
+    @classmethod
+    def image_indices_for_abinit(
+        cls,
+        particles_path: str,
+        ind: np.ndarray | int | None,
+        tilt_ind: np.ndarray | None,
+        *,
+        warn=None,
+    ) -> np.ndarray | None:
+        """Star-row indices kept by ``cryodrgn abinit``.
+
+        On a tilt series, ``ind`` selects particles and is expanded to every
+        tilt image of those particles, matching ``train_vae`` and
+        ``backproject_voxel``. ``tilt_ind`` selects tilt-image rows directly,
+        which is how ``--ind`` used to behave for this command. On a
+        single-particle stack, ``ind`` is already an image index and
+        ``tilt_ind`` is rejected.
+        """
+        groups = cls.tilt_groups(particles_path)
+        if groups is None:
+            if tilt_ind is not None:
+                raise ValueError(
+                    "--tilt-ind applies only to tilt-series ab initio "
+                    "reconstruction."
+                )
+            if ind is None:
+                return None
+            if isinstance(ind, (int, np.integer)):
+                return np.arange(int(ind))
+            return np.asarray(ind, dtype=np.int64).ravel()
+
+        if ind is not None and tilt_ind is not None:
+            raise ValueError(
+                "Pass particle indices with --ind or tilt-image indices with "
+                "--tilt-ind, not both."
+            )
+        if tilt_ind is not None:
+            return np.asarray(tilt_ind, dtype=np.int64).ravel()
+        if ind is None:
+            return None
+
+        n_particles = len(groups)
+        if isinstance(ind, (int, np.integer)):
+            n_keep = int(ind)
+            if n_keep < 0 or n_keep > n_particles:
+                raise ValueError(
+                    f"--ind {n_keep} is outside the {n_particles} particles "
+                    "in this tilt series."
+                )
+            particle_ids = np.arange(n_keep)
+        else:
+            particle_ids = np.asarray(ind, dtype=np.int64).ravel()
+            if cls.indices_follow_tilt_images(particle_ids, groups):
+                message = (
+                    "--ind selects particles for tilt-series ab initio "
+                    "reconstruction, as it does elsewhere in cryoDRGN. This "
+                    f"index list has {particle_ids.size} entries for "
+                    f"{n_particles} particles and addresses tilt-image rows. "
+                    "Pass it with --tilt-ind."
+                )
+                if warn is not None:
+                    warn(message)
+                raise ValueError(message)
+            if particle_ids.size and (
+                bool(np.any(particle_ids < 0))
+                or bool(np.any(particle_ids >= n_particles))
+            ):
+                raise ValueError(
+                    "A particle index is outside "
+                    f"0..{n_particles - 1} for this tilt series."
+                )
+        if particle_ids.size == 0:
+            return np.asarray([], dtype=np.int64)
+        return cls.particles_to_tilts(groups, particle_ids)
 
     @classmethod
     def tilts_to_particles(cls, tilts_to_particles, tilts):

@@ -28,7 +28,6 @@ import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from matplotlib.colors import ListedColormap
 import seaborn as sns
-import umap
 
 from cryodrgn import config, utils
 from cryodrgn.lattice import Lattice
@@ -489,6 +488,8 @@ def main(args: argparse.Namespace) -> None:
 
     # Run UMAP
     logger.info("Running UMAP...")
+    import umap  # lazy: slow to import, and the CLI imports every command
+
     reducer = umap.UMAP(n_neighbors=args.num_neighbors)
     umap_emb = reducer.fit_transform(embeddings_all)
     utils.save_pkl(umap_emb, os.path.join(outdir, "umap_vol_pca.pkl"))

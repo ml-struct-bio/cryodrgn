@@ -147,18 +147,14 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--epochs-pose-search",
         type=int,
         default=None,
-        help="Number of pose-search epochs after pretraining "
-        "(default: %(default)s). This is the number of passes, not a label "
-        "shared with the standalone drgnai epoch counter.",
+        help="Number of epochs to train for pose search (default: %(default)s)",
     )
     group.add_argument(
         "--n-imgs-pose-search",
         type=int,
         default=None,
         help="Image budget for pose search. Overrides --epochs-pose-search. "
-        "The budget is converted as n_imgs // n_particles + 1, so 150000 "
-        "images and 9842 particles is 16 search epochs, the March 2026 "
-        "yeast schedule (default: %(default)s).",
+        "The epoch budget is converted as n_imgs // n_particles + 1",
     )
     group.add_argument(
         "--epochs-sgd",
@@ -207,8 +203,7 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--no-amp",
         action="store_false",
         dest="amp",
-        help="Disable automatic mixed precision for pretraining, pose search, "
-        "and SGD (torch.amp).",
+        help="Disable automatic mixed precision (torch.amp).",
     )
     group.add_argument(
         "--batch-size-hps",
@@ -543,29 +538,31 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help="Treat particles as tilt series and run ab initio subtomogram averaging.",
     )
     group.add_argument(
-        "--n-tilts",
+        "--ntilts",
         type=int,
         default=11,
         help="Number of tilts kept per particle (default: %(default)s).",
     )
     group.add_argument(
         "--dose-per-tilt",
+        "-d",
         type=float,
         default=None,
         help="Dose per tilt in e-/A^2. Required for subtomogram averaging.",
     )
     group.add_argument(
         "--angle-per-tilt",
+        "-a",
         type=float,
         default=None,
         help="Angle between consecutive tilts, in degrees. "
         "Required for subtomogram averaging.",
     )
     group.add_argument(
-        "--n-tilts-pose-search",
+        "--ntilts-pose-search",
         type=int,
         default=None,
-        help="Number of tilts used during pose search " "(default: --n-tilts).",
+        help="Number of tilts used during pose search " "(default: --ntilts).",
     )
     group.add_argument(
         "--average-over-tilts",

@@ -20,7 +20,6 @@ from matplotlib import pyplot as plt
 import numpy as np
 import torch
 from scipy import stats, ndimage, spatial
-import umap
 
 from cryodrgn import analysis, fft, utils
 from cryodrgn.source import ImageSource, write_mrc
@@ -288,6 +287,8 @@ def encoder_latent_umaps(
             reducer = cuUMAP(random_state=random_state, n_epochs=n_epochs_umap)
             umap_embedding = reducer.fit_transform(z)
         else:  # using umap-learn library CPU-bound UMAP
+            import umap  # lazy: slow to import, and the CLI imports every command
+
             reducer = umap.UMAP(random_state=random_state)
             umap_embedding = reducer.fit_transform(z)
 

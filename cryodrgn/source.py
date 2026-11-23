@@ -415,10 +415,10 @@ class MRCFileSource(ImageSource):
         if require_contiguous and not is_contiguous:
             raise ValueError("MRC indices are not contiguous!")
 
-        with open(self.mrcfile_path) as f:
+        with open(self.mrcfile_path, "rb") as f:
             if is_contiguous:
                 f.seek(self.start)
-                offset = indices[0] * self.stride
+                offset = self._byte_offset(indices[0])
                 # 'offset' in the call below is w.r.t the current position of f
                 _data = np.fromfile(
                     f, dtype=self.dtype, count=self.size * len(indices), offset=offset
@@ -428,7 +428,7 @@ class MRCFileSource(ImageSource):
             else:
                 for index, tgt_index in zip(indices, tgt_indices):
                     f.seek(self.start)
-                    offset = index * self.stride
+                    offset = self._byte_offset(index)
                     # 'offset' in the call below is w.r.t the current position of f
                     _data = np.fromfile(
                         f, dtype=self.dtype, count=self.size, offset=offset
@@ -436,6 +436,16 @@ class MRCFileSource(ImageSource):
                     data[tgt_index, ...] = _data
 
         return data
+
+    def _byte_offset(self, index) -> int:
+        """Byte offset of image ``index`` from the start of the pixel data.
+
+        cryoSPARC ``.cs`` files store ``blob/idx`` as uint32. Under NumPy 2 that
+        dtype stays 32-bit when multiplied by a Python int (NEP 50) and wraps at
+        4 GiB, so ``np.fromfile`` would return an earlier particle. Casting both
+        factors to Python int before multiplying keeps the full offset.
+        """
+        return int(index) * int(self.stride)
 
     def write(
         self,

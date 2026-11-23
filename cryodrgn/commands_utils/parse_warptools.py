@@ -4,17 +4,32 @@ WarpTools/RELION5 2D stacks are often CTF-premultiplied
 (``rlnCtfDataAreCtfPremultiplied``); disable CTF correction in cryoDRGN when
 that flag is set.
 
+Each tilt image's defocus is the tilt's defocus at the tomogram center plus the
+particle's depth along the beam, with the sign of RELION's ``rlnTomoHand``.
+WarpTools does not always write the sign that Warp's own CTF model uses, which
+is -1 for tilt series with ``AreAnglesInverted`` set in their XML and +1
+otherwise: 2.0.0dev39 and earlier write -1 for every tilt series, and 2.0.0dev40
+and later write the reverse of Warp's sign. Use ``--warp-tiltseries`` to take the
+sign from the tilt-series XMLs instead, or ``--hand`` to set it.
+
 Example usage
 -------------
 cryodrgn_utils parse_warptools -t tomograms.star -p particles.star \\
     --tilt-dim 5760 4092 -o particles_2d.star
 
+# Take each tomogram's depth-defocus sign from Warp's tilt-series XMLs
+cryodrgn_utils parse_warptools -t tomograms.star -p particles.star \\
+    --tilt-dim 5760 4092 --warp-tiltseries warp_tiltseries -o particles_2d.star
+
 # Separate step necessary to get pose+CTF files needed for cryoDRGN 3D reconstruction
 # cryodrgn parse_star particles_2d.star --poses pose.pkl --ctf ctf.pkl --Apix 2.1 -D 128
 
 """
+
 import argparse
 import logging
+import os
+import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
 import starfile
@@ -67,6 +82,25 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         help=(
             "Box size of the cropped particle images in pixels. Defaults to "
             "rlnImageSize from the particles optics table."
+        ),
+    )
+    parser.add_argument(
+        "--warp-tiltseries",
+        metavar="DIR",
+        help=(
+            "WarpTools tilt-series processing folder with a <tomogram>.xml file per "
+            "tilt series. The sign of the depth term in each tilt image's defocus is "
+            "then taken from the XML's AreAnglesInverted flag (-1 if set, +1 if not), "
+            "as in Warp's own CTF model, instead of from rlnTomoHand."
+        ),
+    )
+    parser.add_argument(
+        "--hand",
+        type=int,
+        choices=(-1, 1),
+        help=(
+            "Sign of the depth term in each tilt image's defocus for every tilt "
+            "series, overriding both rlnTomoHand and --warp-tiltseries."
         ),
     )
 
@@ -134,6 +168,22 @@ def _optics_groups_are_ctf_premultiplied(optics_df: pd.DataFrame) -> list:
             flagged.append(row["rlnOpticsGroup"])
 
     return flagged
+
+
+def _warp_xml_hand(xml_dir: str, tomo_name: str) -> int | None:
+    """Depth-defocus sign of Warp's own CTF model for one tilt series.
+
+    Warp subtracts the particle's depth from the tilt's defocus when the tilt
+    series has ``AreAnglesInverted`` set and adds it otherwise. Returns None if
+    ``xml_dir`` has no XML for this tilt series.
+
+    """
+    xml_path = os.path.join(xml_dir, f"{tomo_name.removesuffix('.tomostar')}.xml")
+    if not os.path.isfile(xml_path):
+        return None
+
+    inverted = ET.parse(xml_path).getroot().get("AreAnglesInverted", "False")
+    return -1 if inverted.strip().lower() == "true" else 1
 
 
 def _warp_euler_matrix_from_row(row, fields):
@@ -451,18 +501,53 @@ def main(args: argparse.Namespace) -> None:
     tomogram_cache = {}
     has_visible_frames = "rlnTomoVisibleFrames" in particles_df.columns
 
+    # WarpTools added rlnPhaseShift to the tilt tables in 2.0.0dev40, together
+    # with the rlnTomoHand mapping that reverses Warp's own depth-defocus sign.
+    if args.hand is None and args.warp_tiltseries is None:
+        if any("rlnPhaseShift" in tomo_star[name].columns for name in global_by_tomo):
+            logger.warning(
+                "These tilt tables have rlnPhaseShift, which WarpTools writes from "
+                "2.0.0dev40 on. These versions set rlnTomoHand to +1 for tilt series "
+                "with AreAnglesInverted set in their XML and to -1 otherwise, the "
+                "reverse of the depth-defocus sign of Warp's own CTF model; use "
+                "--warp-tiltseries with the tilt-series XML folder, or --hand."
+            )
+        else:
+            logger.warning(
+                "WarpTools 2.0.0dev39 and earlier write rlnTomoHand = -1 for every "
+                "tilt series, which matches Warp's own CTF model only for tilt series "
+                "with AreAnglesInverted set in their XML; use --warp-tiltseries with "
+                "the tilt-series XML folder, or --hand, to be sure."
+            )
+
     # Parse Proj matrices once per tomogram.
+    hands = {}
     for tomo_name, global_row in global_by_tomo.items():
         optics_row = next(iter(optics_resolved.values()))["row"]
         pixel_size_ang = _get_tomogram_pixel_size(global_row, optics_row)
-        handedness = global_row.get("rlnTomoHand", 1)
+        hand = -1 if float(global_row.get("rlnTomoHand", 1)) == -1 else 1
+        if args.hand is not None:
+            hand = args.hand
+        elif args.warp_tiltseries is not None:
+            xml_hand = _warp_xml_hand(args.warp_tiltseries, tomo_name)
+            if xml_hand is None:
+                logger.warning(
+                    "No Warp XML for %s in %s; using its rlnTomoHand (%d).",
+                    tomo_name,
+                    args.warp_tiltseries,
+                    hand,
+                )
+            else:
+                hand = xml_hand
+        hands[tomo_name] = hand
+
         ts_df = tomo_star[tomo_name]
         tomo_meta_cache[tomo_name] = {
             "global_row": global_row,
             "ts_df": ts_df,
             "proj_mats": _projection_matrices_from_df(ts_df),
             "pixel_size_ang": pixel_size_ang,
-            "hand": -1 if float(handedness) == -1 else 1,
+            "hand": hand,
             "tomo_center_px": np.array(
                 [
                     global_row["rlnTomoSizeX"] / 2.0,
@@ -472,6 +557,10 @@ def main(args: argparse.Namespace) -> None:
                 dtype=float,
             ),
         }
+    logger.info(
+        "Depth-defocus sign: %s",
+        ", ".join(f"{name} {hand:+d}" for name, hand in hands.items()),
+    )
 
     all_2d_rows = [
         _expand_one_particle(

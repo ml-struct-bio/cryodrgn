@@ -225,6 +225,7 @@ ABINIT_GROUPS: list[Group] = [
         "Dataset loading",
         [
             _text("ab_ind", ["--ind"]),
+            _text("ab_tilt_ind", ["--tilt-ind"]),
             _flag("ab_relion31", ["--relion31"]),
             _flag("ab_uninvert", ["--uninvert-data"]),
             _flag("ab_lazy", ["--lazy"]),

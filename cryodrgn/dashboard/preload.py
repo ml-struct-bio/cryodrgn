@@ -17,7 +17,11 @@ from typing import Iterable
 import matplotlib.pyplot as plt
 import numpy as np
 
-from cryodrgn.dashboard.data import DashboardExperiment, particle_image_array
+from cryodrgn.dashboard.data import (
+    TILT_ABINIT_NO_PLOT_INDS_MSG,
+    DashboardExperiment,
+    particle_image_array,
+)
 from cryodrgn.dashboard.plots_figure_utils import ezlab_matplotlib_rc
 
 logger = logging.getLogger(__name__)
@@ -145,7 +149,7 @@ def particle_thumbnail_b64_from_row(
     exp: DashboardExperiment, row_index: int, max_side: int = 72
 ) -> str | None:
     """Small grayscale JPEG (base64) for trajectory NN inset previews."""
-    if not exp.can_preview_particles:
+    if exp.particle_images_unavailable:
         return None
     try:
         from PIL import Image
@@ -368,7 +372,8 @@ def load_plot_df_rows_from_plot_inds_file(
 ) -> list[int]:
     """Map ``--plot-inds`` pickle dataset indices to ``plot_df`` rows.
 
-    Returns ``[]`` when the path is empty, missing, or errors on load.
+    Returns ``[]`` when the path is empty, missing, or errors on load, and for
+    tilt-series ab initio runs, whose index files may list tilt images.
     """
     from cryodrgn import utils
 
@@ -376,6 +381,11 @@ def load_plot_df_rows_from_plot_inds_file(
 
     path = (plot_inds_path or "").strip()
     if not path or not os.path.isfile(path):
+        return []
+    if exp.tilt_abinit:
+        logger.warning(
+            "Ignoring --plot-inds %s: %s", path, TILT_ABINIT_NO_PLOT_INDS_MSG
+        )
         return []
     try:
         pre = utils.load_pkl(path)

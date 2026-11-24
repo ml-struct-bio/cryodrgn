@@ -90,10 +90,8 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--ind",
         type=os.path.abspath,
-        help="Filter by particle indices (.pkl). On a tilt series these are "
-        "particles, as elsewhere in cryoDRGN, and every tilt image of each "
-        "selected particle is kept. Use --tilt-ind to filter individual tilt "
-        "images. Ignored if None.",
+        help="Path to indices (.pkl) or number of images to keep (first images kept). "
+        "Use full dataset if None.",
     )
     group.add_argument(
         "--tilt-ind",

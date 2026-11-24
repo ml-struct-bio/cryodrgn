@@ -58,6 +58,39 @@ def discover_analyzed_workdirs(parent: str) -> list[str]:
     return out
 
 
+TILT_NO_THUMBNAILS_MSG = (
+    "Tilt-series data does not include single-particle thumbnails in this view."
+)
+TILT_ABINIT_NO_IMAGES_MSG = (
+    "This is a tilt-series ab initio run: each point is a particle made of several "
+    "tilt images, and the dashboard does not yet map particles to their images, so "
+    "particle thumbnails are turned off for it."
+)
+TILT_ABINIT_NO_EXPORT_MSG = (
+    "Selections cannot be saved for tilt-series ab initio runs yet: their --ind "
+    "files list tilt images, and the dashboard does not yet convert the selected "
+    "particles into tilt images."
+)
+TILT_ABINIT_NO_PLOT_INDS_MSG = (
+    "index files of tilt-series ab initio runs may list tilt images, and the "
+    "dashboard does not yet convert tilt images into particles."
+)
+
+
+def is_tilt_series_abinit(train_configs: dict[str, Any]) -> bool:
+    """True for a tilt-series (subtomogram averaging) ``cryodrgn abinit`` run.
+
+    These runs do not set ``model_args.encode_mode``; they are marked by
+    ``training.subtomogram_averaging``. Their ``z.N.pkl`` has one row per
+    particle, while the particle stack, the CTF table and ``pose.N.pkl`` have
+    one row per tilt image. Older configs store that tilt-image filter in
+    ``ind``. Current abinit stores particle indices in ``ind`` and any
+    tilt-image filter in ``tilt_ind``.
+    """
+    training = train_configs.get("training")
+    return isinstance(training, dict) and bool(training.get("subtomogram_averaging"))
+
+
 @dataclass
 class DashboardExperiment:
     """Everything the dashboard needs for scatter / pair-grid / image preview."""
@@ -75,6 +108,8 @@ class DashboardExperiment:
     umap: np.ndarray | None
     pc: np.ndarray
     z: np.ndarray
+    # Tilt-series ab initio run: rows are particles, images are per tilt.
+    tilt_abinit: bool = False
     _image_source: object | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -106,6 +141,27 @@ class DashboardExperiment:
     @property
     def can_preview_particles(self) -> bool:
         return self.enc_mode != "tilt"
+
+    @property
+    def particle_images_unavailable(self) -> str | None:
+        """Why this run has no image per plotted row (``None`` when it has one).
+
+        For a tilt-series ab initio run, row ``i`` of the table is particle ``i``
+        but image ``i`` of the stack is a tilt image of some other particle, so
+        showing it would be wrong rather than merely unhelpful.
+        """
+        if self.enc_mode == "tilt":
+            return TILT_NO_THUMBNAILS_MSG
+        if self.tilt_abinit:
+            return TILT_ABINIT_NO_IMAGES_MSG
+        return None
+
+    @property
+    def selection_export_unavailable(self) -> str | None:
+        """Why selected rows cannot be written as a dataset-index file (or ``None``)."""
+        if self.tilt_abinit:
+            return TILT_ABINIT_NO_EXPORT_MSG
+        return None
 
     @property
     def analyze_dir(self) -> str:
@@ -189,7 +245,13 @@ def load_experiment(
         workdir,
         f"pose.{epoch}.pkl",
     )
-    rot, trans = utils.load_pkl(pose_pkl)
+    # ``abinit --no-trans`` saves the rotations alone instead of a (rot, trans) pair.
+    poses = utils.load_pkl(pose_pkl)
+    if isinstance(poses, (tuple, list)):
+        rot = poses[0]
+        trans = poses[1] if len(poses) > 1 else None
+    else:
+        rot, trans = poses, None
 
     ctf_path = ds_args["ctf"]
     ctf_params = utils.load_pkl(ctf_path) if ctf_path is not None else None
@@ -206,8 +268,14 @@ def load_experiment(
 
     imgs_fl = ds_args["particles"]
     datadir = ds_args.get("datadir") or ""
+    tilt_abinit = is_tilt_series_abinit(train_configs)
 
-    if ctf_params is not None and enc_mode != "tilt":
+    if tilt_abinit:
+        # Rows of z are particles. Older runs stored tilt-image indices in
+        # ``ind``. Current abinit stores particle indices there and puts a
+        # tilt-image list in ``tilt_ind`` when one was passed.
+        all_indices = np.arange(z.shape[0])
+    elif ctf_params is not None and enc_mode != "tilt":
         all_indices = np.arange(ctf_params.shape[0])
     elif enc_mode == "tilt":
         pt, _tp = TiltSeriesData.parse_particle_tilt(imgs_fl)
@@ -215,12 +283,24 @@ def load_experiment(
     else:
         all_indices = np.arange(len(ImageDataset(mrcfile=imgs_fl, lazy=True)))
 
-    if indices is not None:
-        ctf_params = ctf_params[indices, :] if ctf_params is not None else None
-        all_indices = all_indices[indices]
+    # Per-tilt tables (CTF, poses) are sliced by tilt-image indices. A new
+    # abinit config records those separately from particle ``ind``.
+    table_indices = indices
+    if tilt_abinit and "tilt_ind" in ds_args:
+        tilt_raw = ds_args.get("tilt_ind")
+        if isinstance(tilt_raw, int):
+            table_indices = slice(tilt_raw)
+        elif tilt_raw is not None:
+            table_indices = utils.load_pkl(tilt_raw)
+        else:
+            table_indices = None
+    if table_indices is not None:
+        ctf_params = ctf_params[table_indices, :] if ctf_params is not None else None
+        if not tilt_abinit:
+            all_indices = all_indices[table_indices]
         if "poses" in ds_args:
-            rot = rot[indices, :, :]
-            trans = trans[indices, :]
+            rot = rot[table_indices, :, :]
+            trans = trans[table_indices, :] if trans is not None else None
 
     pc, _ = analysis.run_pca(z)
     umap_path = os.path.join(anlzdir, "umap.pkl")
@@ -281,13 +361,15 @@ def load_experiment(
         umap=umap,
         pc=pc,
         z=z,
+        tilt_abinit=tilt_abinit,
     )
 
 
 def particle_image_array(exp: DashboardExperiment, row_index: int) -> np.ndarray:
     """Return a single 2D real-space image for dataframe row ``row_index``."""
-    if not exp.can_preview_particles:
-        raise RuntimeError("Particle previews are not supported for tilt-series data.")
+    unavailable = exp.particle_images_unavailable
+    if unavailable:
+        raise RuntimeError(unavailable)
     g = int(exp.all_indices[int(row_index)])
     img = exp.particle_image_source().images(g, as_numpy=True)
     if img.ndim == 3:

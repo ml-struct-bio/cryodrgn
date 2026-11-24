@@ -27,7 +27,7 @@ jobs:
       CRYODRGN_REQUIRE_WEBGL: 1
     strategy:
       matrix:
-        python: [ '3.10', '3.11' , '3.12' , '3.13' , '3.14' ]
+        python: [ '3.10', '3.11' , '3.12' , '3.13' , '3.14' , '3.15' ]
         os: [ macos-latest, ubuntu-latest ]
         include:
           # Each row targets a distinct compatibility corner (floor, NumPy 1.x,

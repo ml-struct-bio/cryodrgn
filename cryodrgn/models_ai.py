@@ -577,11 +577,11 @@ class SharedCNN(nn.Module):
             final_size = resolution // 2
         else:
             final_size = resolution
+
         if coord_conv:
             cnn.append(AddCoords(final_size))
             in_channels = in_channels + 3
-        else:
-            in_channels = in_channels
+
         out_channels = channels
         for i in range(depth):
             ks = min(kernel_size, final_size)
@@ -997,7 +997,11 @@ class HyperVolume(nn.Module):
         batch_size_in = x.shape[0]
         n_pts = x.shape[-2]
         subtomogram_averaging = x.dim() == 4
-        out_shape = (batch_size_in, x.shape[1], n_pts) if subtomogram_averaging else (batch_size_in, n_pts)
+        out_shape = (
+            (batch_size_in, x.shape[1], n_pts)
+            if subtomogram_averaging
+            else (batch_size_in, n_pts)
+        )
         h = self._first_x(x)  # [B(, T), N, hidden], no bias
         hz = self._first_z(z)  # [B or 1, hidden], with the bias
         hz = hz[:, None, None] if subtomogram_averaging else hz[:, None]
@@ -1009,14 +1013,24 @@ class HyperVolume(nn.Module):
         first-layer term are computed once. x: [n_pts, 3]; z: [batch_size, z_dim] -> [batch_size, n_pts]."""
         lin = self._first_layer()
         hz = self._first_z(z)  # [B, hidden], with the bias
-        x_enc = self.random_fourier_encoding(x)  # [N, 3 * 2 * pe_dim], fp32, once for the batch
+        x_enc = self.random_fourier_encoding(
+            x
+        )  # [N, 3 * 2 * pe_dim], fp32, once for the batch
         if torch.is_grad_enabled() or not hasattr(torch, "_addmm_activation"):
-            h = torch.relu(F.linear(x_enc, lin.weight[:, : x_enc.shape[-1]])[None] + hz[:, None])
+            h = torch.relu(
+                F.linear(x_enc, lin.weight[:, : x_enc.shape[-1]])[None] + hz[:, None]
+            )
         else:  # per particle: one GEMM with the z term as bias and a fused ReLU, written in place
-            dt = torch.get_autocast_dtype(x.device.type) if torch.is_autocast_enabled() else x_enc.dtype
+            dt = (
+                torch.get_autocast_dtype(x.device.type)
+                if torch.is_autocast_enabled()
+                else x_enc.dtype
+            )
             xe = x_enc.to(dt)
             Wx = lin.weight[:, : x_enc.shape[-1]].to(dt)
-            h = torch.empty(hz.shape[0], xe.shape[0], Wx.shape[0], device=xe.device, dtype=dt)
+            h = torch.empty(
+                hz.shape[0], xe.shape[0], Wx.shape[0], device=xe.device, dtype=dt
+            )
             with torch.autocast(device_type=x.device.type, enabled=False):
                 for b in range(hz.shape[0]):
                     torch._addmm_activation(hz[b].to(dt), xe, Wx.t(), out=h[b])
@@ -1024,7 +1038,9 @@ class HyperVolume(nn.Module):
 
     def _first_layer(self):
         lin = self.mlp.main[0]
-        assert type(lin) is nn.Linear, "the split first layer needs a plain Linear input layer"
+        assert (
+            type(lin) is nn.Linear
+        ), "the split first layer needs a plain Linear input layer"
         return lin
 
     def _first_x(self, x):
@@ -1037,7 +1053,7 @@ class HyperVolume(nn.Module):
             return lin.bias[None]
         if self.pe_type_conf == "geom":
             z = self.geom_fourier_encoding_conf(z)
-        return F.linear(z, lin.weight[:, 3 * 2 * self.pe_dim:], lin.bias)
+        return F.linear(z, lin.weight[:, 3 * 2 * self.pe_dim :], lin.bias)
 
     def _rest(self, h):
         """The layers after the first ReLU: [..., hidden] -> [..., 1]. Without gradients (pose search, re-search,
@@ -1055,7 +1071,12 @@ class HyperVolume(nn.Module):
                 nxt = layers[i + 1] if i + 1 < len(layers) else None
                 if isinstance(m, ResidualLinear) and isinstance(nxt, nn.ReLU):
                     W = m.linear.weight
-                    Wf = (W + torch.eye(W.shape[0], W.shape[1], device=W.device, dtype=W.dtype)).to(dt)
+                    Wf = (
+                        W
+                        + torch.eye(
+                            W.shape[0], W.shape[1], device=W.device, dtype=W.dtype
+                        )
+                    ).to(dt)
                     flat = torch._addmm_activation(m.linear.bias.to(dt), flat, Wf.t())
                     i += 2
                 elif isinstance(m, nn.Linear):  # the output layer (MyLinear)
@@ -1078,8 +1099,14 @@ class HyperVolume(nn.Module):
         freqs = self.rand_freqs * (self.D // 2)  # [3 * pe_dim, 3]
         with torch.autocast(device_type=x.device.type, enabled=False):
             xf = x.float()
-            if xf.is_cuda and torch.backends.cuda.matmul.allow_tf32:  # TF32 would round the phases
-                k = xf[..., 0:1] * freqs[:, 0] + xf[..., 1:2] * freqs[:, 1] + xf[..., 2:3] * freqs[:, 2]
+            if (
+                xf.is_cuda and torch.backends.cuda.matmul.allow_tf32
+            ):  # TF32 would round the phases
+                k = (
+                    xf[..., 0:1] * freqs[:, 0]
+                    + xf[..., 1:2] * freqs[:, 1]
+                    + xf[..., 2:3] * freqs[:, 2]
+                )
             else:
                 k = xf @ freqs.T
             return torch.cat([torch.sin(k), torch.cos(k)], -1)

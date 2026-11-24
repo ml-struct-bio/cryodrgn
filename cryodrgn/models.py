@@ -393,11 +393,12 @@ class PositionalDecoder(Decoder):
         # Note: extent should be 0.5 by default, except when a downsampled
         # volume is generated
         assert extent <= 0.5
-        zdim = 0
-        z = torch.tensor([])
         if zval is not None:
             zdim = len(zval)
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
+        else:
+            zdim = 0
+            z = torch.tensor([], dtype=torch.float32, device=coords.device)
 
         vol_f = torch.zeros((D, D, D), dtype=torch.float32)
         assert not self.training
@@ -583,11 +584,13 @@ class FTPositionalDecoder(Decoder):
             zval: value of latent (zdim x 1)
         """
         assert extent <= 0.5
-        zdim = 0
-        z = torch.tensor([])
+
         if zval is not None:
             zdim = len(zval)
             z = torch.tensor(zval, dtype=torch.float32, device=coords.device)
+        else:
+            zdim = 0
+            z = torch.tensor([], dtype=torch.float32, device=coords.device)
 
         vol_f = torch.zeros((D, D, D), dtype=torch.float32, device=coords.device)
         assert not self.training
@@ -610,10 +613,12 @@ class FTPositionalDecoder(Decoder):
                 slice_[keep] = y
                 slice_ = slice_.view(D, D)
             vol_f[i] = slice_
+
         vol_f = vol_f * norm[1] + norm[0]
         vol = fft.ihtn_center(
             vol_f[:-1, :-1, :-1]
         )  # remove last +k freq for inverse FFT
+
         return vol
 
 

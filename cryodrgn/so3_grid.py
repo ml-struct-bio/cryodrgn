@@ -223,10 +223,57 @@ try:
     with open(f"{os.path.dirname(__file__)}/healpy_grid.json") as hf:
         _GRIDS = {int(k): np.array(v).T for k, v in json.load(hf).items()}
 except IOError:
-    print(
-        "WARNING: Couldn't load cached healpy grid; will fall back to importing healpy"
-    )
+    print("WARNING: Couldn't load cached healpy grid; will compute grids on the fly")
     _GRIDS = None
+
+# Face layout of the HEALPix base resolution (rings and longitudes of the 12 faces)
+_JRLL = np.array([2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4], dtype=np.int64)
+_JPLL = np.array([1, 3, 5, 7, 0, 2, 4, 6, 1, 3, 5, 7], dtype=np.int64)
+
+
+def _compress_bits(v):
+    """Keep the even bits of v, packed together (de-interleaves a Morton code)."""
+    v = v & 0x5555555555555555
+    v = (v | (v >> 1)) & 0x3333333333333333
+    v = (v | (v >> 2)) & 0x0F0F0F0F0F0F0F0F
+    v = (v | (v >> 4)) & 0x00FF00FF00FF00FF
+    v = (v | (v >> 8)) & 0x0000FFFF0000FFFF
+    v = (v | (v >> 16)) & 0x00000000FFFFFFFF
+    return v
+
+
+def pix2ang_nest(n_side, i_pix):
+    """
+    Centres of HEALPix pixels in the nested scheme, as healpy.pix2ang(nest=True).
+
+    Follows healpix_cxx's T_Healpix_Base::pix2loc; agrees with healpy to within
+    1 ulp in theta (phi is identical).
+
+    output: theta [0,pi], phi [0,2pi) (np.array, same shape as i_pix)
+    """
+    i_pix = np.asarray(i_pix, dtype=np.int64)
+    npface = n_side * n_side
+    fact2 = 4.0 / (12 * npface)
+    fact1 = 2 * n_side * fact2
+    face, pf = np.divmod(i_pix, npface)
+    ix, iy = _compress_bits(pf), _compress_bits(pf >> 1)
+    jr = _JRLL[face] * n_side - ix - iy - 1  # ring index, counted from the north
+
+    north, south = jr < n_side, jr > 3 * n_side
+    nr = np.where(north, jr, np.where(south, 4 * n_side - jr, n_side))
+    tmp = (nr * nr) * fact2
+    z = np.where(north, 1 - tmp, np.where(south, tmp - 1, (2 * n_side - jr) * fact1))
+    # near the poles, arccos(z) loses precision; use sin(theta) as healpix does
+    polar = (north & (z > 0.99)) | (south & (z < -0.99))
+    sth = np.sqrt(np.where(polar, tmp * (2.0 - tmp), 0.0))
+    theta = np.where(polar, np.arctan2(sth, z), np.arccos(np.clip(z, -1, 1)))
+
+    t = _JPLL[face] * nr + ix - iy
+    t = np.where(t < 0, t + 8 * nr, t)
+    phi = np.where(
+        nr == n_side, 0.75 * (np.pi / 2) * t * fact1, (0.5 * (np.pi / 2) * t) / nr
+    )
+    return theta, phi
 
 
 def pix2ang_tensor(n_side, i_pix, nest=False, lonlat=False):
@@ -242,13 +289,14 @@ def pix2ang_tensor(n_side, i_pix, nest=False, lonlat=False):
 
 
 def pix2ang(Nside, ipix, nest=False, lonlat=False):
-    if _GRIDS is not None and Nside in _GRIDS and nest and not lonlat:
+    """
+    (theta, phi) of HEALPix pixel centres; only the nested scheme is supported.
+
+    Grids for Nside 2-128 come from the cached healpy_grid.json, larger ones
+    from pix2ang_nest.
+    """
+    if not nest or lonlat:
+        raise NotImplementedError("pix2ang supports only nest=True, lonlat=False")
+    if _GRIDS is not None and Nside in _GRIDS:
         return _GRIDS[Nside][ipix].T
-    else:
-        try:
-            import healpy
-        except ImportError:
-            raise RuntimeError(
-                "You need to `pip install healpy` to run with non-standard grid sizes."
-            )
-        return healpy.pix2ang(Nside, ipix, nest=nest, lonlat=lonlat)
+    return pix2ang_nest(Nside, ipix)

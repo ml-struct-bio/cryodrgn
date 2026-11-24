@@ -241,83 +241,87 @@ class Starfile:
         return vals
 
     def set_optics_values(self, fieldname: str, vals: Union[float, Iterable]) -> None:
-        """Set optics values for a given field, updating optics table if present."""
-        if not isinstance(vals, Iterable):
-            vals = [vals]
-        else:
-            vals = list(vals)
+        """Set an existing field, preferring its optics-table column when present.
 
-        possible_sizes = {1, len(self)}
+        Scalars and one-element iterables broadcast to the destination column.
+        Otherwise, values may be given per particle row or per optics-table row.
+        Per-particle values take precedence when those row counts are equal,
+        matching the order returned by ``get_optics_values``. Updates to an
+        optics-table column must agree within each particle's optics group.
+        """
+        if not isinstance(vals, Iterable) or (
+            isinstance(vals, np.ndarray) and vals.ndim == 0
+        ):
+            values = np.asarray([vals])
+        else:
+            values = np.asarray(list(vals))
+        if values.ndim != 1:
+            raise ValueError("Optics values must be scalar or one-dimensional!")
+
+        in_optics = self.relion31 and fieldname in self.data_optics
+        if not in_optics and fieldname not in self.df:
+            raise ValueError(f"Cannot find {fieldname=} in this .star file!")
+
+        n_particles = self.df.shape[0]
+        possible_sizes = {1, n_particles}
         if self.relion31:
             possible_sizes |= {self.data_optics.shape[0]}
-        if len(vals) not in possible_sizes:
+        if len(values) not in possible_sizes:
             raise ValueError(
-                f"Given optics values have length `{len(vals)}` "
+                f"Given optics values have length `{len(values)}` "
                 f"not in {possible_sizes}!"
             )
 
-        if self.relion31 and fieldname in self.data_optics:
-            if "_rlnOpticsGroup" in self.df.columns:
-                if len(set(vals)) not in {1, self.data_optics.shape[0]}:
+        target = self.data_optics if in_optics else self.df
+        if len(values) == 1:
+            target[fieldname] = values[0]
+            return
+
+        per_particle = len(values) == n_particles
+        if not in_optics and per_particle:
+            self.df[fieldname] = values
+            return
+        if in_optics and not per_particle:
+            # Per-group values follow optics-table row order, not group IDs.
+            self.data_optics[fieldname] = values
+            return
+
+        if "_rlnOpticsGroup" not in self.df:
+            if in_optics and self.data_optics.shape[0] == 1:
+                if len(values) == 0:
+                    return
+                if pd.Series(values).nunique(dropna=False) == 1:
+                    self.data_optics[fieldname] = values[0]
+                    return
+            raise ValueError(
+                "Cannot map optics values to particles without _rlnOpticsGroup!"
+            )
+        if not self.data_optics.index.is_unique:
+            raise ValueError("Optics table has duplicate _rlnOpticsGroup IDs!")
+        groups = self.df["_rlnOpticsGroup"]
+        unknown_groups = groups[~groups.isin(self.data_optics.index)].unique()
+        if len(unknown_groups):
+            raise ValueError(
+                f"Particle optics group(s) {unknown_groups.tolist()} "
+                "are not present in the optics table!"
+            )
+
+        if in_optics:
+            # Preserve unused groups when only the observed particles are updated.
+            group_values = self.data_optics[fieldname].to_dict()
+            updates = pd.Series(values, index=groups.to_numpy())
+            for group, group_updates in updates.groupby(level=0, sort=False):
+                if group_updates.nunique(dropna=False) != 1:
                     raise ValueError(
-                        f"Given optics table has `{self.data_optics.shape[0]}` groups, "
-                        f"while new optics values have length `{len(vals)}`!"
+                        f"Conflicting {fieldname} values for optics group {group}!"
                     )
-
-                if len(vals) in {1, self.data_optics.shape[0]}:
-                    self.data_optics.loc[:, fieldname] = vals
-                elif len(set(vals)) == 1:
-                    self.data_optics.loc[:, fieldname] = tuple(set(vals))[0]
-                else:
-                    if len(vals) != self.df.shape[0]:
-                        raise ValueError(
-                            f"Given optics values have length `{len(vals)}` but this "
-                            f".star file contains {self.df.shape[0]} particles!"
-                        )
-
-                    new_vals = {
-                        g: None for g in self.data_optics["_rlnOpticsGroup"].values
-                    }
-                    for g, v in zip(self.df["_rlnOpticsGroup"].values, vals):
-                        if g not in new_vals:
-                            raise ValueError(
-                                f"This .star file has `_rlnOpticsGroup` `{g}` not "
-                                f"present in its own optics table!"
-                            )
-
-                        if new_vals[g] is None:
-                            new_vals[g] = v
-                        elif new_vals[g] != v:
-                            raise ValueError(
-                                f"This .star file has `_rlnOpticsGroup` `{g}` "
-                                f"present multiple times in its own optics table!"
-                            )
-
-                    self.data_optics.loc[:, fieldname] = [
-                        new_vals[g] for g in self.data_optics["_rlnOpticsGroup"].values
-                    ]
-            else:
-
-                if len(vals) != 1:
-                    raise ValueError(
-                        f"No optics mapping for this .star file, and thus new optics "
-                        f"values have to be of length one, given {len(vals)=}!"
-                    )
-                self.data_optics.loc[:, fieldname] = vals
-
-        # If can't find this field in the optics table, look in the primary data table
-        elif fieldname in self.df:
-            if len(vals) == self.data_optics.shape[0]:
-                self.df.loc[:, fieldname] = np.array(
-                    [
-                        vals[self.data_optics["_rlnOpticsGroup"].index(g)]
-                        for g in self.df["_rlnOpticsGroup"].values
-                    ]
-                )
-            else:
-                self.df.loc[:, fieldname] = vals
+                group_values[group] = group_updates.iloc[0]
+            self.data_optics[fieldname] = [
+                group_values[group] for group in self.data_optics.index
+            ]
         else:
-            raise ValueError(f"Cannot find {fieldname=} in this .star file!")
+            group_values = dict(zip(self.data_optics.index, values))
+            self.df[fieldname] = groups.map(group_values).to_numpy()
 
     @property
     def apix(self) -> Union[None, np.ndarray]:

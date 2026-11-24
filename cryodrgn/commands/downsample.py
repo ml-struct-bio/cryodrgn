@@ -116,6 +116,7 @@ def downsample_mrc_images(
     out_fl: str,
     batch_size: int,
     chunk_size: Optional[int] = None,
+    pixel_size: Optional[float] = None,
 ) -> None:
     """Downsample the images in a single particle stack into a new .mrcs file.
 
@@ -130,6 +131,7 @@ def downsample_mrc_images(
     batch_size  The batch size for processing images;
                 useful for avoiding out-of-memory issues.
     chunk_size  If given, divide output into files each containing this many images.
+    pixel_size  Override the source header pixel size with authoritative STAR metadata.
 
     """
     if new_box_size > src.D:
@@ -138,7 +140,7 @@ def downsample_mrc_images(
             f"than the original box size {src.D}!"
         )
 
-    old_apix = src.apix
+    old_apix = src.apix if pixel_size is None else pixel_size
     if old_apix is None:
         old_apix = 1.0
 
@@ -240,6 +242,11 @@ def main(args: argparse.Namespace) -> None:
         datadir=args.datadir,
         max_threads=args.max_threads,
     )
+    if isinstance(src, StarfileSource) and ind is not None:
+        # Keep metadata in the same order as the selected images. The source's
+        # indices otherwise refer to its original, unfiltered particle table.
+        src.df = src.df.iloc[src.indices].reset_index(drop=True)
+        src.indices = np.arange(src.n)
     if args.D > src.D:
         raise ValueError(
             f"New box size {args.D=} can't be larger "
@@ -299,11 +306,40 @@ def main(args: argparse.Namespace) -> None:
             oldpath: os.path.join(outdir, os.path.relpath(oldpath, basepath))
             for oldpath, _ in src.sources
         }
+        # Snapshot the per-image pixel sizes before changing any metadata. Image
+        # dimensions come from the source stacks, not potentially stale STAR values.
+        original_apix = src.apix if isinstance(src, StarfileSource) else None
+        stack_apix = {}
+        stack_rows = src.df.groupby("__mrc_filepath", sort=False).indices
+        if original_apix is not None:
+            for fl, rows in stack_rows.items():
+                values = np.unique(original_apix[rows])
+                if len(values) != 1:
+                    raise ValueError(
+                        f"Stack `{fl}` has multiple STAR pixel sizes; a single MRC "
+                        "header cannot represent them."
+                    )
+                stack_apix[fl] = float(values[0])
+
+        new_apix = None if original_apix is None else original_apix.astype(float).copy()
         for fl, fl_src in src.sources:
             os.makedirs(os.path.dirname(newpaths[fl]), exist_ok=True)
             downsample_mrc_images(
-                fl_src, args.D, newpaths[fl], args.batch_size, chunk_size=None
+                fl_src,
+                args.D,
+                newpaths[fl],
+                args.batch_size,
+                chunk_size=None,
+                pixel_size=stack_apix.get(fl),
             )
+            if new_apix is not None:
+                new_apix[stack_rows[fl]] *= fl_src.D / args.D
+
+        if isinstance(src, StarfileSource):
+            if new_apix is not None:
+                src.set_optics_values("_rlnImagePixelSize", np.round(new_apix, 6))
+            if src.resolution is not None:
+                src.set_optics_values("_rlnImageSize", args.D)
 
         src.df["__mrc_filepath"] = src.df["__mrc_filepath"].map(newpaths)
         if out_ext == ".star":
@@ -323,12 +359,6 @@ def main(args: argparse.Namespace) -> None:
                     src.df["_rlnImageName"].values, src.df["__mrc_filepath"].values
                 )
             ]
-        if isinstance(src, StarfileSource) and src.resolution is not None:
-            apix = 1.0 if src.apix is None else src.apix
-            src.set_optics_values(
-                "_rlnImagePixelSize", np.round(apix * src.resolution / args.D, 6)
-            )
-
         src.write(args.outfile)
 
     else:
